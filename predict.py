@@ -104,6 +104,9 @@ if __name__ == "__main__":
     # Prepare state
     device = torch.device(ARGS.device)
     dtype = getattr(torch, ARGS.dtype)
+
+    input_dir = os.path.abspath(ARGS.input)
+
     workers = ARGS.num_workers
     if workers is None:
         workers = os.cpu_count() - 1
@@ -111,7 +114,7 @@ if __name__ == "__main__":
     batch_size = ARGS.batch_size
 
     if not os.path.exists(ARGS.class_index):
-        _class2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(ARGS.input)) if os.path.isdir(os.path.join(ARGS.input, f))]))}
+        _class2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(input_dir)) if os.path.isdir(os.path.join(input_dir, f))]))}
         with open(ARGS.class_index, "w") as f:
             json.dump(_class2idx, f)
     with open(ARGS.class_index, "rb") as f:
@@ -137,7 +140,7 @@ if __name__ == "__main__":
         dtype,
         torch.device("cpu")
     )
-    images = find_images(ARGS.input)
+    images = find_images(input_dir)
     ds = image_loader(images)
     dl = DataLoader(
         ds,
