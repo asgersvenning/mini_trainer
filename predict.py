@@ -3,6 +3,7 @@ import os
 from argparse import ArgumentParser
 from glob import glob
 from typing import Union, Iterable, Callable
+from math import ceil
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -83,7 +84,7 @@ if __name__ == "__main__":
         help="Are the images in `input` stored in subfolders named by their class? If so, we can calculate accuracy statistics."
     )
     parser.add_argument(
-        "--batch_size", type=int, default=16, required=False,
+        "--batch_size", type=int, default=32, required=False,
         help="Batch size used for inference. Higher requires more VRAM."
     )
     parser.add_argument(
@@ -105,7 +106,8 @@ if __name__ == "__main__":
     dtype = getattr(torch, ARGS.dtype)
     workers = ARGS.num_workers
     if workers is None:
-        workers = os.cpu_count()
+        workers = os.cpu_count() - 1
+        workers -= workers % 2
     batch_size = ARGS.batch_size
 
     if not os.path.exists(ARGS.class_index):
@@ -143,7 +145,8 @@ if __name__ == "__main__":
         num_workers=workers,
         pin_memory=True,
         pin_memory_device=device.type,
-        shuffle=False
+        shuffle=False,
+        drop_last=False
     )
 
 
@@ -158,7 +161,7 @@ if __name__ == "__main__":
     
     start.record()
     with torch.no_grad():
-        for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=len(images) // batch_size + 1):
+        for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
             i = batch_i * batch_size
             prediction = model(batch.to(device))
             results["path"].extend(images[i:(i+len(batch))])
