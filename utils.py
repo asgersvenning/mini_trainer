@@ -4,14 +4,128 @@ import copy
 import datetime
 import errno
 import hashlib
+import json
 import os
 import time
-from collections import defaultdict, deque, OrderedDict
-from typing import List, Optional, Tuple
+from collections import OrderedDict, defaultdict, deque
+from random import random
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.distributed as dist
 
+
+def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
+    """
+    Accepts a path to 
+    """
+    if not os.path.exists(path):
+        if dir is None or not os.path.isdir(dir):
+            raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
+        cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
+        if path is not None:
+            with open(path, "w") as f:
+                json.dump(cls2idx, f)
+    else:
+        with open(path, "rb") as f:
+            cls2idx = json.load(f)
+    cls = list(cls2idx.keys())
+    idx2cls = {v : k for k, v in cls2idx.items()}
+    ncls = len(idx2cls)
+    return cls, cls2idx, idx2cls, ncls
+
+def write_metadata(directory : str, classes : List[str], dst : str, train_proportion : float=0.9):
+    data = {
+        "path" : [],
+        "class" : [],
+        "split" : []
+    }
+    for cls in classes:
+        this_dir = os.path.join(directory, cls)
+        for file in map(os.path.basename, os.listdir(this_dir)):
+            data["path"].append(os.path.join(this_dir, file))
+            data["class"].append(cls)
+            data["split"].append("train" if random() < train_proportion else "validation")
+    with open(dst, "w") as f:
+        json.dump(data, f)
+
+def is_image(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            header = f.read(16)  # read enough bytes for JPEG and PNG signatures
+    except Exception:
+        return False
+
+    # JPEG files start with: 0xFF, 0xD8
+    if header.startswith(b'\xff\xd8'):
+        return True
+
+    # PNG files start with: 0x89, 'PNG', CR, LF, 0x1A, LF
+    if header.startswith(b'\x89PNG\r\n\x1a\n'):
+        return True
+
+    return False
+
+def get_image_data(path : str):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
+        with open(path, "rb") as f:
+            _image_data = {k : np.array(v) for k, v in json.load(f).items()}
+        image_data = {k : v[np.array([is_image(f) for f in _image_data["path"]])] for k, v in _image_data.items()}
+        train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
+        test_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
+        return train_image_data, test_image_data
+
+def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt")):
+    # Build confusion matrix and compute accuracies
+    classes = [i2c[i] for i in sorted(list(i2c))]
+
+    # Initialize confusion matrix and counters
+    conf_mat = {gt: {pred: 0 for pred in classes} for gt in classes}
+    total_correct = 0
+    total_samples = 0
+    per_class_total = {cls: 0 for cls in classes}
+    per_class_correct = {cls: 0 for cls in classes}
+
+    # Populate confusion matrix and count correct predictions
+    for p, g in zip(results[keys[0]], results[keys[1]]):
+        conf_mat[g][p] += 1
+        total_samples += 1
+        per_class_total[g] += 1
+        if g.lower().strip() == p.lower().strip():
+            total_correct += 1
+            per_class_correct[g] += 1
+
+    # Print the confusion matrix (numbers only, aligned)
+    max_cf_n = max(val for d in conf_mat.values() for val in d.values())
+    width = len(str(max_cf_n))
+    for gt in classes:
+        row_str = "|".join(
+            "{:>{width}d}".format(conf_mat[gt][pred], width=width)
+            if conf_mat[gt][pred] != 0
+            else " " * width
+            for pred in classes
+        )
+        print(row_str)
+
+    # Compute and print per-class accuracies
+    print("\nPer-class Accuracies:")
+    macro_acc = 0.0
+    for cls in classes:
+        if per_class_total[cls] > 0:
+            acc = per_class_correct[cls] / per_class_total[cls]
+        else:
+            acc = 0.0
+        macro_acc += acc
+        print(f"{cls:_<{max(map(len, classes))}}{acc:_>9.1%} ({per_class_correct[cls]}/{per_class_total[cls]})")
+    macro_acc /= len(classes) if classes else 1
+
+    # Micro accuracy: overall correct predictions / total predictions
+    micro_acc = total_correct / total_samples if total_samples > 0 else 0.0
+
+    print(f"\nMicro Accuracy: {micro_acc:.2%} ({total_correct}/{total_samples})")
+    print(f"Macro Accuracy: {macro_acc:.2%}")
 
 class SmoothedValue:
     """Track a series of values and provide access to smoothed values over a

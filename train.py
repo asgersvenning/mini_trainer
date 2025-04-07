@@ -1,9 +1,8 @@
 import json
 import os
-import random
 from argparse import ArgumentParser
 from functools import partial
-from random import choice, random, seed
+from random import choice, seed
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -20,7 +19,8 @@ from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
 from trainer import train
-from utils import set_weight_decay
+from utils import (get_image_data, parse_class_index, set_weight_decay,
+                   write_metadata)
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
@@ -153,48 +153,6 @@ def get_training_augmentation():
         # torchvision.transforms.ToTensor(),
     ])
 
-def write_metadata(directory : str, dst : str, train_proportion : float=0.9):
-    data = {
-        "path" : [],
-        "class" : [],
-        "split" : []
-    }
-    for cls in CLASSES:
-        this_dir = os.path.join(directory, cls)
-        for file in map(os.path.basename, os.listdir(this_dir)):
-            data["path"].append(os.path.join(this_dir, file))
-            data["class"].append(cls)
-            data["split"].append("train" if random() < train_proportion else "validation")
-    with open(dst, "w") as f:
-        json.dump(data, f)
-
-def is_image(path: str) -> bool:
-    try:
-        with open(path, "rb") as f:
-            header = f.read(16)  # read enough bytes for JPEG and PNG signatures
-    except Exception:
-        return False
-
-    # JPEG files start with: 0xFF, 0xD8
-    if header.startswith(b'\xff\xd8'):
-        return True
-
-    # PNG files start with: 0x89, 'PNG', CR, LF, 0x1A, LF
-    if header.startswith(b'\x89PNG\r\n\x1a\n'):
-        return True
-
-    return False
-
-def get_image_data(path : str):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
-        with open(path, "rb") as f:
-            _image_data = {k : np.array(v) for k, v in json.load(f).items()}
-        image_data = {k : v[np.array([is_image(f) for f in _image_data["path"]])] for k, v in _image_data.items()}
-        train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
-        test_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
-        return train_image_data, test_image_data
-
 def get_dataset_dataloader(train_image_data : Dict, val_image_data : Dict, class2idx : Dict[str, int], resize_size : Union[int, Tuple[int, int]], device=torch.device("cpu"), dtype=torch.float32):
     train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
     val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
@@ -238,19 +196,23 @@ if __name__ == "__main__":
         description = "Train a simple classifier"
     )  
     parser.add_argument(
-        "--model", type=str, default="efficientnet_v2_s", required=False,
+        "-m", "--model", type=str, default="efficientnet_v2_s", required=False,
         help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
     )
     parser.add_argument(
-        "--input", type=str, required=True,
+        "-i", "--input", type=str, required=True,
         help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
     )
     parser.add_argument(
-        "--class_index", type=str, default="class_index.json", required=False,
+        "-D", "--data_index", type=str, required=False,
+        help="JSON file containing three arrays with keys 'path', 'split' and 'class'. The arrays should all have equal lengths and can be considered \"columns\" in a table. The 'split' column should contain values 'train', 'validation' or other, and the 'class' column' should contain the the class *names* (not indices) for each file/path."
+    )
+    parser.add_argument(
+        "-C", "--class_index", type=str, default="class_index.json", required=False,
         help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
     )
     parser.add_argument(
-        "--checkpoint", type=str, required=False,
+        "-c", "--checkpoint", type=str, required=False,
         help="Model checkpoint (weights) used to initialize model before training."
     )
     parser.add_argument(
@@ -266,11 +228,11 @@ if __name__ == "__main__":
         help="Number of images used in each mini-batch for training/validation (default=16)."
     )
     parser.add_argument(
-        "--warmup_epochs", type=int, default=2, required=False,
+        "--warmup_epochs", type=float, default=2, required=False,
         help="Number of warmup epochs (default=2)."
     )
     parser.add_argument(
-        "--name", type=str, required=False,
+        "-n", "--name", type=str, required=False,
         help="name of the output model. If not provided, a helpful name will be inferred from the other arguments."
     )
     parser.add_argument(
@@ -301,15 +263,7 @@ if __name__ == "__main__":
     device = torch.device(ARGS.device)
     dtype = getattr(torch, ARGS.dtype)
 
-    if not os.path.exists(ARGS.class_index):
-        _class2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(input_dir)) if os.path.isdir(os.path.join(input_dir, f))]))}
-        with open(ARGS.class_index, "w") as f:
-            json.dump(_class2idx, f)
-    with open(ARGS.class_index, "rb") as f:
-        class2idx = json.load(f)
-    CLASSES = list(class2idx.keys())
-    idx2class = {v : k for k, v in class2idx.items()}
-    num_classes = len(idx2class)
+    CLASSES, class2idx, idx2class, num_classes = parse_class_index(ARGS.class_index, input_dir)
 
     # Prepare model
     model, head_name, model_preprocess = get_model(ARGS.model)
@@ -325,9 +279,12 @@ if __name__ == "__main__":
                 param.requires_grad_(False)
 
     # Prepare datasets/dataloaders
-    with NamedTemporaryFile() as tmpfile:
-        write_metadata(input_dir, tmpfile.name, train_proportion=0.9)
-        train_image_data, val_image_data = get_image_data(tmpfile.name)
+    if ARGS.data_index is None:
+        with NamedTemporaryFile() as tmpfile:
+            write_metadata(input_dir, CLASSES, tmpfile.name, train_proportion=0.9)
+            train_image_data, val_image_data = get_image_data(tmpfile.name)
+    else:
+        train_image_data, val_image_data = get_image_data(ARGS.data_index)
 
     train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
         train_image_data, 
@@ -352,27 +309,31 @@ if __name__ == "__main__":
     # Define training "hyperparameters"
     epochs = ARGS.epochs
     lr_warmup_epochs = ARGS.warmup_epochs
+    lr = 0.0001
+    label_smoothing = 0.1
+    if lr_warmup_epochs > epochs:
+        raise ValueError(f'Number of warmup epochs ({lr_warmup_epochs}) must be lower than number of total epochs ({epochs}).')
 
     parameters = set_weight_decay(model, 1e-3)
-    optimizer = torch.optim.AdamW(parameters, lr=0.0001, weight_decay=1e-4)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    optimizer = torch.optim.AdamW(parameters, lr=lr, weight_decay=1e-4)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
-        T_max=epochs - lr_warmup_epochs, 
-        eta_min=0
+        T_max=(epochs - lr_warmup_epochs) * len(train_loader), 
+        eta_min=lr * 10**-6
     )
     if lr_warmup_epochs > 0:
         warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, 
-            start_factor=0.01, 
-            total_iters=lr_warmup_epochs
+            start_factor=10**-2, 
+            total_iters=lr_warmup_epochs * len(train_loader)
         )
     
     lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer, 
         schedulers=[warmup_lr_scheduler, main_lr_scheduler], 
-        milestones=[lr_warmup_epochs]
+        milestones=[lr_warmup_epochs * len(train_loader)]
     ) if lr_warmup_epochs > 0 else main_lr_scheduler
 
     # Run training

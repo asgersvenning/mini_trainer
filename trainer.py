@@ -21,6 +21,7 @@ def train_one_epoch(
         model : nn.Module, 
         criterion : _Loss, 
         optimizer : Optimizer, 
+        lr_scheduler : LRScheduler,
         data_loader : DataLoader, 
         epoch : int, 
         preprocess : Callable=lambda x : x,
@@ -53,6 +54,7 @@ def train_one_epoch(
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         optimizer.step()
+        lr_scheduler.step()
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         batch_size = batch.shape[0]
@@ -131,8 +133,7 @@ def train(
     print("Start training")
     start_time = time.time()
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, criterion, optimizer, train_loader, epoch, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
-        lr_scheduler.step()
+        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
         evaluate(model, criterion, test_loader, preprocess, device=device, dtype=dtype)
         # if args.output_dir:
         #     checkpoint = {
