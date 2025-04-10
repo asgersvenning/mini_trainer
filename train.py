@@ -301,13 +301,13 @@ def main(
     device = torch.device(device)
     dtype = getattr(torch, dtype)
 
-    CLASSES, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
+    classes, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
 
     # Prepare model
     model, head_name, model_preprocess = get_model(model)
-    model : torch.Module
-    if not isinstance(model, torch.Module):
-        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.Module}`")
+    model : torch.nn.Module
+    if not isinstance(model, torch.nn.Module):
+        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.nn.Module}`")
     num_embeddings = getattr(model, head_name)[1].in_features
     if weights is not None:
         model = Classifier.load(model, weights, device=device, dtype=torch.float32)
@@ -322,7 +322,7 @@ def main(
     # Prepare datasets/dataloaders
     if data_index is None:
         with NamedTemporaryFile() as tmpfile:
-            write_metadata(input_dir, CLASSES, tmpfile.name, train_proportion=0.9)
+            write_metadata(input_dir, classes, tmpfile.name, train_proportion=0.9)
             train_image_data, val_image_data = get_image_data(tmpfile.name)
     else:
         train_image_data, val_image_data = get_image_data(data_index)
