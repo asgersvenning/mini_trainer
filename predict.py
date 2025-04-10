@@ -58,19 +58,19 @@ def find_images(root : str):
     return list(filter(is_image, paths))
 
 def main(
-    model: str,
-    weights: str,
-    input: str,
-    output: str = "result.json",
-    class_index: str = "class_index.json",
-    training_format: bool = False,
-    batch_size: int = 32,
-    num_workers: Optional[int] = None,
-    device: str = "cuda:0",
-    dtype: str = "float16"
+    model : str,
+    weights : str,
+    input : str,
+    output : str="result.json",
+    class_index : str="class_index.json",
+    training_format : bool=False,
+    batch_size : int=32,
+    num_workers : Optional[int]=None,
+    device : str="cuda:0",
+    dtype : str="float16"
 ) -> None:
     """
-    Predict with a simple classifier.
+    Predict with a classifier.
 
     Args:
         model (str):
@@ -195,7 +195,7 @@ def main(
 if __name__ == "__main__":  
     parser = ArgumentParser(
         prog = "predict",
-        description = "Predict with a simple classifier"
+        description = "Predict with a classifier"
     )  
     parser.add_argument(
         "-m", "--model", type=str, default="efficientnet_v2_s", required=True,

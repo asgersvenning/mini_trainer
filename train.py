@@ -198,25 +198,54 @@ def easy_get_dataset_dataloader(data_path, class_path):
         class2idx = json.load(f)
     return get_dataset_dataloader(*get_image_data(data_path), class2idx)
 
+def base_load_model(
+        model : str,
+        num_classes : int,
+        weights : Optional[str],
+        fine_tune : bool,
+        device : torch.types.Device,
+        dtype : torch.dtype
+    ) -> Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
+    model, head_name, model_preprocess = get_model(model)
+    model : torch.nn.Module
+    if not isinstance(model, torch.nn.Module):
+        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.nn.Module}`")
+    num_embeddings = getattr(model, head_name)[1].in_features
+    if weights is not None:
+        model = Classifier.load(model, weights, device=device, dtype=torch.float32)
+    else:
+        setattr(model, head_name, Classifier(num_embeddings, num_classes))
+        model.to(device, torch.float32)
+    if fine_tune:
+        for name, param in model.named_parameters():
+            if param.requires_grad and not head_name in name:
+                param.requires_grad_(False)
+    return model, model_preprocess
+
 def main(
-    input: str,
-    output: str = ".",
-    model: str = "efficientnet_v2_s",
-    checkpoint: Optional[List[str]] = None,
-    weights: Optional[str] = None,
-    data_index: Optional[str] = None,
-    class_index: str = "class_index.json",
-    fine_tune: bool = False,
-    epochs: int = 15,
-    batch_size: int = 16,
-    warmup_epochs: float = 2.0,
-    name: Optional[str] = None,
-    device: str = "cuda:0",
-    dtype: str = "float16",
-    seed: Optional[int] = None
+    input : str,
+    output : str = ".",
+    model : str = "efficientnet_v2_s",
+    checkpoint : Optional[List[str]]=None,
+    weights : Optional[str]=None,
+    data_index : Optional[str]=None,
+    class_index : str="class_index.json",
+    fine_tune : bool=False,
+    epochs: int=15,
+    batch_size : int=16,
+    warmup_epochs : float=2.0,
+    name: Optional[str]=None,
+    device : str="cuda:0",
+    dtype : str="float16",
+    seed : Optional[int]=None,
+    load_model : Callable[
+        [str, int, Optional[str], bool, torch.dtype, torch.types.Device, Dict[str, Any]], 
+        Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
+    ]=base_load_model,
+    load_model_kwargs : Dict[str, Any]={}
 ) -> None:
     """
-    Train a simple classifier.
+    Train a classifier.
 
     Args:
         model (str, optional):
@@ -298,26 +327,15 @@ def main(
     input_dir = os.path.abspath(input)
     output_dir = os.path.abspath(output)
 
-    device = torch.device(device)
-    dtype = getattr(torch, dtype)
+    device : torch.device = torch.device(device)
+    dtype : torch.dtype = getattr(torch, dtype)
 
     classes, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
 
     # Prepare model
-    model, head_name, model_preprocess = get_model(model)
-    model : torch.nn.Module
+    model, model_preprocess = load_model(model, num_classes, weights, fine_tune, device, dtype, **load_model_kwargs) 
     if not isinstance(model, torch.nn.Module):
         raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.nn.Module}`")
-    num_embeddings = getattr(model, head_name)[1].in_features
-    if weights is not None:
-        model = Classifier.load(model, weights, device=device, dtype=torch.float32)
-    else:
-        setattr(model, head_name, Classifier(num_embeddings, num_classes))
-        model.to(device, torch.float32)
-    if fine_tune:
-        for name, param in model.named_parameters():
-            if param.requires_grad and not head_name in name:
-                param.requires_grad_(False)
 
     # Prepare datasets/dataloaders
     if data_index is None:
@@ -416,7 +434,7 @@ def main(
 if __name__ == "__main__":  
     parser = ArgumentParser(
         prog = "train",
-        description = "Train a simple classifier"
+        description = "Train a classifier"
     )
     parser.add_argument(
         "-i", "--input", type=str, required=True,
