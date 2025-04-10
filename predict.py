@@ -3,7 +3,7 @@ import os
 from argparse import ArgumentParser
 from glob import glob
 from math import ceil
-from typing import Callable, Iterable, Union
+from typing import Callable, Iterable, Union, Optional
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -57,72 +57,84 @@ def find_images(root : str):
     paths = glob(os.path.join(root, "**"), recursive=True)
     return list(filter(is_image, paths))
 
-if __name__ == "__main__":  
-    parser = ArgumentParser(
-        prog = "predict",
-        description = "Predict with a simple classifier"
-    )  
-    parser.add_argument(
-        "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
-        help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
-    )
-    parser.add_argument(
-        "-w", "--weights", type=str, required=True,
-        help="Model weights for inference."
-    )
-    parser.add_argument(
-        "-i", "--input", type=str, required=True,
-        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
-    )
-    parser.add_argument(
-        "-o", "--output", type=str, default="result.json", required=False,
-        help='Path used to store inference results (default="result.json").'
-    )
-    parser.add_argument(
-        "-C", "--class_index", type=str, default="class_index.json", required=True,
-        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
-    )
-    parser.add_argument(
-        "--training_format", action="store_true", required=False,
-        help="Are the images in `input` stored in subfolders named by their class? If so, we can calculate accuracy statistics."
-    )
-    parser.add_argument(
-        "--batch_size", type=int, default=32, required=False,
-        help="Batch size used for inference. Higher requires more VRAM."
-    )
-    parser.add_argument(
-        "--num_workers", type=int, default=None, required=False,
-        help="Number of workers used for reading/loading images for inference. Default is set to number of physical CPU cores." 
-    )
-    parser.add_argument(
-        "--device", type=str, default="cuda:0", required=False,
-        help='Device used for inference (default="cuda:0").'
-    )
-    parser.add_argument(
-        "--dtype", type=str, default="float16", required=False,
-        help="PyTorch data type used for inference (default=float16)."
-    )
-    ARGS = parser.parse_args()
+def main(
+    model: str,
+    weights: str,
+    input: str,
+    output: str = "result.json",
+    class_index: str = "class_index.json",
+    training_format: bool = False,
+    batch_size: int = 32,
+    num_workers: Optional[int] = None,
+    device: str = "cuda:0",
+    dtype: str = "float16"
+) -> None:
+    """
+    Predict with a simple classifier.
 
+    Args:
+        model (str):
+            Name of the model type from the torchvision model zoo.
+            See: https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights.
+            Not case-sensitive. (required)
+
+        weights (str):
+            Path to the model weights file used for inference. (required)
+
+        input (str):
+            Path to a directory containing images for prediction, optionally structured
+            with subdirectories named after class labels. (required)
+
+        output (str, optional):
+            Path where inference results will be stored.
+            Default is 'result.json'.
+
+        class_index (str):
+            Path to a JSON file containing the mapping from class names to indices.
+            If it does not exist, one will be created based on subdirectories under `input`. (required)
+
+        training_format (bool, optional):
+            Indicates if the images in `input` are organized into class-specific subdirectories.
+            If True, accuracy statistics will be computed. Default is False.
+
+        batch_size (int, optional):
+            Batch size used during inference. Larger values require more VRAM.
+            Default is 32.
+
+        num_workers (Optional[int], optional):
+            Number of worker threads/processes used for loading images.
+            Defaults to the number of physical CPU cores if None.
+
+        device (str, optional):
+            Device to perform inference on (e.g., 'cuda:0', 'cpu').
+            Default is 'cuda:0'.
+
+        dtype (str, optional):
+            PyTorch data type used for inference (e.g., 'float16').
+            Default is 'float16'.
+
+    Returns:
+        None
+    """
     # Prepare state
-    device = torch.device(ARGS.device)
-    dtype = getattr(torch, ARGS.dtype)
+    device = torch.device(device)
+    dtype = getattr(torch, dtype)
 
-    input_dir = os.path.abspath(ARGS.input)
+    input_dir = os.path.abspath(input)
 
-    workers = ARGS.num_workers
+    workers = num_workers
     if workers is None:
         workers = os.cpu_count() - 1
         workers -= workers % 2
-    batch_size = ARGS.batch_size
+    batch_size = batch_size
 
-    CLASSES, class2idx, idx2class, num_classes = parse_class_index(ARGS.class_index)
+    classes, class2idx, idx2class, num_classes = parse_class_index(class_index)
 
     # Prepare model
-    model, head_name, model_preprocess = get_model(ARGS.model)
+    model, head_name, model_preprocess = get_model(model)
     num_embeddings = getattr(model, head_name)[1].in_features
-    if ARGS.weights is not None:
-        model = Classifier.load(ARGS.model, ARGS.weights, device=device, dtype=dtype)
+    if weights is not None:
+        model = Classifier.load(model, weights, device=device, dtype=dtype)
     else:
         setattr(model, head_name, Classifier(num_embeddings, num_classes))
         model.to(device, dtype)
@@ -166,20 +178,63 @@ if __name__ == "__main__":
             results["conf"].extend(prediction.softmax(1).max(0).values.tolist())
     
     # Write results
-    with open(ARGS.output, "w") as f:
+    with open(output, "w") as f:
         json.dump(results, f)
 
-    print(f'Outputs written to {os.path.abspath(ARGS.output)}')
+    print(f'Outputs written to {os.path.abspath(output)}')
     end.record()
     torch.cuda.synchronize(device)
     inf_time = start.elapsed_time(end) / 1000
     print(f'Inference took {inf_time:.1f}s ({len(images)/inf_time:.1f} img/s)')
 
-    if ARGS.training_format:
+    if training_format:
         results["gt"] = [f.split(os.sep)[-2] for f in results["path"]]
 
         confusion_matrix(results, idx2class)
 
-
-
-    
+if __name__ == "__main__":  
+    parser = ArgumentParser(
+        prog = "predict",
+        description = "Predict with a simple classifier"
+    )  
+    parser.add_argument(
+        "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
+        help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
+    )
+    parser.add_argument(
+        "-w", "--weights", type=str, required=True,
+        help="Model weights for inference."
+    )
+    parser.add_argument(
+        "-i", "--input", type=str, required=True,
+        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, default="result.json", required=False,
+        help='Path used to store inference results (default="result.json").'
+    )
+    parser.add_argument(
+        "-C", "--class_index", type=str, default="class_index.json", required=True,
+        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
+    )
+    parser.add_argument(
+        "--training_format", action="store_true", required=False,
+        help="Are the images in `input` stored in subfolders named by their class? If so, we can calculate accuracy statistics."
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=32, required=False,
+        help="Batch size used for inference (default=32). Higher requires more VRAM."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=None, required=False,
+        help="Number of workers used for reading/loading images for inference. Default is set to number of physical CPU cores." 
+    )
+    parser.add_argument(
+        "--device", type=str, default="cuda:0", required=False,
+        help='Device used for inference (default="cuda:0").'
+    )
+    parser.add_argument(
+        "--dtype", type=str, default="float16", required=False,
+        help="PyTorch data type used for inference (default=float16)."
+    )
+    main(**parser.parse_args())
