@@ -13,7 +13,7 @@ from tqdm import tqdm as TQDM
 
 from train import (Classifier, convert2bf16, convert2fp16, convert2fp32,
                    convert2uint8, get_model)
-from utils import is_image, parse_class_index
+from utils import confusion_matrix, is_image, parse_class_index
 
 
 class ImageDataset(Dataset):

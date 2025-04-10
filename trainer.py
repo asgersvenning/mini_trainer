@@ -1,20 +1,20 @@
-import time
 import datetime
+import os
+import time
 import warnings
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch import autocast
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
-import torch.nn as nn
-from torch import autocast
+from torch.utils.data import DataLoader
 from tqdm import tqdm as TQDM
 
 from utils import (MetricLogger, SmoothedValue, accuracy,
-                   reduce_across_processes)
+                   reduce_across_processes, save_on_master)
 
 
 def train_one_epoch(
@@ -128,6 +128,7 @@ def train(
         augmentation : Callable=lambda x : x,
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
+        output_dir : Optional[str]=None,
         **kwargs
     ):
     print("Start training")
@@ -135,20 +136,19 @@ def train(
     for epoch in range(start_epoch, epochs):
         train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
         evaluate(model, criterion, test_loader, preprocess, device=device, dtype=dtype)
-        # if args.output_dir:
-        #     checkpoint = {
-        #         "model": model_without_ddp.state_dict(),
-        #         "optimizer": optimizer.state_dict(),
-        #         "lr_scheduler": lr_scheduler.state_dict(),
-        #         "epoch": epoch,
-        #         "args": args,
-        #     }
-        #     if model_ema:
-        #         checkpoint["model_ema"] = model_ema.state_dict()
-        #     if scaler:
-        #         checkpoint["scaler"] = scaler.state_dict()
-        #     utils.save_on_master(checkpoint, os.path.join(args.output_dir, f"model_{epoch}.pth"))
-        #     utils.save_on_master(checkpoint, os.path.join(args.output_dir, "checkpoint.pth"))
+        if output_dir:
+            checkpoint = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "lr_scheduler": lr_scheduler.state_dict(),
+                "epoch": epoch,
+            }
+            # if model_ema:
+            #     checkpoint["model_ema"] = model_ema.state_dict()
+            # if scaler:
+            #     checkpoint["scaler"] = scaler.state_dict()
+            save_on_master(checkpoint, os.path.join(output_dir, f"model_{epoch}.pth"))
+            save_on_master(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

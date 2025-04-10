@@ -1,0 +1,10 @@
+name: mini_trainer
+channels:
+  - conda-forge
+dependencies:
+  - python >=3.11,<3.13
+  - pytorch
+  - torchvision
+  - torchaudio
+  - matplotlib
+  - tqdm

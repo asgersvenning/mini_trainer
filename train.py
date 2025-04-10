@@ -1,8 +1,8 @@
 import json
 import os
+import random
 from argparse import ArgumentParser
 from functools import partial
-from random import choice, seed
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -19,8 +19,8 @@ from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
 from trainer import train
-from utils import (get_image_data, parse_class_index, set_weight_decay,
-                   write_metadata)
+from utils import (average_checkpoints, get_image_data, parse_class_index,
+                   save_on_master, set_weight_decay, write_metadata)
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
@@ -153,7 +153,15 @@ def get_training_augmentation():
         # torchvision.transforms.ToTensor(),
     ])
 
-def get_dataset_dataloader(train_image_data : Dict, val_image_data : Dict, class2idx : Dict[str, int], resize_size : Union[int, Tuple[int, int]], device=torch.device("cpu"), dtype=torch.float32):
+def get_dataset_dataloader(
+        train_image_data : Dict, 
+        val_image_data : Dict, 
+        class2idx : Dict[str, int], 
+        resize_size : Union[int, Tuple[int, int]],
+        batch_size : int=16, 
+        device=torch.device("cpu"), 
+        dtype=torch.float32
+    ):
     train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
     val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
 
@@ -168,14 +176,14 @@ def get_dataset_dataloader(train_image_data : Dict, val_image_data : Dict, class
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=ARGS.batch_size,
+        batch_size=batch_size,
         sampler=train_sampler,
         num_workers=0,
         pin_memory=False
     )
     val_loader = DataLoader(
         val_dataset, 
-        batch_size=ARGS.batch_size, 
+        batch_size=batch_size, 
         sampler=val_sampler, 
         num_workers=0, 
         pin_memory=False
@@ -190,18 +198,245 @@ def easy_get_dataset_dataloader(data_path, class_path):
         class2idx = json.load(f)
     return get_dataset_dataloader(*get_image_data(data_path), class2idx)
 
+def main(
+    input: str,
+    output: str = ".",
+    model: str = "efficientnet_v2_s",
+    checkpoint: Optional[List[str]] = None,
+    weights: Optional[str] = None,
+    data_index: Optional[str] = None,
+    class_index: str = "class_index.json",
+    fine_tune: bool = False,
+    epochs: int = 15,
+    batch_size: int = 16,
+    warmup_epochs: float = 2.0,
+    name: Optional[str] = None,
+    device: str = "cuda:0",
+    dtype: str = "float16",
+    seed: Optional[int] = None
+) -> None:
+    """
+    Train a simple classifier.
+
+    Args:
+        model (str, optional):
+            Name of the model type from the torchvision model zoo.
+            See: https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights.
+            Default is 'efficientnet_v2_s'. Not case-sensitive.
+
+        input (str):
+            Path to a directory containing a subdirectory for each class, where
+            each subdirectory's name corresponds to the class name. (required)
+
+        output (str, optional):
+            Root directory for all created files and directories.
+            Default is current working directory '.'.
+
+        checkpoint (Optional[List[str]], optional):
+            Path to one or more checkpoint files for restarting training.
+            If multiple files are supplied, training is restarted from an 'average'
+            of checkpoint states. Default is None.
+
+        weights (Optional[str], optional):
+            Model weights used to initialize model before training.
+            Default is None.
+
+        data_index (Optional[str], optional):
+            Path to a JSON file containing three arrays with keys 'path', 'split',
+            and 'class', representing a structured dataset.
+            Default is None.
+
+        class_index (str, optional):
+            Path to a JSON file containing the mapping from class names to indices.
+            If the file does not exist, it will be created based on subdirectories
+            found under `input`. Default is 'class_index.json'.
+
+        fine_tune (bool, optional):
+            If True, update only the classifier weights during training.
+            Default is False.
+
+        epochs (int, optional):
+            Number of training epochs. Default is 15.
+
+        batch_size (int, optional):
+            Number of images per mini-batch for training and validation.
+            Default is 16.
+
+        warmup_epochs (float, optional):
+            Number of warmup epochs at the start of training.
+            Default is 2.0.
+
+        name (Optional[str], optional):
+            Name of the output model. If not provided, a descriptive name
+            will be inferred from other arguments. Default is None.
+
+        device (str, optional):
+            Device used for training (e.g., 'cuda:0', 'cpu').
+            Default is 'cuda:0'.
+
+        dtype (str, optional):
+            PyTorch data type for images during training and validation
+            (e.g., 'float16'). The model parameters are always stored in float32,
+            and training is done with autocasting. Default is 'float16'.
+
+        seed (Optional[int], optional):
+            Initial seed for Python's random number generator to ensure reproducibility,
+            especially for train/validation splits. Default is None.
+
+    Returns:
+        None
+    """
+        # Prepare state
+    if name is None:
+        name = f'{model}_{"fine_tune" if fine_tune else "full"}_e{epochs}'
+    
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.seed(seed)
+    
+    input_dir = os.path.abspath(input)
+    output_dir = os.path.abspath(output)
+
+    device = torch.device(device)
+    dtype = getattr(torch, dtype)
+
+    CLASSES, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
+
+    # Prepare model
+    model, head_name, model_preprocess = get_model(model)
+    model : torch.Module
+    if not isinstance(model, torch.Module):
+        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.Module}`")
+    num_embeddings = getattr(model, head_name)[1].in_features
+    if weights is not None:
+        model = Classifier.load(model, weights, device=device, dtype=torch.float32)
+    else:
+        setattr(model, head_name, Classifier(num_embeddings, num_classes))
+        model.to(device, torch.float32)
+    if fine_tune:
+        for name, param in model.named_parameters():
+            if param.requires_grad and not head_name in name:
+                param.requires_grad_(False)
+
+    # Prepare datasets/dataloaders
+    if data_index is None:
+        with NamedTemporaryFile() as tmpfile:
+            write_metadata(input_dir, CLASSES, tmpfile.name, train_proportion=0.9)
+            train_image_data, val_image_data = get_image_data(tmpfile.name)
+    else:
+        train_image_data, val_image_data = get_image_data(data_index)
+
+    train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
+        train_image_data, 
+        val_image_data, 
+        class2idx, 
+        model_preprocess.resize_size if hasattr(model_preprocess, "resize_size") else 256, 
+        batch_size,
+        device, 
+        dtype
+    )
+    augmentation = get_training_augmentation()
+
+    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+    example_image = train_dataset[random.choice(range(len(train_dataset)))][0].clone().float().cpu()
+
+    axs[0].imshow(example_image.permute(1,2,0))
+    axs[1].imshow(augmentation(example_image).permute(1,2,0))
+
+    plt.savefig("example_augmentation.png")
+    plt.close()
+
+    # Define training "hyperparameters"
+    epochs = epochs
+    start_epoch = 0
+    lr_warmup_epochs = warmup_epochs
+    lr = 0.0001
+    label_smoothing = 0.1
+    if lr_warmup_epochs > epochs:
+        raise ValueError(f'Number of warmup epochs ({lr_warmup_epochs}) must be lower than number of total epochs ({epochs}).')
+
+    parameters = set_weight_decay(model, 1e-3)
+    optimizer = torch.optim.AdamW(parameters, lr=lr, weight_decay=1e-4)
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+
+    main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, 
+        T_max=(epochs - lr_warmup_epochs) * len(train_loader), 
+        eta_min=lr * 10**-6
+    )
+    if lr_warmup_epochs > 0:
+        warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, 
+            start_factor=10**-2, 
+            total_iters=lr_warmup_epochs * len(train_loader)
+        )
+    
+    lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer, 
+        schedulers=[warmup_lr_scheduler, main_lr_scheduler], 
+        milestones=[lr_warmup_epochs * len(train_loader)]
+    ) if lr_warmup_epochs > 0 else main_lr_scheduler
+
+    if checkpoint is not None:
+        checkpoint_files = checkpoint
+        if isinstance(checkpoint_files, list) and len(checkpoint_files) == 1:
+            checkpoint_files = checkpoint_files[0]
+        if isinstance(checkpoint_files, str):
+            checkpoint = torch.load(checkpoint_files, device)
+        else:
+            checkpoint = average_checkpoints(checkpoint_files)
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        start_epoch = checkpoint["epoch"]
+
+    # Run training
+    train(
+        model, 
+        train_loader,
+        val_loader,
+        criterion,
+        optimizer,
+        lr_scheduler,
+        epochs,
+        start_epoch,
+        model_preprocess,
+        augmentation,
+        device=device,
+        dtype=dtype,
+        output_dir=output_dir
+    )
+
+    # Save result model
+    model.eval()
+    save_on_master(model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
+
 if __name__ == "__main__":  
     parser = ArgumentParser(
         prog = "train",
         description = "Train a simple classifier"
+    )
+    parser.add_argument(
+        "-i", "--input", type=str, required=True,
+        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, default=".", required=False,
+        help="Root directory for all created files and directories. Default is current working directory ('.')."
     )  
     parser.add_argument(
         "-m", "--model", type=str, default="efficientnet_v2_s", required=False,
         help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
     )
     parser.add_argument(
-        "-i", "--input", type=str, required=True,
-        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
+        "-c", "--checkpoint", type=str, nargs="+", required=False,
+        help="Path to [a] checkpoint file(s) for restarting training. If multiple files are supplied training is restarted from an 'average' of checkpoint states."
+    )
+    parser.add_argument(
+        "-w", "--weights", type=str, required=False,
+        help="Model weights used to initialize model before training."
     )
     parser.add_argument(
         "-D", "--data_index", type=str, required=False,
@@ -210,10 +445,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "-C", "--class_index", type=str, default="class_index.json", required=False,
         help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
-    )
-    parser.add_argument(
-        "-c", "--checkpoint", type=str, required=False,
-        help="Model checkpoint (weights) used to initialize model before training."
     )
     parser.add_argument(
         "--fine-tune", action="store_true", required=False,
@@ -247,112 +478,5 @@ if __name__ == "__main__":
         "--seed", type=int, required=False,
         help="Set the initial seed for the RNG in the core Python library `random`. This is particularly important for reproducible train/validation splits."
     )
-    ARGS = parser.parse_args()
-
-    # Prepare state
-    if ARGS.name is None:
-        NAME = f'{ARGS.model}_{"fine_tune" if ARGS.fine_tune else "full"}_e{ARGS.epochs}'
-    else:
-        NAME = ARGS.name
-    
-    if ARGS.seed is not None:
-        seed(ARGS.seed)
-    
-    input_dir = os.path.abspath(ARGS.input)
-
-    device = torch.device(ARGS.device)
-    dtype = getattr(torch, ARGS.dtype)
-
-    CLASSES, class2idx, idx2class, num_classes = parse_class_index(ARGS.class_index, input_dir)
-
-    # Prepare model
-    model, head_name, model_preprocess = get_model(ARGS.model)
-    num_embeddings = getattr(model, head_name)[1].in_features
-    if ARGS.checkpoint is not None:
-        model = Classifier.load(ARGS.model, ARGS.checkpoint, device=device, dtype=torch.float32)
-    else:
-        setattr(model, head_name, Classifier(num_embeddings, num_classes))
-        model.to(device, torch.float32)
-    if ARGS.fine_tune:
-        for name, param in model.named_parameters():
-            if param.requires_grad and not head_name in name:
-                param.requires_grad_(False)
-
-    # Prepare datasets/dataloaders
-    if ARGS.data_index is None:
-        with NamedTemporaryFile() as tmpfile:
-            write_metadata(input_dir, CLASSES, tmpfile.name, train_proportion=0.9)
-            train_image_data, val_image_data = get_image_data(tmpfile.name)
-    else:
-        train_image_data, val_image_data = get_image_data(ARGS.data_index)
-
-    train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
-        train_image_data, 
-        val_image_data, 
-        class2idx, 
-        model_preprocess.resize_size if hasattr(model_preprocess, "resize_size") else 256, 
-        device, 
-        dtype
-    )
-    augmentation = get_training_augmentation()
-
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-
-    example_image = train_dataset[choice(range(len(train_dataset)))][0].clone().float().cpu()
-
-    axs[0].imshow(example_image.permute(1,2,0))
-    axs[1].imshow(augmentation(example_image).permute(1,2,0))
-
-    plt.savefig("example_augmentation.png")
-    plt.close()
-
-    # Define training "hyperparameters"
-    epochs = ARGS.epochs
-    lr_warmup_epochs = ARGS.warmup_epochs
-    lr = 0.0001
-    label_smoothing = 0.1
-    if lr_warmup_epochs > epochs:
-        raise ValueError(f'Number of warmup epochs ({lr_warmup_epochs}) must be lower than number of total epochs ({epochs}).')
-
-    parameters = set_weight_decay(model, 1e-3)
-    optimizer = torch.optim.AdamW(parameters, lr=lr, weight_decay=1e-4)
-    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-
-    main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, 
-        T_max=(epochs - lr_warmup_epochs) * len(train_loader), 
-        eta_min=lr * 10**-6
-    )
-    if lr_warmup_epochs > 0:
-        warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, 
-            start_factor=10**-2, 
-            total_iters=lr_warmup_epochs * len(train_loader)
-        )
-    
-    lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer, 
-        schedulers=[warmup_lr_scheduler, main_lr_scheduler], 
-        milestones=[lr_warmup_epochs * len(train_loader)]
-    ) if lr_warmup_epochs > 0 else main_lr_scheduler
-
-    # Run training
-    train(
-        model, 
-        train_loader,
-        val_loader,
-        criterion,
-        optimizer,
-        lr_scheduler,
-        epochs,
-        0,
-        model_preprocess,
-        augmentation,
-        device=device,
-        dtype=dtype
-    )
-
-    # Save result model
-    model.eval()
-    torch.save(model.state_dict(), f"{NAME}.pt")
+    main(**parser.parse_args())
 
