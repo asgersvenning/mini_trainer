@@ -4,7 +4,8 @@ import random
 from argparse import ArgumentParser
 from functools import partial
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (Any, Callable, Concatenate, Dict, List, Optional, Tuple,
+                    Union)
 
 import numpy as np
 import torch
@@ -203,9 +204,13 @@ def base_load_model(
         num_classes : int,
         weights : Optional[str],
         fine_tune : bool,
-        device : torch.types.Device,
-        dtype : torch.dtype
+        device : torch.device,
+        dtype : torch.dtype,
+        **kwargs : Any
     ) -> Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
+    if len(kwargs) != 0:
+        unexpected = ", ".join(kwargs.keys())
+        raise TypeError(f"my_fun() got unexpected keyword argument(s): {unexpected}")
     model, head_name, model_preprocess = get_model(model)
     model : torch.nn.Module
     if not isinstance(model, torch.nn.Module):
@@ -239,7 +244,7 @@ def main(
     dtype : str="float16",
     seed : Optional[int]=None,
     load_model : Callable[
-        [str, int, Optional[str], bool, torch.dtype, torch.types.Device, Dict[str, Any]], 
+        Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
         Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
     ]=base_load_model,
     load_model_kwargs : Dict[str, Any]={}
@@ -311,6 +316,10 @@ def main(
         seed (Optional[int], optional):
             Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is None.
+        
+        **kwargs: Additional arguments to be documented. 
+            All additional arguments are not available from the commandline, but exist to enable usage of 
+            the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
 
     Returns:
         None
@@ -333,9 +342,7 @@ def main(
     classes, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
 
     # Prepare model
-    model, model_preprocess = load_model(model, num_classes, weights, fine_tune, device, dtype, **load_model_kwargs) 
-    if not isinstance(model, torch.nn.Module):
-        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.nn.Module}`")
+    nn_model, model_preprocess = load_model(model, num_classes, weights, fine_tune, dtype, device, **load_model_kwargs) 
 
     # Prepare datasets/dataloaders
     if data_index is None:
@@ -375,7 +382,7 @@ def main(
     if lr_warmup_epochs > epochs:
         raise ValueError(f'Number of warmup epochs ({lr_warmup_epochs}) must be lower than number of total epochs ({epochs}).')
 
-    parameters = set_weight_decay(model, 1e-3)
+    parameters = set_weight_decay(nn_model, 1e-3)
     optimizer = torch.optim.AdamW(parameters, lr=lr, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
@@ -402,17 +409,24 @@ def main(
         if isinstance(checkpoint_files, list) and len(checkpoint_files) == 1:
             checkpoint_files = checkpoint_files[0]
         if isinstance(checkpoint_files, str):
-            checkpoint = torch.load(checkpoint_files, device)
+            checkpoint_data = torch.load(checkpoint_files, device)
         else:
-            checkpoint = average_checkpoints(checkpoint_files)
-        model.load_state_dict(checkpoint["model"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
-        start_epoch = checkpoint["epoch"]
+            checkpoint_data = average_checkpoints(checkpoint_files)
+        nn_model.load_state_dict(checkpoint_data["model"])
+        optimizer.load_state_dict(checkpoint_data["optimizer"])
+        lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])
+        start_epoch = checkpoint_data["epoch"]
+        if not isinstance(start_epoch, int):
+            if isinstance(start_epoch, (torch.Tensor, np.ndarray)) and len(start_epoch) == 1:
+                start_epoch = start_epoch.tolist()[0]
+            if isinstance(start_epoch, float) and np.isclose(start_epoch % 1, 0):
+                start_epoch = int(start_epoch)
+            else:
+                raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
 
     # Run training
     train(
-        model, 
+        nn_model, 
         train_loader,
         val_loader,
         criterion,
@@ -428,8 +442,8 @@ def main(
     )
 
     # Save result model
-    model.eval()
-    save_on_master(model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
+    nn_model.eval()
+    save_on_master(nn_model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
 
 if __name__ == "__main__":  
     parser = ArgumentParser(

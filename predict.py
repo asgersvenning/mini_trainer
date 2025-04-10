@@ -3,7 +3,8 @@ import os
 from argparse import ArgumentParser
 from glob import glob
 from math import ceil
-from typing import Callable, Iterable, Union, Optional
+from typing import (Any, Callable, Concatenate, Dict, Iterable, Optional,
+                    Tuple, Union)
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -11,8 +12,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
-from train import (Classifier, convert2bf16, convert2fp16, convert2fp32,
-                   convert2uint8, get_model)
+from train import base_load_model, convert2bf16, convert2fp16, convert2fp32
 from utils import confusion_matrix, is_image, parse_class_index
 
 
@@ -67,7 +67,12 @@ def main(
     batch_size : int=32,
     num_workers : Optional[int]=None,
     device : str="cuda:0",
-    dtype : str="float16"
+    dtype : str="float16",
+    load_model : Callable[
+        Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
+        Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
+    ]=base_load_model,
+    load_model_kwargs : Dict[str, Any]={}
 ) -> None:
     """
     Predict with a classifier.
@@ -112,13 +117,17 @@ def main(
         dtype (str, optional):
             PyTorch data type used for inference (e.g., 'float16').
             Default is 'float16'.
+        
+        **kwargs: Additional arguments to be documented. 
+            All additional arguments are not available from the commandline, but exist to enable usage of 
+            the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
 
     Returns:
         None
     """
     # Prepare state
-    device = torch.device(device)
-    dtype = getattr(torch, dtype)
+    device : torch.device = torch.device(device)
+    dtype : torch.dtype = getattr(torch, dtype)
 
     input_dir = os.path.abspath(input)
 
@@ -131,16 +140,8 @@ def main(
     classes, class2idx, idx2class, num_classes = parse_class_index(class_index)
 
     # Prepare model
-    model, head_name, model_preprocess = get_model(model)
-    num_embeddings = getattr(model, head_name)[1].in_features
-    if weights is not None:
-        model = Classifier.load(model, weights, device=device, dtype=dtype)
-    else:
-        setattr(model, head_name, Classifier(num_embeddings, num_classes))
-        model.to(device, dtype)
-    model.eval()
+    nn_model, model_preprocess = load_model(model, num_classes, weights, False, dtype, device, **load_model_kwargs)
         
-
     # Prepare image loader
     image_loader = ImageLoader(
         model_preprocess,
@@ -172,7 +173,7 @@ def main(
     with torch.no_grad():
         for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
             i = batch_i * batch_size
-            prediction = model(batch.to(device))
+            prediction = nn_model(batch.to(device))
             results["path"].extend(images[i:(i+len(batch))])
             results["pred"].extend([idx2class[idx] for idx in prediction.argmax(1).tolist()])
             results["conf"].extend(prediction.softmax(1).max(0).values.tolist())
