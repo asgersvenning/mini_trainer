@@ -12,10 +12,11 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
+from tqdm.contrib.concurrent import thread_map
 
-from classifier import Classifier, get_model
-from utils import (convert2bf16, convert2fp16, convert2fp32, convert2uint8,
-                   get_image_data)
+from .classifier import Classifier, get_model
+from .utils import (convert2bf16, convert2fp16, convert2fp32, get_image_data,
+                    write_metadata)
 
 
 def prepare_split(paths : List[str], desc="Preprocessing images for split...", resize_size : Union[int, Tuple[int, int]]=256, device=torch.device("cpu"), dtype=torch.float16):
@@ -30,12 +31,17 @@ def prepare_split(paths : List[str], desc="Preprocessing images for split...", r
             raise ValueError("Only fp16 supported for now.")
     shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
     tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
-    for i, p in enumerate(TQDM(paths, desc=desc)):
+    def write_one_image(args):
+        idx, path = args
         try:
-            tensor[i] = resize(converter(decode_image(p, ImageReadMode.RGB)), shape).to(device)
+            tensor[idx] = resize(converter(decode_image(path, ImageReadMode.RGB)), shape).to(device)
         except Exception as e:
-            e.add_note(f'Path: {p}')
+            e.add_note(f'Path: {path}')
             raise e
+    # num_workers = os.cpu_count() - 1
+    # num_workers -= num_workers % 2
+    # thread_map(write_one_image, enumerate(paths), tqdm_class=TQDM, total=len(paths), desc=desc, max_workers=num_workers)
+    [write_one_image(v) for v in TQDM(enumerate(paths), total=len(paths), desc=desc)]
     return tensor
 
 def default_training_augmentation():
@@ -66,6 +72,10 @@ def get_dataset_dataloader(
         device=torch.device("cpu"), 
         dtype=torch.float32
     ):
+    if not isinstance(resize_size, int):
+        if not (isinstance(resize_size, tuple) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
+            raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
+    print(f"Building datasets with image size {resize_size}")
     train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
     val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
 
@@ -104,11 +114,11 @@ def easy_get_dataset_dataloader(data_path, class_path):
 
 def base_model_builder(
         model : str,
-        num_classes : int,
         weights : Optional[str],
         fine_tune : bool,
         device : torch.device,
         dtype : torch.dtype,
+        num_classes : int,
         **kwargs : Any
     ) -> Tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
     if len(kwargs) != 0:
@@ -140,7 +150,8 @@ def base_dataloader_builder(
         device : torch.device,
         dtype = torch.dtype,
         resize_size : Optional[int]=None,
-        train_proportion : float=0.9
+        train_proportion : float=0.9,
+        idx2class : Optional[Dict[int, str]]=None
     ):
     # Prepare datasets/dataloaders
     if data_index is None:
@@ -154,7 +165,7 @@ def base_dataloader_builder(
         train_image_data, 
         val_image_data, 
         class2idx, 
-        resize_size or preprocess.resize_size, 
+        preprocess.resize_size if hasattr(preprocess, "resize_size") else resize_size, 
         batch_size,
         device, 
         dtype

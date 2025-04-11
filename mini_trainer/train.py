@@ -9,11 +9,11 @@ import torch
 import torchvision
 from torch import nn
 
-from builders import (base_dataloader_builder, base_lr_schedule_builder,
-                      base_model_builder, default_training_augmentation)
-from trainer import train
-from utils import (average_checkpoints, debug_augmentation, parse_class_index,
-                   save_on_master)
+from .builders import (base_dataloader_builder, base_lr_schedule_builder,
+                       base_model_builder, default_training_augmentation)
+from .trainer import train
+from .utils import (average_checkpoints, debug_augmentation, parse_class_index,
+                    save_on_master)
 
 
 def main(
@@ -221,20 +221,19 @@ def main(
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
     extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
-        class_index, 
-        input_dir,
+        path=class_index, 
+        dir=input_dir,
         **spec_model_dataloader_kwargs
     )
 
     # Prepare model
     nn_model, model_preprocess = model_builder(
-        model, 
-        weights, 
-        fine_tune, 
-        device, 
-        dtype,
-        **extra_model_kwargs,
-        **model_builder_kwargs
+        model=model, 
+        weights=weights, 
+        fine_tune=fine_tune, 
+        device=device, 
+        dtype=dtype,
+        **{**extra_model_kwargs, **model_builder_kwargs}
     ) 
     if not isinstance(nn_model, torch.nn.Module):
         raise TypeError(
@@ -244,14 +243,13 @@ def main(
     
     # Prepare dataloader
     train_loader, val_loader = dataloader_builder(
-        data_index,
-        input_dir,
-        model_preprocess,
-        batch_size,
-        device,
-        dtype,
-        **extra_dataloader_kwargs,
-        **dataloader_builder_kwargs
+        data_index=data_index,
+        input_dir=input_dir,
+        preprocess=model_preprocess,
+        batch_size=batch_size,
+        device=device,
+        dtype=dtype,
+        **{**extra_dataloader_kwargs, **dataloader_builder_kwargs}
     )
     if not isinstance(train_loader, torch.utils.data.DataLoader):
         raise TypeError(
@@ -271,9 +269,9 @@ def main(
             f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
         )
     debug_augmentation(
-        augmentation,
-        train_loader.dataset,
-        strict=False
+        augmentation=augmentation,
+        dataset=train_loader.dataset,
+        strict=True
     )
 
     # Define training "hyperparameters"
@@ -354,7 +352,7 @@ def main(
     nn_model.eval()
     save_on_master(nn_model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
 
-if __name__ == "__main__":  
+def cli():
     parser = ArgumentParser(
         prog = "train",
         description = "Train a classifier"
@@ -419,5 +417,8 @@ if __name__ == "__main__":
         "--seed", type=int, required=False,
         help="Set the initial seed for the RNG in the core Python library `random`. This is particularly important for reproducible train/validation splits."
     )
-    main(**parser.parse_args())
+    main(**vars(parser.parse_args()))
+
+if __name__ == "__main__":  
+    cli()
 

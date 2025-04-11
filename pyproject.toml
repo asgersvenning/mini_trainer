@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mini-trainer"
+version = "0.0.1"
+dependencies = [
+  "torch",
+  "torchvision",
+  "matplotlib",
+  "tqdm",
+]
+requires-python = ">=3.11"
+authors = [
+  {name = "Asger Svenning", email = "asgersvenning@gmail.com"}
+]
+maintainers = [
+  {name = "Asger Svenning", email = "asgersvenning@gmail.com"}
+]
+description = "An as minimal as possible fully extendable DL image classification training and inference package"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E.*"]
+keywords = ["classification", "computer vision", "deep learning", "pytorch"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python"
+]
+
+[project.optional-dependencies]
+notebook = [
+    "ipykernel",
+    "ipywidgets"
+]
+
+[project.urls]
+Repository = "https://github.com/asgersvenning/mini_trainer"
+"Bug Tracker" = "https://github.com/asgersvenning/mini_trainer/issues"
+
+[project.scripts]
+mt_train = "mini_trainer:train.cli"
+mt_predict = "mini_trainer:predict.cli"

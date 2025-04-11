@@ -6,16 +6,16 @@ import errno
 import hashlib
 import json
 import os
+import random
 import time
 from collections import OrderedDict, defaultdict, deque
-from random import random
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.distributed as dist
-from torchvision.transforms import ConvertImageDtype
 from matplotlib import pyplot as plt
+from torchvision.transforms import ConvertImageDtype
 
 convert2fp16 = ConvertImageDtype(torch.float16)
 convert2bf16 = ConvertImageDtype(torch.bfloat16)
@@ -39,7 +39,7 @@ def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     cls = list(cls2idx.keys())
     idx2cls = {v : k for k, v in cls2idx.items()}
     ncls = len(idx2cls)
-    return {"num_classes" : ncls}, {"classes" : cls, "class2idx" : cls2idx}
+    return {"num_classes" : ncls}, {"classes" : cls, "class2idx" : cls2idx, "idx2class" : idx2cls}
 
 def write_metadata(directory : str, classes : List[str], dst : str, train_proportion : float=0.9):
     data = {
@@ -52,7 +52,7 @@ def write_metadata(directory : str, classes : List[str], dst : str, train_propor
         for file in map(os.path.basename, os.listdir(this_dir)):
             data["path"].append(os.path.join(this_dir, file))
             data["class"].append(cls)
-            data["split"].append("train" if random() < train_proportion else "validation")
+            data["split"].append("train" if random.random() < train_proportion else "validation")
     with open(dst, "w") as f:
         json.dump(data, f)
 
@@ -118,14 +118,16 @@ def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys 
     # Compute and print per-class accuracies
     print("\nPer-class Accuracies:")
     macro_acc = 0.0
+    num_class_with_any = 0
     for cls in classes:
         if per_class_total[cls] > 0:
             acc = per_class_correct[cls] / per_class_total[cls]
+            num_class_with_any += 1
         else:
             acc = 0.0
         macro_acc += acc
         print(f"{cls:_<{max(map(len, classes))}}{acc:_>9.1%} ({per_class_correct[cls]}/{per_class_total[cls]})")
-    macro_acc /= len(classes) if classes else 1
+    macro_acc /= num_class_with_any or 1
 
     # Micro accuracy: overall correct predictions / total predictions
     micro_acc = total_correct / total_samples if total_samples > 0 else 0.0
@@ -150,7 +152,7 @@ class _ResultsCollector:
     def data(self):
         raise NotImplementedError('Result collector must have `data` class propery suitable for JSON serialization.')
 
-class BaseResultCollector:
+class BaseResultCollector(_ResultsCollector):
     def __init__(self, idx2class : Dict[int, str], training_format : bool=False, *args, **kwargs):
         self.paths = []
         self.preds = []
@@ -245,6 +247,7 @@ def debug_augmentation(
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
         example_image = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
+        print(example_image.shape)
 
         axs[0].imshow(example_image.permute(1,2,0))
         axs[1].imshow(augmentation(example_image).permute(1,2,0))

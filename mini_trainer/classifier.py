@@ -7,7 +7,7 @@ import torch.nn as nn
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
-from utils import convert2fp16
+from .utils import convert2fp16
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 

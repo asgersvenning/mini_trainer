@@ -13,8 +13,8 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm as TQDM
 
-from utils import (MetricLogger, SmoothedValue, accuracy,
-                   reduce_across_processes, save_on_master)
+from .utils import (MetricLogger, SmoothedValue, accuracy,
+                    reduce_across_processes, save_on_master)
 
 
 def train_one_epoch(

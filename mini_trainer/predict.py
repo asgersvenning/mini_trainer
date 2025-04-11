@@ -12,9 +12,9 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
-from builders import base_model_builder
-from utils import (BaseResultCollector, convert2bf16, convert2fp16,
-                   convert2fp32, is_image, parse_class_index)
+from .builders import base_model_builder
+from .utils import (BaseResultCollector, convert2bf16, convert2fp16,
+                    convert2fp32, is_image, parse_class_index)
 
 
 class ImageDataset(Dataset):
@@ -50,7 +50,7 @@ class ImageLoader:
     
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str):
-            proc_img : torch.Tensor = self.preprocessor(resize(convert2fp32(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device, self.dtype)
+            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
             return proc_img
         return ImageDataset(self, x)
 
@@ -160,11 +160,11 @@ def main(
         model, 
         weights, 
         False, 
-        dtype, 
         device, 
-        **extra_model_kwargs,
-        **model_builder_kwargs
+        dtype, 
+        **{**extra_model_kwargs, **model_builder_kwargs}
     )
+    nn_model.eval()
         
     # Prepare image loader
     image_loader = ImageLoader(
@@ -185,7 +185,7 @@ def main(
     )
 
     # Inference
-    results = result_collector(**extra_dataloader_kwargs, **result_collector_kwargs)
+    results = result_collector(**{**extra_dataloader_kwargs, **result_collector_kwargs})
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     
@@ -193,7 +193,8 @@ def main(
     with torch.no_grad():
         for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
             i = batch_i * batch_size
-            prediction = nn_model(batch.to(device))
+            with torch.autocast(device_type=device.type, dtype=dtype):
+                prediction = nn_model(batch.to(device))
             results.collect(
                 paths = images[i:(i+len(batch))],
                 predictions = prediction
@@ -211,7 +212,7 @@ def main(
 
     results.evaluate()
 
-if __name__ == "__main__":  
+def cli():
     parser = ArgumentParser(
         prog = "predict",
         description = "Predict with a classifier"
@@ -256,6 +257,9 @@ if __name__ == "__main__":
         "--dtype", type=str, default="float16", required=False,
         help="PyTorch data type used for inference (default=float16)."
     )
-    kwargs = parser.parse_args()
-    kwargs["result_collector_kwargs"] = kwargs.get("result_collector_kwargs", {}).update({"training_format" : kwargs.pop("training_format")})
+    kwargs = vars(parser.parse_args())
+    kwargs["result_collector_kwargs"] = {"training_format" : kwargs.pop("training_format")}
     main(**kwargs)
+
+if __name__ == "__main__":  
+    cli()
