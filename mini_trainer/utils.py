@@ -247,8 +247,7 @@ def debug_augmentation(
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
         example_image = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
-        print(example_image.shape)
-
+        
         axs[0].imshow(example_image.permute(1,2,0))
         axs[1].imshow(augmentation(example_image).permute(1,2,0))
 
