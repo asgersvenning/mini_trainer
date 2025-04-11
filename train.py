@@ -1,231 +1,20 @@
-import json
 import os
 import random
 from argparse import ArgumentParser
-from functools import partial
-from tempfile import NamedTemporaryFile
 from typing import (Any, Callable, Concatenate, Dict, List, Optional, Tuple,
-                    Union, Type)
+                    Type, Union)
 
 import numpy as np
 import torch
 import torchvision
-import torchvision.transforms as tt
-from matplotlib import pyplot as plt
 from torch import nn
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
-from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import resize
-from tqdm import tqdm as TQDM
 
+from builders import (base_dataloader_builder, base_lr_schedule_builder,
+                      base_model_builder, default_training_augmentation)
 from trainer import train
-from utils import (average_checkpoints, get_image_data, parse_class_index,
-                   save_on_master, set_weight_decay, write_metadata)
+from utils import (average_checkpoints, debug_augmentation, parse_class_index,
+                   save_on_master)
 
-_UNSUPPORTED_MODELS = [
-    'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
-    'fcos_resnet50_fpn', 
-    'keypointrcnn_resnet50_fpn', 
-    'maskrcnn_resnet50_fpn', 'maskrcnn_resnet50_fpn_v2', 
-    'mvit_v1_b', 'mvit_v2_s', 
-    'raft_large', 'raft_small', 
-    'retinanet_resnet50_fpn', 'retinanet_resnet50_fpn_v2', 
-    'ssd300_vgg16', 'ssdlite320_mobilenet_v3_large', 
-    'swin3d_b', 'swin3d_s', 'swin3d_t', 'swin_b', 'swin_s', 'swin_t', 'swin_v2_b', 'swin_v2_s', 'swin_v2_t', 
-    'vit_b_16', 'vit_b_32', 'vit_h_14', 'vit_l_16', 'vit_l_32'
-]
-
-convert2fp16 = tt.ConvertImageDtype(torch.float16)
-convert2bf16 = tt.ConvertImageDtype(torch.bfloat16)
-convert2fp32 = tt.ConvertImageDtype(torch.float32)
-convert2uint8 = tt.ConvertImageDtype(torch.uint8)
-
-def preprocess(item, transform, func):
-    if isinstance(item, str):
-        path = str(item)
-        if not os.path.exists(path):
-            raise FileNotFoundError("Unable to find image: " + path)
-        image = decode_image(path, ImageReadMode.RGB)
-    elif isinstance(item, torch.Tensor):
-        image = item
-    else:
-        raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item).__qualname__}")
-    return transform(func(image))
-
-def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {},
-              classifier_name: Union[str, List[str]] = ["classifier", "fc"]):
-    default_transform = None
-    if isinstance(backbone_model, str):
-        if backbone_model in _UNSUPPORTED_MODELS:
-            raise ValueError(f"The model {backbone_model} is not supported.")
-        default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
-        default_transform = default_weights.transforms(antialias=True)
-        backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
-    if not isinstance(backbone_model, nn.Module):
-        raise ValueError("backbone_model must be a string or a torch.nn.Module")
-    backbone_classifier_name = None
-    if isinstance(classifier_name, str):
-        classifier_name = [classifier_name]
-    for name in classifier_name:
-        if hasattr(backbone_model, name):
-            backbone_classifier_name = name
-            break
-    if backbone_classifier_name is None:
-        raise AttributeError(f"No classifier found with names {classifier_name}")
-
-    return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=convert2fp16)
-
-class Classifier(nn.Module):
-    def __init__(self, in_features : int, out_features : int, hidden : bool=False):
-        super().__init__()
-        # Create a BatchNormalization Layer
-        self.batch_norm = nn.BatchNorm1d(in_features)
-
-        # Create one hidden layer
-        self.hidden = hidden and nn.Linear(in_features, in_features)
-
-        # Create a standard linear layer.
-        self.linear = nn.Linear(in_features, out_features, bias=True)
-        
-        # Set the bias to -1 and freeze it.
-        with torch.no_grad():
-            self.linear.bias.fill_(-1)
-        self.linear.bias.requires_grad_(False)
-
-    def forward(self, x):
-        if self.hidden:
-            x = nn.functional.leaky_relu(self.hidden(x), True)
-        x = self.batch_norm(x)
-        return self.linear(x)
-    
-    @staticmethod
-    def load(model_type : str, path : str, device=torch.device("cpu"), dtype=torch.float32):
-        # Parse model architecture
-        architecture, head_name, _ = get_model(model_type)
-
-        # Read weight file
-        weights = torch.load(path, device, weights_only=True)
-        num_classes, num_embeddings = weights[f"{head_name}.linear.weight"].shape
-        
-        # Load weights into model architecture
-        setattr(architecture, head_name, Classifier(num_embeddings, num_classes))
-        architecture.load_state_dict(weights)
-        architecture.to(device, dtype)
-        
-        return architecture
-
-def prepare_split(paths : List[str], desc="Preprocessing images for split...", resize_size : Union[int, Tuple[int, int]]=256, device=torch.device("cpu"), dtype=torch.float16):
-    match dtype:
-        case torch.float16:
-            converter = convert2fp16
-        case torch.float32:
-            converter = convert2fp32
-        case torch.bfloat16:
-            converter = convert2bf16
-        case _:
-            raise ValueError("Only fp16 supported for now.")
-    shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
-    tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
-    for i, p in enumerate(TQDM(paths, desc=desc)):
-        try:
-            tensor[i] = resize(converter(decode_image(p, ImageReadMode.RGB)), shape).to(device)
-        except Exception as e:
-            e.add_note(f'Path: {p}')
-            raise e
-    return tensor
-
-def get_training_augmentation():
-    """
-    Returns a training augmentation pipeline for normalized tensors.
-    Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
-
-    Returns:
-        transforms.Compose: A composition of augmentations.
-    """
-    return torchvision.transforms.Compose([
-        torchvision.transforms.RandomHorizontalFlip(p=0.5),
-        torchvision.transforms.RandomVerticalFlip(p=0.5),
-        torchvision.transforms.RandomRotation(degrees=15),
-        torchvision.transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-        # torchvision.transforms.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
-        torchvision.transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-        # # Convert back to tensor (in case some augmentations convert to PIL Image)
-        # torchvision.transforms.ToTensor(),
-    ])
-
-def get_dataset_dataloader(
-        train_image_data : Dict, 
-        val_image_data : Dict, 
-        class2idx : Dict[str, int], 
-        resize_size : Union[int, Tuple[int, int]],
-        batch_size : int=16, 
-        device=torch.device("cpu"), 
-        dtype=torch.float32
-    ):
-    train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
-    val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
-
-    train_labels = torch.tensor([class2idx[str(cls)] for cls in train_image_data["class"]]).long().to(device)
-    val_labels = torch.tensor([class2idx[str(cls)] for cls in val_image_data["class"]]).long().to(device)
-
-    train_dataset = TensorDataset(train_tensor, train_labels)
-    val_dataset = TensorDataset(val_tensor, val_labels)
-
-    train_sampler = RandomSampler(train_dataset)
-    val_sampler = SequentialSampler(val_dataset)
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        sampler=train_sampler,
-        num_workers=0,
-        pin_memory=False
-    )
-    val_loader = DataLoader(
-        val_dataset, 
-        batch_size=batch_size, 
-        sampler=val_sampler, 
-        num_workers=0, 
-        pin_memory=False
-    )
-
-    return train_dataset, val_dataset, train_loader, val_loader
-
-def easy_get_dataset_dataloader(data_path, class_path):
-    if not os.path.exists(class_path):
-        raise FileNotFoundError(f'Species index file ({class_path}) for not found.')
-    with open(class_path, "rb") as f:
-        class2idx = json.load(f)
-    return get_dataset_dataloader(*get_image_data(data_path), class2idx)
-
-def base_model_builder(
-        model : str,
-        num_classes : int,
-        weights : Optional[str],
-        fine_tune : bool,
-        device : torch.device,
-        dtype : torch.dtype,
-        **kwargs : Any
-    ) -> Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
-    if len(kwargs) != 0:
-        unexpected = ", ".join(kwargs.keys())
-        raise TypeError(f"my_fun() got unexpected keyword argument(s): {unexpected}")
-    model, head_name, model_preprocess = get_model(model)
-    model : torch.nn.Module
-    if not isinstance(model, torch.nn.Module):
-        raise TypeError(f"Unknown model type `{type(model)}`, expected `{torch.nn.Module}`")
-    num_embeddings = getattr(model, head_name)[1].in_features
-    if weights is not None:
-        model = Classifier.load(model, weights, device=device, dtype=torch.float32)
-    else:
-        setattr(model, head_name, Classifier(num_embeddings, num_classes))
-        model.to(device, torch.float32)
-    if fine_tune:
-        for name, param in model.named_parameters():
-            if param.requires_grad and not head_name in name:
-                param.requires_grad_(False)
-    return model, model_preprocess
 
 def main(
     input : str,
@@ -244,11 +33,64 @@ def main(
     device : str="cuda:0",
     dtype : str="float16",
     seed : Optional[int]=None,
+    spec_model_dataloader : Callable[
+        Concatenate[
+            str,
+            str,
+            ...
+        ],
+        Tuple[
+            Dict[str, Any],
+            Dict[str, Any]
+        ]
+    ]=parse_class_index,
+    spec_model_dataloader_kwargs : Dict[str, Any]={},
     model_builder : Callable[
-        Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
-        Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
+        Concatenate[
+            str, 
+            int, 
+            Optional[str], 
+            bool, 
+            torch.dtype, 
+            torch.device, 
+            ...
+        ], 
+        Tuple[
+            torch.nn.Module, 
+            Callable[[torch.Tensor], torch.Tensor]
+        ]
     ]=base_model_builder,
     model_builder_kwargs : Dict[str, Any]={},
+    dataloader_builder : Callable[
+        Concatenate[
+            str, 
+            str, 
+            List[str], 
+            Dict[str, int], 
+            Callable[[torch.Tensor], torch.Tensor], 
+            int, 
+            torch.device, 
+            torch.dtype,
+            ...
+        ],
+        Tuple[
+            torch.utils.data.DataLoader,
+            torch.utils.data.DataLoader,
+            Union[
+                torchvision.transforms.Compose,
+                Callable[[torch.Tensor], torch.Tensor]
+            ]
+        ]
+    ]=base_dataloader_builder,
+    dataloader_builder_kwargs : Dict[str, Any]={
+        "resize_size" : 256, 
+        "train_proportion" : 0.9
+    },
+    augmentation_builder : Callable[
+        Concatenate[...],
+        torchvision.transforms.Compose
+    ]=default_training_augmentation,
+    augmentation_builder_kwargs : Dict[str, Any]={},
     criterion_builder : Union[
         Callable[
             Concatenate[...],
@@ -264,7 +106,22 @@ def main(
         ],
         Type[torch.optim.Optimizer]
     ]=torch.optim.AdamW,
-    optimizer_kwargs : Dict[str, Any]={"weight_decay" : 1e-4}
+    optimizer_kwargs : Dict[str, Any]={"weight_decay" : 1e-4},
+    lr_schedule_builder : Callable[
+        Concatenate[
+            torch.optim.Optimizer,
+            float,
+            int,
+            int,
+            int,
+            ...
+        ],
+        torch.optim.lr_scheduler.LRScheduler
+    ]=base_lr_schedule_builder,
+    lr_schedule_builder_kwargs : Dict[str, Any]={
+        "min_factor" : 1 / 10**6, 
+        "start_factor" : 1 / 10**2
+    }
 ) -> None:
     """
     Train a classifier.
@@ -361,78 +218,100 @@ def main(
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype)
 
-    classes, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
+    # Load additional information for model and dataloader instantiation
+    # e.g. number of classes, class-to-index dictionary
+    extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
+        class_index, 
+        input_dir,
+        **spec_model_dataloader_kwargs
+    )
 
     # Prepare model
-    nn_model, model_preprocess = model_builder(model, num_classes, weights, fine_tune, dtype, device, **model_builder_kwargs) 
-
-    # Prepare datasets/dataloaders
-    if data_index is None:
-        with NamedTemporaryFile() as tmpfile:
-            write_metadata(input_dir, classes, tmpfile.name, train_proportion=0.9)
-            train_image_data, val_image_data = get_image_data(tmpfile.name)
-    else:
-        train_image_data, val_image_data = get_image_data(data_index)
-
-    train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
-        train_image_data, 
-        val_image_data, 
-        class2idx, 
-        model_preprocess.resize_size if hasattr(model_preprocess, "resize_size") else 256, 
-        batch_size,
+    nn_model, model_preprocess = model_builder(
+        model, 
+        weights, 
+        fine_tune, 
         device, 
-        dtype
-    )
-    augmentation = get_training_augmentation()
-
-    try:
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-
-        example_image = train_dataset[random.choice(range(len(train_dataset)))][0].clone().float().cpu()
-
-        axs[0].imshow(example_image.permute(1,2,0))
-        axs[1].imshow(augmentation(example_image).permute(1,2,0))
-
-        plt.savefig("example_augmentation.png")
-        plt.close()
-    except Exception as e:
-        e.add_note(
-            "Error while attempting to create debug augmentation image."
-            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
+        dtype,
+        **extra_model_kwargs,
+        **model_builder_kwargs
+    ) 
+    if not isinstance(nn_model, torch.nn.Module):
+        raise TypeError(
+            'Expected `model_builder` to return a tuple, where the first element'
+            f'is an object inheriting from `torch.nn.Module`, but got `{type(nn_model)}`.'
         )
-        raise e
+    
+    # Prepare dataloader
+    train_loader, val_loader = dataloader_builder(
+        data_index,
+        input_dir,
+        model_preprocess,
+        batch_size,
+        device,
+        dtype,
+        **extra_dataloader_kwargs,
+        **dataloader_builder_kwargs
+    )
+    if not isinstance(train_loader, torch.utils.data.DataLoader):
+        raise TypeError(
+            'Expected `dataloader_builder` to return an objects'
+            f'inheriting from `torch.utils.data.DataLoader`, but got `{type(train_loader)}.'
+        )
+    if not isinstance(val_loader, torch.utils.data.DataLoader):
+        raise TypeError(
+            'Expected `dataloader_builder` to return an objects'
+            f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
+        )
+
+    augmentation = augmentation_builder(**augmentation_builder_kwargs)
+    if not isinstance(augmentation, torchvision.transforms.Compose):
+        raise TypeError(
+            'Expected `augmentation_builder` to return an objects'
+            f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
+        )
+    debug_augmentation(
+        augmentation,
+        train_loader.dataset,
+        strict=False
+    )
 
     # Define training "hyperparameters"
     start_epoch = 0
     if warmup_epochs > epochs:
-        raise ValueError(f'Number of warmup epochs ({warmup_epochs}) must be lower than number of total epochs ({epochs}).')
+        raise ValueError(
+            f'Number of warmup epochs ({warmup_epochs}) must be'
+            f'lower than number of total epochs ({epochs}).'
+        )
 
     # parameters = set_weight_decay(nn_model, 1e-3)
     optimizer_kwargs["lr"] = learning_rate 
     optimizer = optimizer_builder(nn_model.parameters(recurse=True), **optimizer_kwargs)
     if not isinstance(optimizer, torch.optim.Optimizer):
-        raise TypeError(f'Expected `optimizer_builder` to return an object inheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}.')
-    criterion = criterion_builder(**criterion_kwargs)
-    if not isinstance(criterion, torch.optim.Optimizer):
-        raise TypeError(f'Expected `criterion_builder` to return an object inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.')
-
-    main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, 
-        T_max=(epochs - warmup_epochs) * len(train_loader), 
-        eta_min=learning_rate * 10**-6
-    )
-    if warmup_epochs > 0:
-        warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
-            optimizer, 
-            start_factor=10**-2, 
-            total_iters=warmup_epochs * len(train_loader)
+        raise TypeError(
+            'Expected `optimizer_builder` to return an object'
+            f'inheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}.'
         )
-    
-    lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer, 
-        schedulers=[warmup_lr_scheduler, main_lr_scheduler], 
-        milestones=[warmup_epochs * len(train_loader)]
-    ) if warmup_epochs > 0 else main_lr_scheduler
+    criterion = criterion_builder(**criterion_kwargs)
+    if not isinstance(criterion, torch.nn.modules.loss._Loss):
+        raise TypeError(
+            'Expected `criterion_builder` to return an object'
+            f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
+        )
+
+    lr_scheduler = lr_schedule_builder(
+        optimizer=optimizer,
+        learning_rate=learning_rate,
+        epochs=epochs,
+        warmup_epochs=warmup_epochs,
+        steps_per_epoch=len(train_loader),
+        **lr_schedule_builder_kwargs
+    )
+    if not isinstance(lr_scheduler, torch.optim.lr_scheduler.LRScheduler):
+        raise TypeError(
+            'Expected `lr_schedule_builder` to return an object'
+            f'inheriting from `torch.optim.lr_scheduler.LRScheduler`, but got `{type(lr_scheduler)}.'
+        )
 
     if checkpoint is not None:
         checkpoint_files = checkpoint

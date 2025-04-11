@@ -12,8 +12,9 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
-from train import base_model_builder, convert2bf16, convert2fp16, convert2fp32
-from utils import confusion_matrix, is_image, parse_class_index
+from builders import base_model_builder
+from utils import (BaseResultCollector, convert2bf16, convert2fp16,
+                   convert2fp32, is_image, parse_class_index)
 
 
 class ImageDataset(Dataset):
@@ -63,16 +64,29 @@ def main(
     input : str,
     output : str="result.json",
     class_index : str="class_index.json",
-    training_format : bool=False,
     batch_size : int=32,
     num_workers : Optional[int]=None,
     device : str="cuda:0",
     dtype : str="float16",
+    spec_model_dataloader : Callable[
+        Concatenate[
+            str,
+            str,
+            ...
+        ],
+        Tuple[
+            Dict[str, Any],
+            Dict[str, Any]
+        ]
+    ]=parse_class_index,
+    spec_model_dataloader_kwargs : Dict[str, Any]={},
     model_builder : Callable[
         Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
         Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
     ]=base_model_builder,
-    model_builder_kwargs : Dict[str, Any]={}
+    model_builder_kwargs : Dict[str, Any]={},
+    result_collector=BaseResultCollector,
+    result_collector_kwargs : Dict[str, Any]={"training_format" : False}
 ) -> None:
     """
     Predict with a classifier.
@@ -97,10 +111,6 @@ def main(
         class_index (str):
             Path to a JSON file containing the mapping from class names to indices.
             If it does not exist, one will be created based on subdirectories under `input`. (required)
-
-        training_format (bool, optional):
-            Indicates if the images in `input` are organized into class-specific subdirectories.
-            If True, accuracy statistics will be computed. Default is False.
 
         batch_size (int, optional):
             Batch size used during inference. Larger values require more VRAM.
@@ -137,10 +147,24 @@ def main(
         workers -= workers % 2
     batch_size = batch_size
 
-    classes, class2idx, idx2class, num_classes = parse_class_index(class_index)
+    # Load additional information for model and dataloader instantiation
+    # e.g. number of classes, class-to-index dictionary
+    extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
+        class_index, 
+        input_dir,
+        **spec_model_dataloader_kwargs
+    )
 
     # Prepare model
-    nn_model, model_preprocess = model_builder(model, num_classes, weights, False, dtype, device, **model_builder_kwargs)
+    nn_model, model_preprocess = model_builder(
+        model, 
+        weights, 
+        False, 
+        dtype, 
+        device, 
+        **extra_model_kwargs,
+        **model_builder_kwargs
+    )
         
     # Prepare image loader
     image_loader = ImageLoader(
@@ -161,11 +185,7 @@ def main(
     )
 
     # Inference
-    results = {
-        "path" : [],
-        "pred" : [],
-        "conf" : []
-    }
+    results = result_collector(**extra_dataloader_kwargs, **result_collector_kwargs)
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     
@@ -174,13 +194,14 @@ def main(
         for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
             i = batch_i * batch_size
             prediction = nn_model(batch.to(device))
-            results["path"].extend(images[i:(i+len(batch))])
-            results["pred"].extend([idx2class[idx] for idx in prediction.argmax(1).tolist()])
-            results["conf"].extend(prediction.softmax(1).max(0).values.tolist())
+            results.collect(
+                paths = images[i:(i+len(batch))],
+                predictions = prediction
+            )
     
     # Write results
     with open(output, "w") as f:
-        json.dump(results, f)
+        json.dump(results.data, f)
 
     print(f'Outputs written to {os.path.abspath(output)}')
     end.record()
@@ -188,10 +209,7 @@ def main(
     inf_time = start.elapsed_time(end) / 1000
     print(f'Inference took {inf_time:.1f}s ({len(images)/inf_time:.1f} img/s)')
 
-    if training_format:
-        results["gt"] = [f.split(os.sep)[-2] for f in results["path"]]
-
-        confusion_matrix(results, idx2class)
+    results.evaluate()
 
 if __name__ == "__main__":  
     parser = ArgumentParser(
@@ -238,4 +256,6 @@ if __name__ == "__main__":
         "--dtype", type=str, default="float16", required=False,
         help="PyTorch data type used for inference (default=float16)."
     )
-    main(**parser.parse_args())
+    kwargs = parser.parse_args()
+    kwargs["result_collector_kwargs"] = kwargs.get("result_collector_kwargs", {}).update({"training_format" : kwargs.pop("training_format")})
+    main(**kwargs)

@@ -9,12 +9,18 @@ import os
 import time
 from collections import OrderedDict, defaultdict, deque
 from random import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import torch
 import torch.distributed as dist
+from torchvision.transforms import ConvertImageDtype
+from matplotlib import pyplot as plt
 
+convert2fp16 = ConvertImageDtype(torch.float16)
+convert2bf16 = ConvertImageDtype(torch.bfloat16)
+convert2fp32 = ConvertImageDtype(torch.float32)
+convert2uint8 = ConvertImageDtype(torch.uint8)
 
 def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     """
@@ -33,7 +39,7 @@ def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     cls = list(cls2idx.keys())
     idx2cls = {v : k for k, v in cls2idx.items()}
     ncls = len(idx2cls)
-    return cls, cls2idx, idx2cls, ncls
+    return {"num_classes" : ncls}, {"classes" : cls, "class2idx" : cls2idx}
 
 def write_metadata(directory : str, classes : List[str], dst : str, train_proportion : float=0.9):
     data = {
@@ -127,6 +133,55 @@ def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys 
     print(f"\nMicro Accuracy: {micro_acc:.2%} ({total_correct}/{total_samples})")
     print(f"Macro Accuracy: {macro_acc:.2%}")
 
+class _ResultsCollector:
+    def collect(
+            self, 
+            paths : List[str],
+            prediction : Any,
+            *args, 
+            **kwargs
+        ):
+        raise NotImplementedError('Result collectors must have a `collect` class method.')
+    
+    def evaluate(self):
+        raise NotImplementedError('Result collector must have a `evaluate` class method.')
+    
+    @property
+    def data(self):
+        raise NotImplementedError('Result collector must have `data` class propery suitable for JSON serialization.')
+
+class BaseResultCollector:
+    def __init__(self, idx2class : Dict[int, str], training_format : bool=False, *args, **kwargs):
+        self.paths = []
+        self.preds = []
+        self.confs = []
+        self.idx2class = idx2class
+        self.training_format = training_format
+    
+    def collect(
+            self,
+            paths,
+            predictions
+        ):
+        self.paths.extend(paths)
+        self.preds.extend([self.idx2class[idx] for idx in predictions.argmax(1).tolist()])
+        self.confs.extend(predictions.softmax(1).max(0).values.tolist())
+
+    def evaluate(self):
+        if self.training_format:
+            data = self.data
+            data["gt"] = [f.split(os.sep)[-2] for f in data["path"]]
+
+            confusion_matrix(data, self.idx2class)
+    
+    @property
+    def data(self):
+        return {
+            "path" : self.paths,
+            "pred" : self.preds,
+            "conf" : self.confs
+        }
+
 class SmoothedValue:
     """Track a series of values and provide access to smoothed values over a
     window or the global series average.
@@ -181,6 +236,32 @@ class SmoothedValue:
             median=self.median, avg=self.avg, global_avg=self.global_avg, max=self.max, value=self.value
         )
 
+def debug_augmentation(
+        augmentation,
+        dataset,
+        strict : bool=True
+    ):
+    try:
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+        example_image = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
+
+        axs[0].imshow(example_image.permute(1,2,0))
+        axs[1].imshow(augmentation(example_image).permute(1,2,0))
+
+        plt.savefig("example_augmentation.png")
+        plt.close()
+    except Exception as e:
+        e_msg = (
+            "Error while attempting to create debug augmentation image."
+            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
+        )
+        e.add_note(e_msg)
+        if strict:
+            raise e
+        print(e_msg)
+        return False
+    return True
 
 class MetricLogger:
     def __init__(self, delimiter="\t", printer=print):
