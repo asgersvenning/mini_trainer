@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import (Any, Callable, Concatenate, Dict, List, Optional, Tuple,
-                    Union)
+                    Union, Type)
 
 import numpy as np
 import torch
@@ -199,7 +199,7 @@ def easy_get_dataset_dataloader(data_path, class_path):
         class2idx = json.load(f)
     return get_dataset_dataloader(*get_image_data(data_path), class2idx)
 
-def base_load_model(
+def base_model_builder(
         model : str,
         num_classes : int,
         weights : Optional[str],
@@ -236,6 +236,7 @@ def main(
     data_index : Optional[str]=None,
     class_index : str="class_index.json",
     fine_tune : bool=False,
+    learning_rate : float=0.0001,
     epochs: int=15,
     batch_size : int=16,
     warmup_epochs : float=2.0,
@@ -243,11 +244,27 @@ def main(
     device : str="cuda:0",
     dtype : str="float16",
     seed : Optional[int]=None,
-    load_model : Callable[
+    model_builder : Callable[
         Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
         Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
-    ]=base_load_model,
-    load_model_kwargs : Dict[str, Any]={}
+    ]=base_model_builder,
+    model_builder_kwargs : Dict[str, Any]={},
+    criterion_builder : Union[
+        Callable[
+            Concatenate[...],
+            nn.modules.loss._Loss
+        ],
+        Type[nn.modules.loss._Loss]
+    ] = nn.CrossEntropyLoss,
+    criterion_kwargs : Dict[str, Any]={"label_smoothing" : 0.1},
+    optimizer_builder : Union[
+        Callable[
+            Concatenate[...],
+            torch.optim.Optimizer
+        ],
+        Type[torch.optim.Optimizer]
+    ]=torch.optim.AdamW,
+    optimizer_kwargs : Dict[str, Any]={"weight_decay" : 1e-4}
 ) -> None:
     """
     Train a classifier.
@@ -288,6 +305,11 @@ def main(
         fine_tune (bool, optional):
             If True, update only the classifier weights during training.
             Default is False.
+
+        learning_rate (bool, optional):
+            Base learning rate for training. 
+            Influences the magnitude, but not shape of the learning rate curve. 
+            Default is 0.0001.
 
         epochs (int, optional):
             Number of training epochs. Default is 15.
@@ -342,7 +364,7 @@ def main(
     classes, class2idx, idx2class, num_classes = parse_class_index(class_index, input_dir)
 
     # Prepare model
-    nn_model, model_preprocess = load_model(model, num_classes, weights, fine_tune, dtype, device, **load_model_kwargs) 
+    nn_model, model_preprocess = model_builder(model, num_classes, weights, fine_tune, dtype, device, **model_builder_kwargs) 
 
     # Prepare datasets/dataloaders
     if data_index is None:
@@ -363,46 +385,54 @@ def main(
     )
     augmentation = get_training_augmentation()
 
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+    try:
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
-    example_image = train_dataset[random.choice(range(len(train_dataset)))][0].clone().float().cpu()
+        example_image = train_dataset[random.choice(range(len(train_dataset)))][0].clone().float().cpu()
 
-    axs[0].imshow(example_image.permute(1,2,0))
-    axs[1].imshow(augmentation(example_image).permute(1,2,0))
+        axs[0].imshow(example_image.permute(1,2,0))
+        axs[1].imshow(augmentation(example_image).permute(1,2,0))
 
-    plt.savefig("example_augmentation.png")
-    plt.close()
+        plt.savefig("example_augmentation.png")
+        plt.close()
+    except Exception as e:
+        e.add_note(
+            "Error while attempting to create debug augmentation image."
+            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
+        )
+        raise e
 
     # Define training "hyperparameters"
-    epochs = epochs
     start_epoch = 0
-    lr_warmup_epochs = warmup_epochs
-    lr = 0.0001
-    label_smoothing = 0.1
-    if lr_warmup_epochs > epochs:
-        raise ValueError(f'Number of warmup epochs ({lr_warmup_epochs}) must be lower than number of total epochs ({epochs}).')
+    if warmup_epochs > epochs:
+        raise ValueError(f'Number of warmup epochs ({warmup_epochs}) must be lower than number of total epochs ({epochs}).')
 
-    parameters = set_weight_decay(nn_model, 1e-3)
-    optimizer = torch.optim.AdamW(parameters, lr=lr, weight_decay=1e-4)
-    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    # parameters = set_weight_decay(nn_model, 1e-3)
+    optimizer_kwargs["lr"] = learning_rate 
+    optimizer = optimizer_builder(nn_model.parameters(recurse=True), **optimizer_kwargs)
+    if not isinstance(optimizer, torch.optim.Optimizer):
+        raise TypeError(f'Expected `optimizer_builder` to return an object inheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}.')
+    criterion = criterion_builder(**criterion_kwargs)
+    if not isinstance(criterion, torch.optim.Optimizer):
+        raise TypeError(f'Expected `criterion_builder` to return an object inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.')
 
     main_lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
-        T_max=(epochs - lr_warmup_epochs) * len(train_loader), 
-        eta_min=lr * 10**-6
+        T_max=(epochs - warmup_epochs) * len(train_loader), 
+        eta_min=learning_rate * 10**-6
     )
-    if lr_warmup_epochs > 0:
+    if warmup_epochs > 0:
         warmup_lr_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, 
             start_factor=10**-2, 
-            total_iters=lr_warmup_epochs * len(train_loader)
+            total_iters=warmup_epochs * len(train_loader)
         )
     
     lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer, 
         schedulers=[warmup_lr_scheduler, main_lr_scheduler], 
-        milestones=[lr_warmup_epochs * len(train_loader)]
-    ) if lr_warmup_epochs > 0 else main_lr_scheduler
+        milestones=[warmup_epochs * len(train_loader)]
+    ) if warmup_epochs > 0 else main_lr_scheduler
 
     if checkpoint is not None:
         checkpoint_files = checkpoint

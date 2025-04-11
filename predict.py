@@ -12,7 +12,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
 from tqdm import tqdm as TQDM
 
-from train import base_load_model, convert2bf16, convert2fp16, convert2fp32
+from train import base_model_builder, convert2bf16, convert2fp16, convert2fp32
 from utils import confusion_matrix, is_image, parse_class_index
 
 
@@ -68,11 +68,11 @@ def main(
     num_workers : Optional[int]=None,
     device : str="cuda:0",
     dtype : str="float16",
-    load_model : Callable[
+    model_builder : Callable[
         Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
         Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
-    ]=base_load_model,
-    load_model_kwargs : Dict[str, Any]={}
+    ]=base_model_builder,
+    model_builder_kwargs : Dict[str, Any]={}
 ) -> None:
     """
     Predict with a classifier.
@@ -140,7 +140,7 @@ def main(
     classes, class2idx, idx2class, num_classes = parse_class_index(class_index)
 
     # Prepare model
-    nn_model, model_preprocess = load_model(model, num_classes, weights, False, dtype, device, **load_model_kwargs)
+    nn_model, model_preprocess = model_builder(model, num_classes, weights, False, dtype, device, **model_builder_kwargs)
         
     # Prepare image loader
     image_loader = ImageLoader(
