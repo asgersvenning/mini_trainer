@@ -56,7 +56,10 @@ def train_one_epoch(
         optimizer.step()
         lr_scheduler.step()
 
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        if isinstance(output, list):
+            acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
+        else:
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
         batch_size = batch.shape[0]
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
         metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
@@ -89,7 +92,10 @@ def evaluate(
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
 
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            if isinstance(output, list):
+                acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
+            else:
+                acc1, acc5 = accuracy(output, target, topk=(1, 5))
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
             batch_size = batch.shape[0]

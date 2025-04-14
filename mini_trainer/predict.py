@@ -1,62 +1,17 @@
 import json
 import os
 from argparse import ArgumentParser
-from glob import glob
 from math import ceil
-from typing import (Any, Callable, Concatenate, Dict, Iterable, Optional,
-                    Tuple, Union)
+from typing import Any, Callable, Concatenate, Dict, Optional, Tuple
 
 import torch
-from torch.utils.data import DataLoader, Dataset
-from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import resize
+from torch.utils.data import DataLoader
 from tqdm import tqdm as TQDM
 
 from .builders import base_model_builder
-from .utils import (BaseResultCollector, convert2bf16, convert2fp16,
-                    convert2fp32, is_image, parse_class_index)
+from .utils import (BaseResultCollector, ImageLoader, find_images,
+                    parse_class_index)
 
-
-class ImageDataset(Dataset):
-    def __init__(self, func : Callable[[str], torch.Tensor], items : list[str]):
-        self.func = func
-        self.items = items
-
-    def __len__(self):
-        return len(self.items)
-
-    def __getitem__(self, i):
-        return self.func(self.items[i])
-
-    def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
-
-class ImageLoader:
-    def __init__(self, preprocessor, dtype, device):
-        self.dtype, self.device = dtype, device
-        self.preprocessor = preprocessor
-        match self.dtype:
-            case torch.float16:
-                self.converter = convert2fp16
-            case torch.float32:
-                self.converter = convert2fp32
-            case torch.bfloat16:
-                self.converter = convert2bf16
-            case _:
-                raise ValueError("Only fp16 supported for now.")
-        size = self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else 256
-        self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
-    
-    def __call__(self, x : Union[str, Iterable]):
-        if isinstance(x, str):
-            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
-            return proc_img
-        return ImageDataset(self, x)
-
-def find_images(root : str):
-    paths = glob(os.path.join(root, "**"), recursive=True)
-    return list(filter(is_image, paths))
 
 def main(
     model : str,

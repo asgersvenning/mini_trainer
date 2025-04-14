@@ -26,8 +26,33 @@ from torch import nn
 from torch._prims_common import DeviceLikeType
 from torch.types import _dtype
 
-# Class based implemtation
-class MultiLevelWeightedCrossEntropyLoss:
+class MultiLevelCrossEntropyLoss(torch.nn.modules.loss._Loss):
+    def __init__(
+            self, 
+            weights : Union[List[Union[float, int]], torch.Tensor], 
+            label_smoothing : float = 0.0
+        ):
+
+        self.weights = [float(v) for v in weights]
+        self.n_levels = len(weights)
+        self.label_smoothing = label_smoothing
+        
+        self._loss_fns = [
+            nn.CrossEntropyLoss(
+                weight=None, 
+                reduction="none", 
+                label_smoothing=label_smoothing
+            ) for i in range(self.n_levels)
+        ]
+
+    def __call__(
+            self, 
+            preds : torch.Tensor, 
+            targets : torch.Tensor
+        ):
+        targets = targets.transpose(0, 1)
+        return MultiLevelLoss([(self._loss_fns[i](preds[i], targets[i])).mean() for i in range(self.n_levels)], self.weights).aggregate()
+class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
             self, 
             weights : Union[List[Union[float, int]], torch.Tensor], 

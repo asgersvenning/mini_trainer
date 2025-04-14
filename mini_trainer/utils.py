@@ -3,19 +3,23 @@
 import copy
 import datetime
 import errno
+import glob
 import hashlib
 import json
 import os
 import random
 import time
 from collections import OrderedDict, defaultdict, deque
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torch.distributed as dist
 from matplotlib import pyplot as plt
+from torch.utils.data import Dataset
+from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import ConvertImageDtype
+from torchvision.transforms.functional import resize
 
 convert2fp16 = ConvertImageDtype(torch.float16)
 convert2bf16 = ConvertImageDtype(torch.bfloat16)
@@ -82,6 +86,71 @@ def get_image_data(path : str):
         train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
         val_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
         return train_image_data, val_image_data
+
+def find_images(root : str):
+    paths = glob.glob(os.path.join(root, "**"), recursive=True)
+    return list(filter(is_image, paths))
+
+class LazyDataset(Dataset):
+    def __init__(self, func : Callable[[str], torch.Tensor], items : list[str]):
+        self.func = func
+        self.items = items
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i):
+        return self.func(self.items[i])
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+class ImageLoader:
+    def __init__(self, preprocessor, dtype, device):
+        self.dtype, self.device = dtype, device
+        self.preprocessor = preprocessor
+        match self.dtype:
+            case torch.float16:
+                self.converter = convert2fp16
+            case torch.float32:
+                self.converter = convert2fp32
+            case torch.bfloat16:
+                self.converter = convert2bf16
+            case _:
+                raise ValueError("Only fp16 supported for now.")
+        size = self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else 256
+        self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
+    
+    def __call__(self, x : Union[str, Iterable]):
+        if isinstance(x, str):
+            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
+            return proc_img
+        return LazyDataset(self, x)
+    
+class ImageClassLoader:
+    def __init__(self, class_decoder, preprocessor, dtype, device):
+        self.dtype, self.device = dtype, device
+        self.preprocessor = preprocessor
+        self.class_decoder = class_decoder
+        match self.dtype:
+            case torch.float16:
+                self.converter = convert2fp16
+            case torch.float32:
+                self.converter = convert2fp32
+            case torch.bfloat16:
+                self.converter = convert2bf16
+            case _:
+                raise ValueError("Only fp16 supported for now.")
+        size = self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else 256
+        self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
+    
+    def __call__(self, x : Union[str, Iterable]):
+        if isinstance(x, str):
+            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
+            cls = self.class_decoder(x)
+            return proc_img, cls
+        return LazyDataset(self, x)
 
 def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt")):
     # Build confusion matrix and compute accuracies
