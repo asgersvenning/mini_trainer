@@ -80,8 +80,8 @@ def get_image_data(path : str):
             _image_data = {k : np.array(v) for k, v in json.load(f).items()}
         image_data = {k : v[np.array([is_image(f) for f in _image_data["path"]])] for k, v in _image_data.items()}
         train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
-        test_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
-        return train_image_data, test_image_data
+        val_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
+        return train_image_data, val_image_data
 
 def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt")):
     # Build confusion matrix and compute accuracies
