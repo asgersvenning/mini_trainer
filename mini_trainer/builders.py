@@ -112,7 +112,7 @@ def easy_get_dataset_dataloader(data_path, class_path):
         class2idx = json.load(f)
     return get_dataset_dataloader(*get_image_data(data_path), class2idx)
 
-def     base_model_builder(
+def base_model_builder(
         model : str,
         weights : Optional[str],
         fine_tune : bool,
