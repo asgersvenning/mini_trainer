@@ -23,7 +23,7 @@ def main(
     checkpoint : Optional[List[str]]=None,
     weights : Optional[str]=None,
     data_index : Optional[str]=None,
-    class_index : str="class_index.json",
+    class_index : Optional[str]=None,
     fine_tune : bool=False,
     learning_rate : float=0.0001,
     epochs: int=15,
@@ -157,7 +157,7 @@ def main(
         class_index (str, optional):
             Path to a JSON file containing the mapping from class names to indices.
             If the file does not exist, it will be created based on subdirectories
-            found under `input`. Default is 'class_index.json'.
+            found under `output` if it is set. Default is 'class_index.json'.
 
         fine_tune (bool, optional):
             If True, update only the classifier weights during training.
@@ -221,7 +221,7 @@ def main(
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
     extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
-        path=class_index, 
+        path=class_index if class_index is not None else os.path.join(output_dir, "class_index.json"), 
         dir=input_dir,
         **spec_model_dataloader_kwargs
     )
@@ -271,6 +271,7 @@ def main(
     debug_augmentation(
         augmentation=augmentation,
         dataset=train_loader.dataset,
+        output_dir=output_dir,
         strict=True
     )
 
@@ -345,7 +346,8 @@ def main(
         augmentation,
         device=device,
         dtype=dtype,
-        output_dir=output_dir
+        output_dir=output_dir,
+        weight_store_rate=5
     )
 
     # Save result model
@@ -382,8 +384,8 @@ def cli():
         help="JSON file containing three arrays with keys 'path', 'split' and 'class'. The arrays should all have equal lengths and can be considered \"columns\" in a table. The 'split' column should contain values 'train', 'validation' or other, and the 'class' column' should contain the the class *names* (not indices) for each file/path."
     )
     parser.add_argument(
-        "-C", "--class_index", type=str, default="class_index.json", required=False,
-        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
+        "-C", "--class_index", type=str, required=False,
+        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `output` if it is set."
     )
     parser.add_argument(
         "--fine-tune", action="store_true", required=False,

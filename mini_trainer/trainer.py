@@ -43,9 +43,10 @@ def train_one_epoch(
 
     for i, (batch, target) in enumerate(metric_logger.log_every(pbar, 25, header)):
         start_time = time.time()
-        with autocast(device_type=device.type, dtype=dtype):
-            if len(batch.shape) == 3:
+        batch, target = batch.to(device), target.to(device)
+        if len(batch.shape) == 3:
                 batch = batch.unsqueeze(0)
+        with autocast(device_type=device.type, dtype=dtype):
             output = model(preprocess(augmentation(batch)))
             loss = criterion(output, target) 
 
@@ -84,25 +85,25 @@ def evaluate(
     metric_logger = MetricLogger(delimiter="  ", printer = lambda x : pbar.set_description_str(x))
 
     num_processed_samples = 0
-    with torch.inference_mode():
-        for batch, target in metric_logger.log_every(pbar, print_freq, header):
+    for batch, target in metric_logger.log_every(pbar, print_freq, header):
+        with torch.inference_mode():
+            batch, target = batch.to(device), target.to(device)
             if len(batch.shape) == 3:
-                batch = batch.unsqueeze(0)
+                    batch = batch.unsqueeze(0)
             with autocast(device_type=device.type, dtype=dtype):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
-
-            if isinstance(output, list):
-                acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
-            else:
-                acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            # FIXME need to take into account that the datasets
-            # could have been padded in distributed setup
-            batch_size = batch.shape[0]
-            metric_logger.update(loss=loss.item())
-            metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-            metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
-            num_processed_samples += batch_size
+        if isinstance(output, list):
+            acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
+        else:
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        # FIXME need to take into account that the datasets
+        # could have been padded in distributed setup
+        batch_size = batch.shape[0]
+        metric_logger.update(loss=loss.item())
+        metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
+        metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
+        num_processed_samples += batch_size
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
@@ -135,6 +136,7 @@ def train(
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
         output_dir : Optional[str]=None,
+        weight_store_rate : Optional[int]=None,
         **kwargs
     ):
     print("Start training")
@@ -153,7 +155,8 @@ def train(
             #     checkpoint["model_ema"] = model_ema.state_dict()
             # if scaler:
             #     checkpoint["scaler"] = scaler.state_dict()
-            save_on_master(checkpoint, os.path.join(output_dir, f"model_{epoch}.pth"))
+            if weight_store_rate is not None and epoch % weight_store_rate == 0:
+                save_on_master(checkpoint, os.path.join(output_dir, f"model_{epoch}.pth"))
             save_on_master(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
 
     total_time = time.time() - start_time

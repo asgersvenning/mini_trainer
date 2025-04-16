@@ -129,7 +129,7 @@ class ImageLoader:
         return LazyDataset(self, x)
     
 class ImageClassLoader:
-    def __init__(self, class_decoder, preprocessor, dtype, device):
+    def __init__(self, class_decoder, resize_size : Optional[int]=None, preprocessor=lambda x : x, dtype=torch.float32, device=torch.device("cpu")):
         self.dtype, self.device = dtype, device
         self.preprocessor = preprocessor
         self.class_decoder = class_decoder
@@ -142,7 +142,7 @@ class ImageClassLoader:
                 self.converter = convert2bf16
             case _:
                 raise ValueError("Only fp16 supported for now.")
-        size = self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else 256
+        size = resize_size if resize_size is not None else self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else resize_size
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
     def __call__(self, x : Union[str, Iterable]):
@@ -308,19 +308,20 @@ class SmoothedValue:
         )
 
 def debug_augmentation(
-        augmentation,
-        dataset,
+        augmentation : Callable[[torch.Tensor], torch.Tensor],
+        dataset : Dataset,
+        output_dir : Optional[str]=None,
         strict : bool=True
     ):
     try:
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
-        example_image = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
+        example_image : torch.Tensor = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
         
         axs[0].imshow(example_image.permute(1,2,0))
         axs[1].imshow(augmentation(example_image).permute(1,2,0))
 
-        plt.savefig("example_augmentation.png")
+        plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
         plt.close()
     except Exception as e:
         e_msg = (
