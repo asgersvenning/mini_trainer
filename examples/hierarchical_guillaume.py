@@ -10,6 +10,7 @@ SHARE_LINK = "JlICFo26h8"
 IMAGE_DIR = os.path.abspath(os.path.join("hierarchical", "gmo_traits"))
 
 if __name__ == "__main__":
+    os.system(f'sshpass -p "{SHARE_LINK}" sftp -P 2222 -o StrictHostKeyChecking=no {SHARE_LINK}@io.erda.au.dk')
     result = hierarchical_parse_class_index(
         dir = SHARE_LINK,
         dir2comb_fn=erda_to_combinations 
