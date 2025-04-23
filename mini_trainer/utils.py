@@ -91,6 +91,33 @@ def find_images(root : str):
     paths = glob.glob(os.path.join(root, "**"), recursive=True)
     return list(filter(is_image, paths))
 
+def debug_augmentation(
+        augmentation : Callable[[torch.Tensor], torch.Tensor],
+        dataset : Dataset,
+        output_dir : Optional[str]=None,
+        strict : bool=True
+    ):
+    try:
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+
+        example_image : torch.Tensor = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
+        
+        axs[0].imshow(example_image.permute(1,2,0))
+        axs[1].imshow(augmentation(example_image).permute(1,2,0))
+
+        plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
+        plt.close()
+    except Exception as e:
+        e_msg = (
+            "Error while attempting to create debug augmentation image."
+            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
+        )
+        e.add_note(e_msg)
+        if strict:
+            raise e
+        print(e_msg)
+        return False
+    return True
 class LazyDataset(Dataset):
     def __init__(self, func : Callable[[str], torch.Tensor], items : list[str]):
         self.func = func
@@ -152,7 +179,7 @@ class ImageClassLoader:
             return proc_img, cls
         return LazyDataset(self, x)
 
-def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt")):
+def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt"), plot_conf_mat : bool=False):
     # Build confusion matrix and compute accuracies
     classes = [i2c[i] for i in sorted(list(i2c))]
 
@@ -171,6 +198,13 @@ def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys 
         if g.lower().strip() == p.lower().strip():
             total_correct += 1
             per_class_correct[g] += 1
+
+    if plot_conf_mat:
+        conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
+        conf_mat_arr /= np.clip(conf_mat_arr.sum(1, keepdims=True), a_min=1, a_max=None)
+        plt.matshow(conf_mat_arr)
+        plt.colorbar()
+        plt.show()
 
     # Print the confusion matrix (numbers only, aligned)
     max_cf_n = max(val for d in conf_mat.values() for val in d.values())
@@ -306,34 +340,6 @@ class SmoothedValue:
         return self.fmt.format(
             median=self.median, avg=self.avg, global_avg=self.global_avg, max=self.max, value=self.value
         )
-
-def debug_augmentation(
-        augmentation : Callable[[torch.Tensor], torch.Tensor],
-        dataset : Dataset,
-        output_dir : Optional[str]=None,
-        strict : bool=True
-    ):
-    try:
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-
-        example_image : torch.Tensor = dataset[random.choice(range(len(dataset)))][0].clone().float().cpu()
-        
-        axs[0].imshow(example_image.permute(1,2,0))
-        axs[1].imshow(augmentation(example_image).permute(1,2,0))
-
-        plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
-        plt.close()
-    except Exception as e:
-        e_msg = (
-            "Error while attempting to create debug augmentation image."
-            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
-        )
-        e.add_note(e_msg)
-        if strict:
-            raise e
-        print(e_msg)
-        return False
-    return True
 
 class MetricLogger:
     def __init__(self, delimiter="\t", printer=print):

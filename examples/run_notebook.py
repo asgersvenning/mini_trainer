@@ -10,7 +10,7 @@ def run_notebook(notebook_path):
     for cell in notebook.get("cells", []):
         if cell.get("cell_type") == "code":
             # Each cell's source is a list of strings. We join them.
-            cell_code = "".join(cell.get("source", []))
+            cell_code = "".join([line.replace("tqdm.notebook", "tqdm") for line in cell.get("source", [])])
             # Optionally, add a separator (e.g., a comment) between cells.
             full_code += f"\n# Begin cell\n{cell_code}\n# End cell\n"
     return full_code
