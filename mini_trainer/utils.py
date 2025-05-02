@@ -270,7 +270,7 @@ class BaseResultCollector(_ResultsCollector):
         ):
         self.paths.extend(paths)
         self.preds.extend([self.idx2class[idx] for idx in predictions.argmax(1).tolist()])
-        self.confs.extend(predictions.softmax(1).max(0).values.tolist())
+        self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
     def evaluate(self):
         if self.training_format:

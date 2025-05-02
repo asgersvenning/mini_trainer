@@ -15,13 +15,13 @@ def create_taxonomy(ids : List[int], level : str="family"):
     level = level.strip().lower()
     if level not in TAXONOMY_KEYS:
         raise ValueError(f'Unknown taxonomic level "{level}", expected one of [{", ".join([f"\"{tk}\"" for tk in TAXONOMY_KEYS])}].')
-    levels = TAXONOMY_KEYS[TAXONOMY_KEYS.index(level):]
+    levels = TAXONOMY_KEYS[:(TAXONOMY_KEYS.index(level)+1)]
     del level
-    info = {taxonomy["species"][1] : OrderedDict([(key, value) for key, value in taxonomy.items() if key in levels]) for taxonomy in thread_map(resolve_id, ids, total=len(ids), desc="Querying the GBIF Species API...")}
-    return OrderedDict([(key, values) for key, values in sorted(info.items(), key=lambda x : [x[1][level][0] for level in levels])])
+    info = {taxonomy["species"][0] : OrderedDict([(key, value) for key, value in taxonomy.items() if key in levels]) for taxonomy in thread_map(resolve_id, ids, total=len(ids), desc="Querying the GBIF Species API...")}
+    return OrderedDict([(key, values) for key, values in sorted(info.items(), key=lambda x : [x[1][level][1] for level in levels])])
 
 # "JlICFo26h8"
-def erda_to_combinations(id : str, verbose : bool=True):
+def erda_to_combinations(id : str, verbose : bool=False):
     files = erda_list_files(id)
     if verbose:
         print(f'Found {len(files)} files.')

@@ -12,8 +12,7 @@ from torch import nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 from mini_trainer.classifier import get_model
-from mini_trainer.utils import ImageClassLoader
-
+from mini_trainer.utils import ImageClassLoader, get_image_data
 
 def hierarchical_parse_class_index(
         path : Optional[str]=None, 
@@ -22,6 +21,8 @@ def hierarchical_parse_class_index(
     ):
     """
     Accepts a path to a class index file or a directory with named subdirectories for each class.
+
+    Alternatively `dir` can be used with a custom function. The custom function should return a topologically sorted list of all combinations of classes (root-to-leaf) as a tuple of strings.
     """
     if path is None or not os.path.exists(path):
         if dir2comb_fn is None:
@@ -91,11 +92,16 @@ def hierarchical_model_builder(
                 param.requires_grad_(False)
     return model, model_preprocess
 
+def hierarchical_base_path2cls2idx_builder(class2idx):
+    def path2cls2idx(path, cls2idx=class2idx, nlvl=len(class2idx)):
+        return torch.tensor(list(reversed([cls2idx[lvl][cls] for lvl, cls in enumerate(path.split(os.sep)[:-1][-nlvl:])]))).long()
+    return path2cls2idx
+
 def multi_level_collate(batch):
     return tuple(torch.stack(v) for v in zip(*batch))
 
 def hierarchical_dataloader_builder(
-        data_index : str,
+        data_index : Optional[str],
         input_dir : str,
         classes : List[str],
         class2idx : Dict[str, int],
@@ -106,8 +112,11 @@ def hierarchical_dataloader_builder(
         resize_size : Optional[int]=None,
         train_proportion : float=0.9,
         idx2class : Optional[Dict[int, str]]=None,
-        num_workers : Optional[int]=None
+        num_workers : Optional[int]=None,
+        path2cls2idx_builder : Callable[[Any], Callable[[str], torch.Tensor]]=hierarchical_base_path2cls2idx_builder,
+        path2cls2idx_builder_kwargs : Dict[str, Any]={}
     ):
+    path2cls2idx = path2cls2idx_builder(class2idx=class2idx, **path2cls2idx_builder_kwargs)
     # Prepare datasets/dataloaders
     if data_index is None:
         all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f))]
@@ -118,11 +127,13 @@ def hierarchical_dataloader_builder(
         }
         for path in all_files:
             data["path"].append(path)
-            data["class"].append([class2idx[lvl][cls] for lvl, cls in enumerate(os.path.relpath(path, input_dir).split(os.sep)[:-1])])
+            data["class"].append(path2cls2idx(path).tolist())
             data["split"].append("train" if random.random() < train_proportion else "validation")
         data = {k : np.array(v) for k, v in data.items()}
         train_image_data = {k : v[data["split"] == np.array("train")] for k, v in data.items()}
         val_image_data = {k : v[data["split"] == np.array("validation")] for k, v in data.items()}
+    else:
+        train_image_data, val_image_data = get_image_data(data_index)
         
     resize_size = preprocess.resize_size if hasattr(preprocess, "resize_size") else resize_size
 
@@ -130,9 +141,6 @@ def hierarchical_dataloader_builder(
         if not (isinstance(resize_size, tuple) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
             raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
     print(f"Building datasets with image size {resize_size}")
-
-    def path2cls2idx(path, cls2idx=class2idx, nlvl=len(class2idx)):
-        return torch.tensor(list(reversed([cls2idx[lvl][cls] for lvl, cls in enumerate(path.split(os.sep)[:-1][-nlvl:])]))).long()#.to(device)
 
     loader = ImageClassLoader(path2cls2idx, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
     train_dataset = loader(train_image_data["path"])

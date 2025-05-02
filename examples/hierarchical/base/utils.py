@@ -16,10 +16,10 @@ def create_hierarchy(combinations : Iterable[List[str]], class_to_idx : List[Dic
             Level 0 is the leaf level, and is not included. 
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
-    hierarchy = [[set() for _ in range(n)] for n in n_classes[:-1]]  # Create empty lists for each level
-    processed_leaves = [0] * n_classes[-1]  # Keep track of which leaves have been processed
+    hierarchy = [[set() for _ in range(n)] for n in n_classes]  # Create empty lists for each level
+    processed_leaves = [0] * n_classes[0]  # Keep track of which leaves have been processed
 
-    # Iterate over the paths
+    # Iterate over the 
     for components in combinations:
         # Convert the class strings to indices
         indices = [class_to_idx[ctype][class_str] for ctype, class_str in enumerate(components)] 

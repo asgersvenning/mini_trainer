@@ -51,7 +51,10 @@ class MultiLevelCrossEntropyLoss(torch.nn.modules.loss._Loss):
             targets : torch.Tensor
         ):
         targets = targets.transpose(0, 1)
-        return MultiLevelLoss([(self._loss_fns[i](preds[i], targets[i])).mean() for i in range(self.n_levels)], self.weights).aggregate()
+        return MultiLevelLoss(
+            [(self._loss_fns[i](preds[i], targets[i])).mean() for i, w in enumerate(self.weights) if w > 0], 
+            [w for w in self.weights if w > 0]
+        ).aggregate()
 
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
@@ -115,3 +118,6 @@ class MultiLevelLoss:
 
     def __iter__(self):
         return iter(self.losses)
+    
+    def __repr__(self):
+        return f'Losses: [{", ".join([f"{loss.item():.1f}" for loss in self.losses])}]\nWeights: [{", ".join([f"{weight:.1f}" for weight in self.weights])}]'
