@@ -6,6 +6,7 @@ import errno
 import glob
 import hashlib
 import json
+import math
 import os
 import random
 import time
@@ -21,29 +22,31 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import ConvertImageDtype
 from torchvision.transforms.functional import resize
 
+def get_model_name(name : str, dir : Optional[str]=None, max_iter : int=1000):
+    if name is None:
+        raise ValueError('A model name must be specified.')
+    if not isinstance(name, str):
+        raise TypeError(f'Invalid type `{type(name)}` used for the model name. Only `str` is accepted.')
+    if len(name) == 0:
+        raise ValueError('Invalid zero-length model specified.')
+    def _name(i : int):
+        if i < 0:
+            raise RuntimeError(f'Invalid name iteration {i} specified.')
+        if i == 0:
+            return name
+        return f'{name}_{i}'
+
+    fs = set([os.path.splitext(os.path.basename(f))[0] for f in glob.glob(name + "*", root_dir=dir)])
+    for i in range(max_iter+1):
+        if (this := _name(i)) not in fs:
+            return this
+    
+    raise RuntimeError(f'Unable to create a new model name from {name} in {dir}, the maximum number of model iterations with the same base name {max_iter} has been reached. OBS: The name check is file-extension agnostic!')
+
 convert2fp16 = ConvertImageDtype(torch.float16)
 convert2bf16 = ConvertImageDtype(torch.bfloat16)
 convert2fp32 = ConvertImageDtype(torch.float32)
 convert2uint8 = ConvertImageDtype(torch.uint8)
-
-def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
-    """
-    Accepts a path to 
-    """
-    if not os.path.exists(path):
-        if dir is None or not os.path.isdir(dir):
-            raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
-        cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
-        if path is not None:
-            with open(path, "w") as f:
-                json.dump(cls2idx, f)
-    else:
-        with open(path, "rb") as f:
-            cls2idx = json.load(f)
-    cls = list(cls2idx.keys())
-    idx2cls = {v : k for k, v in cls2idx.items()}
-    ncls = len(idx2cls)
-    return {"num_classes" : ncls}, {"classes" : cls, "class2idx" : cls2idx, "idx2class" : idx2cls}
 
 def write_metadata(directory : str, classes : List[str], dst : str, train_proportion : float=0.9):
     data = {
@@ -178,6 +181,17 @@ class ImageClassLoader:
             cls = self.class_decoder(x)
             return proc_img, cls
         return LazyDataset(self, x)
+
+def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : float):
+    def _shape_fn(step : int):
+        if warmup > 0 and step < warmup:
+            # linear warm-up from start_factor -> 1.0
+            return start + (1.0 - start) * step / warmup
+        # cosine decay from 1.0 -> min_factor
+        progress = (step - warmup) / max(1, total - warmup)
+        return end + 0.5 * (1.0 - end) * (1.0 + math.cos(math.pi * progress))
+    return _shape_fn
+
 
 def confusion_matrix(results : Dict[str, List[str]], i2c : Dict[int, str], keys : Tuple[str, str]=("pred", "gt"), plot_conf_mat : bool=False):
     # Build confusion matrix and compute accuracies

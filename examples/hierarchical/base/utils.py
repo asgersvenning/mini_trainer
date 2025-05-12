@@ -16,37 +16,36 @@ def create_hierarchy(combinations : Iterable[List[str]], class_to_idx : List[Dic
             Level 0 is the leaf level, and is not included. 
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
-    hierarchy = [[set() for _ in range(n)] for n in n_classes]  # Create empty lists for each level
+    hierarchy = [[set() for _ in range(n)] for n in n_classes[1:]]  # Create empty lists for each level
     processed_leaves = [0] * n_classes[0]  # Keep track of which leaves have been processed
 
-    # Iterate over the 
+    # Iterate over the combinations
     for components in combinations:
         # Convert the class strings to indices
-        indices = [class_to_idx[ctype][class_str] for ctype, class_str in enumerate(components)] 
-        
+        indices = [class_to_idx[ctype][class_str] for ctype, class_str in enumerate(components)]
+
         # Skip processed leaves (species in this case)
-        if processed_leaves[indices[-1]] == 0:  # If the leaf has not been processed yet
-            processed_leaves[indices[-1]] = 1
+        if processed_leaves[indices[0]] == 0:  # If the leaf has not been processed yet
+            processed_leaves[indices[0]] = 1
         else:
-            continue  # Skip this leaf
+            continue # Skip this leaf
         
         # Iterate over the indices and add them to the hierarchy
         for i in range(len(indices) - 1):
             # Get the parent and child indices
-            parent = indices[i]
-            child = indices[i+1]
-            
+            child = indices[i]
+            parent = indices[i+1]
             hierarchy[i][parent].add(child)  # Append the child to the parent's list
 
     return [[list(parent) for parent in level] for level in hierarchy]
 
-def create_mask(indices, s, zero=-100, **kwargs):
+def create_mask_col(indices, height, zero=-100, **kwargs):
     """
     Create an approximate logarithmic binary mask with the given indices.
 
     Arguments:
         indices (list): List of indices to include in the mask.
-        s (int): Size of the mask.
+        height (int): Height of the mask (i.e. number of rows, also the 1+max(indices)).
         zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0). 
             This should be a large negative number. Default: -100.
         **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
@@ -54,10 +53,10 @@ def create_mask(indices, s, zero=-100, **kwargs):
     Returns:
         torch.Tensor: An approximate logarithmic binary mask for the given indices.
     """
-    t = torch.zeros(s, **kwargs, requires_grad=False)
-    t += zero
-    t[indices] = 0
-    return t
+    col = torch.zeros((height, 1), **kwargs, requires_grad=False)
+    col += zero
+    col[indices] = 0
+    return col
 
 def mask_islogarithmic(masks):
     if isinstance(masks, list):
@@ -88,6 +87,6 @@ def mask_hierarchy(hierarchy, zero=-100, **kwargs):
     masks = []
     for level in hierarchy:
         n = sum([len(indices) for indices in level])
-        masks.append([create_mask(indices, n, zero=zero, **kwargs) for indices in level])
+        masks.append([create_mask_col(indices, n, zero=zero, **kwargs) for indices in level])
 
-    return [torch.stack(level) for level in masks]
+    return [torch.hstack(level) for level in masks]

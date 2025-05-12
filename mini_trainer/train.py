@@ -1,126 +1,48 @@
 import os
 import random
 from argparse import ArgumentParser
-from typing import (Any, Callable, Concatenate, Dict, List, Optional, Tuple,
-                    Type, Union)
+from typing import Any, Dict, List, Optional, Type
 
 import numpy as np
 import torch
 import torchvision
-from torch import nn
 
-from .builders import (base_dataloader_builder, base_lr_schedule_builder,
-                       base_model_builder, default_training_augmentation)
-from .trainer import train
-from .utils import (average_checkpoints, debug_augmentation, parse_class_index,
-                    save_on_master)
+from mini_trainer.builders import BaseBuilder
+from mini_trainer.trainer import train
+from mini_trainer.utils import (average_checkpoints, debug_augmentation,
+                                get_model_name, save_on_master)
 
 
 def main(
     input : str,
     output : str = ".",
-    model : str = "efficientnet_v2_s",
     checkpoint : Optional[List[str]]=None,
-    weights : Optional[str]=None,
-    data_index : Optional[str]=None,
     class_index : Optional[str]=None,
-    fine_tune : bool=False,
-    learning_rate : float=0.0001,
-    epochs: int=15,
-    batch_size : int=16,
-    warmup_epochs : float=2.0,
+    epochs : int=15,
     name: Optional[str]=None,
     device : str="cuda:0",
     dtype : str="float16",
     seed : Optional[int]=None,
-    spec_model_dataloader : Callable[
-        Concatenate[
-            str,
-            str,
-            ...
-        ],
-        Tuple[
-            Dict[str, Any],
-            Dict[str, Any]
-        ]
-    ]=parse_class_index,
+    builder : Type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : Dict[str, Any]={},
-    model_builder : Callable[
-        Concatenate[
-            str, 
-            int, 
-            Optional[str], 
-            bool, 
-            torch.dtype, 
-            torch.device, 
-            ...
-        ], 
-        Tuple[
-            torch.nn.Module, 
-            Callable[[torch.Tensor], torch.Tensor]
-        ]
-    ]=base_model_builder,
-    model_builder_kwargs : Dict[str, Any]={},
-    dataloader_builder : Callable[
-        Concatenate[
-            str, 
-            str, 
-            List[str], 
-            Dict[str, int], 
-            Callable[[torch.Tensor], torch.Tensor], 
-            int, 
-            torch.device, 
-            torch.dtype,
-            ...
-        ],
-        Tuple[
-            torch.utils.data.DataLoader,
-            torch.utils.data.DataLoader,
-            Union[
-                torchvision.transforms.Compose,
-                Callable[[torch.Tensor], torch.Tensor]
-            ]
-        ]
-    ]=base_dataloader_builder,
+    model_builder_kwargs : Dict[str, Any]={
+        "model_name" : "efficientnet_v2_s",
+        "weights" : None,
+        "fine_tune" : False
+    },
     dataloader_builder_kwargs : Dict[str, Any]={
+        "bacth_size" : 16,
         "resize_size" : 256, 
         "train_proportion" : 0.9
     },
-    augmentation_builder : Callable[
-        Concatenate[...],
-        torchvision.transforms.Compose
-    ]=default_training_augmentation,
     augmentation_builder_kwargs : Dict[str, Any]={},
-    criterion_builder : Union[
-        Callable[
-            Concatenate[...],
-            nn.modules.loss._Loss
-        ],
-        Type[nn.modules.loss._Loss]
-    ] = nn.CrossEntropyLoss,
-    criterion_kwargs : Dict[str, Any]={"label_smoothing" : 0.1},
-    optimizer_builder : Union[
-        Callable[
-            Concatenate[...],
-            torch.optim.Optimizer
-        ],
-        Type[torch.optim.Optimizer]
-    ]=torch.optim.AdamW,
-    optimizer_kwargs : Dict[str, Any]={"weight_decay" : 1e-4},
-    lr_schedule_builder : Callable[
-        Concatenate[
-            torch.optim.Optimizer,
-            float,
-            int,
-            int,
-            int,
-            ...
-        ],
-        torch.optim.lr_scheduler.LRScheduler
-    ]=base_lr_schedule_builder,
+    optimizer_builder_kwargs : Dict[str, Any]={
+        "lr" : 0.001,
+        "weight_decay" : 1e-4
+    },
+    criterion_builder_kwargs : Dict[str, Any]={"label_smoothing" : 0.1},
     lr_schedule_builder_kwargs : Dict[str, Any]={
-        "min_factor" : 1 / 10**6, 
-        "start_factor" : 1 / 10**2
+        "warmup_epochs" : 2.0
     }
 ) -> None:
     """
@@ -145,10 +67,6 @@ def main(
             If multiple files are supplied, training is restarted from an 'average'
             of checkpoint states. Default is None.
 
-        weights (Optional[str], optional):
-            Model weights used to initialize model before training.
-            Default is None.
-
         data_index (Optional[str], optional):
             Path to a JSON file containing three arrays with keys 'path', 'split',
             and 'class', representing a structured dataset.
@@ -159,25 +77,8 @@ def main(
             If the file does not exist, it will be created based on subdirectories
             found under `output` if it is set. Default is 'class_index.json'.
 
-        fine_tune (bool, optional):
-            If True, update only the classifier weights during training.
-            Default is False.
-
-        learning_rate (bool, optional):
-            Base learning rate for training. 
-            Influences the magnitude, but not shape of the learning rate curve. 
-            Default is 0.0001.
-
         epochs (int, optional):
             Number of training epochs. Default is 15.
-
-        batch_size (int, optional):
-            Number of images per mini-batch for training and validation.
-            Default is 16.
-
-        warmup_epochs (float, optional):
-            Number of warmup epochs at the start of training.
-            Default is 2.0.
 
         name (Optional[str], optional):
             Name of the output model. If not provided, a descriptive name
@@ -195,18 +96,20 @@ def main(
         seed (Optional[int], optional):
             Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is None.
-        
-        **kwargs: Additional arguments to be documented. 
-            All additional arguments are not available from the commandline, but exist to enable usage of 
-            the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
 
+        builder (Type[BaseBuilder], optional):
+            An object inheriting from `mini_trainer.builders.BaseBuilder`. This object 
+            is responsible for instantiating the model, dataloader, augmentation, optimizer, 
+            criterion (loss function) and learning rate scheduler.
+        
+        **kwargs: 
+            Additional arguments are passed to the various builder methods. 
+            See `mini_trainer.builders.BaseBuilder` for details.
+    
     Returns:
         None
     """
-        # Prepare state
-    if name is None:
-        name = f'{model}_{"fine_tune" if fine_tune else "full"}_e{epochs}'
-    
+    # Prepare state    
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -215,24 +118,23 @@ def main(
     input_dir = os.path.abspath(input)
     output_dir = os.path.abspath(output)
 
+    name = get_model_name(name, output_dir)
+
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype)
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
-    extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
+    extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
         path=class_index if class_index is not None else os.path.join(output_dir, "class_index.json"), 
         dir=input_dir,
         **spec_model_dataloader_kwargs
     )
 
     # Prepare model
-    nn_model, model_preprocess = model_builder(
-        model=model, 
-        weights=weights, 
-        fine_tune=fine_tune, 
+    nn_model, model_preprocess = builder.build_model(
         device=device, 
-        dtype=dtype,
+        dtype=torch.float32, # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
         **{**extra_model_kwargs, **model_builder_kwargs}
     ) 
     if not isinstance(nn_model, torch.nn.Module):
@@ -242,11 +144,9 @@ def main(
         )
     
     # Prepare dataloader
-    train_loader, val_loader = dataloader_builder(
-        data_index=data_index,
+    train_loader, val_loader = builder.build_dataloader(
         input_dir=input_dir,
         preprocess=model_preprocess,
-        batch_size=batch_size,
         device=device,
         dtype=dtype,
         **{**extra_dataloader_kwargs, **dataloader_builder_kwargs}
@@ -262,7 +162,7 @@ def main(
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
         )
 
-    augmentation = augmentation_builder(**augmentation_builder_kwargs)
+    augmentation = builder.build_augmentation(**augmentation_builder_kwargs)
     if not isinstance(augmentation, torchvision.transforms.Compose):
         raise TypeError(
             'Expected `augmentation_builder` to return an objects'
@@ -275,34 +175,25 @@ def main(
         strict=True
     )
 
-    # Define training "hyperparameters"
+    # Setup optimizer, criterion (loss function) and learning rate scheduler
     start_epoch = 0
-    if warmup_epochs > epochs:
-        raise ValueError(
-            f'Number of warmup epochs ({warmup_epochs}) must be'
-            f'lower than number of total epochs ({epochs}).'
-        )
 
-    # parameters = set_weight_decay(nn_model, 1e-3)
-    optimizer_kwargs["lr"] = learning_rate 
-    optimizer = optimizer_builder(nn_model.parameters(recurse=True), **optimizer_kwargs)
+    optimizer = builder.build_optimizer(params=nn_model.parameters(recurse=True), **optimizer_builder_kwargs)
     if not isinstance(optimizer, torch.optim.Optimizer):
         raise TypeError(
             'Expected `optimizer_builder` to return an object'
             f'inheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}.'
         )
-    criterion = criterion_builder(**criterion_kwargs)
+    criterion = builder.build_criterion(**criterion_builder_kwargs)
     if not isinstance(criterion, torch.nn.modules.loss._Loss):
         raise TypeError(
             'Expected `criterion_builder` to return an object'
             f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
         )
 
-    lr_scheduler = lr_schedule_builder(
+    lr_scheduler = builder.build_lr_scheduler(
         optimizer=optimizer,
-        learning_rate=learning_rate,
         epochs=epochs,
-        warmup_epochs=warmup_epochs,
         steps_per_epoch=len(train_loader),
         **lr_schedule_builder_kwargs
     )
@@ -388,20 +279,24 @@ def cli():
         help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `output` if it is set."
     )
     parser.add_argument(
-        "--fine-tune", action="store_true", required=False,
-        help="Update only the classifier weights"
-    )
-    parser.add_argument(
         "--epochs", type=int, default=15, required=False,
         help="Number of training epochs (default=15)."
+    )
+    parser.add_argument(
+        "--lr", "--learning_rate", default=0.001, required=False,
+        help="Initial learning rate after warmup (default=0.001)."
     )
     parser.add_argument(
         "--batch_size", type=int, default=16, required=False,
         help="Number of images used in each mini-batch for training/validation (default=16)."
     )
     parser.add_argument(
-        "--warmup_epochs", type=float, default=2, required=False,
-        help="Number of warmup epochs (default=2)."
+        "--warmup_epochs", type=float, default=2.0, required=False,
+        help="Number of warmup epochs (default=2.0)."
+    )
+    parser.add_argument(
+        "--fine-tune", action="store_true", required=False,
+        help="Update only the classifier weights. This should probably not be used."
     )
     parser.add_argument(
         "-n", "--name", type=str, required=False,
@@ -419,7 +314,33 @@ def cli():
         "--seed", type=int, required=False,
         help="Set the initial seed for the RNG in the core Python library `random`. This is particularly important for reproducible train/validation splits."
     )
-    main(**vars(parser.parse_args()))
+    args = vars(parser.parse_args())
+    # Distribute builder arguments to the relevant functions
+    args["model_builder_kwargs"] = {
+        "model_type" : args.pop("model"),
+        "weights" : args.pop("weights"),
+        "fine_tune" : args.pop("fine_tune")
+    }
+    args["dataloader_builder_kwargs"] = {
+        "data_index" : args.pop("data_index"),
+        "batch_size" : args.pop("batch_size"),
+        "resize_size" : 256, 
+        "train_proportion" : 0.9
+    }
+    args["optimizer_builder_kwargs"] = {
+        "lr" : args.pop("lr"),
+        "weight_decay" : 1e-4
+    }
+    args["lr_schedule_builder_kwargs"] = {
+        "warmup_epochs" : args.pop("warmup_epochs"),
+        "min_factor" : 1 / 10**6, 
+        "start_factor" : 1 / 10**2
+    }
+    # Set reasonable default name for unspecified CLI training runs
+    if args["name"] is None:
+        args["name"] = f'{args["model_builder_kwargs"]["model_type"]}_{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_e{args["epochs"]}'
+    # Call the Python training API
+    main(**args)
 
 if __name__ == "__main__":  
     cli()

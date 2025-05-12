@@ -3,10 +3,8 @@ import shutil
 
 import numpy as np
 import torch
-from hierarchical.base.integration import (hierarchical_dataloader_builder,
-                                           hierarchical_model_builder,
-                                           hierarchical_parse_class_index)
-from hierarchical.base.loss import MultiLevelCrossEntropyLoss
+from hierarchical.base.integration import (HierarchicalBuilder,
+                                           HierarchicalResultCollector)
 from hierarchical.guillaume.hierarchical import (
     DEFAULT_HIERARCHY_LEVELS, HierarchicalPathParser,
     hierarchical_create_data_index)
@@ -89,35 +87,35 @@ def standardized_save(image : torch.Tensor, dst : str):
 
 if __name__ == "__main__":
     # # os.system(f'sshpass -p "{SHARE_LINK}" sftp -P 2222 -o StrictHostKeyChecking=no {SHARE_LINK}@io.erda.au.dk')
-    if os.path.isdir(IMAGE_DIR):
-        shutil.rmtree(IMAGE_DIR)
-    if os.path.exists(IMAGE_DIR):
-        raise RuntimeError(f'Error while cleaning the image directory: {IMAGE_DIR}')
-    os.makedirs(IMAGE_DIR, exist_ok=True)
-    with IOHandler(user=SHARE_LINK, password=SHARE_LINK, remote="io.erda.au.dk", verbose=False) as io:
-        ri = RemotePathIterator(io, max_queued_batches=5, batch_parallel=16)
-        ri.subset([i for i, rp in enumerate(ri.remote_paths) if not image_already_saved(rp, IMAGE_DIR)])
-        for lp, rp in TQDM(ri, desc="Downloading files...", smoothing=0.01):
-            dst = create_dst(rp, IMAGE_DIR)
-            if not os.path.exists(os.path.dirname(dst)):
-                os.makedirs(os.path.dirname(dst))
-            try:
-                image = read_image(lp, ImageReadMode.RGB)
-                standardized_save(image, dst)
-            except Exception as e:
-                e.add_note(f'Error while trying to resize and/or save {rp} to {dst}.')
-                raise e
+    # if os.path.isdir(IMAGE_DIR):
+    #     shutil.rmtree(IMAGE_DIR)
+    # if os.path.exists(IMAGE_DIR):
+    #     raise RuntimeError(f'Error while cleaning the image directory: {IMAGE_DIR}')
+    # os.makedirs(IMAGE_DIR, exist_ok=True)
+    # with IOHandler(user=SHARE_LINK, password=SHARE_LINK, remote="io.erda.au.dk", verbose=False) as io:
+    #     ri = RemotePathIterator(io, max_queued_batches=5, batch_parallel=16)
+    #     ri.subset([i for i, rp in enumerate(ri.remote_paths) if not image_already_saved(rp, IMAGE_DIR)])
+    #     for lp, rp in TQDM(ri, desc="Downloading files...", smoothing=0.01):
+    #         dst = create_dst(rp, IMAGE_DIR)
+    #         if not os.path.exists(os.path.dirname(dst)):
+    #             os.makedirs(os.path.dirname(dst))
+    #         try:
+    #             image = read_image(lp, ImageReadMode.RGB)
+    #             standardized_save(image, dst)
+    #         except Exception as e:
+    #             e.add_note(f'Error while trying to resize and/or save {rp} to {dst}.')
+    #             raise e
     
-    print(f'Running quality control:')
-    mt_predict(
-        model="efficientnet_v2_s", 
-        weights="quality/efficientnet_v2_s_full_e15.pt",
-        input=IMAGE_DIR,
-        output="hierarchical/quality_control.json",
-        class_index="quality/class_index.json"
-    )
+    # print(f'Running quality control:')
+    # mt_predict(
+    #     model="efficientnet_v2_s", 
+    #     weights="quality/efficientnet_v2_s_full_e15.pt",
+    #     input=IMAGE_DIR,
+    #     output="hierarchical/quality_control.json",
+    #     class_index="quality/class_index.json"
+    # )
     
-    hierarchical_parse_class_index(
+    HierarchicalBuilder.spec_model_dataloader(
         path="hierarchical/gmo_traits_class_index.json",
         dir=SHARE_LINK,
         dir2comb_fn=erda_to_combinations 
@@ -132,35 +130,43 @@ if __name__ == "__main__":
         levels=DEFAULT_HIERARCHY_LEVELS
     )
 
-    mt_train(
-        input="hierarchical/train",
-        output="hierarchical",
-        model="efficientnet_b0",
+    # mt_train(
+    #     input="hierarchical/gmo_traits",
+    #     output="hierarchical",
+    #     class_index="hierarchical/gmo_traits_class_index.json",
+    #     name="test_1",
+    #     # weights="hierarchical/gmo_traits_2.pt",
+    #     epochs=10,
+    #     dtype="float16",
+    #     device="cuda:0",
+    #     builder=HierarchicalBuilder,
+    #     model_builder_kwargs={"model_type" : "efficientnet_b0"},
+    #     dataloader_builder_kwargs={
+    #         "data_index" : "hierarchical/gmo_traits_data_index.json",
+    #         "batch_size" : 16,
+    #         "resize_size": 256, 
+    #         # "train_proportion": 0.9,
+    #         "path2cls2idx_builder" : HierarchicalPathParser,
+    #         "path2cls2idx_builder_kwargs" : {
+    #             "class_index" : "hierarchical/gmo_traits_class_index.json",
+    #             "levels" : DEFAULT_HIERARCHY_LEVELS,
+    #             "as_tensor" : True
+    #         }
+    #     },
+    #     optimizer_builder_kwargs={"lr" : 0.001},
+    #     criterion_builder_kwargs={"label_smoothing" : 0.01, "weights" : [0.65, 0.25, 0.1]}, #  non-hierarchical: [1, 0, 0] | different hierarchical weightings: [0.1, 0.25, 0.65], [0.65, 0.25, 0.1], [1, 1, 1]
+    #     lr_schedule_builder_kwargs={"warmup_epochs" : 0.5}
+    # )
+
+    mt_predict(
+        input="hierarchical/gmo_traits",
+        output="hierarchical/result.json",
         class_index="hierarchical/gmo_traits_class_index.json",
-        data_index="hierarchical/gmo_traits_data_index.json",
-        name="test",
-        # weights="hierarchical/efficientnet_b0_full_e2.pt",
-        batch_size=16,
-        learning_rate=0.001,
-        warmup_epochs=0.1,
-        epochs=10,
-        dtype="float16",
-        # device="cpu",
-        spec_model_dataloader=hierarchical_parse_class_index,
-        dataloader_builder=hierarchical_dataloader_builder,
-        dataloader_builder_kwargs={
-            "resize_size": 256, 
-            # "train_proportion": 0.9,
-            "path2cls2idx_builder" : HierarchicalPathParser,
-            "path2cls2idx_builder_kwargs" : {
-                "class_index" : "hierarchical/gmo_traits_class_index.json",
-                "levels" : DEFAULT_HIERARCHY_LEVELS,
-                "as_tensor" : True
-            }
-        },
-        model_builder=hierarchical_model_builder,
-        criterion_builder=MultiLevelCrossEntropyLoss,
-        criterion_kwargs={"label_smoothing" : 0.01, "weights" : [0.65, 0.25, 0.1]} #  non-hierarchical: [1, 0, 0] | different hierarchical weightings: [0.1, 0.25, 0.65], [0.65, 0.25, 0.1], [1, 1, 1]
+        n_max=256,
+        builder=HierarchicalBuilder,
+        model_builder_kwargs={"model_type" : "efficientnet_b0", "weights" : "hierarchical/efficientnet_b0_full_e10.pt"},
+        result_collector=HierarchicalResultCollector,
+        result_collector_kwargs={"levels" : 3, "training_format" : True}
     )
 
 

@@ -35,7 +35,7 @@ class HierarchicalPathParser:
             raise ValueError(f'Unable to initialize path to hierarchical class label parser. More levels ({levels}) specified than the number of class-to-index dictionaries found in {class_index}.')
         self.combinations : List = _class_index_data["combinations"]
         comb_leafs = [c[0] for c in self.combinations]
-        self.hierarchy = {leaf : {level : [cls] for level, cls in zip(self.levels, self.combinations[comb_leafs.index(leaf)])} for leaf in self.cls2idx[str(len(self.levels)-1)]}
+        self.hierarchy = {leaf : {level : [cls] for level, cls in zip(self.levels, self.combinations[comb_leafs.index(leaf)])} for leaf in self.cls2idx["0"]}
 
     def __call__(self, path : str):
         cls = path_to_hierarchy(path, self.hierarchy, self.cls2idx, self.levels)
@@ -51,19 +51,14 @@ def path_to_hierarchy(
         cls2idx : Optional[Dict[str, Dict[str, int]]]=None, 
         levels : List[str]=DEFAULT_HIERARCHY_LEVELS
     ):
-    print(levels)
     if os.path.sep in path:
         parts = path.split(os.path.sep)
     else:
         parts = path.split("/")
-    print(parts)
     if len(parts) < 2:
         raise ValueError(f'Expected `path` to be an absolute path or a relative path stump containing at least one parent directory, not {path} which only contains {len(parts)} path components.')
     leaf = parts[-2]
-    print(leaf)
     out = tuple([hierarchy[leaf][level][0] for level in levels])
-    print(out)
-    raise RuntimeError()
     if cls2idx is not None:
         out = tuple([cls2idx[str(li)][cls] for li, cls in enumerate(out)])
     return out   

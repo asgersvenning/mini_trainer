@@ -1,6 +1,7 @@
 import os
+from collections import OrderedDict
 from functools import partial
-from typing import List, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -79,19 +80,58 @@ class Classifier(nn.Module):
             x = nn.functional.leaky_relu(self.hidden(x), True)
         x = self.batch_norm(x)
         return self.linear(x)
-    
-    @staticmethod
-    def load(model_type : str, path : str, device=torch.device("cpu"), dtype=torch.float32):
-        # Parse model architecture
-        architecture, head_name, _ = get_model(model_type)
 
-        # Read weight file
-        weights = torch.load(path, device, weights_only=True)
-        num_classes, num_embeddings = weights[f"{head_name}.linear.weight"].shape
-        
-        # Load weights into model architecture
-        setattr(architecture, head_name, Classifier(num_embeddings, num_classes))
-        architecture.load_state_dict(weights)
+    @classmethod
+    def load(
+        cls,
+        architecture_class : str,
+        architecture_output_name : str,
+        architecture : nn.Module,
+        state : Optional[OrderedDict[str, Union[torch.Tensor, Any]]],
+        device : torch.types.Device,
+        dtype : torch.dtype,
+        **kwargs
+    ):
+        """
+        Load weights into model architecture
+        """
+        architecture.add_module(architecture_output_name, cls(**kwargs))
+        setattr(architecture, "_backbone_class", architecture_class)
+        setattr(architecture, "_backbone_output_name", architecture_output_name)
+        if state is not None:
+            architecture.load_state_dict(state)
         architecture.to(device, dtype)
         
         return architecture
+
+    @classmethod    
+    def build(
+        cls,
+        model_type : str, 
+        weights : Optional[Union[str, OrderedDict[str, Union[torch.Tensor, Any]]]]=None, 
+        num_classes : Optional[int]=None,
+        device=torch.device("cpu"), 
+        dtype=torch.float32,
+        **kwargs
+    ):
+        architecture, head_name, model_preprocess = get_model(model_type)
+        if not isinstance(architecture, nn.Module):
+            raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
+        
+        num_embeddings = getattr(architecture, head_name)[1].in_features
+        state = None
+
+        if weights is not None:
+            if isinstance(weights, str):
+                state : OrderedDict[str, torch.Tensor] = torch.load(weights, device, weights_only=True)
+            else:
+                state = weights
+            for key in list(state.keys()):
+                if isinstance(state[key], torch.Tensor):
+                    state[key] = state[key].to(device, dtype)
+            num_classes, _ = state[f"{head_name}.linear.weight"].shape
+        else:
+            if not isinstance(num_classes, int):
+                raise RuntimeError('Unable to build classifier with unknown number of output classes. If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.')
+        
+        return cls.load(model_type, head_name, architecture, state, device, dtype, in_features=num_embeddings, out_features=num_classes, **kwargs), model_preprocess

@@ -2,43 +2,27 @@ import json
 import os
 from argparse import ArgumentParser
 from math import ceil
-from typing import Any, Callable, Concatenate, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Type
 
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm as TQDM
 
-from .builders import base_model_builder
-from .utils import (BaseResultCollector, ImageLoader, find_images,
-                    parse_class_index)
+from .builders import BaseBuilder
+from .utils import BaseResultCollector, ImageLoader, find_images
 
 
 def main(
-    model : str,
-    weights : str,
     input : str,
     output : str="result.json",
     class_index : str="class_index.json",
     batch_size : int=32,
     num_workers : Optional[int]=None,
+    n_max : Optional[int]=None,
     device : str="cuda:0",
     dtype : str="float16",
-    spec_model_dataloader : Callable[
-        Concatenate[
-            str,
-            str,
-            ...
-        ],
-        Tuple[
-            Dict[str, Any],
-            Dict[str, Any]
-        ]
-    ]=parse_class_index,
+    builder : Type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : Dict[str, Any]={},
-    model_builder : Callable[
-        Concatenate[str, int, Optional[str], bool, torch.dtype, torch.device, ...], 
-        Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]
-    ]=base_model_builder,
     model_builder_kwargs : Dict[str, Any]={},
     result_collector=BaseResultCollector,
     result_collector_kwargs : Dict[str, Any]={"training_format" : False}
@@ -75,6 +59,9 @@ def main(
             Number of worker threads/processes used for loading images.
             Defaults to the number of physical CPU cores if None.
 
+        n_max (Optional[int], optional):
+            Maximum number of images to run inference on.
+
         device (str, optional):
             Device to perform inference on (e.g., 'cuda:0', 'cpu').
             Default is 'cuda:0'.
@@ -104,19 +91,16 @@ def main(
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
-    extra_model_kwargs, extra_dataloader_kwargs = spec_model_dataloader(
-        class_index, 
-        input_dir,
+    extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
+        path=class_index, 
+        dir=input_dir,
         **spec_model_dataloader_kwargs
     )
 
     # Prepare model
-    nn_model, model_preprocess = model_builder(
-        model, 
-        weights, 
-        False, 
-        device, 
-        dtype, 
+    nn_model, model_preprocess = builder.build_model( 
+        device=device, 
+        dtype=dtype, 
         **{**extra_model_kwargs, **model_builder_kwargs}
     )
     nn_model.eval()
@@ -128,6 +112,8 @@ def main(
         torch.device("cpu")
     )
     images = find_images(input_dir)
+    if n_max is not None and len(images) > n_max:
+        images = images[:n_max]
     ds = image_loader(images)
     dl = DataLoader(
         ds,
@@ -148,6 +134,8 @@ def main(
     with torch.no_grad():
         for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
             i = batch_i * batch_size
+            if len(batch.shape) == 3:
+                batch = batch.unsqueeze(0)
             with torch.autocast(device_type=device.type, dtype=dtype):
                 prediction = nn_model(batch.to(device))
             results.collect(
@@ -212,9 +200,13 @@ def cli():
         "--dtype", type=str, default="float16", required=False,
         help="PyTorch data type used for inference (default=float16)."
     )
-    kwargs = vars(parser.parse_args())
-    kwargs["result_collector_kwargs"] = {"training_format" : kwargs.pop("training_format")}
-    main(**kwargs)
+    args = vars(parser.parse_args())
+    args["model_builder_kwargs"] = {
+        "model_type" : args.pop("model"),
+        "weights" : args.pop("weights")
+    }
+    args["result_collector_kwargs"] = {"training_format" : args.pop("training_format")}
+    main(**args)
 
 if __name__ == "__main__":  
     cli()
