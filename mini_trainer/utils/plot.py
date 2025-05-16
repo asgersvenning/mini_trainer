@@ -1,6 +1,6 @@
 import os
 from random import choice
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Optional, Union
 
 import numpy as np
 import torch
@@ -44,9 +44,9 @@ def debug_augmentation(
 
 
 def named_confusion_matrix(
-        results : Dict[str, List[str]], 
-        idx2cls : Dict[int, str], 
-        keys : Tuple[str, str]=("preds", "labels"),
+        results : dict[str, list[str]], 
+        idx2cls : dict[int, str], 
+        keys : tuple[str, str]=("preds", "labels"),
         verbose : bool=False, 
         plot_conf_mat : Union[bool, str]=False
     ):
@@ -122,8 +122,8 @@ def named_confusion_matrix(
     }
 
 def raw_confusion_matrix(
-        labels : Union[List[int], torch.Tensor, np.ndarray], 
-        predictions : Union[List[int], torch.Tensor, np.ndarray], 
+        labels : Union[list[int], torch.Tensor, np.ndarray], 
+        predictions : Union[list[int], torch.Tensor, np.ndarray], 
         n_classes : int
     ):
     labels = np.asarray(labels).ravel().astype(np.int64)
@@ -143,7 +143,7 @@ def raw_confusion_matrix(
 def plot_heatmap(
         mat : np.ndarray, 
         cmap_name : str='magma',
-        figsize : Tuple[int, int]=(20, 20),
+        figsize : tuple[int, int]=(20, 20),
         font_size : int=20,
         max_ticks : int=10,
         **kwargs
@@ -213,8 +213,8 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
         raise RuntimeError(f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix.")
     return class_dmat_cdf
 
-def plot_model_class_distance(model : nn.Module):
+def plot_model_class_distance(model : nn.Module, **kwargs):
     llw = last_layer_weights(model)
     cdm = class_distance(llw, True)
     cdm.fill_diagonal_(torch.nan)
-    return plot_heatmap(cdm, figsize=(5, 5), font_size=5)
+    return plot_heatmap(cdm, **kwargs)

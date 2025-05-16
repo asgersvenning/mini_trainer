@@ -5,7 +5,7 @@ import os
 import shutil
 from collections import OrderedDict
 from glob import glob
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import psutil
 import torch
@@ -30,7 +30,7 @@ def float_signif_decimal(value : float, digits : int=3):
     return -min(-1, min_b10 - digits + 1)
 
 def memory_proportion(
-        shape : Tuple[int, ...], 
+        shape : tuple[int, ...], 
         device : torch.types.Device, 
         dtype : torch.dtype
     ):
@@ -80,13 +80,13 @@ def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : 
     return _shape_fn
 
 
-def cuda_memory_stats() -> Dict[int, Dict[str, float]]:
+def cuda_memory_stats() -> dict[int, dict[str, float]]:
     """
     Compute used, free, and total memory (in megabytes) for each CUDA device
     that has non-zero allocations in the current PyTorch process.
 
     Returns:
-        Dict[int, Dict[str, float]]: A mapping from device index to a dict with
+        dict[int, dict[str, float]]: A mapping from device index to a dict with
             'used_mb'  - bytes allocated by this process (MB)
             'free_mb'  - free bytes on the device (MB)
             'total_mb' - total device memory (MB)
@@ -199,7 +199,7 @@ def average_checkpoints(inputs):
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
 
     Args:
-      inputs (List[str]): An iterable of string paths of checkpoints to load from.
+      inputs (list[str]): An iterable of string paths of checkpoints to load from.
     Returns:
       A dict of string keys mapping to various values. The 'model' key
       from the returned dict should correspond to an OrderedDict mapping
@@ -319,8 +319,8 @@ def set_weight_decay(
     model: torch.nn.Module,
     weight_decay: float,
     norm_weight_decay: Optional[float] = None,
-    norm_classes: Optional[List[type]] = None,
-    custom_keys_weight_decay: Optional[List[Tuple[str, float]]] = None,
+    norm_classes: Optional[list[type]] = None,
+    custom_keys_weight_decay: Optional[list[tuple[str, float]]] = None,
 ):
     if not norm_classes:
         norm_classes = [

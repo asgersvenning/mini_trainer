@@ -7,8 +7,7 @@ from collections import defaultdict, deque
 from itertools import chain, repeat
 from threading import RLock
 from types import GeneratorType
-from typing import (Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar,
-                    Union)
+from typing import Any, Callable, Optional, Type, TypeVar, Union
 
 import numpy as np
 import torch
@@ -21,6 +20,69 @@ from mini_trainer.utils import (cuda_memory_stats, float_signif_decimal,
 from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
+
+
+def format_duration(sec, suffix="dhms"):
+    sec = int(sec)
+    days, rem = divmod(sec, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    tms = [days, hours, mins, secs]
+    # First non-zero element (but clamped to len - 1)
+    start = next((i for i, v in enumerate(tms[:-1]) if v), len(tms) - 1)
+    return "".join(f"{t:02d}{s}" for t, s in zip(tms[start:], suffix[start:]))
+
+class ETA:
+    def __init__(
+            self, 
+            total_steps : int, 
+            smoothing : float=0.3, 
+            fmt : str="%H:%M:%S"
+        ):
+        """
+        Args:
+            total_steps (int): total number of steps expected
+            smoothing (float): EMA smoothing factor (between 0 and 1)
+            fmt (str): strftime-format string for duration display, e.g. "%H:%M:%S"
+        """
+        self.total_steps = total_steps
+        self.smoothing = smoothing
+        self.fmt = fmt
+        self._start_time = time.time()
+        self._last_time = self._start_time
+        self._ema = None
+        self._step = 0
+
+    def __len__(self):
+        return self.total_steps
+    
+    def __bool__(self):
+        return self._step < self.total_steps
+
+    def step(self, steps : int=1):
+        """
+        Args:
+            steps (int): Number of steps to progress (default=1).
+
+        Returns:
+            ETA (float): Estimated number of (fractional) seconds left.
+        """
+        now = time.time()
+        elapsed = now - self._last_time
+        per_step = elapsed / steps
+        self._ema = per_step if self._ema is None else self.smoothing * per_step + (1 - self.smoothing) * self._ema
+        self._step += steps
+        self._last_time = now
+        remaining = max(self.total_steps - self._step, 0)
+        return remaining * self._ema
+
+    def __str__(self):
+        used_str = format_duration(time.time() - self._start_time)
+        if self._ema is None:
+            return f"{used_str}/??"
+        remaining = max(self.total_steps - self._step, 0)
+        eta_str = format_duration(remaining * self._ema)
+        return f"{used_str}/{eta_str}"
 
 
 def accuracy(output, target, topk=(1,)):
@@ -65,10 +127,10 @@ class _ResultsCollector:
 class BaseResultCollector(_ResultsCollector):
     def __init__(
             self, 
-            idx2cls : Dict[int, str], 
+            idx2cls : dict[int, str], 
             verbose : bool=False, 
             training_format : bool=False,
-            additional_attributes : Optional[List[str]]=None, 
+            additional_attributes : Optional[list[str]]=None, 
             *args, 
             **kwargs
         ):
@@ -84,13 +146,13 @@ class BaseResultCollector(_ResultsCollector):
         for attr in self._extra_attr:
             setattr(self, attr, [])
 
-    def collect(self, paths : List[str], predictions : torch.Tensor, **kwargs):
+    def collect(self, paths : list[str], predictions : torch.Tensor, **kwargs):
         self._collect_base_attributes(paths, predictions)
         if self._training_format and "labels" not in kwargs:
             kwargs["labels"] = [os.path.basename(os.path.dirname(path)) for path in paths]
         self._collect_extra_attributes(**kwargs)
 
-    def _collect_base_attributes(self, paths : List[str], predictions : torch.Tensor):
+    def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor):
         """
         Override in subclasses!
         """
@@ -98,7 +160,7 @@ class BaseResultCollector(_ResultsCollector):
         self.preds.extend([self.idx2cls[idx] for idx in predictions.argmax(1).tolist()])
         self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
-    def _collect_extra_attributes(self, **kwargs : Union[List, Tuple, GeneratorType, np.ndarray, torch.Tensor]):
+    def _collect_extra_attributes(self, **kwargs : Union[list, tuple, GeneratorType, np.ndarray, torch.Tensor]):
         if len(self._extra_attr) == 0:
             return
         if not all([attr in kwargs for attr in self._extra_attr]):
@@ -121,7 +183,7 @@ class BaseResultCollector(_ResultsCollector):
                 raise TypeError(f'Unexpected value type `{type(value)}` supplied for {key}.')
             getattr(self, key).extend(value)
 
-    def eval_label_fn(self, data : Dict, outdir : Optional[str], save : bool, prefix : str="", **kwargs):
+    def eval_label_fn(self, data : dict, outdir : Optional[str], save : bool, prefix : str="", **kwargs):
         if kwargs:
             raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
         if save and not isinstance(outdir, str):
@@ -142,6 +204,7 @@ class BaseResultCollector(_ResultsCollector):
             if do_save:
                 with open(os.path.join(outdir, f'{prefix}eval_results.json'), "w") as f:
                     json.dump(results, f)
+            return results
 
     @property
     def data(self):
@@ -171,7 +234,7 @@ class _Statistic:
         return len(self) > 0
     
     @property
-    def data(self) -> List[float]:
+    def data(self) -> list[float]:
         raise NotImplementedError()
 
     def update(self, value, *args, **kwargs):
@@ -195,7 +258,7 @@ class _Logger:
     def get(self, name : str) -> _Statistic:
         raise NotImplementedError()
 
-    def update(self, name, values : Union[float, int, List[Union[float, int]], torch.Tensor, np.ndarray]):
+    def update(self, name, values : Union[float, int, list[Union[float, int]], torch.Tensor, np.ndarray]):
         if isinstance(values, (torch.Tensor, np.ndarray)):
             values = values.tolist()
         self.get(name).update(values)
@@ -217,7 +280,7 @@ class SmoothedValue(_Statistic):
     window or the global series average.
     """
 
-    def __init__(self, window_size=20, fmt_vars : List[str]=["median"]):
+    def __init__(self, window_size=20, fmt_vars : list[str]=["median"]):
         self.deque = deque(maxlen=window_size)
         self.total = 0.0
         self.count = 0
@@ -387,14 +450,14 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
         super().__init__(model, device, ema_avg, use_buffers=True)
 
 class BaseStatistic(_Statistic):
-    def __init__(self, values : Optional[List[Union[float, int]]]=None):
+    def __init__(self, values : Optional[list[Union[float, int]]]=None):
         """
         A basic thread-safeish statistic container.
 
         Args:
-            values (`Optional[List[Union[float, int]]]`): A list of values to initially populate the statistic, optional.
+            values (`Optional[list[Union[float, int]]]`): A list of values to initially populate the statistic, optional.
         """
-        self.values : List[float] = []
+        self.values : list[float] = []
         self.lock = RLock()
         self.min : Optional[float] = None
         self.max : Optional[float] = None
@@ -421,7 +484,7 @@ class BaseStatistic(_Statistic):
     def data(self):
         return self.values
 
-    def update(self, value : Union[float, int, List[Union[int, float]], np.ndarray, torch.Tensor], **kwargs):
+    def update(self, value : Union[float, int, list[Union[int, float]], np.ndarray, torch.Tensor], **kwargs):
         if isinstance(value, (torch.Tensor, np.ndarray)):
             if sum(s > 1 for s in value.shape) <= 1:
                 value = value.flatten()
@@ -474,7 +537,7 @@ def compute_aligned_steps(
         origin_length: int,
         total_epochs: int,
         current_epoch: int
-    ) -> List[int]:
+    ) -> list[int]:
     if not (0 <= current_epoch < total_epochs):
         raise ValueError(f"current_epoch must be in [0, {total_epochs}), got {current_epoch!r}")
 
@@ -489,15 +552,16 @@ class MultiLogger:
             train_loader : torch.utils.data.DataLoader,
             val_loader : torch.utils.data.DataLoader,
             epochs : int,
-            statistics : List[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem"], 
-            logger_cls : List[Type[_Logger]]=[MetricLoggerWrapper],
-            logger_cls_extra_kwargs : List[Dict[str, Any]]=[],
-            logger_cls_stat_factory : List[Callable[[], _Statistic]]=[
+            statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem"], 
+            logger_cls : list[Type[_Logger]]=[MetricLoggerWrapper],
+            logger_cls_extra_kwargs : list[dict[str, Any]]=[],
+            logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
                 lambda : SmoothedValue(window_size=1, fmt_vars=["value"])
             ],
             canonical_statistic : Optional[str]=None,
             verbose : bool=False
         ):
+        self.total_epochs = epochs
         self.statistics = statistics
         self.statistics_storage = defaultdict(list)
         if canonical_statistic is None:
@@ -513,9 +577,13 @@ class MultiLogger:
         self.verbose = verbose
 
         # Get aligned steps (mainly for use with tensorboard)
-        self.train_steps, self.val_steps = self.compute_steps(epochs, len(train_loader), len(val_loader))
+        self.train_steps, self.val_steps = self.compute_steps(self.total_epochs, len(train_loader), len(val_loader))
+        self.total_steps = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
 
         # Initialize dynamic attributes
+        self._step = 0
+        self._start_time = None
+        self.eta = None
         self._current_loggers = None
         self._epoch = None
         self._type = None
@@ -539,16 +607,19 @@ class MultiLogger:
             return self.val_steps[self._epoch]
 
     def store(self, name : str, value : Any):
-        self.heterogeneous_storage[name].append((value, self._epoch))
+        self.heterogeneous_storage[name].append((value, self._epoch, self._type))
 
     def update(
         self,
         epoch : int,
         type : str
-    ):
+    ):  
+        if self._start_time is None:
+            self._start_time = time.time()
+            self.eta = ETA(self.total_steps, 0.975)
         self._epoch = epoch
         self._type = type
-        self._current_loggers : List[_Logger] = []
+        self._current_loggers : list[_Logger] = []
         for cls, kwargs, stat_factory in zip(
             self.logger_cls, 
             chain(self.logger_cls_extra_kwargs, repeat(dict())),
@@ -559,8 +630,14 @@ class MultiLogger:
                 this_logger.add_stat(stat, stat_factory())
             self._current_loggers.append(this_logger)
 
+    def step(self):
+        self._step += 1
+        self.eta.step()
+        for logger in self.loggers:
+            logger.step()
+
     @property
-    def loggers(self) -> List[_Logger]:
+    def loggers(self) -> list[_Logger]:
         if self._current_loggers is None:
             raise RuntimeError("Attempted to log statistics before initializing loggers.")
         return self._current_loggers
@@ -588,7 +665,7 @@ class MultiLogger:
     def log_accuracy(
             self, 
             target : torch.Tensor, 
-            prediction : Union[List[torch.Tensor], torch.Tensor]
+            prediction : Union[list[torch.Tensor], torch.Tensor]
         ):
         if isinstance(prediction, list):
             prediction = prediction[0]
@@ -601,8 +678,8 @@ class MultiLogger:
 
     def log_labels_predictions(
             self,
-            labels : List[int], 
-            predictions : List[int]
+            labels : list[int], 
+            predictions : list[int]
         ):
         self.store("labels", labels)
         self.store("predictions", predictions)
@@ -642,7 +719,7 @@ class MultiLogger:
             index : int,
             batch : torch.Tensor,
             target : torch.Tensor,
-            prediction : Union[List[torch.Tensor], torch.Tensor],
+            prediction : Union[list[torch.Tensor], torch.Tensor],
             loss : Any,
             optimizer : torch.optim.Optimizer,
             start_time : int
@@ -667,8 +744,7 @@ class MultiLogger:
         if len(dca) == len(default_consume_kwargs):
             self.default_consume(**dca)
         self.log_statistic(**kwargs)
-        for logger in self.loggers:
-            logger.step()
+        self.step()
 
     def status(self):
         stats = str(self.loggers[0])
@@ -680,17 +756,20 @@ class MultiLogger:
             total += mem_stats["total_mb"]
         pfree = used/free
         ptotal = used/total
-        return f'{stats} (mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
+        return f'E{self._epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats} (mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
 
-    def summary(self, stats : List[str]=["acc1", "acc5", "loss"]):
+    def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
         return " | ".join([f'{stat}={value:>5.{float_signif_decimal(value)}f}' for stat in stats if (value := self.statistics_storage[stat][-1]) or True])
     
     def confusion_matrix(self):
         counts = {"labels" : [], "predictions" : []}
         for what in counts:
-            for cls_idxs, epoch in reversed(self.heterogeneous_storage[what]):
+            for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
                 if epoch != self._epoch:
                     break
+                ctp = tp.lower().strip()
+                if not (ctp.startswith("val") or ctp.startswith("eval")):
+                    continue
                 counts[what].extend(cls_idxs)
         cm = raw_confusion_matrix(
             **counts,

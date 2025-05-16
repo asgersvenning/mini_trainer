@@ -1,7 +1,7 @@
 import os
 from collections import OrderedDict
 from functools import partial
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -36,7 +36,7 @@ def preprocess(item, transform, func):
     return transform(func(image))
 
 def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {},
-              classifier_name: Union[str, List[str]] = ["classifier", "fc"]):
+              classifier_name: Union[str, list[str]] = ["classifier", "fc"]):
     default_transform = None
     if isinstance(backbone_model, str):
         if backbone_model in _UNSUPPORTED_MODELS:

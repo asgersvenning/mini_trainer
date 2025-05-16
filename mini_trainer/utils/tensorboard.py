@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Type, Union
+from typing import Optional, Type, Union
 
 import numpy as np
 import torch
@@ -10,9 +10,9 @@ from matplotlib import pyplot as plt
 
 
 class TensorboardLogger(_Logger):
-    def __init__(self, writer : SummaryWriter, steps : List[int], tag : Optional[Union[str, List[str]]]=None):
+    def __init__(self, writer : SummaryWriter, steps : list[int], tag : Optional[Union[str, list[str]]]=None):
         self.writer = writer
-        self.statistics : Dict[str, _Statistic] = dict()
+        self.statistics : dict[str, _Statistic] = dict()
         if steps is None:
             raise TypeError(f'Initializing {TensorboardLogger} with `steps=None` is invalid.')
         self.global_steps = steps

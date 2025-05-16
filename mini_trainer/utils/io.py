@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Tuple, Union, Callable
+from typing import Iterable, Optional, Union, Callable
 
 import torch
 from torchvision.io import ImageReadMode, decode_image
@@ -26,7 +26,7 @@ def is_image(path: str) -> bool:
 
 def make_read_and_resize_fn(
         mode : ImageReadMode, 
-        size : Tuple[int, int], 
+        size : tuple[int, int], 
         device : torch.types.Device,
         dtype : Union[torch.dtype, str], 
         **kwargs

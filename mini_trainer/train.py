@@ -1,7 +1,7 @@
 import os
 import random
 from argparse import ArgumentParser
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Optional, Type
 
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ from mini_trainer.utils.plot import debug_augmentation
 def main(
     input : str,
     output : str = ".",
-    checkpoint : Optional[List[str]]=None,
+    checkpoint : Optional[list[str]]=None,
     class_index : Optional[str]=None,
     epochs : int=15,
     name: Optional[str]=None,
@@ -26,27 +26,27 @@ def main(
     dtype : str="float16",
     seed : Optional[int]=None,
     builder : Type[BaseBuilder]=BaseBuilder,
-    spec_model_dataloader_kwargs : Dict[str, Any]={},
-    model_builder_kwargs : Dict[str, Any]={
+    spec_model_dataloader_kwargs : dict[str, Any]={},
+    model_builder_kwargs : dict[str, Any]={
         "model_name" : "efficientnet_v2_s",
         "weights" : None,
         "fine_tune" : False
     },
-    dataloader_builder_kwargs : Dict[str, Any]={
+    dataloader_builder_kwargs : dict[str, Any]={
         "bacth_size" : 16,
         "resize_size" : 256, 
         "train_proportion" : 0.9
     },
-    augmentation_builder_kwargs : Dict[str, Any]={},
-    optimizer_builder_kwargs : Dict[str, Any]={
+    augmentation_builder_kwargs : dict[str, Any]={},
+    optimizer_builder_kwargs : dict[str, Any]={
         "lr" : 0.001,
         "weight_decay" : 1e-4
     },
-    criterion_builder_kwargs : Dict[str, Any]={"label_smoothing" : 0.1},
-    lr_schedule_builder_kwargs : Dict[str, Any]={
+    criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
+    lr_schedule_builder_kwargs : dict[str, Any]={
         "warmup_epochs" : 2.0
     },
-    logger_builder_kwargs : Dict[str, Any]={"verbose" : False}
+    logger_builder_kwargs : dict[str, Any]={"verbose" : False}
 ) -> None:
     """
     Train a classifier.
@@ -65,7 +65,7 @@ def main(
             Root directory for all created files and directories.
             Default is current working directory '.'.
 
-        checkpoint (Optional[List[str]], optional):
+        checkpoint (Optional[list[str]], optional):
             Path to one or more checkpoint files for restarting training.
             If multiple files are supplied, training is restarted from an 'average'
             of checkpoint states. Default is None.
@@ -320,7 +320,7 @@ def cli():
         "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
     )
     train_args.add_argument(
-        "-E", "--epochs", type=int, default=15, required=False,
+        "-e", "--epochs", type=int, default=15, required=False,
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(

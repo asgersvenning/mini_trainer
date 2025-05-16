@@ -1,7 +1,8 @@
 import os
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Optional, Type, Union
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as tt
@@ -18,10 +19,9 @@ from mini_trainer.utils.logging import MultiLogger
 
 
 def get_dataset_dataloader(
-        train_image_data : Dict, 
-        val_image_data : Dict, 
-        cls2idx : Dict[str, int], 
-        resize_size : Union[int, Tuple[int, int]],
+        train_image_data : dict, 
+        val_image_data : dict, 
+        resize_size : Union[int, tuple[int, int]],
         batch_size : int=16, 
         num_workers : Optional[int]=None,
         device=torch.device("cpu"), 
@@ -39,8 +39,14 @@ def get_dataset_dataloader(
         train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
         val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
 
-        train_labels = torch.tensor([cls2idx[str(cls)] for cls in train_image_data["class"]]).long().to(device)
-        val_labels = torch.tensor([cls2idx[str(cls)] for cls in val_image_data["class"]]).long().to(device)
+        train_labels = torch.tensor([
+            cls[0] if isinstance(cls, (list, np.ndarray)) else cls 
+            for cls in train_image_data["class"] 
+        ]).long().to(device)
+        val_labels = torch.tensor([
+            cls[0] if isinstance(cls, (list, np.ndarray)) else cls
+            for cls in val_image_data["class"]
+        ]).long().to(device)
 
         train_dataset = TensorDataset(train_tensor, train_labels)
         val_dataset = TensorDataset(val_tensor, val_labels)
@@ -49,9 +55,11 @@ def get_dataset_dataloader(
         num_workers = 0
     else:
         reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), dtype)
-        def proc_path_label(path_label : Tuple[str, Union[str, int]]):
+        def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
             path, label = path_label
-            return reader(path), torch.tensor(cls2idx[str(label)], dtype=torch.long)
+            if isinstance(label, (list, np.ndarray)):
+                label = label[0]
+            return reader(path), torch.tensor(label, dtype=torch.long)
 
         train_dataset = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(train_image_data["path"], train_image_data["class"])])
         val_dataset   = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])])
@@ -106,7 +114,7 @@ class BaseBuilder:
     def spec_model_dataloader(path : Optional[str]=None, dir : Optional[str]=None, *args, **kwargs):
         """
         Returns:
-            (extra_model_kwargs, extra_dataloader_kwargs) (`Tuple[Dict[str, Any], Dict[str, Any]]`): Extra keyword arguments for the model and dataloader building functions.
+            (extra_model_kwargs, extra_dataloader_kwargs) (`tuple[dict[str, Any], dict[str, Any]]`): Extra keyword arguments for the model and dataloader building functions.
         """
         if args or kwargs:
             raise ValueError(f'`BaseBuilder.spec_model_dataloader` expects only `path` and `dir`, but got {len(args)} additional positional arguments ({args}) and {len(kwargs)} additional keyword arguments ({list(kwargs.keys())}).')
@@ -117,12 +125,12 @@ class BaseBuilder:
             fine_tune : bool=False,
             cls : Type[Classifier]=Classifier,
             **kwargs : Any
-        ) -> Tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
+        ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
         """
         The mandatory keyword arguments depend on the class of `cls`, but are likely to be ["model_name", "weights", "device", "dtype" and "num_classes"] or a superset containing these.
 
         Returns:
-            (model, model_preprocess) (`Tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`): The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
+            (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`): The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
         """
         model, model_preprocess = cls.build(**kwargs)
         if fine_tune:
@@ -134,8 +142,8 @@ class BaseBuilder:
     @staticmethod
     def build_dataloader(
             input_dir : str,
-            classes : List[str],
-            cls2idx : Dict[str, int],
+            classes : list[str],
+            cls2idx : dict[str, int],
             preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
@@ -143,24 +151,23 @@ class BaseBuilder:
             data_index : Optional[str]=None,
             resize_size : Optional[int]=None,
             train_proportion : float=0.9,
-            idx2cls : Optional[Dict[int, str]]=None,
+            idx2cls : Optional[dict[int, str]]=None,
             num_workers : Optional[int]=None):
         """
         Returns:
-            (train_loader, validation_loader) (`Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
+            (train_loader, validation_loader) (`tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
         """
         # Prepare datasets/dataloaders
         if data_index is None:
             with NamedTemporaryFile() as tmpfile:
-                write_metadata(input_dir, classes, tmpfile.name, train_proportion=train_proportion)
+                write_metadata(input_dir, classes, cls2idx, tmpfile.name, train_proportion=train_proportion)
                 train_image_data, val_image_data = get_image_data(tmpfile.name)
         else:
             train_image_data, val_image_data = get_image_data(data_index)
 
         train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
             train_image_data=train_image_data, 
-            val_image_data=val_image_data, 
-            cls2idx=cls2idx, 
+            val_image_data=val_image_data,
             resize_size=getattr(preprocess, "resize_size", resize_size),  
             batch_size=batch_size,
             num_workers=num_workers,

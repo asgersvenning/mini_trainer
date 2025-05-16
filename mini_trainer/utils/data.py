@@ -2,7 +2,7 @@ import json
 import os
 import random
 from glob import glob
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ from mini_trainer import TQDM
 from mini_trainer.utils.io import is_image, make_read_and_resize_fn
 
 
-def write_metadata(directory : str, classes : List[str], dst : str, train_proportion : float=0.9):
+def write_metadata(directory : str, classes : list[str], cls2idx : dict[str, int], dst : str, train_proportion : float=0.9):
     data = {
         "path" : [],
         "class" : [],
@@ -22,7 +22,7 @@ def write_metadata(directory : str, classes : List[str], dst : str, train_propor
         this_dir = os.path.join(directory, cls)
         for file in map(os.path.basename, os.listdir(this_dir)):
             data["path"].append(os.path.join(this_dir, file))
-            data["class"].append(cls)
+            data["class"].append(cls2idx[cls])
             data["split"].append("train" if random.random() < train_proportion else "validation")
     with open(dst, "w") as f:
         json.dump(data, f)
@@ -58,8 +58,8 @@ def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     return {"num_classes" : ncls}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls}
 
 def prepare_split(
-        paths : List[str], desc="Preprocessing images for split...", 
-        resize_size : Union[int, Tuple[int, int]]=256, 
+        paths : list[str], desc="Preprocessing images for split...", 
+        resize_size : Union[int, tuple[int, int]]=256, 
         device=torch.device("cpu"), 
         dtype=torch.float16
     ):

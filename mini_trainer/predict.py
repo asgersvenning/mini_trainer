@@ -4,7 +4,7 @@ import re
 import warnings
 from argparse import ArgumentParser
 from math import ceil
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional, Type
 
 import torch
 from torch.utils.data import DataLoader
@@ -28,10 +28,10 @@ def main(
     dtype : str="float16",
     verbose : bool=False,
     builder : Type[BaseBuilder]=BaseBuilder,
-    spec_model_dataloader_kwargs : Dict[str, Any]={},
-    model_builder_kwargs : Dict[str, Any]={},
+    spec_model_dataloader_kwargs : dict[str, Any]={},
+    model_builder_kwargs : dict[str, Any]={},
     result_collector=BaseResultCollector,
-    result_collector_kwargs : Dict[str, Any]={"training_format" : False, "verbose" : False}
+    result_collector_kwargs : dict[str, Any]={"training_format" : False, "verbose" : False}
 ) -> None:
     """
     Predict with a classifier.
