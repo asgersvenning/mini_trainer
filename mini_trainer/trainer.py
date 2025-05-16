@@ -11,10 +11,10 @@ from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
-from tqdm import tqdm as TQDM
 
-from .utils import (MetricLogger, SmoothedValue, accuracy,
-                    reduce_across_processes, save_on_master)
+from mini_trainer import TQDM
+from mini_trainer.utils import reduce_across_processes, save_on_master, TERMINAL_WIDTH
+from mini_trainer.utils.logging import MultiLogger
 
 
 def train_one_epoch(
@@ -24,24 +24,26 @@ def train_one_epoch(
         lr_scheduler : LRScheduler,
         data_loader : DataLoader, 
         epoch : int, 
+        logger : MultiLogger,
         preprocess : Callable=lambda x : x,
         augmentation : Callable=lambda x : x,
         clip_grad_norm : Optional[float]=1,
         device : torch.types.Device=torch.device("cpu"),
-        dtype : torch.dtype=torch.float32
+        dtype : torch.dtype=torch.float32,
     ):
     model.train()
     
-    pbar = TQDM(data_loader, total=len(data_loader), leave=False)
+    pbar = TQDM(data_loader, total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
+    logger.update(epoch=epoch, type="train")
     # pbar = data_loader
     
-    metric_logger = MetricLogger(delimiter="  ", printer=lambda x : pbar.set_description_str(x))
-    metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value}"))
-    metric_logger.add_meter("img/s", SmoothedValue(window_size=10, fmt="{value}"))
+    # metric_logger = MetricLogger(delimiter="  ", printer=lambda x : pbar.set_description_str(x))
+    # metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value}"))
+    # metric_logger.add_meter("img/s", SmoothedValue(window_size=10, fmt="{value}"))
 
-    header = f"Epoch: [{epoch}]"
+    # header = f"Epoch: [{epoch}]"
 
-    for i, (batch, target) in enumerate(metric_logger.log_every(pbar, 25, header)):
+    for i, (batch, target) in enumerate(pbar): # metric_logger.log_every(pbar, flush_rate=25, description=header)
         start_time = time.time()
         batch, target = batch.to(device), target.to(device)
         if len(batch.shape) == 3:
@@ -56,36 +58,48 @@ def train_one_epoch(
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         optimizer.step()
         lr_scheduler.step()
-
-        if isinstance(output, list):
-            acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
-        else:
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        batch_size = batch.shape[0]
-        metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
-        metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-        metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
-        metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
+        
+        logger.consume(
+            index=i,
+            batch=batch, 
+            target=target, 
+            prediction=output, 
+            loss=loss, 
+            optimizer=optimizer, 
+            start_time=start_time
+        )
+        pbar.set_description_str(logger.status(), i % 25 == 0)
+        # if isinstance(output, list):
+        #     acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
+        # else:
+        #     acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        # batch_size = batch.shape[0]
+        # metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
+        # metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
+        # metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
+        # metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
     
     model.eval()
 
 def evaluate(
-        model, 
-        criterion, 
-        data_loader, 
+        model : nn.Module, 
+        criterion : _Loss, 
+        data_loader : DataLoader, 
+        epoch : int,
+        logger : MultiLogger,
         preprocess : Callable=lambda x : x,
-        print_freq=100, 
-        log_suffix="",
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32
     ):
     model.eval()
-    header = f"Test: {log_suffix}"
-    pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), leave=False)
-    metric_logger = MetricLogger(delimiter="  ", printer = lambda x : pbar.set_description_str(x))
+    # header = f"Test: {log_suffix}"
+    pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
+    logger.update(epoch=epoch, type="eval")
+    # metric_logger = MetricLogger(delimiter="  ", printer = lambda x : pbar.set_description_str(x))
 
     num_processed_samples = 0
-    for batch, target in metric_logger.log_every(pbar, print_freq, header):
+    for i, (batch, target) in enumerate(pbar): # metric_logger.log_every(pbar, print_freq, header)
+        start_time = time.time()
         with torch.inference_mode():
             batch, target = batch.to(device), target.to(device)
             if len(batch.shape) == 3:
@@ -93,17 +107,29 @@ def evaluate(
             with autocast(device_type=device.type, dtype=dtype):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
-        if isinstance(output, list):
-            acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
-        else:
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        # FIXME need to take into account that the datasets
-        # could have been padded in distributed setup
-        batch_size = batch.shape[0]
-        metric_logger.update(loss=loss.item())
-        metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-        metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
-        num_processed_samples += batch_size
+
+        logger.consume(
+            index=i, 
+            batch=batch, 
+            target=target, 
+            prediction=output, 
+            loss=loss, 
+            optimizer=None, 
+            start_time=start_time
+        )
+        pbar.set_description_str(logger.status(), i % 25 == 0)
+        # if isinstance(output, list):
+        #     acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
+        # else:
+        #     acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        # # FIXME need to take into account that the datasets
+        # # could have been padded in distributed setup
+        # batch_size = batch.shape[0]
+        # metric_logger.update(loss=loss.item())
+        # metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
+        # metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
+        num_processed_samples += len(batch)
+    
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
@@ -119,16 +145,21 @@ def evaluate(
             "Setting the world size to 1 is always a safe bet."
         )
 
-    print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
-    return metric_logger.acc1.global_avg
+    # if verbose:
+    #     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
+    if logger.verbose:
+        print(logger.summary())
+    logger.figures(model)
+    return logger.statistics_storage[logger.canonical_statistic][-1]
 
 def train(
         model : nn.Module, 
         train_loader : DataLoader, 
-        test_loader : DataLoader,
+        val_loader : DataLoader,
         criterion : _Loss, 
         optimizer : Optimizer, 
         lr_scheduler : LRScheduler,
+        logger : MultiLogger,
         epochs : int, 
         start_epoch : int = 0,
         preprocess : Callable=lambda x : x,
@@ -139,11 +170,13 @@ def train(
         weight_store_rate : Optional[int]=None,
         **kwargs
     ):
-    print("Start training")
+    if logger.verbose:
+        print("Start training")
     start_time = time.time()
+
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
-        evaluate(model, criterion, test_loader, preprocess, device=device, dtype=dtype)
+        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
+        evaluate(model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         if output_dir:
             checkpoint = {
                 "model": model.state_dict(),
@@ -161,4 +194,5 @@ def train(
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f"Training time {total_time_str}")
+    if logger.verbose:
+        print(f"Training time {total_time_str}")

@@ -10,5 +10,6 @@
 **.pt
 **.pth
 **.csv
+**events.out.tfevents*
 
 **/__pycache__/**

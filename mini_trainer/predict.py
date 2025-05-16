@@ -1,51 +1,54 @@
 import json
 import os
+import re
+import warnings
 from argparse import ArgumentParser
 from math import ceil
 from typing import Any, Dict, Optional, Type
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm as TQDM
 
-from .builders import BaseBuilder
-from .utils import BaseResultCollector, ImageLoader, find_images
+from mini_trainer import TQDM, Formatter
+from mini_trainer.builders import BaseBuilder
+from mini_trainer.utils.data import find_images
+from mini_trainer.utils.io import ImageLoader
+from mini_trainer.utils.logging import BaseResultCollector
 
 
 def main(
     input : str,
-    output : str="result.json",
+    output : Optional[str]=None,
+    name : Optional[str]=None,
     class_index : str="class_index.json",
     batch_size : int=32,
     num_workers : Optional[int]=None,
     n_max : Optional[int]=None,
     device : str="cuda:0",
     dtype : str="float16",
+    verbose : bool=False,
     builder : Type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : Dict[str, Any]={},
     model_builder_kwargs : Dict[str, Any]={},
     result_collector=BaseResultCollector,
-    result_collector_kwargs : Dict[str, Any]={"training_format" : False}
+    result_collector_kwargs : Dict[str, Any]={"training_format" : False, "verbose" : False}
 ) -> None:
     """
     Predict with a classifier.
 
     Args:
-        model (str):
-            Name of the model type from the torchvision model zoo.
-            See: https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights.
-            Not case-sensitive. (required)
-
-        weights (str):
-            Path to the model weights file used for inference. (required)
-
         input (str):
             Path to a directory containing images for prediction, optionally structured
             with subdirectories named after class labels. (required)
 
         output (str, optional):
-            Path where inference results will be stored.
-            Default is 'result.json'.
+            Path to the directory where the results should be stored, 
+            if passed and the directory does not already exist it is created.
+        
+        name (str, optional):
+            Name of the prediction run, used as a prefix for the result files.
+            The name should only contain alphanumeric ASCII characters and underscores.
+            If not supplied the basename of the input directory is used (all non-ASCII alphanumeric/underscore characters are removed).
 
         class_index (str):
             Path to a JSON file containing the mapping from class names to indices.
@@ -70,6 +73,9 @@ def main(
             PyTorch data type used for inference (e.g., 'float16').
             Default is 'float16'.
         
+        verbose (bool, optional):
+            Print additional logging messages to the terminal.
+        
         **kwargs: Additional arguments to be documented. 
             All additional arguments are not available from the commandline, but exist to enable usage of 
             the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
@@ -81,7 +87,18 @@ def main(
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype)
 
+    if name is None:
+        name = re.sub("[^a-zA-Z0-9_]", "", os.path.basename(input))
+    else:
+        if re.search("[^a-zA-Z0-9_]", name) and verbose:
+            warnings.warn(f'Found non-standard characters (non-ASCII alphanumeric and underscore) in the supplied name; "{name}".')
+
     input_dir = os.path.abspath(input)
+    if not os.path.isdir(input_dir):
+        raise OSError(f'Supplied input directory ("{input_dir}") is not a valid directory.')
+    output_dir = os.path.abspath(output) if isinstance(output, str) else None
+    if isinstance(output_dir, str) and not os.path.isdir(output_dir):
+        raise OSError(f'Supplied output directory ("{output_dir}") is not a valid directory.')
 
     workers = num_workers
     if workers is None:
@@ -143,60 +160,87 @@ def main(
                 predictions = prediction
             )
     
-    # Write results
-    with open(output, "w") as f:
-        json.dump(results.data, f)
-
-    print(f'Outputs written to {os.path.abspath(output)}')
     end.record()
     torch.cuda.synchronize(device)
     inf_time = start.elapsed_time(end) / 1000
-    print(f'Inference took {inf_time:.1f}s ({len(images)/inf_time:.1f} img/s)')
+    if verbose:
+        print(f'Inference took {inf_time:.1f}s ({len(images)/inf_time:.1f} img/s)')
 
-    results.evaluate()
+    # Write results
+    if output_dir is not None:
+        with open(os.path.join(output_dir, f'{name}_result.json'), "w") as f:
+            json.dump(results.data, f)
+
+    results.evaluate(outdir=output_dir, prefix=f'{name}_')
+    if verbose:
+        print(f'Outputs written to {os.path.abspath(output_dir)}')
 
 def cli():
     parser = ArgumentParser(
-        prog = "predict",
-        description = "Predict with a classifier"
-    )  
-    parser.add_argument(
-        "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
-        help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
+        prog="predict",
+        description="Predict with a classifier",
+        formatter_class=Formatter
     )
     parser.add_argument(
+        "-v", "--verbose", action="store_true", required=False,
+        help="Print the prediction results to the terminal? Disabled by default."
+    )
+
+    main_args = parser.add_argument_group("Input [mandatory]")
+    main_args.add_argument(
+        "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
+        help=
+        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
+        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights"
+    )
+    main_args.add_argument(
+        "-C", "--class_index", type=str, default="class_index.json", required=True,
+        help="Path to a JSON file containing the class name to index mapping."
+    )
+    main_args.add_argument(
         "-w", "--weights", type=str, required=True,
         help="Model weights for inference."
     )
-    parser.add_argument(
+    main_args.add_argument(
         "-i", "--input", type=str, required=True,
-        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
+        help=
+        "Path to a directory containing a subdirectory for each class,\n"
+        "where the name of each subdirectory should correspond to the name of the class."
     )
-    parser.add_argument(
-        "-o", "--output", type=str, default="result.json", required=False,
-        help='Path used to store inference results (default="result.json").'
+    out_args = parser.add_argument_group("Output [optional]")
+    out_args.add_argument(
+        "-o", "--output", type=str, required=False,
+        help='Path to the directory where the results should be stored.'
     )
-    parser.add_argument(
-        "-C", "--class_index", type=str, default="class_index.json", required=True,
-        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `input`."
+    out_args.add_argument(
+        "-n", "--name", type=str, required=False,
+        help=
+        "Name of the prediction run, used as a prefix for the result files.\n"
+        "The name should only contain alphanumeric ASCII characters and underscores.\n"
+        "If not supplied the basename of the input directory is used (removing non-ASCII alphanumeric/underscore characters)."
     )
-    parser.add_argument(
+    out_args.add_argument(
         "--training_format", action="store_true", required=False,
-        help="Are the images in `input` stored in subfolders named by their class? If so, we can calculate accuracy statistics."
+        help= \
+        "Are the images in `input` stored in subfolders named by their class? "
+        "If so, we can calculate accuracy statistics."
     )
-    parser.add_argument(
+    cfg_args = parser.add_argument_group("Config [optional]")
+    cfg_args.add_argument(
         "--batch_size", type=int, default=32, required=False,
         help="Batch size used for inference (default=32). Higher requires more VRAM."
     )
-    parser.add_argument(
+    cfg_args.add_argument(
         "--num_workers", type=int, default=None, required=False,
-        help="Number of workers used for reading/loading images for inference. Default is set to number of physical CPU cores." 
+        help= \
+        "Number of workers used for reading/loading images for inference. "
+        "Default is set to number of physical CPU cores." 
     )
-    parser.add_argument(
+    cfg_args.add_argument(
         "--device", type=str, default="cuda:0", required=False,
         help='Device used for inference (default="cuda:0").'
     )
-    parser.add_argument(
+    cfg_args.add_argument(
         "--dtype", type=str, default="float16", required=False,
         help="PyTorch data type used for inference (default=float16)."
     )
@@ -205,7 +249,10 @@ def cli():
         "model_type" : args.pop("model"),
         "weights" : args.pop("weights")
     }
-    args["result_collector_kwargs"] = {"training_format" : args.pop("training_format")}
+    args["result_collector_kwargs"] = {
+        "training_format" : args.pop("training_format", False), 
+        "verbose" : args.get("verbose", False)
+    }
     main(**args)
 
 if __name__ == "__main__":  

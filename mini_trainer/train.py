@@ -7,10 +7,12 @@ import numpy as np
 import torch
 import torchvision
 
+from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.trainer import train
-from mini_trainer.utils import (average_checkpoints, debug_augmentation,
-                                get_model_name, save_on_master)
+from mini_trainer.utils import (average_checkpoints, increment_name_dir,
+                                save_on_master)
+from mini_trainer.utils.plot import debug_augmentation
 
 
 def main(
@@ -43,7 +45,8 @@ def main(
     criterion_builder_kwargs : Dict[str, Any]={"label_smoothing" : 0.1},
     lr_schedule_builder_kwargs : Dict[str, Any]={
         "warmup_epochs" : 2.0
-    }
+    },
+    logger_builder_kwargs : Dict[str, Any]={"verbose" : False}
 ) -> None:
     """
     Train a classifier.
@@ -118,7 +121,7 @@ def main(
     input_dir = os.path.abspath(input)
     output_dir = os.path.abspath(output)
 
-    name = get_model_name(name, output_dir)
+    name = increment_name_dir(name, output_dir)
 
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype)
@@ -223,18 +226,27 @@ def main(
             else:
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
 
+    # Instantiate logger
+    logger = builder.build_logger(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=epochs,
+        **logger_builder_kwargs
+    )
+
     # Run training
     train(
-        nn_model, 
-        train_loader,
-        val_loader,
-        criterion,
-        optimizer,
-        lr_scheduler,
-        epochs,
-        start_epoch,
-        model_preprocess,
-        augmentation,
+        model=nn_model, 
+        train_loader=train_loader,
+        val_loader=val_loader,
+        criterion=criterion,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        logger=logger,
+        epochs=epochs,
+        start_epoch=start_epoch,
+        preprocess=model_preprocess,
+        augmentation=augmentation,
         device=device,
         dtype=dtype,
         output_dir=output_dir,
@@ -247,72 +259,102 @@ def main(
 
 def cli():
     parser = ArgumentParser(
-        prog = "train",
-        description = "Train a classifier"
+        prog="train",
+        description="Train a classifier",
+        formatter_class=Formatter
     )
-    parser.add_argument(
+    main_args = parser.add_argument_group("Input [mandatory]")
+    main_args.add_argument(
         "-i", "--input", type=str, required=True,
-        help="path to a directory containing a subdirectory for each class, where the name of each subdirectory should correspond to the name of the class."
+        help=
+        "Path to a directory containing a subdirectory for each class,\n" 
+        "where the name of each subdirectory should correspond to the name of the class."
     )
-    parser.add_argument(
+    out_args = parser.add_argument_group("Output [optional]")
+    out_args.add_argument(
         "-o", "--output", type=str, default=".", required=False,
-        help="Root directory for all created files and directories. Default is current working directory ('.')."
-    )  
-    parser.add_argument(
+        help=
+        "Root directory for all created files and directories.\n"
+        "Default is current working directory ('.')."
+    )
+    out_args.add_argument(
+        "-n", "--name", type=str, required=False,
+        help=
+        "Name of the output model.\n"
+        "If not provided, a helpful name will be inferred from the other arguments."
+    )
+    out_args.add_argument(
+        "-t", "--tensorboard", action="store_true", required=False,
+        help="Enable tensorboard logging."
+    )
+    mod_args = parser.add_argument_group("Model [optional]")
+    mod_args.add_argument(
         "-m", "--model", type=str, default="efficientnet_v2_s", required=False,
-        help="name of the model type from the torchvision model zoo (https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights). Not case-sensitive."
+        help=
+        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
+        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
     )
-    parser.add_argument(
+    mod_args.add_argument(
         "-c", "--checkpoint", type=str, nargs="+", required=False,
-        help="Path to [a] checkpoint file(s) for restarting training. If multiple files are supplied training is restarted from an 'average' of checkpoint states."
+        help= 
+        "Path to [a] checkpoint file(s) for restarting training.\n"
+        "If multiple files are supplied training is restarted from an 'average' of checkpoint states."
     )
-    parser.add_argument(
+    mod_args.add_argument(
         "-w", "--weights", type=str, required=False,
         help="Model weights used to initialize model before training."
     )
-    parser.add_argument(
-        "-D", "--data_index", type=str, required=False,
-        help="JSON file containing three arrays with keys 'path', 'split' and 'class'. The arrays should all have equal lengths and can be considered \"columns\" in a table. The 'split' column should contain values 'train', 'validation' or other, and the 'class' column' should contain the the class *names* (not indices) for each file/path."
-    )
-    parser.add_argument(
+    mod_args.add_argument(
         "-C", "--class_index", type=str, required=False,
-        help="path to a JSON file containing the class name to index mapping. If it doesn't exist, one will be created based on the directories found under `output` if it is set."
+        help=
+        "path to a JSON file containing the class name to index mapping.\n"
+        "If it doesn't exist, one will be created based on the directories found under `output` if it is set."
     )
-    parser.add_argument(
-        "--epochs", type=int, default=15, required=False,
+    train_args = parser.add_argument_group("Training [optional]")
+    train_args.add_argument(
+        "-D", "--data_index", type=str, required=False,
+        help=
+        "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
+        "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
+        "The 'split' column should contain values 'train', 'validation' or other,\n"
+        "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
+    )
+    train_args.add_argument(
+        "-E", "--epochs", type=int, default=15, required=False,
         help="Number of training epochs (default=15)."
     )
-    parser.add_argument(
+    train_args.add_argument(
         "--lr", "--learning_rate", default=0.001, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
-    parser.add_argument(
+    train_args.add_argument(
         "--batch_size", type=int, default=16, required=False,
         help="Number of images used in each mini-batch for training/validation (default=16)."
     )
-    parser.add_argument(
+    train_args.add_argument(
         "--warmup_epochs", type=float, default=2.0, required=False,
         help="Number of warmup epochs (default=2.0)."
     )
-    parser.add_argument(
+    train_args.add_argument(
         "--fine-tune", action="store_true", required=False,
-        help="Update only the classifier weights. This should probably not be used."
+        help="OBS: This should probably not be used. Update only the classifier weights."
     )
-    parser.add_argument(
-        "-n", "--name", type=str, required=False,
-        help="name of the output model. If not provided, a helpful name will be inferred from the other arguments."
-    )
-    parser.add_argument(
+    cfg_args = parser.add_argument_group("Config [optional]")
+    cfg_args.add_argument(
         "--device", type=str, default="cuda:0", required=False,
         help='Device used for training (default="cuda:0").'
     )
-    parser.add_argument(
+    cfg_args.add_argument(
         "--dtype", type=str, default="float16", required=False,
-        help="PyTorch data type used for storing images for training/validation (default=float16). The model is always stored in float32, and training is done with autocasting."
+        help=
+        "PyTorch data type used for storing images for training/validation (default=float16).\n" 
+        "The model is always stored in float32, and training is done with autocasting."
     )
-    parser.add_argument(
+    cfg_args.add_argument(
         "--seed", type=int, required=False,
-        help="Set the initial seed for the RNG in the core Python library `random`. This is particularly important for reproducible train/validation splits."
+        help=
+        "Set the initial seed for the RNG in the core Python library `random`.\n"
+        "This is particularly important for reproducible train/validation splits."
     )
     args = vars(parser.parse_args())
     # Distribute builder arguments to the relevant functions
@@ -338,7 +380,24 @@ def cli():
     }
     # Set reasonable default name for unspecified CLI training runs
     if args["name"] is None:
-        args["name"] = f'{args["model_builder_kwargs"]["model_type"]}_{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_e{args["epochs"]}'
+        args["name"] = \
+        f'{args["model_builder_kwargs"]["model_type"]}_' \
+        f'{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_' \
+        f'e{args["epochs"]}'
+    if args.pop("tensorboard"):
+        from mini_trainer.utils.tensorboard import TensorboardLogger
+        from mini_trainer.utils.logging import MetricLoggerWrapper
+        from torch.utils.tensorboard.writer import SummaryWriter
+        
+        run_name = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
+        tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, run_name), flush_secs=30)
+        
+        args["logger_builder_kwargs"] = {
+            "verbose" : True,
+            "logger_cls" : [MetricLoggerWrapper, TensorboardLogger],
+            "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
+        }
+    
     # Call the Python training API
     main(**args)
 

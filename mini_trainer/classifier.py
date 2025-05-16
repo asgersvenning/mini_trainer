@@ -1,14 +1,14 @@
 import os
 from collections import OrderedDict
 from functools import partial
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
 import torch
 import torch.nn as nn
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
-from .utils import convert2fp16
+from mini_trainer.utils import convert2fp16
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
@@ -135,3 +135,12 @@ class Classifier(nn.Module):
                 raise RuntimeError('Unable to build classifier with unknown number of output classes. If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.')
         
         return cls.load(model_type, head_name, architecture, state, device, dtype, in_features=num_embeddings, out_features=num_classes, **kwargs), model_preprocess
+
+
+def last_layer_weights(model : nn.Module):
+    classification_head = getattr(model, getattr(model, "_backbone_output_name", None), None)
+    if classification_head is None:
+        return None
+    elif not isinstance(classification_head, Classifier):
+        raise RuntimeError(f"Unexpected classification head type {type(classification_head)} found.")
+    return classification_head.linear._parameters["weight"].data

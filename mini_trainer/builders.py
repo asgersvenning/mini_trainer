@@ -1,5 +1,3 @@
-
-import json
 import os
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
@@ -9,82 +7,58 @@ import torch.nn as nn
 import torchvision.transforms as tt
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
-from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import resize
-from tqdm import tqdm as TQDM
+from torchvision.io import ImageReadMode
 
-from .classifier import Classifier
-from .utils import (convert2bf16, convert2fp16, convert2fp32,
-                    cosine_schedule_with_warmup, get_image_data,
-                    write_metadata)
+from mini_trainer.classifier import Classifier
+from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion
+from mini_trainer.utils.data import (get_image_data, parse_class_index,
+                                     prepare_split, write_metadata)
+from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
+from mini_trainer.utils.logging import MultiLogger
 
-
-# Base builder utilities
-def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
-    """
-    Accepts a path to 
-    """
-    if not os.path.exists(path):
-        if dir is None or not os.path.isdir(dir):
-            raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
-        cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
-        if path is not None:
-            with open(path, "w") as f:
-                json.dump(cls2idx, f)
-    else:
-        with open(path, "rb") as f:
-            cls2idx = json.load(f)
-    cls = list(cls2idx.keys())
-    idx2cls = {v : k for k, v in cls2idx.items()}
-    ncls = len(idx2cls)
-    return {"num_classes" : ncls}, {"classes" : cls, "class2idx" : cls2idx, "idx2class" : idx2cls}
-
-def prepare_split(paths : List[str], desc="Preprocessing images for split...", resize_size : Union[int, Tuple[int, int]]=256, device=torch.device("cpu"), dtype=torch.float16):
-    match dtype:
-        case torch.float16:
-            converter = convert2fp16
-        case torch.float32:
-            converter = convert2fp32
-        case torch.bfloat16:
-            converter = convert2bf16
-        case _:
-            raise ValueError("Only fp16 supported for now.")
-    shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
-    tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
-    def write_one_image(args):
-        idx, path = args
-        try:
-            tensor[idx] = resize(converter(decode_image(path, ImageReadMode.RGB)), shape).to(device)
-        except Exception as e:
-            e.add_note(f'Path: {path}')
-            raise e
-    # num_workers = os.cpu_count() - 1
-    # num_workers -= num_workers % 2
-    # thread_map(write_one_image, enumerate(paths), tqdm_class=TQDM, total=len(paths), desc=desc, max_workers=num_workers)
-    [write_one_image(v) for v in TQDM(enumerate(paths), total=len(paths), desc=desc)]
-    return tensor
 
 def get_dataset_dataloader(
         train_image_data : Dict, 
         val_image_data : Dict, 
-        class2idx : Dict[str, int], 
+        cls2idx : Dict[str, int], 
         resize_size : Union[int, Tuple[int, int]],
         batch_size : int=16, 
+        num_workers : Optional[int]=None,
         device=torch.device("cpu"), 
         dtype=torch.float32
     ):
-    if not isinstance(resize_size, int):
+    if isinstance(resize_size, int):
+        resize_size = (resize_size, resize_size)
+    else:
         if not (isinstance(resize_size, tuple) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
             raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
+        
     print(f"Building datasets with image size {resize_size}")
-    train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
-    val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
+    dataset_is_small = memory_proportion((len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size), device, dtype) < 0.25
+    if dataset_is_small:
+        train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
+        val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
 
-    train_labels = torch.tensor([class2idx[str(cls)] for cls in train_image_data["class"]]).long().to(device)
-    val_labels = torch.tensor([class2idx[str(cls)] for cls in val_image_data["class"]]).long().to(device)
+        train_labels = torch.tensor([cls2idx[str(cls)] for cls in train_image_data["class"]]).long().to(device)
+        val_labels = torch.tensor([cls2idx[str(cls)] for cls in val_image_data["class"]]).long().to(device)
 
-    train_dataset = TensorDataset(train_tensor, train_labels)
-    val_dataset = TensorDataset(val_tensor, val_labels)
+        train_dataset = TensorDataset(train_tensor, train_labels)
+        val_dataset = TensorDataset(val_tensor, val_labels)
+        
+        # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
+        num_workers = 0
+    else:
+        reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), dtype)
+        def proc_path_label(path_label : Tuple[str, Union[str, int]]):
+            path, label = path_label
+            return reader(path), torch.tensor(cls2idx[str(label)], dtype=torch.long)
+
+        train_dataset = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(train_image_data["path"], train_image_data["class"])])
+        val_dataset   = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])])
+
+        if num_workers is None:
+            num_workers = os.cpu_count() - 1
+            num_workers -= num_workers % 2
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
@@ -93,25 +67,21 @@ def get_dataset_dataloader(
         train_dataset,
         batch_size=batch_size,
         sampler=train_sampler,
-        num_workers=0,
-        pin_memory=False
+        num_workers=num_workers,
+        pin_memory=not dataset_is_small,
+        pin_memory_device="" if dataset_is_small else str(device)
     )
+
     val_loader = DataLoader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=0, 
-        pin_memory=False
+        num_workers=num_workers, 
+        pin_memory=not dataset_is_small,
+        pin_memory_device="" if dataset_is_small else str(device)
     )
 
     return train_dataset, val_dataset, train_loader, val_loader
-
-def easy_get_dataset_dataloader(data_path, class_path):
-    if not os.path.exists(class_path):
-        raise FileNotFoundError(f'Species index file ({class_path}) for not found.')
-    with open(class_path, "rb") as f:
-        class2idx = json.load(f)
-    return get_dataset_dataloader(*get_image_data(data_path), class2idx)
 
 class BaseBuilder:
     """
@@ -127,6 +97,7 @@ class BaseBuilder:
         **`build_optimizer`**: Builds the model optimizer method (e.g. SGD/ADAM).
         **`build_criterion`**: Builds the optimization criterion (i.e. loss function).
         **`build_lr_scheduler`**: Builds the learning rate scheduler (shape only, magnitude defined by optimizer).
+        **`build_logger`**: Builds the training diagnostics logger(s).
     """
     def __init__(self):
         pass
@@ -164,7 +135,7 @@ class BaseBuilder:
     def build_dataloader(
             input_dir : str,
             classes : List[str],
-            class2idx : Dict[str, int],
+            cls2idx : Dict[str, int],
             preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
@@ -172,8 +143,8 @@ class BaseBuilder:
             data_index : Optional[str]=None,
             resize_size : Optional[int]=None,
             train_proportion : float=0.9,
-            idx2class : Optional[Dict[int, str]]=None
-        ):
+            idx2cls : Optional[Dict[int, str]]=None,
+            num_workers : Optional[int]=None):
         """
         Returns:
             (train_loader, validation_loader) (`Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
@@ -187,13 +158,14 @@ class BaseBuilder:
             train_image_data, val_image_data = get_image_data(data_index)
 
         train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
-            train_image_data, 
-            val_image_data, 
-            class2idx, 
-            preprocess.resize_size if hasattr(preprocess, "resize_size") else resize_size, 
-            batch_size,
-            device, 
-            dtype
+            train_image_data=train_image_data, 
+            val_image_data=val_image_data, 
+            cls2idx=cls2idx, 
+            resize_size=getattr(preprocess, "resize_size", resize_size),  
+            batch_size=batch_size,
+            num_workers=num_workers,
+            device=device, 
+            dtype=dtype
         )
 
         return train_loader, val_loader
@@ -249,4 +221,11 @@ class BaseBuilder:
         Returns:
             lr_scheduler (`torch.optim.lr_scheduler.LRScheduler`): The learning rate scheduler (shape only).
         """
-        return torch.optim.lr_scheduler.LambdaLR(optimizer, cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_epochs * steps_per_epoch, start_factor, min_factor))
+        return torch.optim.lr_scheduler.LambdaLR(
+            optimizer=optimizer, 
+            lr_lambda=cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_epochs * steps_per_epoch, start_factor, min_factor)
+        )
+    
+    @staticmethod
+    def build_logger(**kwargs):
+        return MultiLogger(**kwargs)
