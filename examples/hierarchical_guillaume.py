@@ -139,11 +139,11 @@ if __name__ == "__main__":
     # )
     
     class_index_path = "hierarchical/gmo_traits_hierarchical_class_index.json"
-    # HierarchicalBuilder.spec_model_dataloader(
-    #     path=class_index_path,
-    #     dir=SHARE_LINK,
-    #     dir2comb_fn=erda_to_combinations 
-    # )
+    HierarchicalBuilder.spec_model_dataloader(
+        path=class_index_path,
+        dir=SHARE_LINK,
+        dir2comb_fn=erda_to_combinations 
+    )
     # with open("hierarchical/gmo_traits_class_index.json", "w") as f:
     #     json.dump(hierarchical_class_index_to_standard(class_index_path), f)
 
@@ -156,13 +156,13 @@ if __name__ == "__main__":
         levels=DEFAULT_HIERARCHY_LEVELS
     )
 
-    name = "hierarchical_v2"
+    name = "test3"
     output = "hierarchical"
 
     mt_train(
         input="hierarchical/gmo_traits",
         output=output,
-        checkpoint="hierarchical/model_15.pth",
+        # checkpoint="hierarchical/model_15.pth",
         class_index=class_index_path,
         name=name,
         # weights="hierarchical/gmo_traits_2.pt",
@@ -174,14 +174,8 @@ if __name__ == "__main__":
         dataloader_builder_kwargs={
             "data_index" : "hierarchical/gmo_traits_data_index.json",
             "batch_size" : 32,
-            "resize_size": 256, 
-            # "train_proportion": 0.9,
-            "path2cls2idx_builder" : HierarchicalPathParser,
-            "path2cls2idx_builder_kwargs" : {
-                "class_index" : class_index_path,
-                "levels" : DEFAULT_HIERARCHY_LEVELS,
-                "as_tensor" : True
-            }
+            "resize_size": 256
+            # "train_proportion": 0.9
         },
         optimizer_builder_kwargs={"lr" : 0.001},
         criterion_builder_kwargs={"label_smoothing" : 0.01, "weights" : [1, 1, 1]}, #  non-hierarchical: [1, 0, 0] | different hierarchical weightings: [0.1, 0.25, 0.65], [0.65, 0.25, 0.1], [1, 1, 1]

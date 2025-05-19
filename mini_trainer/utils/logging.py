@@ -22,8 +22,7 @@ from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
 
-
-def format_duration(sec, suffix="dhms"):
+def format_duration(sec : int, suffix="dhms"):
     sec = int(sec)
     days, rem = divmod(sec, 86400)
     hours, rem = divmod(rem, 3600)

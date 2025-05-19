@@ -175,10 +175,10 @@ def main(
     if verbose:
         print(f'Outputs written to {os.path.abspath(output_dir)}')
 
-def cli():
+def cli(description="Predict with a classifier"):
     parser = ArgumentParser(
         prog="predict",
-        description="Predict with a classifier",
+        description=description,
         formatter_class=Formatter
     )
     parser.add_argument(
@@ -186,26 +186,38 @@ def cli():
         help="Print the prediction results to the terminal? Disabled by default."
     )
 
-    main_args = parser.add_argument_group("Input [mandatory]")
-    main_args.add_argument(
+    input_args = parser.add_argument_group("Input [mandatory]")
+    input_args.add_argument(
         "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
         help=
         "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
         "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights"
     )
-    main_args.add_argument(
+    input_args.add_argument(
         "-C", "--class_index", type=str, default="class_index.json", required=True,
         help="Path to a JSON file containing the class name to index mapping."
     )
-    main_args.add_argument(
+    input_args.add_argument(
         "-w", "--weights", type=str, required=True,
         help="Model weights for inference."
     )
-    main_args.add_argument(
+    input_args.add_argument(
         "-i", "--input", type=str, required=True,
         help=
         "Path to a directory containing a subdirectory for each class,\n"
         "where the name of each subdirectory should correspond to the name of the class."
+    )
+    input_args.add_argument(
+        "-D", "--data_index", type=str, required=False,
+        help=
+        "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
+        "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
+        "The 'split' column should contain values 'train', 'validation' or other,\n"
+        "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
+    )
+    input_args.add_argument(
+        "--split", type=str, default="test", required=False,
+        help="Which split to perform inference on (default='test'). Only applies if `--data_index` is passed."
     )
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
@@ -253,7 +265,7 @@ def cli():
         "training_format" : args.pop("training_format", False), 
         "verbose" : args.get("verbose", False)
     }
-    main(**args)
+    return args
 
 if __name__ == "__main__":  
-    cli()
+    main(**cli())

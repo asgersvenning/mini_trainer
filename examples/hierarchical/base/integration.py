@@ -23,6 +23,16 @@ def hierarchical_base_path2cls2idx_builder(cls2idx):
         return torch.tensor(list(reversed([cls2idx[lvl][cls] for lvl, cls in enumerate(path.split(os.sep)[:-1][-nlvl:])]))).long()
     return path2cls2idx
 
+def hierarchical_path2cls2idx_w_classindex(*args, class_index : str, **kwargs):
+    with open(class_index, "r") as f:
+        class_index = json.load(f)
+    cls2idx = class_index["cls2idx"]
+    combinations = class_index["combinations"]
+    cls2idxs = {comb[0] : [cls2idx[str(lvl)][c] for lvl, c in enumerate(comb)] for comb in combinations}
+    def path2cls2idx(path):
+        return torch.tensor(cls2idxs[os.path.basename(os.path.dirname(path))])
+    return path2cls2idx
+
 def multi_level_collate(batch):
     return tuple(torch.stack(v) for v in zip(*batch))
 
@@ -46,6 +56,7 @@ class HierarchicalBuilder(BaseBuilder):
         """
         if path is None or not os.path.exists(path):
             if dir2comb_fn is None:
+                # This function can be used if the images are stored in a hierarchical directory structure:
                 combinations = sorted(set(tuple(f.split(os.sep)[:-1]) for f in glob.glob("**", root_dir=dir, recursive=True) if not os.path.isdir(os.path.join(dir, f))))
             else:
                 combinations = dir2comb_fn(dir)
@@ -90,12 +101,14 @@ class HierarchicalBuilder(BaseBuilder):
             idx2cls : Optional[dict[int, str]]=None,
             num_workers : Optional[int]=None,
             hierarchy : Optional[list[list[list[int]]]]=None,
-            path2cls2idx_builder : Callable[[Any], Callable[[str], torch.Tensor]]=hierarchical_base_path2cls2idx_builder,
+            path2cls2idx_builder : Optional[Callable[[Any], Callable[[str], torch.Tensor]]]=hierarchical_base_path2cls2idx_builder,
             path2cls2idx_builder_kwargs : dict[str, Any]={}
         ):
-        path2cls2idx = path2cls2idx_builder(cls2idx=cls2idx, **path2cls2idx_builder_kwargs)
         # Prepare datasets/dataloaders
         if data_index is None:
+            if path2cls2idx_builder is None:
+                raise RuntimeError(f'If no data index is passed a function factory (higher order function) that generates a function which computes the class/label from the path must be passed.')
+            path2cls2idx = path2cls2idx_builder(cls2idx=cls2idx, **path2cls2idx_builder_kwargs)
             all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f))]
             data = {
                 "path" : [],
@@ -119,9 +132,9 @@ class HierarchicalBuilder(BaseBuilder):
                 raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
         print(f"Building datasets with image size {resize_size}")
 
-        loader = ImageClassLoader(path2cls2idx, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
-        train_dataset = loader(train_image_data["path"])
-        val_dataset = loader(val_image_data["path"])
+        loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
+        train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
+        val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
 
         train_sampler = RandomSampler(train_dataset)
         val_sampler = SequentialSampler(val_dataset)

@@ -262,14 +262,14 @@ def main(
     nn_model.eval()
     save_on_master(nn_model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
 
-def cli():
+def cli(description="Train a classifier"):
     parser = ArgumentParser(
         prog="train",
-        description="Train a classifier",
+        description=description,
         formatter_class=Formatter
     )
-    main_args = parser.add_argument_group("Input [mandatory]")
-    main_args.add_argument(
+    input_args = parser.add_argument_group("Input [mandatory]")
+    input_args.add_argument(
         "-i", "--input", type=str, required=True,
         help=
         "Path to a directory containing a subdirectory for each class,\n" 
@@ -404,8 +404,8 @@ def cli():
         }
     
     # Call the Python training API
-    main(**args)
+    return args
 
 if __name__ == "__main__":  
-    cli()
+    main(**cli())
 

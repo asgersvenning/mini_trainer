@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Union, Callable
+from typing import Iterable, Optional, Union, Callable, Any
 
 import torch
 from torchvision.io import ImageReadMode, decode_image
@@ -86,9 +86,18 @@ class ImageLoader:
         return LazyDataset(self, x)
     
 class ImageClassLoader:
-    def __init__(self, class_decoder, resize_size : Optional[int]=None, preprocessor : Callable[[torch.Tensor], torch.Tensor]=lambda x : x, dtype=torch.float32, device=torch.device("cpu")):
+    def __init__(
+            self, 
+            class_decoder, 
+            item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
+            resize_size : Optional[int]=None, 
+            preprocessor : Callable[[torch.Tensor], torch.Tensor]=lambda x : x, 
+            dtype=torch.float32, 
+            device=torch.device("cpu")
+        ):
         self.dtype, self.device = dtype, device
         self.preprocessor = preprocessor
+        self.splitter = item_splitter
         self.class_decoder = class_decoder
         match self.dtype:
             case torch.float16:
@@ -103,8 +112,9 @@ class ImageClassLoader:
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
     def __call__(self, x : Union[str, Iterable]):
-        if isinstance(x, str):
-            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
-            cls = self.class_decoder(x)
+        if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
+            p, c = self.splitter(x)
+            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(p, ImageReadMode.RGB)), self.shape)).to(self.device)
+            cls = self.class_decoder(c)
             return proc_img, cls
         return LazyDataset(self, x)
