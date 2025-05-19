@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from torch import nn as nn
@@ -7,7 +7,7 @@ from mini_trainer.classifier import Classifier
 
 
 class HierarchicalClassifier(Classifier):
-    def __init__(self, masks : Optional[List[torch.Tensor]]=None, **kwargs):
+    def __init__(self, masks : Optional[list[torch.Tensor]]=None, **kwargs):
         super().__init__(**kwargs)
 
         # Store masks

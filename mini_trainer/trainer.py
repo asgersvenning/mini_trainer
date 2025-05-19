@@ -13,7 +13,8 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM
-from mini_trainer.utils import reduce_across_processes, save_on_master, TERMINAL_WIDTH
+from mini_trainer.utils import (TERMINAL_WIDTH, reduce_across_processes,
+                                save_on_master)
 from mini_trainer.utils.logging import MultiLogger
 
 
@@ -32,18 +33,10 @@ def train_one_epoch(
         dtype : torch.dtype=torch.float32,
     ):
     model.train()
-    
     pbar = TQDM(data_loader, total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
-    # pbar = data_loader
-    
-    # metric_logger = MetricLogger(delimiter="  ", printer=lambda x : pbar.set_description_str(x))
-    # metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value}"))
-    # metric_logger.add_meter("img/s", SmoothedValue(window_size=10, fmt="{value}"))
 
-    # header = f"Epoch: [{epoch}]"
-
-    for i, (batch, target) in enumerate(pbar): # metric_logger.log_every(pbar, flush_rate=25, description=header)
+    for i, (batch, target) in enumerate(pbar):
         start_time = time.time()
         batch, target = batch.to(device), target.to(device)
         if len(batch.shape) == 3:
@@ -59,26 +52,17 @@ def train_one_epoch(
         optimizer.step()
         lr_scheduler.step()
         
-        logger.consume(
-            index=i,
-            batch=batch, 
-            target=target, 
-            prediction=output, 
-            loss=loss, 
-            optimizer=optimizer, 
-            start_time=start_time
-        )
+        with torch.no_grad():
+            logger.consume(
+                index=i,
+                batch=batch, 
+                target=target, 
+                prediction=output, 
+                loss=loss, 
+                optimizer=optimizer, 
+                start_time=start_time
+            )
         pbar.set_description_str(logger.status(), i % 25 == 0)
-        # if isinstance(output, list):
-        #     acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
-        # else:
-        #     acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        # batch_size = batch.shape[0]
-        # metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
-        # metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-        # metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
-        # metric_logger.meters["img/s"].update(batch_size / (time.time() - start_time))
-    
     model.eval()
 
 def evaluate(
@@ -92,13 +76,11 @@ def evaluate(
         dtype : torch.dtype=torch.float32
     ):
     model.eval()
-    # header = f"Test: {log_suffix}"
     pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="eval")
-    # metric_logger = MetricLogger(delimiter="  ", printer = lambda x : pbar.set_description_str(x))
 
     num_processed_samples = 0
-    for i, (batch, target) in enumerate(pbar): # metric_logger.log_every(pbar, print_freq, header)
+    for i, (batch, target) in enumerate(pbar):
         start_time = time.time()
         with torch.inference_mode():
             batch, target = batch.to(device), target.to(device)
@@ -107,27 +89,17 @@ def evaluate(
             with autocast(device_type=device.type, dtype=dtype):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
-
-        logger.consume(
-            index=i, 
-            batch=batch, 
-            target=target, 
-            prediction=output, 
-            loss=loss, 
-            optimizer=None, 
-            start_time=start_time
-        )
+            
+            logger.consume(
+                index=i, 
+                batch=batch, 
+                target=target, 
+                prediction=output, 
+                loss=loss, 
+                optimizer=None, 
+                start_time=start_time
+            )
         pbar.set_description_str(logger.status(), i % 25 == 0)
-        # if isinstance(output, list):
-        #     acc1, acc5 = accuracy(output[0], target[:, 0], topk=(1, 5))
-        # else:
-        #     acc1, acc5 = accuracy(output, target, topk=(1, 5))
-        # # FIXME need to take into account that the datasets
-        # # could have been padded in distributed setup
-        # batch_size = batch.shape[0]
-        # metric_logger.update(loss=loss.item())
-        # metric_logger.meters["acc1"].update(acc1.item(), n=batch_size)
-        # metric_logger.meters["acc5"].update(acc5.item(), n=batch_size)
         num_processed_samples += len(batch)
     
     # gather the stats from all processes
@@ -145,8 +117,6 @@ def evaluate(
             "Setting the world size to 1 is always a safe bet."
         )
 
-    # if verbose:
-    #     print(f"{header} Acc@1 {metric_logger.acc1.global_avg:.3f} Acc@5 {metric_logger.acc5.global_avg:.3f}")
     if logger.verbose:
         print(logger.summary())
     logger.figures(model)

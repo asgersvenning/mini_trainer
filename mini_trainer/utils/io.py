@@ -86,7 +86,7 @@ class ImageLoader:
         return LazyDataset(self, x)
     
 class ImageClassLoader:
-    def __init__(self, class_decoder, resize_size : Optional[int]=None, preprocessor=lambda x : x, dtype=torch.float32, device=torch.device("cpu")):
+    def __init__(self, class_decoder, resize_size : Optional[int]=None, preprocessor : Callable[[torch.Tensor], torch.Tensor]=lambda x : x, dtype=torch.float32, device=torch.device("cpu")):
         self.dtype, self.device = dtype, device
         self.preprocessor = preprocessor
         self.class_decoder = class_decoder

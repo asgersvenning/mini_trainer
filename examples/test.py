@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from mini_trainer.builders import base_model_builder
+from mini_trainer.builders import BaseBuilder
 
 if __name__ == "__main__":
     dev, dt = torch.device("cuda:0"), torch.float32
@@ -23,12 +23,11 @@ if __name__ == "__main__":
         cls2idx = json.load(f)
     idx2cls = {v : k for k, v in cls2idx.items()}
 
-    qcmodel, mproc = base_model_builder(
-        model="efficientnet_v2_s",
+    qcmodel, mproc = BaseBuilder.build_model(
+        model_type="efficientnet_v2_s",
         weights="quality/efficientnet_v2_s_full_e15.pt",
         device=dev,
         dtype=dt,
-        fine_tune=False,
         num_classes=len(cls2desc)
     )
     qcmodel.eval()
@@ -45,7 +44,7 @@ if __name__ == "__main__":
 
     for i in range(5):
         print("_"*60)
-        print(f"PREDICTION #{i}")
+        print(f"PREdictION #{i}")
         print(f"Model output: [{', '.join([f'{v:.1f}' for v in tout[i]])}]")
         print(f"Model confidences: [{', '.join([f'{c.item():.0%}' for c in tconfs[i]])}]")
         print(f"Model prediction & confidence: {cls2desc[tcls[i]]} ({tconf[i]:.1%})")

@@ -724,17 +724,16 @@ class MultiLogger:
             optimizer : torch.optim.Optimizer,
             start_time : int
         ):    
-        with torch.no_grad():
-            # These are set first, so they may be used while logging the other statistics
-            self._idx = index
-            self._batch_size = len(batch)
-            
-            self.log_batch(batch)
-            self.log_optim(optimizer)
-            self.log_accuracy(target, prediction)
-            self.log_loss(loss)
-            self.log_speed(start_time)
-            self.log_memory_use()
+        # These are set first, so they may be used while logging the other statistics
+        self._idx = index
+        self._batch_size = len(batch)
+        
+        self.log_batch(batch)
+        self.log_optim(optimizer)
+        self.log_accuracy(target, prediction)
+        self.log_loss(loss)
+        self.log_speed(start_time)
+        self.log_memory_use()
 
         self._idx = self._batch_size = None
 
@@ -748,15 +747,15 @@ class MultiLogger:
 
     def status(self):
         stats = str(self.loggers[0])
-        cuda_memory_use = cuda_memory_stats()
-        used = total = free = 0
-        for dev_idx, mem_stats in cuda_memory_use.items():
-            used  += mem_stats["used_mb"]
-            free  += mem_stats["free_mb"]
-            total += mem_stats["total_mb"]
-        pfree = used/free
-        ptotal = used/total
-        return f'E{self._epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats} (mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
+        # cuda_memory_use = cuda_memory_stats()
+        # used = total = free = 0
+        # for dev_idx, mem_stats in cuda_memory_use.items():
+        #     used  += mem_stats["used_mb"]
+        #     free  += mem_stats["free_mb"]
+        #     total += mem_stats["total_mb"]
+        # pfree = used/free
+        # ptotal = used/total
+        return f'E{self._epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'# '(mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
 
     def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
         return " | ".join([f'{stat}={value:>5.{float_signif_decimal(value)}f}' for stat in stats if (value := self.statistics_storage[stat][-1]) or True])

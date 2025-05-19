@@ -1,10 +1,12 @@
 import os
 import shutil
+import json
 
 import numpy as np
 import torch
 from hierarchical.base.integration import (HierarchicalBuilder,
-                                           HierarchicalResultCollector)
+                                           HierarchicalResultCollector,
+                                           hierarchical_class_index_to_standard)
 from hierarchical.guillaume.hierarchical import (
     DEFAULT_HIERARCHY_LEVELS, HierarchicalPathParser,
     hierarchical_create_data_index)
@@ -85,6 +87,27 @@ def standardized_save(image : torch.Tensor, dst : str):
         quality=90
     )
 
+def tensorboard_logger_kwargs(name : str, output : str, resume : bool=False):
+    from torch.utils.tensorboard.writer import SummaryWriter
+
+    from mini_trainer.utils import increment_name_dir
+    from mini_trainer.utils.logging import MetricLoggerWrapper
+    from mini_trainer.utils.tensorboard import TensorboardLogger
+    
+    tensorboard_dir = os.path.join(output, "tensorboard")
+    if resume:
+        run_name = name
+    else:
+        run_name = increment_name_dir(name, tensorboard_dir)
+    tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, run_name), flush_secs=30)
+    
+    return {
+        "verbose" : True,
+        "logger_cls" : [MetricLoggerWrapper, TensorboardLogger],
+        "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
+    }
+
+
 if __name__ == "__main__":
     # # os.system(f'sshpass -p "{SHARE_LINK}" sftp -P 2222 -o StrictHostKeyChecking=no {SHARE_LINK}@io.erda.au.dk')
     # if os.path.isdir(IMAGE_DIR):
@@ -115,58 +138,86 @@ if __name__ == "__main__":
     #     class_index="quality/class_index.json"
     # )
     
-    HierarchicalBuilder.spec_model_dataloader(
-        path="hierarchical/gmo_traits_class_index.json",
-        dir=SHARE_LINK,
-        dir2comb_fn=erda_to_combinations 
-    )
+    class_index_path = "hierarchical/gmo_traits_hierarchical_class_index.json"
+    # HierarchicalBuilder.spec_model_dataloader(
+    #     path=class_index_path,
+    #     dir=SHARE_LINK,
+    #     dir2comb_fn=erda_to_combinations 
+    # )
+    # with open("hierarchical/gmo_traits_class_index.json", "w") as f:
+    #     json.dump(hierarchical_class_index_to_standard(class_index_path), f)
 
     hierarchical_create_data_index(
-        path="hierarchical/quality_control.json", 
+        path="quality/gmo_traits_result.json", 
         outpath="hierarchical/gmo_traits_data_index.json",
         split=(0.9, 0.05, 0.05), 
-        max_per_cls=25,
-        class_index="hierarchical/gmo_traits_class_index.json",
+        max_per_cls=500,
+        class_index=class_index_path,
         levels=DEFAULT_HIERARCHY_LEVELS
     )
 
-    # mt_train(
-    #     input="hierarchical/gmo_traits",
-    #     output="hierarchical",
-    #     class_index="hierarchical/gmo_traits_class_index.json",
-    #     name="test_1",
-    #     # weights="hierarchical/gmo_traits_2.pt",
-    #     epochs=10,
-    #     dtype="float16",
-    #     device="cuda:0",
-    #     builder=HierarchicalBuilder,
-    #     model_builder_kwargs={"model_type" : "efficientnet_b0"},
-    #     dataloader_builder_kwargs={
-    #         "data_index" : "hierarchical/gmo_traits_data_index.json",
-    #         "batch_size" : 16,
-    #         "resize_size": 256, 
-    #         # "train_proportion": 0.9,
-    #         "path2cls2idx_builder" : HierarchicalPathParser,
-    #         "path2cls2idx_builder_kwargs" : {
-    #             "class_index" : "hierarchical/gmo_traits_class_index.json",
-    #             "levels" : DEFAULT_HIERARCHY_LEVELS,
-    #             "as_tensor" : True
-    #         }
-    #     },
-    #     optimizer_builder_kwargs={"lr" : 0.001},
-    #     criterion_builder_kwargs={"label_smoothing" : 0.01, "weights" : [0.65, 0.25, 0.1]}, #  non-hierarchical: [1, 0, 0] | different hierarchical weightings: [0.1, 0.25, 0.65], [0.65, 0.25, 0.1], [1, 1, 1]
-    #     lr_schedule_builder_kwargs={"warmup_epochs" : 0.5}
-    # )
+    name = "hierarchical_v2"
+    output = "hierarchical"
+
+    mt_train(
+        input="hierarchical/gmo_traits",
+        output=output,
+        checkpoint="hierarchical/model_15.pth",
+        class_index=class_index_path,
+        name=name,
+        # weights="hierarchical/gmo_traits_2.pt",
+        epochs=25,
+        dtype="float16",
+        device="cuda:0",
+        builder=HierarchicalBuilder,
+        model_builder_kwargs={"model_type" : "efficientnet_b0"},
+        dataloader_builder_kwargs={
+            "data_index" : "hierarchical/gmo_traits_data_index.json",
+            "batch_size" : 32,
+            "resize_size": 256, 
+            # "train_proportion": 0.9,
+            "path2cls2idx_builder" : HierarchicalPathParser,
+            "path2cls2idx_builder_kwargs" : {
+                "class_index" : class_index_path,
+                "levels" : DEFAULT_HIERARCHY_LEVELS,
+                "as_tensor" : True
+            }
+        },
+        optimizer_builder_kwargs={"lr" : 0.001},
+        criterion_builder_kwargs={"label_smoothing" : 0.01, "weights" : [1, 1, 1]}, #  non-hierarchical: [1, 0, 0] | different hierarchical weightings: [0.1, 0.25, 0.65], [0.65, 0.25, 0.1], [1, 1, 1]
+        lr_schedule_builder_kwargs={"warmup_epochs" : 1},
+        logger_builder_kwargs=tensorboard_logger_kwargs(name, output)
+    )
+    # CMD for training the equivalent flat classifier: 
+    # python -m mini_trainer.train \
+    #   -i hierarchical/gmo_traits \
+    #   -o hierarchical \
+    #   -n flat_v2 \
+    #   -t \
+    #   -m efficientnet_b0 \
+    #   -C hierarchical/gmo_traits_class_index.json \
+    #   -D hierarchical/gmo_traits_data_index.json \
+    #   -e 25 \
+    #   --batch_size 32 \
+    #   --warmup_epochs 1
 
     mt_predict(
         input="hierarchical/gmo_traits",
-        output="hierarchical/result.json",
-        class_index="hierarchical/gmo_traits_class_index.json",
+        output="hierarchical",
+        name=name,
+        class_index=class_index_path,
         n_max=256,
         builder=HierarchicalBuilder,
-        model_builder_kwargs={"model_type" : "efficientnet_b0", "weights" : "hierarchical/efficientnet_b0_full_e10.pt"},
+        model_builder_kwargs={"model_type" : "efficientnet_b0", "weights" : "hierarchical/hierarchical_v2.pt"},
         result_collector=HierarchicalResultCollector,
-        result_collector_kwargs={"levels" : 3, "training_format" : True}
+        result_collector_kwargs={"levels" : 3, "training_format" : True, "verbose" : False},
+        verbose=True
     )
+    # CMD for predicting/evaluating the equivalent flat classifier:
+    # python -m mini_trainer.predict \
+    #   -i hierarchical/gmo_traits \
+    #   -o hierarchical \
+    #   -n flat_v2 \
+    #   OBS=Unfinished! TODO: The CLI APIs for training and inference differ too much (e.g. the prediction API doesn't accept a data index)
 
 

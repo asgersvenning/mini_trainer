@@ -65,28 +65,33 @@ def get_dataset_dataloader(
         val_dataset   = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])])
 
         if num_workers is None:
-            num_workers = os.cpu_count() - 1
+            num_workers = int(os.cpu_count() * 3 / 4)
             num_workers -= num_workers % 2
+            num_workers = max(0, num_workers)
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
+
+    pin_memory = not dataset_is_small
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         sampler=train_sampler,
         num_workers=num_workers,
-        pin_memory=not dataset_is_small,
-        pin_memory_device="" if dataset_is_small else str(device)
+        pin_memory=pin_memory,
+        pin_memory_device=str(device) if pin_memory else "",
+        persistent_workers=pin_memory
     )
 
     val_loader = DataLoader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=num_workers, 
-        pin_memory=not dataset_is_small,
-        pin_memory_device="" if dataset_is_small else str(device)
+        num_workers=min(2, num_workers), 
+        pin_memory=False,
+        pin_memory_device="",
+        persistent_workers=False
     )
 
     return train_dataset, val_dataset, train_loader, val_loader

@@ -20,7 +20,7 @@
 # [(loss_fn[i](pred[i], labels[i].to(device)) * item_weights[i]).mean() for i in range(N_LEVELS)]
 
 # Imports
-from typing import List, Union
+from typing import Union
 import torch
 from torch import nn
 from torch._prims_common import DeviceLikeType
@@ -29,7 +29,7 @@ from torch.types import _dtype
 class MultiLevelCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
             self, 
-            weights : Union[List[Union[float, int]], torch.Tensor], 
+            weights : Union[list[Union[float, int]], torch.Tensor], 
             label_smoothing : float = 0.0
         ):
 
@@ -59,8 +59,8 @@ class MultiLevelCrossEntropyLoss(torch.nn.modules.loss._Loss):
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
             self, 
-            weights : Union[List[Union[float, int]], torch.Tensor], 
-            class_counts : List[torch.Tensor], 
+            weights : Union[list[Union[float, int]], torch.Tensor], 
+            class_counts : list[torch.Tensor], 
             device : DeviceLikeType, 
             dtype : _dtype, 
             label_smoothing : float = 0.0
@@ -99,8 +99,8 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
 class MultiLevelLoss:
     def __init__(
             self, 
-            losses : List[torch.Tensor], 
-            weights : List[Union[float, int]]
+            losses : list[torch.Tensor], 
+            weights : list[Union[float, int]]
         ):
         self.losses = losses
         self.weights = weights
