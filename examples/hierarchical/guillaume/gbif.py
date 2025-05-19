@@ -3,6 +3,8 @@ from collections import OrderedDict
 from urllib.request import urlopen
 from urllib.parse import quote
 
+from functools import lru_cache
+
 GBIF_SPECIES_API_ENDPOINT = 'https://api.gbif.org/v1/species/'
 TAXONOMY_KEYS = (
     "species",
@@ -13,6 +15,7 @@ TAXONOMY_KEYS = (
     "kingdom"
 )
 
+@lru_cache(maxsize=1024)
 def retrive_request(req):
     resp = urlopen(req)
     if resp.status != 200:

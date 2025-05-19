@@ -231,6 +231,8 @@ def main(
         train_loader=train_loader,
         val_loader=val_loader,
         epochs=epochs,
+        output=output_dir,
+        name=name+"_log",
         **logger_builder_kwargs
     )
 
@@ -252,6 +254,9 @@ def main(
         output_dir=output_dir,
         weight_store_rate=5
     )
+
+    # Store final logs (logs are stored continously, but this flushes the logs to disk)
+    logger.save()
 
     # Save result model
     nn_model.eval()

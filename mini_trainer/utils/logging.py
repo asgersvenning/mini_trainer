@@ -7,7 +7,8 @@ from collections import defaultdict, deque
 from itertools import chain, repeat
 from threading import RLock
 from types import GeneratorType
-from typing import Any, Callable, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Optional, TextIO, Type, TypeVar, Union
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 import torch
@@ -16,7 +17,7 @@ from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer.utils import (cuda_memory_stats, float_signif_decimal,
-                                reduce_across_processes)
+                                reduce_across_processes, increment_name_dir)
 from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
@@ -59,6 +60,16 @@ class ETA:
     def __bool__(self):
         return self._step < self.total_steps
 
+    @property
+    def remaining(self):
+        return max(self.total_steps - self._step, 0)
+    
+    @property
+    def eta(self):
+        if self._ema is None:
+            return None
+        return self.remaining * self._ema
+
     def step(self, steps : int=1):
         """
         Args:
@@ -73,15 +84,13 @@ class ETA:
         self._ema = per_step if self._ema is None else self.smoothing * per_step + (1 - self.smoothing) * self._ema
         self._step += steps
         self._last_time = now
-        remaining = max(self.total_steps - self._step, 0)
-        return remaining * self._ema
+        return self.eta
 
     def __str__(self):
         used_str = format_duration(time.time() - self._start_time)
         if self._ema is None:
             return f"{used_str}/??"
-        remaining = max(self.total_steps - self._step, 0)
-        eta_str = format_duration(remaining * self._ema)
+        eta_str = format_duration(self.eta)
         return f"{used_str}/{eta_str}"
 
 
@@ -552,17 +561,22 @@ class MultiLogger:
             train_loader : torch.utils.data.DataLoader,
             val_loader : torch.utils.data.DataLoader,
             epochs : int,
-            statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem"], 
+            output : str,
+            name : str="log",
+            statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
+            private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
             logger_cls : list[Type[_Logger]]=[MetricLoggerWrapper],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
                 lambda : SmoothedValue(window_size=1, fmt_vars=["value"])
             ],
             canonical_statistic : Optional[str]=None,
+            save_interval : int=5,
             verbose : bool=False
         ):
         self.total_epochs = epochs
         self.statistics = statistics
+        self.private_statistics = private_statistics
         self.statistics_storage = defaultdict(list)
         if canonical_statistic is None:
             canonical_statistic = statistics[0]
@@ -570,6 +584,9 @@ class MultiLogger:
         if self.canonical_statistic not in self.statistics:
             raise KeyError(f'Supplied canonical statistic "{self.canonical_statistic}" should be one of the supplied statistics: {", ".join([f'"{stat}"' for stat in self.statistics])}')
         self.heterogeneous_storage = defaultdict(list)
+        self.output_path = os.path.join(output, increment_name_dir(name, output) + ".json")
+        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        self.save_interval = save_interval
         
         self.logger_cls = logger_cls
         self.logger_cls_extra_kwargs = logger_cls_extra_kwargs
@@ -581,6 +598,7 @@ class MultiLogger:
         self.total_steps = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
 
         # Initialize dynamic attributes
+        self._last_save = time.time()
         self._step = 0
         self._start_time = None
         self.eta = None
@@ -616,7 +634,7 @@ class MultiLogger:
     ):  
         if self._start_time is None:
             self._start_time = time.time()
-            self.eta = ETA(self.total_steps, 0.975)
+            self.eta = ETA(self.total_steps, 0.999)
         self._epoch = epoch
         self._type = type
         self._current_loggers : list[_Logger] = []
@@ -627,14 +645,23 @@ class MultiLogger:
         ):
             this_logger = cls(steps=self.steps, tag=type, **kwargs)
             for stat in self.statistics:
+                if stat in self.private_statistics:
+                    continue
                 this_logger.add_stat(stat, stat_factory())
             self._current_loggers.append(this_logger)
 
     def step(self):
+        self.log_statistic(step=self._step)
         self._step += 1
         self.eta.step()
         for logger in self.loggers:
             logger.step()
+        self.log_statistic(time=time.time())
+        self.log_statistic(eta=self.eta.eta)
+        self.log_statistic(epoch=self._epoch)
+        self.log_statistic(type=self._type)
+        if (time.time() - self._last_save) >= self.save_interval:
+            self.save()
 
     @property
     def loggers(self) -> list[_Logger]:
@@ -650,14 +677,35 @@ class MultiLogger:
 
     def log_statistic(self, **kwargs):
         for stat, value in kwargs.items():
-            for logger in self.loggers:
-                logger.update(stat, value)
+            if stat not in self.private_statistics:
+                for logger in self.loggers:
+                    logger.update(stat, value)
             if isinstance(value, (torch.Tensor, np.ndarray)):
                 value = value.tolist()
             if isinstance(value, (tuple, list)):
                 self.statistics_storage[stat].extend(value)
             else:
                 self.statistics_storage[stat].append(value)
+
+    @property
+    def data(self):
+        return {
+            "statistics" : dict(self.statistics_storage),
+            "extra" : dict(self.heterogeneous_storage)
+        }
+
+    def save(self, fp : Optional[Union[str, TextIO]]=None, encoding : str="utf-8", **kwargs):
+        if fp is None:
+            fp = self.output_path
+        if isinstance(fp, TextIO):
+            json.dump(self.data, fp, **kwargs)
+            return
+        with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
+            json.dump(self.data, tmpfile)
+            tmpfile.flush()
+            os.fsync(tmpfile.fileno())
+        os.replace(tmpfile.name, fp)
+        self._last_save = time.time()
 
     def log_batch(self, batch):
         pass
@@ -755,7 +803,12 @@ class MultiLogger:
         #     total += mem_stats["total_mb"]
         # pfree = used/free
         # ptotal = used/total
-        return f'E{self._epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'# '(mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
+        epoch = self._epoch
+        if epoch is None:
+            epoch = "?"
+        else:
+            epoch += 1
+        return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'# '(mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
 
     def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
         return " | ".join([f'{stat}={value:>5.{float_signif_decimal(value)}f}' for stat in stats if (value := self.statistics_storage[stat][-1]) or True])

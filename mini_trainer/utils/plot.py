@@ -146,10 +146,14 @@ def plot_heatmap(
         figsize : tuple[int, int]=(20, 20),
         font_size : int=20,
         max_ticks : int=10,
+        min_val : Optional[int]=0,
+        ax : Optional[Axes]=None,
         **kwargs
     ):
     # mask zeros so they use the 'bad' color
-    masked = np.ma.masked_invalid(np.ma.masked_equal(mat, 0))
+    masked = np.ma.masked_invalid(mat)
+    if min_val is not None:
+        masked = np.ma.masked_array(masked, masked <= min_val)
     
     # compute vmin from the smallest non-zero value
     base_exp = int(np.floor(np.log10(masked.min())))
@@ -160,13 +164,17 @@ def plot_heatmap(
     cmap.set_bad('black' if cmap_name=='magma' else 'white')
     
     # plot
-    fig, ax = plt.subplots(figsize=figsize, **kwargs)
-    if not isinstance(fig, Figure):
-        raise RuntimeError(f"Unexpected figure type {type(fig)}")
-    if not isinstance(ax, Axes):
-        raise RuntimeError(f"Unexpected axes type {type(ax)}")
-    fig.patch.set_alpha(0)
-    ax.patch.set_alpha(0)
+    new_ax = ax is None
+    if new_ax:
+        fig, ax = plt.subplots(figsize=figsize, **kwargs)
+        if not isinstance(fig, Figure):
+            raise RuntimeError(f"Unexpected figure type {type(fig)}")
+        if not isinstance(ax, Axes):
+            raise RuntimeError(f"Unexpected axes type {type(ax)}")
+        fig.patch.set_alpha(0)
+        ax.patch.set_alpha(0)
+    else:
+        fig = plt.gcf()
     im = ax.imshow(masked, norm=LogNorm(vmin=10**base_exp, vmax=vmax), cmap=cmap)
     ax.axis('off')  # no axes lines, ticks, or grid
     
@@ -196,7 +204,8 @@ def plot_heatmap(
     cbar.ax.tick_params(length=0)
     cbar.outline.set_visible(False)
 
-    plt.tight_layout()
+    if new_ax:
+        plt.tight_layout()
     
     return fig, ax
 
