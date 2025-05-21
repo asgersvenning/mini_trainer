@@ -262,12 +262,17 @@ def main(
     nn_model.eval()
     save_on_master(nn_model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
 
-def cli(description="Train a classifier"):
+def cli(description="Train a classifier", **kwargs):
     parser = ArgumentParser(
         prog="train",
         description=description,
         formatter_class=Formatter
     )
+
+    if kwargs:
+        for argname, args in kwargs.items():
+            parser.add_argument(f'--{argname}', **args)
+
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
         "-i", "--input", type=str, required=True,
@@ -341,6 +346,10 @@ def cli(description="Train a classifier"):
         help="Number of warmup epochs (default=2.0)."
     )
     train_args.add_argument(
+        "--label_smoothing", type=float, default=0.1, required=False,
+        help="Label smoothing applied to training (default=0.1)."
+    )
+    train_args.add_argument(
         "--fine-tune", action="store_true", required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
@@ -377,6 +386,9 @@ def cli(description="Train a classifier"):
     args["optimizer_builder_kwargs"] = {
         "lr" : args.pop("lr"),
         "weight_decay" : 1e-4
+    }
+    args["criterion_builder_kwargs"] = {
+        "label_smoothing" : args.pop("label_smoothing")
     }
     args["lr_schedule_builder_kwargs"] = {
         "warmup_epochs" : args.pop("warmup_epochs"),

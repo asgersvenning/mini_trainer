@@ -29,6 +29,17 @@ def float_signif_decimal(value : float, digits : int=3):
         min_b10 = math.floor(min_b10)
     return -min(-1, min_b10 - digits + 1)
 
+def decimals(value : float, tol : int=6):
+    fv = f'{value}'
+    if "." not in fv:
+        return 0
+    dec = fv.index(".") + 1
+    for d, i in enumerate(range(dec, len(fv))):
+        trunc_value = float(fv[:i])
+        if abs(value - trunc_value) < 10**(-(i+tol)):
+            return d
+    return d + 1
+
 def memory_proportion(
         shape : tuple[int, ...], 
         device : torch.types.Device, 

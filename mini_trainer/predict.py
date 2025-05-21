@@ -17,10 +17,12 @@ from mini_trainer.utils.logging import BaseResultCollector
 
 
 def main(
-    input : str,
+    input : Optional[str],
     output : Optional[str]=None,
     name : Optional[str]=None,
     class_index : str="class_index.json",
+    data_index : Optional[str]=None,
+    split : Optional[str]="test",
     batch_size : int=32,
     num_workers : Optional[int]=None,
     n_max : Optional[int]=None,
@@ -39,7 +41,7 @@ def main(
     Args:
         input (str):
             Path to a directory containing images for prediction, optionally structured
-            with subdirectories named after class labels. (required)
+            with subdirectories named after class labels. (required unless `data_index` is passsed)
 
         output (str, optional):
             Path to the directory where the results should be stored, 
@@ -53,6 +55,14 @@ def main(
         class_index (str):
             Path to a JSON file containing the mapping from class names to indices.
             If it does not exist, one will be created based on subdirectories under `input`. (required)
+
+        data_index (str, optional):
+            Path to a JSON file containing three arrays with keys 'path', 'split',
+            and 'class', representing a structured dataset.
+            Default is None.
+
+        split (str, optional):
+            Name of the split to predict on (default="test"). Only applies when `data_index` is passed.
 
         batch_size (int, optional):
             Batch size used during inference. Larger values require more VRAM.
@@ -88,14 +98,17 @@ def main(
     dtype : torch.dtype = getattr(torch, dtype)
 
     if name is None:
-        name = re.sub("[^a-zA-Z0-9_]", "", os.path.basename(input))
+        name = re.sub("[^a-zA-Z0-9_]", "", "pred" if input is None else os.path.basename(input))
     else:
         if re.search("[^a-zA-Z0-9_]", name) and verbose:
             warnings.warn(f'Found non-standard characters (non-ASCII alphanumeric and underscore) in the supplied name; "{name}".')
 
-    input_dir = os.path.abspath(input)
-    if not os.path.isdir(input_dir):
-        raise OSError(f'Supplied input directory ("{input_dir}") is not a valid directory.')
+    if input is not None:
+        input_dir = os.path.abspath(input)
+        if not os.path.isdir(input_dir):
+            raise OSError(f'Supplied input directory ("{input_dir}") is not a valid directory.')
+    else:
+        input_dir = None
     output_dir = os.path.abspath(output) if isinstance(output, str) else None
     if isinstance(output_dir, str) and not os.path.isdir(output_dir):
         raise OSError(f'Supplied output directory ("{output_dir}") is not a valid directory.')
@@ -110,7 +123,7 @@ def main(
     # e.g. number of classes, class-to-index dictionary
     extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
         path=class_index, 
-        dir=input_dir,
+        dir=None,
         **spec_model_dataloader_kwargs
     )
 
@@ -128,7 +141,16 @@ def main(
         dtype,
         torch.device("cpu")
     )
-    images = find_images(input_dir)
+
+    if data_index:
+        assert split is not None, ValueError(f'Prediction `split` must be passed when `data_index` is used.')
+        split = split.strip().lower()
+        with open(data_index, "r") as f:
+            data_index_data = json.load(f)
+            images = [im for im, spl in zip(data_index_data["path"], data_index_data["split"]) if spl.strip().lower() == split]
+    else:
+        assert input_dir is not None, ValueError(f'Input directory ({input_dir}) must be a valid path.')
+        images = find_images(input_dir)
     if n_max is not None and len(images) > n_max:
         images = images[:n_max]
     ds = image_loader(images)
@@ -175,7 +197,7 @@ def main(
     if verbose:
         print(f'Outputs written to {os.path.abspath(output_dir)}')
 
-def cli(description="Predict with a classifier"):
+def cli(description="Predict with a classifier", **kwargs):
     parser = ArgumentParser(
         prog="predict",
         description=description,
@@ -185,6 +207,10 @@ def cli(description="Predict with a classifier"):
         "-v", "--verbose", action="store_true", required=False,
         help="Print the prediction results to the terminal? Disabled by default."
     )
+
+    if kwargs:
+        for argname, args in kwargs.items():
+            parser.add_argument(f'--{argname}', **args)
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
@@ -202,7 +228,7 @@ def cli(description="Predict with a classifier"):
         help="Model weights for inference."
     )
     input_args.add_argument(
-        "-i", "--input", type=str, required=True,
+        "-i", "--input", type=str, required=False,
         help=
         "Path to a directory containing a subdirectory for each class,\n"
         "where the name of each subdirectory should correspond to the name of the class."

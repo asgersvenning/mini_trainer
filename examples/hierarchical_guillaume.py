@@ -7,10 +7,10 @@ import torch
 from hierarchical.base.integration import (HierarchicalBuilder,
                                            HierarchicalResultCollector,
                                            hierarchical_class_index_to_standard)
-from hierarchical.guillaume.hierarchical import (
+from hierarchical.base.integration import (
     DEFAULT_HIERARCHY_LEVELS, HierarchicalPathParser,
     hierarchical_create_data_index)
-from hierarchical.guillaume.setup import erda_to_combinations
+from examples.hierarchical.base.setup import erda_to_combinations
 from PIL import Image, ImageOps
 from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
 from torchvision.io import ImageReadMode, write_jpeg

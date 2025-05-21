@@ -12,6 +12,7 @@ from matplotlib.ticker import FixedLocator, NullLocator
 from torch import nn
 
 from mini_trainer.classifier import last_layer_weights
+from mini_trainer.utils import decimals
 
 
 def debug_augmentation(
@@ -71,7 +72,7 @@ def named_confusion_matrix(
 
     if plot_conf_mat:
         conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-        fig, _ = plot_heatmap(conf_mat_arr, "magma")
+        fig, _ = plot_heatmap(conf_mat_arr, "magma", percent=False)
         if isinstance(plot_conf_mat, bool):
             plot_conf_mat = "confusion_matrix.png"
         fig.savefig(plot_conf_mat)
@@ -146,6 +147,7 @@ def plot_heatmap(
         figsize : tuple[int, int]=(20, 20),
         font_size : int=20,
         max_ticks : int=10,
+        percent : bool=True,
         min_val : Optional[int]=0,
         ax : Optional[Axes]=None,
         **kwargs
@@ -157,7 +159,9 @@ def plot_heatmap(
     
     # compute vmin from the smallest non-zero value
     base_exp = int(np.floor(np.log10(masked.min())))
-    vmax = float(max(1, masked.max()))
+    vmax = float(masked.max())
+    if percent:
+        vmax = max(1, vmax)
     
     # prepare colormap
     cmap = plt.get_cmap(cmap_name).copy()
@@ -180,20 +184,26 @@ def plot_heatmap(
     
     # dynamic tick values: multipliers of baseline
     multipliers = [1, 1.5, 2, 3, 5, 7]
-    tick_vals = [10**exp * m for exp in range(base_exp, 1) for m in multipliers]
-    if len(tick_vals) > max_ticks:
-        tick_vals = tick_vals[::int(np.ceil(len(tick_vals)/max_ticks))]
-        if not bool(np.isclose(tick_vals[-1], 1)):
-            tick_vals.append(1)
+    tick_vals = [10**exp * m for exp in range(base_exp, int(np.ceil(np.log10(vmax)))) for m in multipliers]
+    
     # only keep those within the data range [baseline, vmax]
     tick_vals = [v for v in tick_vals if 10**base_exp <= v <= vmax]
+    
+    if len(tick_vals) > max_ticks:
+        tick_vals = tick_vals[::int(np.ceil(len(tick_vals)/max_ticks))]
+        if percent and not bool(np.isclose(tick_vals[-1], vmax)):
+            tick_vals.append(vmax)
     
     # corresponding percent labels
     labels = []
     for v in tick_vals:
-        v *= 100
-        lab = f"{int(v)}%" if float(v).is_integer() else f"{v:.2g}%"
+        if percent:
+            v *= 100
+            lab = f"{int(v)}%" if float(v).is_integer() else f"{v:.2g}%"
+        else:
+            lab = f"{v:.{min(3, decimals(v))}f}"
         labels.append(lab)
+        
     
     # place colorbar
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, ticks=tick_vals)
