@@ -8,3 +8,6 @@ dependencies:
   - torchaudio
   - matplotlib
   - tqdm
+  - psutil
+  - tensorboard
+  - pandas

@@ -9,6 +9,7 @@ import torch
 from torchvision.io import ImageReadMode
 
 from mini_trainer import TQDM
+from tqdm.contrib.concurrent import thread_map
 from mini_trainer.utils.io import is_image, make_read_and_resize_fn
 
 
@@ -32,14 +33,28 @@ def get_image_data(path : str):
             raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
         with open(path, "rb") as f:
             _image_data = {k : np.array(v) for k, v in json.load(f).items()}
-        image_data = {k : v[np.array([is_image(f) for f in _image_data["path"]])] for k, v in _image_data.items()}
+        image_data = {
+            k : v[
+                np.array(
+                    thread_map(
+                        is_image, 
+                        _image_data["path"], 
+                        tqdm_class=TQDM, 
+                        desc="Filtering non-standardized images...", 
+                        total=len(_image_data["path"])
+                    )
+                )
+            ]
+            for k, v in _image_data.items()
+        }
         train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
         val_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
         return train_image_data, val_image_data
 
-def find_images(root : str):
+def find_images(root: str) -> list[str]:
     paths = glob(os.path.join(root, "**"), recursive=True)
-    return list(filter(is_image, paths))
+    flags = thread_map(is_image, paths, tqdm_class=TQDM, desc="Filtering non-standardized images...", total=len(paths))
+    return [p for p, f in zip(paths, flags) if f]
 
 def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     if not os.path.exists(path):

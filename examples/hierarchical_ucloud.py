@@ -225,12 +225,14 @@ def cli():
         json.dump(
             obj=parquet_to_dataindex(
                 path=args["parquet"],
-                dir=args["output"],
+                dir=args["input"],
                 class_index=class_index_path
             ),
             fp=f
         )
     args["dataloader_builder_kwargs"]["data_index"] = data_index_path
+
+    args.pop("parquet")
     
     # Call the Python training API
     mt_train(

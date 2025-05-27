@@ -254,6 +254,7 @@ class HierarchicalBuilder(BaseBuilder):
         print(f"Building datasets with image size {resize_size}")
 
         loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
+        
         train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
         val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
 
