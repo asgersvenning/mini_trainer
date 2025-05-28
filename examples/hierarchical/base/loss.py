@@ -60,7 +60,8 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
             self, 
             weights : Union[list[Union[float, int]], torch.Tensor], 
-            class_counts : list[torch.Tensor], 
+            # class_counts : list[torch.Tensor], 
+            class_weights : list[torch.Tensor],
             device : DeviceLikeType, 
             dtype : _dtype, 
             label_smoothing : float = 0.0
@@ -70,12 +71,13 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
 
         self.weights = torch.tensor(weights).to(device=device, dtype=dtype)
         self.n_levels = len(weights)
-        self.class_counts = class_counts
+        # self.class_counts = class_counts
+        self.class_weights = [w.to(device=device, dtype=dtype) for w in class_weights]
         self.label_smoothing = label_smoothing
 
-        self.class_weights = [cc.to(self.device, self.dtype) for cc in class_counts]
-        self.class_weights = [1 / (w + w.mean()) for w in self.class_weights]
-        self.class_weights = [w / w.mean() for w in self.class_weights]
+        # self.class_weights = [cc.to(self.device, self.dtype) for cc in class_counts]
+        # self.class_weights = [1 / (w + w.mean()) for w in self.class_weights]
+        # self.class_weights = [w / w.mean() for w in self.class_weights]
         for i in self.class_weights:
             i.requires_grad = False
         
@@ -94,7 +96,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         ) -> "MultiLevelLoss":
         targets = targets.transpose(0, 1)
         item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
-        return MultiLevelLoss([(self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean() for i in range(self.n_levels)], self.weights)
+        return MultiLevelLoss([(self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean() for i in range(self.n_levels)], self.weights).aggregate()
     
 class MultiLevelLoss:
     def __init__(

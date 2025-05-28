@@ -168,7 +168,7 @@ class BaseBuilder:
         ):
         """
         Returns:
-            (train_loader, validation_loader) (`tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
+            (train_label_cls, train_loader, validation_loader) (`tuple[np.ndarray, torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
         """
         # Prepare datasets/dataloaders
         if data_index is None:
@@ -189,7 +189,7 @@ class BaseBuilder:
             dtype=dtype
         )
 
-        return train_loader, val_loader
+        return train_image_data["class"], train_loader, val_loader
 
     @staticmethod
     def build_augmentation():
@@ -220,12 +220,28 @@ class BaseBuilder:
         return optimizer_cls(params=params, *args, **kwargs)
     
     @staticmethod
-    def build_criterion(*args, criterion_cls : Type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, **kwargs):
+    def build_criterion(
+            *args, 
+            weighted : bool=False,
+            labels : Optional[np.ndarray]=None, 
+            num_classes : Optional[int]=None, 
+            criterion_cls : Type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, 
+            device : Optional[torch.types.Device]=None,
+            dtype : Optional[torch.dtype]=None,
+            **kwargs
+        ):
         """
         Returns:
             loss_fn (`nn.modules.loss._Loss`): The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
-        return criterion_cls(*args, **kwargs)
+        if not weighted or labels is None or num_classes is None:
+            return criterion_cls(*args, **kwargs)
+        counts = torch.ones((num_classes, ))
+        for cls_idx in labels:
+            counts[cls_idx] += 1
+        weights = torch.log(counts)
+        weights /= torch.mean(weights)
+        return criterion_cls(*args, weight=weights, **kwargs)
 
     @staticmethod
     def build_lr_scheduler(

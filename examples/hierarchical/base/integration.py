@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
-from hierarchical.base.loss import MultiLevelCrossEntropyLoss
+from hierarchical.base.loss import MultiLevelWeightedCrossEntropyLoss, MultiLevelCrossEntropyLoss
 from hierarchical.base.model import HierarchicalClassifier
 from hierarchical.base.setup import ids_to_combinations
 from hierarchical.base.utils import (create_hierarchy, leaf_to_parents,
@@ -199,7 +199,7 @@ class HierarchicalBuilder(BaseBuilder):
         ncls = [len(clvl) for clvl in cls]
         hierarchy = create_hierarchy(combinations, cls2idx)
         masks = mask_hierarchy(hierarchy, zero=-100)
-        return {"num_classes" : ncls[0], "masks" : list(masks)}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls, "combinations" : combinations}
+        return {"num_classes" : ncls, "masks" : list(masks)}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls, "combinations" : combinations}
 
     @staticmethod
     def build_model(*args, cls=HierarchicalClassifier, **kwargs):
@@ -257,9 +257,11 @@ class HierarchicalBuilder(BaseBuilder):
         loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
 
         if subsample is None or (isinstance(subsample, int) and subsample <= 1):
+            train_labels = train_image_data["class"]
             train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
             val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
         else:
+            train_labels = train_image_data["class"][::subsample]
             train_dataset = loader(list(zip(train_image_data["path"][::subsample], train_image_data["class"][::subsample])))
             val_dataset = loader(list(zip(val_image_data["path"][::subsample], val_image_data["class"][::subsample])))
 
@@ -295,11 +297,35 @@ class HierarchicalBuilder(BaseBuilder):
             persistent_workers=False
         )
 
-        return train_loader, val_loader
+        return train_labels, train_loader, val_loader
     
     @staticmethod
-    def build_criterion(*args, **kwargs):
-        return MultiLevelCrossEntropyLoss(*args, **kwargs)
+    def build_criterion(
+            *args, 
+            weighted : bool=False,
+            labels : Optional[np.ndarray]=None, 
+            num_classes : Optional[list[int]], 
+            device : Optional[torch.types.Device]=None,
+            dtype : Optional[torch.dtype]=None,
+            **kwargs
+        ):
+        if not weighted or labels is None or num_classes is None:
+            return MultiLevelCrossEntropyLoss(*args, **kwargs)
+        class_weights = []
+        for lvl, ncls in enumerate(num_classes):
+            counts = torch.ones((ncls, ))
+            for cls_idx in labels:
+                counts[cls_idx[lvl]] += 1
+            weights = torch.log(counts)
+            weights /= torch.mean(weights)
+            class_weights.append(weights)
+        return MultiLevelWeightedCrossEntropyLoss(
+            *args, 
+            class_weights=class_weights, 
+            device=device,
+            dtype=dtype,
+            **kwargs
+        )
 
 class MultiLevelResultCollector(BaseResultCollector):
     def __init__(self, lvl : int, cls2cls : Optional[dict[str, str]]=None, *args, **kwargs):

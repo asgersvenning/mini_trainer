@@ -173,6 +173,10 @@ def cli():
         help="Label smoothing applied to training (default=0.1)."
     )
     train_args.add_argument(
+        "--class_weighted", action="store_true", required=False,
+        help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
+    )
+    train_args.add_argument(
         "--fine_tune", action="store_true", required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
@@ -214,7 +218,8 @@ def cli():
     }
     args["criterion_builder_kwargs"] = {
         "weights" : args.pop("loss_weights"),
-        "label_smoothing" : args.pop("label_smoothing")
+        "label_smoothing" : args.pop("label_smoothing"),
+        "weighted" : args.pop("class_weighted")
     }
     args["lr_schedule_builder_kwargs"] = {
         "warmup_epochs" : args.pop("warmup_epochs"),

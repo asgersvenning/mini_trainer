@@ -147,7 +147,7 @@ def main(
         )
     
     # Prepare dataloader
-    train_loader, val_loader = builder.build_dataloader(
+    train_labels, train_loader, val_loader = builder.build_dataloader(
         input_dir=input_dir,
         preprocess=model_preprocess,
         device=device,
@@ -187,7 +187,13 @@ def main(
             'Expected `optimizer_builder` to return an object'
             f'inheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}.'
         )
-    criterion = builder.build_criterion(**criterion_builder_kwargs)
+    criterion = builder.build_criterion(
+        labels=train_labels, 
+        num_classes=extra_model_kwargs["num_classes"], 
+        device=device,
+        dtype=dtype,
+        **criterion_builder_kwargs
+    )
     if not isinstance(criterion, torch.nn.modules.loss._Loss):
         raise TypeError(
             'Expected `criterion_builder` to return an object'
@@ -350,6 +356,10 @@ def cli(description="Train a classifier", **kwargs):
         help="Label smoothing applied to training (default=0.1)."
     )
     train_args.add_argument(
+        "--class_weighted", action="store_true", required=False,
+        help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
+    )
+    train_args.add_argument(
         "--fine-tune", action="store_true", required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
@@ -393,7 +403,8 @@ def cli(description="Train a classifier", **kwargs):
         "weight_decay" : 1e-4
     }
     args["criterion_builder_kwargs"] = {
-        "label_smoothing" : args.pop("label_smoothing")
+        "label_smoothing" : args.pop("label_smoothing"),
+        "weighted" : args.pop("class_weighted")
     }
     args["lr_schedule_builder_kwargs"] = {
         "warmup_epochs" : args.pop("warmup_epochs"),

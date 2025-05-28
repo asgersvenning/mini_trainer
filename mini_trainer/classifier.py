@@ -109,7 +109,7 @@ class Classifier(nn.Module):
         cls,
         model_type : str, 
         weights : Optional[Union[str, OrderedDict[str, Union[torch.Tensor, Any]]]]=None, 
-        num_classes : Optional[int]=None,
+        num_classes : Optional[Union[list[int], int]]=None,
         device=torch.device("cpu"), 
         dtype=torch.float32,
         **kwargs
@@ -131,6 +131,10 @@ class Classifier(nn.Module):
                     state[key] = state[key].to(device, dtype)
             num_classes, _ = state[f"{head_name}.linear.weight"].shape
         else:
+            if isinstance(num_classes, list):
+                # Here we assume that the number of classes for each level has been passed 
+                # and that the number of classes at the leaf level is contained in the first element
+                num_classes = num_classes[0]
             if not isinstance(num_classes, int):
                 raise RuntimeError('Unable to build classifier with unknown number of output classes. If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.')
         
