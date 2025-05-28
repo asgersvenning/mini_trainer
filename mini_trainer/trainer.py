@@ -36,6 +36,8 @@ def train_one_epoch(
     pbar = TQDM(data_loader, total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
 
+    nan_errs = 0
+
     for i, (batch, target) in enumerate(pbar):
         start_time = time.time()
         batch, target = batch.to(device), target.to(device)
@@ -46,6 +48,14 @@ def train_one_epoch(
             loss = criterion(output, target) 
 
         optimizer.zero_grad()
+        if not torch.isfinite(loss).all():
+            nan_errs += 1
+            if nan_errs < 5:
+                continue
+            else:
+                raise RuntimeError(f'Interrupted training due to persistent nan\'s detected in the loss.')
+        else:
+            nan_errs = 0
         loss.backward()
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
