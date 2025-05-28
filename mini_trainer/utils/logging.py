@@ -1,14 +1,14 @@
 import datetime
 import json
-import math
 import os
+import shutil
 import time
 from collections import defaultdict, deque
 from itertools import chain, repeat
+from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
 from typing import Any, Callable, Optional, TextIO, Type, TypeVar, Union
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import torch
@@ -17,10 +17,11 @@ from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer.utils import (cuda_memory_stats, float_signif_decimal,
-                                reduce_across_processes, increment_name_dir)
+                                increment_name_dir, reduce_across_processes)
 from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
+
 
 def format_duration(sec : int, suffix="dhms"):
     sec = int(sec)
@@ -693,18 +694,30 @@ class MultiLogger:
             "extra" : dict(self.heterogeneous_storage)
         }
 
-    def save(self, fp : Optional[Union[str, TextIO]]=None, encoding : str="utf-8", **kwargs):
+    def save(self, fp: Optional[Union[str, TextIO]] = None, encoding: str = "utf-8", **kwargs):
         if fp is None:
             fp = self.output_path
         if isinstance(fp, TextIO):
             json.dump(self.data, fp, **kwargs)
             return
-        with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
-            json.dump(self.data, tmpfile)
-            tmpfile.flush()
-            os.fsync(tmpfile.fileno())
-        os.replace(tmpfile.name, fp)
-        self._last_save = time.time()
+
+        temp_file_name = None
+        try:
+            with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
+                json.dump(self.data, tmpfile, **kwargs)
+                tmpfile.flush()
+                os.fsync(tmpfile.fileno())
+                temp_file_name = tmpfile.name
+            
+            shutil.move(temp_file_name, fp)
+            self._last_save = time.time() # Assuming self._last_save is defined
+        except Exception:
+            if temp_file_name and os.path.exists(temp_file_name):
+                try:
+                    os.remove(temp_file_name)
+                except OSError:
+                    pass # Suppress error during cleanup
+            raise
 
     def log_batch(self, batch):
         pass
