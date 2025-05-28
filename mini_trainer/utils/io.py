@@ -115,7 +115,7 @@ class ImageClassLoader:
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
             proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(p, ImageReadMode.RGB)), self.shape)).to(self.device)
-            if len(proc_img.shape == 4):
+            if len(proc_img.shape) == 4:
                 proc_img = proc_img[0]
             cls = self.class_decoder(c)
             return proc_img, cls
