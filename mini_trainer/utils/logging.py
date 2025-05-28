@@ -827,6 +827,7 @@ class MultiLogger:
     
     def confusion_matrix(self):
         counts = {"labels" : [], "predictions" : []}
+        hits = 0
         for what in counts:
             for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
                 if epoch != self._epoch:
@@ -834,7 +835,10 @@ class MultiLogger:
                 ctp = tp.lower().strip()
                 if not (ctp.startswith("val") or ctp.startswith("eval")):
                     continue
+                hits += 1
                 counts[what].extend(cls_idxs)
+        if hits == 0:
+            print(f"WARNING: No labels or predictions found for {self._epoch}!")
         cm = raw_confusion_matrix(
             **counts,
             n_classes = self._n_classes

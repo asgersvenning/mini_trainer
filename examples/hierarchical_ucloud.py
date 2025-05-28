@@ -253,8 +253,6 @@ def cli():
     args.pop("parquet")
     
     # Call the Python training API
-    import torch
-    torch.autograd.detect_anomaly()
     mt_train(
         builder=HierarchicalBuilder,
         **args
