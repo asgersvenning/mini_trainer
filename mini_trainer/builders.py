@@ -239,7 +239,7 @@ class BaseBuilder:
         counts = torch.ones((num_classes, ))
         for cls_idx in labels:
             counts[cls_idx] += 1
-        weights = torch.log(counts)
+        weights = 1 / (1 + torch.log(counts))
         weights /= torch.mean(weights)
         return criterion_cls(*args, weight=weights, **kwargs)
 

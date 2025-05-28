@@ -316,7 +316,7 @@ class HierarchicalBuilder(BaseBuilder):
             counts = torch.ones((ncls, ))
             for cls_idx in labels:
                 counts[cls_idx[lvl]] += 1
-            weights = torch.log(counts)
+            weights = 1 / (1 + torch.log(counts))
             weights /= torch.mean(weights)
             class_weights.append(weights)
         return MultiLevelWeightedCrossEntropyLoss(
