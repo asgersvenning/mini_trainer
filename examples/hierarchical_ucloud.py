@@ -169,6 +169,10 @@ def cli():
         help="Number of warmup epochs (default=2.0)."
     )
     train_args.add_argument(
+        "--label_smoothing", type=float, default=0.1, required=False,
+        help="Label smoothing applied to training (default=0.1)."
+    )
+    train_args.add_argument(
         "--fine_tune", action="store_true", required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
@@ -202,7 +206,10 @@ def cli():
         "lr" : args.pop("lr"),
         "weight_decay" : 1e-4
     }
-    args["criterion_builder_kwargs"]["weights"] = args.pop("loss_weights")
+    args["criterion_builder_kwargs"] = {
+        "weights" : args.pop("loss_weights"),
+        "label_smoothing" : args.pop("label_smoothing")
+    }
     args["lr_schedule_builder_kwargs"] = {
         "warmup_epochs" : args.pop("warmup_epochs"),
         "min_factor" : 1 / 10**6, 
