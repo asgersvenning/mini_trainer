@@ -195,8 +195,7 @@ def cli():
     )
 
     args = vars(parser.parse_args())
-    print(args)
-    raise NotImplementedError()
+    
     # Distribute builder arguments to the relevant functions
     args["model_builder_kwargs"] = {
         "model_type" : args.pop("model"),
