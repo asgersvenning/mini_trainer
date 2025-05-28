@@ -178,6 +178,10 @@ def cli():
     )
     cfg_args = parser.add_argument_group("Config [optional]")
     cfg_args.add_argument(
+        "--subsample", type=int, default=None, required=False,
+        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
+    )
+    cfg_args.add_argument(
         "--device", type=str, default="cuda:0"
     )
     cfg_args.add_argument(
@@ -191,6 +195,8 @@ def cli():
     )
 
     args = vars(parser.parse_args())
+    print(args)
+    raise NotImplementedError()
     # Distribute builder arguments to the relevant functions
     args["model_builder_kwargs"] = {
         "model_type" : args.pop("model"),
@@ -200,7 +206,8 @@ def cli():
     args["dataloader_builder_kwargs"] = {
         "batch_size" : args.pop("batch_size"),
         "resize_size" : 256, 
-        "train_proportion" : 0.9
+        "train_proportion" : 0.9,
+        "subsample" : args.pop("subsample")
     }
     args["optimizer_builder_kwargs"] = {
         "lr" : args.pop("lr"),

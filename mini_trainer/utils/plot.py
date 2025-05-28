@@ -158,7 +158,11 @@ def plot_heatmap(
         masked = np.ma.masked_array(masked, masked <= min_val)
     
     # compute vmin from the smallest non-zero value
-    base_exp = int(np.floor(np.log10(masked.min())))
+    masked_min = np.floor(np.log10(masked.min()))
+    if np.ma.is_masked(masked_min):
+        base_exp = None
+    else:
+        base_exp = int(masked_min)
     vmax = float(masked.max())
     if percent:
         vmax = max(1, vmax)
@@ -179,6 +183,8 @@ def plot_heatmap(
         ax.patch.set_alpha(0)
     else:
         fig = plt.gcf()
+    if base_exp is None:
+        return fig, ax
     im = ax.imshow(masked, norm=LogNorm(vmin=10**base_exp, vmax=vmax), cmap=cmap)
     ax.axis('off')  # no axes lines, ticks, or grid
     

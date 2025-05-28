@@ -219,7 +219,8 @@ class HierarchicalBuilder(BaseBuilder):
             train_proportion : float=0.9,
             idx2cls : Optional[dict[int, str]]=None,
             num_workers : Optional[int]=None,
-            combinations : Optional[list[tuple[str, str, str]]]=None
+            combinations : Optional[list[tuple[str, str, str]]]=None,
+            subsample : Optional[int]=None
             # hierarchy : Optional[list[list[list[int]]]]=None,
             # path2cls2idx_builder : Optional[Callable[[Any], Callable[[str], torch.Tensor]]]=hierarchical_base_path2cls2idx_builder,
             # path2cls2idx_builder_kwargs : dict[str, Any]={}
@@ -254,9 +255,13 @@ class HierarchicalBuilder(BaseBuilder):
         print(f"Building datasets with image size {resize_size}")
 
         loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
-        
-        train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
-        val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
+
+        if subsample is None or (isinstance(subsample, int) and subsample <= 1):
+            train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
+            val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
+        else:
+            train_dataset = loader(list(zip(train_image_data["path"][::subsample], train_image_data["class"][::subsample])))
+            val_dataset = loader(list(zip(val_image_data["path"][::subsample], val_image_data["class"][::subsample])))
 
         train_sampler = RandomSampler(train_dataset)
         val_sampler = SequentialSampler(val_dataset)

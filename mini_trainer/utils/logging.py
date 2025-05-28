@@ -839,6 +839,8 @@ class MultiLogger:
             **counts,
             n_classes = self._n_classes
         )
+        if not bool(np.any(np.isfinite(cm))):
+            print(f'Confusion matrix has no valid values, produced from counts: {counts}')
         return plot_heatmap(cm, "magma")[0]
 
     def add_figure(self, name : str, figure : Figure):
