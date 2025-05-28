@@ -582,7 +582,7 @@ class MultiLogger:
             canonical_statistic = statistics[0]
         self.canonical_statistic = canonical_statistic
         if self.canonical_statistic not in self.statistics:
-            raise KeyError(f'Supplied canonical statistic "{self.canonical_statistic}" should be one of the supplied statistics: {", ".join([f"\"{stat}\"" for stat in self.statistics])}')
+            raise KeyError(f'Supplied canonical statistic "{self.canonical_statistic}" should be one of the supplied statistics: {", ".join([f"{stat}" for stat in self.statistics])}')
         self.heterogeneous_storage = defaultdict(list)
         self.output_path = os.path.join(output, increment_name_dir(name, output) + ".json")
         os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
