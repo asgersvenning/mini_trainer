@@ -30,15 +30,15 @@ def parquet_to_dataindex(
         else:
             clean_fld = fld
         if (isinstance(clean_fld, int) or clean_fld.isdigit()) and not (int(clean_fld) in test_split):
-            split = "val"
+            split = "validation"
             if train == 0 or (train / max(1, train + val)) < train_prop:
                 split = "train"
             # Ensure we have at least one fold in train/val (if there is more than 1 fold)
             if train > 0 and val == 0:
-                split = "val"
+                split = "validation"
             if split == "train":
                 train += 1
-            if split == "val":
+            if split == "validation":
                 val += 1
         else:
             test += 1
