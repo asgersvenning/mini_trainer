@@ -153,6 +153,10 @@ def cli():
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
+        "--loss_weights", type=float, nargs="+", default=(1., 1., 1.), required=False,
+        help="Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied."
+    )
+    train_args.add_argument(
         "--lr", "--learning_rate", default=0.001, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
@@ -165,7 +169,7 @@ def cli():
         help="Number of warmup epochs (default=2.0)."
     )
     train_args.add_argument(
-        "--fine-tune", action="store_true", required=False,
+        "--fine_tune", action="store_true", required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
     cfg_args = parser.add_argument_group("Config [optional]")
@@ -198,6 +202,7 @@ def cli():
         "lr" : args.pop("lr"),
         "weight_decay" : 1e-4
     }
+    args["criterion_builder_kwargs"]["weights"] = args.pop("loss_weights")
     args["lr_schedule_builder_kwargs"] = {
         "warmup_epochs" : args.pop("warmup_epochs"),
         "min_factor" : 1 / 10**6, 

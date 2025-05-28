@@ -28,25 +28,28 @@ def write_metadata(directory : str, classes : list[str], cls2idx : dict[str, int
     with open(dst, "w") as f:
         json.dump(data, f)
 
-def get_image_data(path : str):
+def get_image_data(path : str, check_integrity : bool=False):
         if not os.path.exists(path):
             raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
         with open(path, "rb") as f:
             _image_data = {k : np.array(v) for k, v in json.load(f).items()}
-        image_data = {
-            k : v[
-                np.array(
-                    thread_map(
-                        is_image, 
-                        _image_data["path"], 
-                        tqdm_class=TQDM, 
-                        desc="Filtering non-standardized images...", 
-                        total=len(_image_data["path"])
+        if check_integrity:
+            image_data = {
+                k : v[
+                    np.array(
+                        thread_map(
+                            is_image, 
+                            _image_data["path"], 
+                            tqdm_class=TQDM, 
+                            desc="Filtering non-standardized images...", 
+                            total=len(_image_data["path"])
+                        )
                     )
-                )
-            ]
-            for k, v in _image_data.items()
-        }
+                ]
+                for k, v in _image_data.items()
+            }
+        else:
+            image_data = _image_data
         train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
         val_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
         return train_image_data, val_image_data
