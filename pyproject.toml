@@ -21,7 +21,7 @@ maintainers = [
 description = "An as minimal as possible fully extendable DL image classification training and inference package"
 readme = "README.md"
 license = "MIT"
-license-files = "LICENSE"
+license-files = ["LICENSE"]
 keywords = ["classification", "computer vision", "deep learning", "pytorch"]
 classifiers = [
   "Development Status :: 3 - Alpha",
