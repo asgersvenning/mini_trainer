@@ -355,6 +355,10 @@ def cli(description="Train a classifier", **kwargs):
     )
     cfg_args = parser.add_argument_group("Config [optional]")
     cfg_args.add_argument(
+        "--subsample", type=int, default=None, required=False,
+        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
+    )
+    cfg_args.add_argument(
         "--device", type=str, default="cuda:0", required=False,
         help='Device used for training (default="cuda:0").'
     )
@@ -381,7 +385,8 @@ def cli(description="Train a classifier", **kwargs):
         "data_index" : args.pop("data_index"),
         "batch_size" : args.pop("batch_size"),
         "resize_size" : 256, 
-        "train_proportion" : 0.9
+        "train_proportion" : 0.9,
+        "subsample" : args.pop("subsample")
     }
     args["optimizer_builder_kwargs"] = {
         "lr" : args.pop("lr"),

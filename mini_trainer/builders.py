@@ -24,6 +24,7 @@ def get_dataset_dataloader(
         resize_size : Union[int, tuple[int, int]],
         batch_size : int=16, 
         num_workers : Optional[int]=None,
+        subsample : Optional[int]=None,
         device=torch.device("cpu"), 
         dtype=torch.float32
     ):
@@ -35,6 +36,11 @@ def get_dataset_dataloader(
         
     print(f"Building datasets with image size {resize_size}")
     dataset_is_small = memory_proportion((len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size), device, dtype) < 0.25
+    if subsample is None or subsample <= 1:
+        pass
+    else:
+        train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
+        val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
     if dataset_is_small:
         train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
         val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
@@ -156,8 +162,10 @@ class BaseBuilder:
             data_index : Optional[str]=None,
             resize_size : Optional[int]=None,
             train_proportion : float=0.9,
+            subsample : int | None=None,
             idx2cls : Optional[dict[int, str]]=None,
-            num_workers : Optional[int]=None):
+            num_workers : Optional[int]=None
+        ):
         """
         Returns:
             (train_loader, validation_loader) (`tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]`): The training and validation dataloaders.
@@ -176,6 +184,7 @@ class BaseBuilder:
             resize_size=getattr(preprocess, "resize_size", resize_size),  
             batch_size=batch_size,
             num_workers=num_workers,
+            subsample=subsample,
             device=device, 
             dtype=dtype
         )
