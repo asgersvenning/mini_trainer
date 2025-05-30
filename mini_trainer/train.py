@@ -43,6 +43,7 @@ def main(
         "weight_decay" : 1e-4
     },
     criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
+    regularizer_builder_kwargs : dict[str, Any]={},
     lr_schedule_builder_kwargs : dict[str, Any]={
         "warmup_epochs" : 2.0
     },
@@ -128,11 +129,18 @@ def main(
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
-    extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
-        path=class_index if class_index is not None else os.path.join(output_dir, "class_index.json"), 
-        dir=input_dir,
-        **spec_model_dataloader_kwargs
-    )
+    try:
+        extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
+            path=class_index if class_index is not None else os.path.join(output_dir, "class_index.json"), 
+            dir=input_dir,
+            **spec_model_dataloader_kwargs
+        )
+    except Exception as e:
+        extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
+            path=class_index, 
+            dir=input_dir,
+            **spec_model_dataloader_kwargs
+        )
 
     # Prepare model
     nn_model, model_preprocess = builder.build_model(
@@ -255,6 +263,7 @@ def main(
         start_epoch=start_epoch,
         preprocess=model_preprocess,
         augmentation=augmentation,
+        regularizer=builder.build_regularizer(**regularizer_builder_kwargs),
         device=device,
         dtype=dtype,
         output_dir=output_dir,

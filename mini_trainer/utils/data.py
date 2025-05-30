@@ -60,7 +60,7 @@ def find_images(root: str) -> list[str]:
     return [p for p, f in zip(paths, flags) if f]
 
 def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
-    if not os.path.exists(path):
+    if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):
             raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
         cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
@@ -70,10 +70,9 @@ def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
     else:
         with open(path, "rb") as f:
             cls2idx = json.load(f)
-    cls = list(cls2idx.keys())
     idx2cls = {v : k for k, v in cls2idx.items()}
     ncls = len(idx2cls)
-    return {"num_classes" : ncls}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls}
+    return {"num_classes" : ncls}, {"classes" : list(cls2idx.keys()), "cls2idx" : cls2idx, "idx2cls" : idx2cls}
 
 def prepare_split(
         paths : list[str], desc="Preprocessing images for split...", 

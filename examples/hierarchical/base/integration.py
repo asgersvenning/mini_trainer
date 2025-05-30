@@ -269,7 +269,7 @@ class HierarchicalBuilder(BaseBuilder):
         val_sampler = SequentialSampler(val_dataset)
 
         if num_workers is None:
-            num_workers = int(os.cpu_count() / 2)
+            num_workers = int(os.cpu_count() * 3 / 4)
             num_workers -= num_workers % 2
             num_workers = max(0, num_workers)
 

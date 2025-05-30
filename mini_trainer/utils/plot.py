@@ -145,9 +145,9 @@ def raw_confusion_matrix(
 def infer_heatmap_figsize(
     matrix_shape: tuple[int, int],
     min_pixels_per_cell: int = 4,
-    max_total_pixels_dim: int = 10000, # Max pixels for width or height to avoid huge images
+    max_total_pixels_dim: int = 8000, # Max pixels for width or height to avoid huge images
     min_figsize_dim: float = 4.0,    # Min inches for width or height
-    max_figsize_dim: float = 100.0,   # Max inches for width or height
+    max_figsize_dim: float = 80.0,   # Max inches for width or height
     default_dpi: float = 100.0
 ) -> tuple[float, float]:
     """

@@ -10,12 +10,13 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torchvision.io import ImageReadMode
 
-from mini_trainer.classifier import Classifier
+from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion
 from mini_trainer.utils.data import (get_image_data, parse_class_index,
                                      prepare_split, write_metadata)
 from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
 from mini_trainer.utils.logging import MultiLogger
+from mini_trainer.utils.loss import class_weight_distribution_regularization
 
 
 def get_dataset_dataloader(
@@ -95,7 +96,7 @@ def get_dataset_dataloader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=min(2, num_workers), 
+        num_workers=min(max(2, os.cpu_count() - 2), num_workers), 
         pin_memory=False,
         pin_memory_device="",
         persistent_workers=False
@@ -335,7 +336,14 @@ class BaseBuilder:
             counts[cls_idx] += 1
         weights = 1 / (counts.mean() + counts)
         weights /= torch.mean(weights)
-        return criterion_cls(*args, weight=weights, **kwargs)
+        return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
+
+    @staticmethod
+    def build_regularizer(strength : float=1e-1, *args, **kwargs):
+        strength = float(strength)
+        if strength == 0:
+            return lambda _: 0.
+        return lambda model: strength * class_weight_distribution_regularization(last_layer_weights(model))
 
     @staticmethod
     def build_lr_scheduler(

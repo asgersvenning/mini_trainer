@@ -28,6 +28,7 @@ def train_one_epoch(
         logger : MultiLogger,
         preprocess : Callable=lambda x : x,
         augmentation : Callable=lambda x : x,
+        regularizer : Callable[[nn.Module], torch.Tensor]=lambda _: 0.,
         clip_grad_norm : Optional[float]=1,
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
@@ -57,7 +58,7 @@ def train_one_epoch(
                 raise RuntimeError(f'Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
-        sum(loss).backward()
+        (sum(loss) + regularizer(model)).backward()
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         optimizer.step()
@@ -144,6 +145,7 @@ def train(
         start_epoch : int = 0,
         preprocess : Callable=lambda x : x,
         augmentation : Callable=lambda x : x,
+        regularizer : Callable[[nn.Module], torch.Tensor]=lambda _: 0.,
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
         output_dir : Optional[str]=None,
@@ -155,7 +157,7 @@ def train(
     start_time = time.time()
 
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, device=device, dtype=dtype, **kwargs)
+        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
         evaluate(model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         if output_dir:
             checkpoint = {
