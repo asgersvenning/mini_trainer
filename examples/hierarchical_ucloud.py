@@ -189,7 +189,7 @@ def cli():
         "--device", type=str, default="cuda:0"
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default="float16"
+        "--dtype", type=str, default="bfloat16"
     )
     cfg_args.add_argument(
         "--seed", type=int, required=False,

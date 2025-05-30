@@ -23,7 +23,7 @@ def main(
     epochs : int=15,
     name: Optional[str]=None,
     device : str="cuda:0",
-    dtype : str="float16",
+    dtype : str="bfloat16",
     seed : Optional[int]=None,
     builder : Type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : dict[str, Any]={},
@@ -93,8 +93,8 @@ def main(
 
         dtype (str, optional):
             PyTorch data type for images during training and validation
-            (e.g., 'float16'). The model parameters are always stored in float32,
-            and training is done with autocasting. Default is 'float16'.
+            (e.g., 'bfloat16'). The model parameters are always stored in float32,
+            and training is done with autocasting. Default is 'bfloat16'.
 
         seed (Optional[int], optional):
             Initial seed for Python's random number generator to ensure reproducibility,
@@ -373,9 +373,9 @@ def cli(description="Train a classifier", **kwargs):
         help='Device used for training (default="cuda:0").'
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default="float16", required=False,
+        "--dtype", type=str, default="bfloat16", required=False,
         help=
-        "PyTorch data type used for storing images for training/validation (default=float16).\n" 
+        "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
         "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(

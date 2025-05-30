@@ -167,7 +167,7 @@ if __name__ == "__main__":
         name=name,
         # weights="hierarchical/gmo_traits_2.pt",
         epochs=25,
-        dtype="float16",
+        dtype="bfloat16",
         device="cuda:0",
         builder=HierarchicalBuilder,
         model_builder_kwargs={"model_type" : "efficientnet_b0"},

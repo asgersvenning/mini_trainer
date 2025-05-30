@@ -27,7 +27,7 @@ def main(
     num_workers : Optional[int]=None,
     n_max : Optional[int]=None,
     device : str="cuda:0",
-    dtype : str="float16",
+    dtype : str="bfloat16",
     verbose : bool=False,
     builder : Type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : dict[str, Any]={},
@@ -80,8 +80,8 @@ def main(
             Default is 'cuda:0'.
 
         dtype (str, optional):
-            PyTorch data type used for inference (e.g., 'float16').
-            Default is 'float16'.
+            PyTorch data type used for inference (e.g., 'bfloat16').
+            Default is 'bfloat16'.
         
         verbose (bool, optional):
             Print additional logging messages to the terminal.
@@ -279,8 +279,8 @@ def cli(description="Predict with a classifier", **kwargs):
         help='Device used for inference (default="cuda:0").'
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default="float16", required=False,
-        help="PyTorch data type used for inference (default=float16)."
+        "--dtype", type=str, default="bfloat16", required=False,
+        help="PyTorch data type used for inference (default=bfloat16)."
     )
     args = vars(parser.parse_args())
     args["model_builder_kwargs"] = {
