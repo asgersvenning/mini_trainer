@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 class TensorboardLogger(_Logger):
     def __init__(self, writer : SummaryWriter, steps : list[int], tag : Optional[Union[str, list[str]]]=None):
         self.writer = writer
-        self.statistics : dict[str, _Statistic] = dict()
+        self._statistics : dict[str, _Statistic] = dict()
         if steps is None:
             raise TypeError(f'Initializing {TensorboardLogger} with `steps=None` is invalid.')
         self.global_steps = steps
@@ -22,10 +22,14 @@ class TensorboardLogger(_Logger):
     def add_stat(self, name : str, container : Union[_Statistic, Type[_Statistic]]=BaseStatistic):
         if isinstance(container, type):
             container = container()
-        self.statistics[name] = container
+        self._statistics[name] = container
 
     def get(self, name : str):
-        return self.statistics[name]
+        return self._statistics[name]
+    
+    @property
+    def statistics(self):
+        return self._statistics
 
     def _make_scalar_hierarchical_tag(self, name : str):
         if isinstance(self.tag, str):

@@ -290,7 +290,7 @@ class BaseBuilder:
         Requires `model` to have `_backbone_output_name` attribute.
         """
         head_lr = lr
-        backbone_lr = backbone_lr or head_lr / 10
+        backbone_lr = backbone_lr or head_lr / 3
         head_weight_decay = weight_decay
         backbone_weight_decay = backbone_weight_decay or head_weight_decay
 

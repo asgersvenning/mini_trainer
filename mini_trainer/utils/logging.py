@@ -287,6 +287,10 @@ class _Logger:
         """
         pass
 
+    @property
+    def statistics(self) -> dict[str, _Statistic]:
+        raise NotImplementedError()
+
 L = TypeVar('L', bound=_Logger)
 
 class SmoothedValue(_Statistic):
@@ -405,6 +409,10 @@ class MetricLogger(_Logger):
 
     def get(self, name : str):
         return self.meters[name]
+    
+    @property
+    def statistics(self):
+        return self.meters
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     """Maintains moving averages of model parameters using an exponential decay.
@@ -534,6 +542,7 @@ class MultiLogger:
         self.total_epochs = epochs
         self.statistics = statistics
         self.private_statistics = private_statistics
+        self._original_statistics = sorted(list(set(self.statistics) - set(self.private_statistics)), key=lambda x : self.statistics.index(x))
         self.statistics_storage = defaultdict(list)
         if canonical_statistic is None:
             canonical_statistic = statistics[0]
@@ -710,10 +719,18 @@ class MultiLogger:
 
     def log_loss(
             self,
-            loss
+            loss : Union[torch.Tensor, list[torch.Tensor]]
         ):
-        loss : float = loss.item()
-        self.log_statistic(loss=loss)
+        if isinstance(loss, torch.Tensor) and loss.numel() == 1:
+            loss : float = loss.item()
+            self.log_statistic(loss=loss)
+        else:
+            self.log_statistic(loss=sum(loss).item())
+            for i, term in enumerate(loss):
+                if term.numel() != 1:
+                    raise RuntimeError(f'Expected scalar loss term but found {loss.shape}.')
+                term = term.item()
+                self.log_statistic(**{f'loss/lvl{i}' : term})
 
     def log_optim(
             self,
@@ -723,7 +740,7 @@ class MultiLogger:
             self.log_statistic(lr=float('nan'))
         else:
             grps = optimizer.param_groups
-            self.log_statistic(lr=optimizer.param_groups[0]["lr"])
+            self.log_statistic(lr=grps[0]["lr"])
             if len(grps) > 1:
                 for grp in grps:
                     self.log_statistic(**{f'lr/{grp["name"]}' : grp["lr"]})
@@ -774,7 +791,7 @@ class MultiLogger:
         self.step()
 
     def status(self):
-        stats = str(self.loggers[0])
+        stats = " | ".join([f'{name}: {str(self.loggers[0].statistics[name])}' for name in self._original_statistics])
         # cuda_memory_use = cuda_memory_stats()
         # used = total = free = 0
         # for dev_idx, mem_stats in cuda_memory_use.items():

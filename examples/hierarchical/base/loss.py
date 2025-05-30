@@ -51,10 +51,13 @@ class MultiLevelCrossEntropyLoss(torch.nn.modules.loss._Loss):
             targets : torch.Tensor
         ):
         targets = targets.transpose(0, 1)
-        return MultiLevelLoss(
-            [(self._loss_fns[i](preds[i], targets[i])).mean() for i, w in enumerate(self.weights) if w > 0], 
+        return list(MultiLevelLoss(
+            [
+                (self._loss_fns[i](preds[i], targets[i])).mean()
+                for i, w in enumerate(self.weights) if w > 0
+            ], 
             [w for w in self.weights if w > 0]
-        ).aggregate()
+        ))
 
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
@@ -96,7 +99,13 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         ) -> "MultiLevelLoss":
         targets = targets.transpose(0, 1)
         item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
-        return MultiLevelLoss([(self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean() for i in range(self.n_levels)], self.weights).aggregate()
+        return list(MultiLevelLoss(
+            [
+                (self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean()
+                for i in range(self.n_levels)
+            ], 
+             self.weights
+        ))
     
 class MultiLevelLoss:
     def __init__(
@@ -113,13 +122,16 @@ class MultiLevelLoss:
         return sum([self.losses[i] * self.weights[i] for i in range(len(self.weights)) if self.weights[i] > 0])
     
     def __getitem__(self, idx : Union[int, slice]) -> torch.Tensor:
-        return self.losses[idx]
+        return self.losses[idx] * self.weights[idx]
     
     def __len__(self) -> int:
-        return len(self.losses)
+        return sum([int(w > 0 for w in self.weights)])
 
     def __iter__(self):
-        return iter(self.losses)
+        for w, l in zip(self.weights, self.losses):
+            if w == 0:
+                continue
+            yield w * l
     
     def __repr__(self):
         return f'Losses: [{", ".join([f"{loss.item():.1f}" for loss in self.losses])}]\nWeights: [{", ".join([f"{weight:.1f}" for weight in self.weights])}]'
