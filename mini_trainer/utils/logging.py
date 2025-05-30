@@ -358,7 +358,10 @@ class SmoothedValue(_Statistic):
 
     @property
     def value(self):
-        return self.deque[-1]
+        if self.deque:
+            return self.deque[-1]
+        else:
+            return float("nan")
 
     def __str__(self):
         parts = []
@@ -632,6 +635,13 @@ class MultiLogger:
     def log_statistic(self, **kwargs):
         for stat, value in kwargs.items():
             if stat not in self.private_statistics:
+                if stat not in self.statistics:
+                    self.statistics.append(stat)
+                    for logger, stat_factory in zip(
+                        self.loggers, 
+                        chain(self.logger_cls_stat_factory, repeat(BaseStatistic))
+                    ):
+                        logger.add_stat(stat, stat_factory())
                 for logger in self.loggers:
                     logger.update(stat, value)
             if isinstance(value, (torch.Tensor, np.ndarray)):
@@ -712,7 +722,11 @@ class MultiLogger:
         if optimizer is None:
             self.log_statistic(lr=float('nan'))
         else:
+            grps = optimizer.param_groups
             self.log_statistic(lr=optimizer.param_groups[0]["lr"])
+            if len(grps) > 1:
+                for grp in grps:
+                    self.log_statistic(**{f'lr/{grp["name"]}' : grp["lr"]})
 
     def log_speed(
             self,
@@ -777,7 +791,17 @@ class MultiLogger:
         return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'# '(mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
 
     def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
-        return " | ".join([f'{stat}={value:>5.{float_signif_decimal(value)}f}' for stat in stats if (value := self.statistics_storage[stat][-1]) or True])
+        parts = []
+        for stat in stats:
+            values = []
+            for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
+                if e != self._epoch or t != self._type:
+                    break
+                values.append(v)
+            value = type(v)(np.median(np.array(values)))
+            part = f'{stat}={value:>5.{float_signif_decimal(value)}f}'
+            parts.append(part)
+        return " | ".join(parts)
     
     def confusion_matrix(self):
         counts = {"labels" : [], "predictions" : []}

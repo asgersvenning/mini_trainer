@@ -39,7 +39,7 @@ def main(
     },
     augmentation_builder_kwargs : dict[str, Any]={},
     optimizer_builder_kwargs : dict[str, Any]={
-        "lr" : 0.001,
+        "lr" : 0.0001,
         "weight_decay" : 1e-4
     },
     criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
@@ -181,7 +181,7 @@ def main(
     # Setup optimizer, criterion (loss function) and learning rate scheduler
     start_epoch = 0
 
-    optimizer = builder.build_optimizer(params=nn_model.parameters(recurse=True), **optimizer_builder_kwargs)
+    optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     if not isinstance(optimizer, torch.optim.Optimizer):
         raise TypeError(
             'Expected `optimizer_builder` to return an object'
@@ -340,8 +340,8 @@ def cli(description="Train a classifier", **kwargs):
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", type=float, default=0.001, required=False,
-        help="Initial learning rate after warmup (default=0.001)."
+        "--lr", "--learning_rate", type=float, default=0.0001, required=False,
+        help="Initial learning rate after warmup (default=0.0001)."
     )
     train_args.add_argument(
         "--batch_size", type=int, default=16, required=False,

@@ -141,10 +141,66 @@ def raw_confusion_matrix(
 
     return cm_norm
 
+
+def infer_heatmap_figsize(
+    matrix_shape: tuple[int, int],
+    min_pixels_per_cell: int = 6,
+    max_total_pixels_dim: int = 30000, # Max pixels for width or height to avoid huge images
+    min_figsize_dim: float = 4.0,    # Min inches for width or height
+    max_figsize_dim: float = 300.0,   # Max inches for width or height
+    default_dpi: float = 100.0
+) -> tuple[float, float]:
+    """
+    Infers a suitable figsize for a heatmap based on matrix dimensions
+    to ensure individual cells are not significantly blurred.
+
+    Args:
+        matrix_shape: Tuple (num_rows, num_cols) of the heatmap matrix.
+        min_pixels_per_cell: Target minimum number of pixels for the shorter
+                             dimension of a cell.
+        max_total_pixels_dim: Maximum allowed total pixels for either width or height
+                              (num_cells * min_pixels_per_cell). This helps cap
+                              the calculated figure size before DPI scaling if
+                              min_pixels_per_cell is very high for a large matrix.
+        min_figsize_dim: Minimum size (in inches) for any dimension of the figure.
+        max_figsize_dim: Maximum size (in inches) for any dimension of the figure.
+        default_dpi: Assumed DPI if not available from Matplotlib's rcParams.
+
+    Returns:
+        Tuple (width_inches, height_inches) for the figure.
+    """
+    num_rows, num_cols = matrix_shape
+
+    if num_rows <= 0 or num_cols <= 0:
+        # Return a default small size for empty or invalid shapes
+        return (min_figsize_dim, min_figsize_dim)
+
+    try:
+        # Get current DPI from Matplotlib settings if available
+        dpi = plt.rcParams.get('figure.dpi', default_dpi)
+    except RuntimeError: # pragma: no cover (can happen in non-GUI backends sometimes)
+        dpi = default_dpi
+    if dpi <= 0: dpi = default_dpi # Ensure DPI is positive
+
+
+    # Calculate ideal total pixels needed for clarity
+    ideal_fig_width_pixels = min(num_cols * min_pixels_per_cell, max_total_pixels_dim)
+    ideal_fig_height_pixels = min(num_rows * min_pixels_per_cell, max_total_pixels_dim)
+
+    # Convert ideal pixels to inches
+    ideal_fig_width_inches = ideal_fig_width_pixels / dpi
+    ideal_fig_height_inches = ideal_fig_height_pixels / dpi
+
+    # Apply inch-based constraints
+    final_fig_width = max(min_figsize_dim, min(ideal_fig_width_inches, max_figsize_dim))
+    final_fig_height = max(min_figsize_dim, min(ideal_fig_height_inches, max_figsize_dim))
+
+    return (final_fig_width, final_fig_height)
+
 def plot_heatmap(
         mat : np.ndarray, 
         cmap_name : str='magma',
-        figsize : tuple[int, int]=(20, 20),
+        figsize : Optional[tuple[int, int]]=None,
         font_size : int=20,
         max_ticks : int=10,
         percent : bool=True,
@@ -174,7 +230,7 @@ def plot_heatmap(
     # plot
     new_ax = ax is None
     if new_ax:
-        fig, ax = plt.subplots(figsize=figsize, **kwargs)
+        fig, ax = plt.subplots(figsize=figsize or infer_heatmap_figsize(mat.shape), **kwargs)
         if not isinstance(fig, Figure):
             raise RuntimeError(f"Unexpected figure type {type(fig)}")
         if not isinstance(ax, Axes):

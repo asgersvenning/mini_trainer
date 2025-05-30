@@ -150,6 +150,67 @@ class BaseBuilder:
                 if param.requires_grad and not model._architecture_output_name in name:
                     param.requires_grad_(False)
         return model, model_preprocess
+    
+    @staticmethod
+    def parameter_groups(
+        model: nn.Module,
+        head_lr: float,
+        backbone_lr: float,
+        head_weight_decay: float,
+        backbone_weight_decay: float,
+    ) -> list[dict[str, Any]]:
+        """
+        Groups all model parameters into 'head' and 'backbone'.
+        The 'head' is identified by the attribute name stored in `model._backbone_output_name`.
+        All other parameters are considered 'backbone'.
+        This method does not filter by requires_grad; it groups all parameters.
+        """
+        if not hasattr(model, '_backbone_output_name'):
+            raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
+        
+        head_attr_name = getattr(model, '_backbone_output_name')
+        if not isinstance(head_attr_name, str):
+            raise TypeError(f"`model._backbone_output_name` must be a string, got {type(head_attr_name)}.")
+        
+        if not hasattr(model, head_attr_name):
+            raise AttributeError(f"Model does not have an attribute named '{head_attr_name}' as specified by `_backbone_output_name`.")
+
+        head_module = getattr(model, head_attr_name)
+        if not isinstance(head_module, nn.Module):
+            raise TypeError(f"The attribute '{head_attr_name}' (value of `_backbone_output_name`) must be an nn.Module.")
+
+        head_module_param_ids = set(id(p) for p in head_module.parameters())
+
+        actual_head_params = []
+        actual_backbone_params = []
+
+        for p in model.parameters(): # Iterate through all parameters the model exposes
+            if id(p) in head_module_param_ids:
+                actual_head_params.append(p)
+            else:
+                actual_backbone_params.append(p)
+        
+        param_groups = []
+        if actual_head_params:
+            param_groups.append({
+                "params": actual_head_params, "lr": head_lr, "name": "head",
+                "weight_decay": head_weight_decay
+            })
+        elif head_module_param_ids: # Head module exists and has params, but they aren't in model.parameters()? Unlikely.
+             raise RuntimeError(f"Head module '{head_attr_name}' seems to have parameters, but none were found directly in `model.parameters()` for the head group.")
+
+
+        if actual_backbone_params:
+            param_groups.append({
+                "params": actual_backbone_params, "lr": backbone_lr, "name": "backbone",
+                "weight_decay": backbone_weight_decay
+            })
+        
+        if not param_groups and list(model.parameters()):
+            raise RuntimeError(f"Model has parameters, but no distinct head/backbone groups formed.")
+
+
+        return param_groups
 
     @staticmethod
     def build_dataloader(
@@ -211,14 +272,46 @@ class BaseBuilder:
             # # Convert back to tensor (in case some augmentations convert to PIL Image)
             # tt.ToTensor(),
         ])
+    
+    @classmethod
+    def build_optimizer(
+        cls,
+        model: nn.Module,
+        optimizer_cls: Type[torch.optim.Optimizer] = torch.optim.AdamW,
+        lr: float=1e-3,
+        weight_decay: float=0.0001,
+        backbone_lr: Optional[float]=None,
+        backbone_weight_decay: Optional[float]=None,
+        **optimizer_kwargs # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
+    ) -> torch.optim.Optimizer:
+        """
+        Builds an optimizer with separate parameter groups for head and backbone.
+        All parameters of the model are assigned to groups.
+        Requires `model` to have `_backbone_output_name` attribute.
+        """
+        head_lr = lr
+        backbone_lr = backbone_lr or head_lr / 10
+        head_weight_decay = weight_decay
+        backbone_weight_decay = backbone_weight_decay or head_weight_decay
 
-    @staticmethod
-    def build_optimizer(params, *args, optimizer_cls : Type[torch.optim.Optimizer]=torch.optim.AdamW, **kwargs):
-        """
-        Returns:
-            optimizer (`torch.optim.Optimizer`): The model optimizer (e.g. `torch.optim.SGD` for standard gradient descent).
-        """
-        return optimizer_cls(params=params, *args, **kwargs)
+        param_groups = cls.parameter_groups(
+            model, 
+            head_lr=head_lr, backbone_lr=backbone_lr,
+            head_weight_decay=head_weight_decay, backbone_weight_decay=backbone_weight_decay
+        )
+
+        if not param_groups and not list(model.parameters()): # Model has no parameters
+            final_params_for_optimizer = [] # Optimizer on empty list
+        elif not param_groups and list(model.parameters()): # Should be caught by group_parameters warning.
+             raise ValueError("Model has parameters, but group_parameters returned no groups. This indicates an issue.")
+        else:
+            final_params_for_optimizer = param_groups
+        
+        # Default LR for the optimizer itself (used if a group has no LR or if not using groups)
+        if 'lr' not in optimizer_kwargs:
+            optimizer_kwargs['lr'] = head_lr # A sensible default
+
+        return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
     
     @staticmethod
     def build_criterion(
@@ -248,7 +341,7 @@ class BaseBuilder:
     def build_lr_scheduler(
             optimizer : torch.optim.Optimizer,
             epochs : int,
-            warmup_epochs : int,
+            warmup_epochs : float,
             steps_per_epoch : int,
             min_factor : float = 1e-6,
             start_factor : float = 1e-4
@@ -259,9 +352,31 @@ class BaseBuilder:
         Returns:
             lr_scheduler (`torch.optim.lr_scheduler.LRScheduler`): The learning rate scheduler (shape only).
         """
+        warmup_steps = round(warmup_epochs * steps_per_epoch)
+        warmup_proportion = warmup_epochs / epochs
+        head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
+        
+        backbone_warmup_steps = round(warmup_steps * (1 - warmup_proportion))
+        _backbone_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch - warmup_steps, backbone_warmup_steps, start_factor, min_factor)
+        def backbone_schedule(step : int):
+            if step < warmup_steps:
+                return 0
+            return _backbone_schedule(step - warmup_steps)
+        
+        lr_lambdas = []
+        for grp in optimizer.param_groups:
+            name = grp["name"]
+            match name:
+                case "head":
+                    lr_lambdas.append(head_schedule)
+                case "backbone":
+                    lr_lambdas.append(backbone_schedule)
+                case _:
+                    raise KeyError(f'Unknown parameter group "{name}" expected one of "head"/"backbone".')
+
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer=optimizer, 
-            lr_lambda=cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_epochs * steps_per_epoch, start_factor, min_factor)
+            lr_lambda=lr_lambdas
         )
     
     @staticmethod
