@@ -79,7 +79,7 @@ def prepare_split(
         paths : list[str], desc="Preprocessing images for split...", 
         resize_size : Union[int, tuple[int, int]]=256, 
         device=torch.device("cpu"), 
-        dtype=torch.float16
+        dtype=torch.bfloat16
     ):
     shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
     tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
