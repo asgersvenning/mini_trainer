@@ -280,6 +280,7 @@ class HierarchicalBuilder(BaseBuilder):
             batch_size=batch_size,
             sampler=train_sampler,
             collate_fn=multi_level_collate,
+            drop_last=True, # Ensures compatibility with batch normalization
             num_workers=num_workers,
             pin_memory=pin_memory,
             pin_memory_device=str(device),

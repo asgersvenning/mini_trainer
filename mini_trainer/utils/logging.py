@@ -281,6 +281,9 @@ class _Logger:
         """
         pass
 
+    def __str__(self):
+        raise NotImplementedError()
+
 L = TypeVar('L', bound=_Logger)
 
 class SmoothedValue(_Statistic):
@@ -295,6 +298,7 @@ class SmoothedValue(_Statistic):
         self.count = 0
         self.min = None
         self.fmt_vars = fmt_vars
+        self.fmt_digs = {var : deque(maxlen=window_size) for var in self.fmt_vars}
 
     def __len__(self):
         return self.count
@@ -354,7 +358,14 @@ class SmoothedValue(_Statistic):
         return self.deque[-1]
 
     def __str__(self):
-        return "/".join([f'{value:.{float_signif_decimal(value)}f}' for var in self.fmt_vars if (value := getattr(self, var)) or True])
+        parts = []
+        for var in self.fmt_vars:
+            value = getattr(self, var)
+            cur_digs = float_signif_decimal(value)
+            self.fmt_digs[var].append(cur_digs)
+            part = f'{value:.{max(self.fmt_digs[var], key=self.fmt_digs[var].count)}f}'
+            parts.append(part)
+        return "/".join(parts)
 
 class MetricLogger:
     def __init__(self, delimiter=" | ", printer=print, **kwargs):
@@ -389,62 +400,6 @@ class MetricLogger:
     def add_meter(self, name, meter):
         self.meters[name] = meter
 
-    def log_every(self, iterable, print_freq, header=None):
-        i = 0
-        if not header:
-            header = ""
-        start_time = time.time()
-        end = time.time()
-        iter_time = SmoothedValue(fmt="{avg:.4f}")
-        data_time = SmoothedValue(fmt="{avg:.4f}")
-        space_fmt = ":" + str(len(str(len(iterable)))) + "d"
-        if torch.cuda.is_available():
-            log_msg = self.delimiter.join(
-                [
-                    header,
-                    "[{0" + space_fmt + "}/{1}]",
-                    "eta: {eta}",
-                    "{meters}",
-                    "time: {time}",
-                    "data: {data}",
-                    "max mem: {memory:.0f}",
-                ]
-            )
-        else:
-            log_msg = self.delimiter.join(
-                [header, "[{0" + space_fmt + "}/{1}]", "eta: {eta}", "{meters}", "time: {time}", "data: {data}"]
-            )
-        MB = 1024.0 * 1024.0
-        for obj in iterable:
-            data_time.update(time.time() - end)
-            yield obj
-            iter_time.update(time.time() - end)
-            if i % print_freq == 0:
-                eta_seconds = iter_time.global_avg * (len(iterable) - i)
-                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
-                if torch.cuda.is_available():
-                    self.printer(
-                        log_msg.format(
-                            i,
-                            len(iterable),
-                            eta=eta_string,
-                            meters=str(self),
-                            time=str(iter_time),
-                            data=str(data_time),
-                            memory=torch.cuda.max_memory_allocated() / MB,
-                        )
-                    )
-                else:
-                    self.printer(
-                        log_msg.format(
-                            i, len(iterable), eta=eta_string, meters=str(self), time=str(iter_time), data=str(data_time)
-                        )
-                    )
-            i += 1
-            end = time.time()
-        total_time = time.time() - start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     """Maintains moving averages of model parameters using an exponential decay.
     ``ema_avg = decay * avg_model_param + (1 - decay) * model_param``
@@ -472,6 +427,7 @@ class BaseStatistic(_Statistic):
         self.max : Optional[float] = None
         self.mean : Optional[float] = None
         self.sum : Optional[float] = None
+        self.digs : deque[int] = deque(maxlen=30)
         self._len : int = 0
         if values is not None:
             self.update(values)
@@ -529,6 +485,8 @@ class BaseStatistic(_Statistic):
             mn = self.min
             mx = self.max
         digs = float_signif_decimal(min(filter(lambda x : x is not None and x != 0, map(abs, [m, mn, mx])), default=1))
+        self.digs.append(digs)
+        digs = max(self.digs, key=self.digs.count)
         return f'{m:.{digs}f} [{mn:.{digs}f}; {mx:.{digs}f}]'
     
     def __repr__(self):

@@ -85,6 +85,7 @@ def get_dataset_dataloader(
         batch_size=batch_size,
         sampler=train_sampler,
         num_workers=num_workers,
+        drop_last=True, # Ensures compatibility with batch normalization
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
         persistent_workers=pin_memory
