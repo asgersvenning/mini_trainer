@@ -340,7 +340,7 @@ def cli(description="Train a classifier", **kwargs):
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", default=0.001, required=False,
+        "--lr", "--learning_rate", type=float, default=0.001, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
     train_args.add_argument(

@@ -157,7 +157,7 @@ def cli():
         help="Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", default=0.001, required=False,
+        "--lr", "--learning_rate", type=float, default=0.001, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
     train_args.add_argument(
