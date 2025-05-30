@@ -96,7 +96,7 @@ def get_dataset_dataloader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=min(max(2, os.cpu_count() - 2), num_workers), 
+        num_workers=min(max(2, os.cpu_count() - num_workers - 2), num_workers), 
         pin_memory=False,
         pin_memory_device="",
         persistent_workers=False
