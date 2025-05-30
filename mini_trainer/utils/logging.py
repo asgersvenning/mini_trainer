@@ -700,22 +700,40 @@ class MultiLogger:
             target : torch.Tensor, 
             prediction : Union[list[torch.Tensor], torch.Tensor]
         ):
-        if isinstance(prediction, list):
+        if isinstance(prediction, list) and len(prediction) == 1:
             prediction = prediction[0]
             target = target[:, 0]
-        if self._n_classes is None:
-            self._n_classes = prediction.shape[1]
-        self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
-        acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
-        self.log_statistic(acc1=acc1, acc5=acc5)
+        if not isinstance(prediction, list):
+            if self._n_classes is None:
+                self._n_classes = prediction.shape[1]
+            self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
+            acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
+            self.log_statistic(acc1=acc1, acc5=acc5)
+        else:
+            if "acc1" in self._original_statistics:
+                self._original_statistics[self._original_statistics.index("acc1")] = "acc1/lvl0"
+            if "acc5" in self._original_statistics:
+                self._original_statistics[self._original_statistics.index("acc5")] = "acc5/lvl0"
+            for lvl in range(len(prediction)):
+                tp = prediction[lvl]
+                tl = target[:, lvl]
+                self._n_classes = tp.shape[1]
+                self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), lvl=lvl)
+                acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
+                self.log_statistic(**{f'acc1/lvl{lvl}' : acc1, f"acc5/lvl{lvl}" : acc5})
 
     def log_labels_predictions(
             self,
             labels : list[int], 
-            predictions : list[int]
+            predictions : list[int],
+            lvl : Optional[int]=None
         ):
-        self.store("labels", labels)
-        self.store("predictions", predictions)
+        if lvl is None:
+            self.store("labels", labels)
+            self.store("predictions", predictions)
+        else:
+            self.store(f"labels/lvl{lvl}", labels)
+            self.store(f"predictions/lvl{lvl}", predictions)
 
     def log_loss(
             self,
@@ -811,6 +829,8 @@ class MultiLogger:
         parts = []
         for stat in stats:
             values = []
+            if len(self.statistics_storage[stat]) == 0 and len(self.statistics_storage[f'{stat}/lvl0']) > 0:
+                stat = f'{stat}/lvl0'
             for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
                 if e != self._epoch or t != self._type:
                     break
@@ -821,35 +841,52 @@ class MultiLogger:
         return " | ".join(parts)
     
     def confusion_matrix(self):
-        counts = {"labels" : [], "predictions" : []}
-        hits = 0
-        for what in counts:
-            for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
-                if epoch != self._epoch:
-                    break
-                ctp = tp.lower().strip()
-                if not (ctp.startswith("val") or ctp.startswith("eval")):
+        lvl = None
+        figs = []
+        while True:
+            if lvl is None:
+                counts = {"labels" : [], "predictions" : []}
+                lvl = 0
+                if any([key not in self.heterogeneous_storage for key in counts]):
                     continue
-                hits += 1
-                counts[what].extend(cls_idxs)
-        if hits == 0:
-            print(f"WARNING: No labels or predictions found for {self._epoch}!")
-        cm = raw_confusion_matrix(
-            **counts,
-            n_classes = self._n_classes
-        )
-        if not bool(np.any(np.isfinite(cm))):
-            print(f'Confusion matrix has no valid values, produced from counts: {counts}')
-        return plot_heatmap(cm, "magma")[0]
+            else:
+                counts = {f"labels/lvl{lvl}" : [], f"predictions/lvl{lvl}" : []}
+                lvl += 1
+                if any([key not in self.heterogeneous_storage for key in counts]):
+                    break
+            hits = 0
+            for what in counts:
+                for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
+                    if epoch != self._epoch:
+                        break
+                    ctp = tp.lower().strip()
+                    if not (ctp.startswith("val") or ctp.startswith("eval")):
+                        continue
+                    hits += 1
+                    counts[what].extend(cls_idxs)
+            if hits == 0:
+                print(f"WARNING: No labels or predictions found for {self._epoch}!")
+            cm = raw_confusion_matrix(
+                *counts.values(),
+                n_classes = max(map(max, counts.values())) + 1
+            )
+            if not bool(np.any(np.isfinite(cm))):
+                print(f'Confusion matrix has no valid values, produced from counts: {counts}')
+            figs.append(plot_heatmap(cm, "magma")[0])
+        return figs
 
     def add_figure(self, name : str, figure : Figure):
         for logger in self.loggers:
             logger.add_figure(name=name, figure=figure, epoch=self._epoch)
 
     def figures(self, model : Optional[nn.Module]):
-        cm_fig = self.confusion_matrix()
-        self.add_figure("Confusion matrix", cm_fig)
-        plt.close(cm_fig)
+        cm_figs = self.confusion_matrix()
+        if len(cm_figs) == 1:
+            self.add_figure("Confusion matrix", cm_figs[0])
+            plt.close(cm_figs[0])
+        for lvl, cm_fig in enumerate(cm_figs):
+            self.add_figure(f"Confusion matrix/lvl{lvl}", cm_fig)
+            plt.close(cm_fig)
 
         if model is not None:
             cdm_fig, _ = plot_model_class_distance(model)
