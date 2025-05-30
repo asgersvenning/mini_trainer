@@ -1,12 +1,13 @@
-import os
-import json
-from PIL import Image, ImageDraw, ImageFont
 import base64
 import io
-from datetime import datetime
-import google.generativeai as genai
-from google.generativeai.types import FunctionDeclaration, Tool
+import json
+import os
 import re
+from datetime import datetime
+
+import google.generativeai as genai
+from PIL import Image, ImageDraw, ImageFont
+from tqdm import tqdm as TQDM
 
 # --- Configuration & Prompts ---
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "YOUR_GOOGLE_API_KEY_HERE")
@@ -14,55 +15,11 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "YOUR_GOOGLE_API_KEY_HERE")
 GEMINI_MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 GEMINI_MODEL = None
 
-# --- Function Definition for Gemini Tool ---
-record_object_func = FunctionDeclaration(
-    name="record_detected_object",
-    description="Records a detected object with its label, bounding box, and segmentation mask. Call this function for each detected bird or insect.",
-    parameters={
-        "type_": "OBJECT",
-        "properties": {
-            "label": {
-                "type_": "STRING",
-                "description": "A descriptive label for the object (e.g., 'bird', 'insect')."
-            },
-            "box_2d": {
-                "type_": "ARRAY",
-                "items": {"type_": "INTEGER"},
-                "description": (
-                    "A bounding box ('box_2d') in the format [y0, x0, y1, x1] with normalized coordinates between 0 and 1000."
-                )
-            },
-            "mask": {
-                "type_": "STRING",
-                "description": (
-                    "A base64 encoded png that is a probability map with values between 0 and 255."
-                )
-            }
-        },
-        "required": ["label", "box_2d", "mask"]
-    }
-)
-OBJECT_EXTRACTION_TOOL = Tool(function_declarations=[record_object_func])
-
 SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-]
-
-B64_1X1_OPAQUE_BLACK_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-MOCK_API_RESPONSE_DATA = [
-    {
-        "label": "the bird (mock)",
-        "box_2d": [160, 75, 440, 485],
-        "mask": B64_1X1_OPAQUE_BLACK_PNG
-    },
-    {
-        "label": "the insect (mock)",
-        "box_2d": [190, 280, 70, 60],
-        "mask": B64_1X1_OPAQUE_BLACK_PNG
-    }
 ]
 
 # --- Helper Functions ---
@@ -95,6 +52,9 @@ def load_image(image_source: str) -> Image.Image | None:
                 print(f"Error: Image path not found: {image_source}")
                 return None
             img = Image.open(image_source)
+        ms = max(img.size)
+        rat = 2000/ms
+        img.resize([int(round(s*rat)) for s in img.size])
         return img.convert("RGBA")
     except ImportError: print("Error: 'requests' library needed for URL images."); return None
     except requests.exceptions.RequestException as e: print(f"Error fetching URL: {e}"); return None
@@ -116,38 +76,33 @@ def decode_json_blocks(response : str):
             pass
     return json_objects
 
-def call_segmentation_api(image: Image.Image, use_mock: bool = True) -> list | None:
-    if use_mock:
-        print("Using MOCK API response.")
-        return MOCK_API_RESPONSE_DATA
-
+def call_segmentation_api(image: Image.Image, verbose : bool=False) -> list | None:
     model = initialize_gemini_model()
     if not model:
-        print("Error: Gemini model not initialized.")
-        return None
+        raise RuntimeError("Error: Gemini model not initialized.")
 
-    print(f"Attempting to call Google Gemini API (model: {GEMINI_MODEL_NAME}) with function calling...")
+    if verbose:
+        print(f"Attempting to call Google Gemini API (model: {GEMINI_MODEL_NAME}) with function calling...")
 
     if not isinstance(image, Image.Image):
-        print("Error: Invalid image type. Expected PIL.Image.")
-        return None
+        raise TypeError("Error: Invalid image type. Expected PIL.Image.")
 
     # Main prompt now includes image dimensions and strongly typed instructions
-    # The details of the output structure are in the tool's FunctionDeclaration.
     prompt_for_gemini = f"""
-Task: Analyze the provided image and give the segmentation masks for all insects and birds.
-    Output a JSON list of segmentation masks where each entry contains the 2D
-    bounding box in the key "box_2d", the segmentation mask in key "mask", and
-    the text label in the key "label".
+Analyze the provided image and give the segmentation masks for the bird(s) and its/their beak(s) (separately) and insect(s).
+Output a JSON list of segmentation masks where each entry contains the 2D
+bounding box in the key "box_2d", the segmentation mask in key "mask", and
+the text label in the key "label".
 """
     # print(f"DEBUG: Sending prompt to Gemini:\n{prompt_for_gemini}") # For debugging
 
     try:
-        print("Sending request to Gemini API...")
+        if verbose:
+            print("Sending request to Gemini API...")
         response = model.generate_content(
             [prompt_for_gemini, image],
             generation_config=genai.types.GenerationConfig(
-                temperature=1,
+                temperature=0.5
             ),
             # tools=[OBJECT_EXTRACTION_TOOL],
             safety_settings=SAFETY_SETTINGS,
@@ -164,7 +119,6 @@ Task: Analyze the provided image and give the segmentation masks for all insects
             elif len(response_data) == 0:
                 raise RuntimeError(f'ERROR: No JSON objects found in model output: {response}')
             response_data = response_data[0]
-            print(f'DEBUG: {response_data=}')
             for element in response_data:
                 label = element.get('label', 'unknown_label')
                 box_2d = element.get('box_2d', [])
@@ -205,11 +159,9 @@ Task: Analyze the provided image and give the segmentation masks for all insects
 def parse_api_response(api_response_data: list | None) -> list:
     parsed_detections = []
     if api_response_data is None:
-        print("Warning: parse_api_response received None. Returning empty list.")
-        return []
+        raise RuntimeError("Warning: parse_api_response received None. Returning empty list.")
     if not isinstance(api_response_data, list):
-        print(f"Warning: API response data is not a list. Got: {type(api_response_data)}. Data: {api_response_data}")
-        return []
+        raise RuntimeError(f"Warning: API response data is not a list. Got: {type(api_response_data)}. Data: {api_response_data}")
 
     for item_idx, item in enumerate(api_response_data):
         if not isinstance(item, dict):
@@ -244,199 +196,183 @@ def parse_api_response(api_response_data: list | None) -> list:
         except Exception as e: print(f"Warning: Error processing item {item.get('label', f'Item #{item_idx}')}: {e}")
     return parsed_detections
 
-def visualize_detections(original_image: Image.Image, detections: list) -> Image.Image:
+def visualize_detections(original_image: Image.Image, detections: list[dict]) -> Image.Image:
     viz_image = original_image.copy().convert("RGBA")
-    draw = ImageDraw.Draw(viz_image)
-    img_width, img_height = original_image.size
+    draw = ImageDraw.Draw(viz_image) # Initial draw object, will be updated if masks are applied
+    img_width, img_height = viz_image.size
 
-    try: font = ImageFont.truetype("arial.ttf", 18)
-    except IOError:
-        try: font = ImageFont.load_default(size=18)
-        except AttributeError: font = ImageFont.load_default()
+    # --- Setup ---
+    try: font = ImageFont.truetype("arial.ttf", 16) # Slightly smaller font
+    except IOError: # Fallback font loading
+        try: font = ImageFont.load_default(size=16) # For Pillow 9.3.0+
+        except (TypeError, AttributeError): # Catches TypeError for unexpected 'size' kwarg or AttributeError
+            font = ImageFont.load_default()     # For Pillow < 9.3.0 or other issues
 
-    colors = [(255,0,0,255), (0,0,255,255), (0,255,0,255), (255,255,0,255), (255,0,255,255), (0,255,255,255)]
-    mask_alpha = 128
+    color_palette_rgb = [
+        (255,0,0), (0,0,255), (0,255,0), (255,255,0), (255,0,255), (0,255,255)
+    ]
+    mask_overlay_alpha = 128
 
+    # --- Process Detections ---
     for i, det in enumerate(detections):
-        label = det['label']
-        box = det['box_2d'] # [xmin, ymin, width, height]
-        mask_image_pil = det.get('mask_image')
+        label = det.get('label', 'N/A')
+        raw_box = det.get('box_2d') # Expected: [y0, x0, y1, x1] in 0-1000
+        mask_pil = det.get('mask_image')
 
-        if not (isinstance(box, list) and len(box) == 4 and all(isinstance(c, int) for c in box)):
-            print(f"Warning: Invalid box_2d for '{label}' in visualization: {box}. Skipping.")
+        # 1. Calculate and Validate Bounding Box
+        if not (isinstance(raw_box, list) and len(raw_box) == 4 and
+                all(isinstance(c, (int, float)) for c in raw_box)):
+            # print(f"Debug: Invalid box format for '{label}'. Skipping.")
             continue
         
-        y0, x0, y1, x1 = [v/1000 for v in box]
-        x0 *= img_width
-        x1 *= img_width
-        y0 *= img_height
-        y1 *= img_height
-        y0, x0, y1, x1 = [int(round(v)) for v in [y0, x0, y1, x1]] 
-        w, h = (x1 - x0), (y1 - y0)
+        y0, x0, y1, x1 = raw_box
+        y0 = int(round((y0 / 1000.0) * img_height))
+        x0 = int(round((x0 / 1000.0) * img_width))
+        y1 = int(round((y1 / 1000.0) * img_height))
+        x1 = int(round((x1 / 1000.0) * img_width))
 
-        # Basic sanity check for bounding box coordinates against image dimensions
-        if not (0 <= x0 < img_width and 0 <= y0 < img_height and 0 <= x1 < img_width and 0 <= y1 < img_height):
-            print(f"Warning: Bounding box for '{label}' [{x0}, {y0}, {x1}, {y1}] ({box}) seems out of image bounds ({img_width}x{img_height}) or has invalid size. Clamping/Skipping for visualization.")
-            # Optional: Clamp or skip. For now, we'll proceed but it might draw oddly or error.
-            # Example clamping (simple, might need more sophisticated logic):
-            # xmin = max(0, xmin)
-            # ymin = max(0, ymin)
-            # w = min(w, img_width - xmin)
-            # h = min(h, img_height - ymin)
-            # if w <=0 or h <=0: continue # Skip if clamped to no size
-        if x0 > x1 or y0 > y1:
-            print(f'Warning some image coordinates seem to be inverted for "{label}" [{x0}, {y0}, {x1}, {y1}] ({box}) in image bounds ({img_width}x{img_height})')
-
-        color = colors[i % len(colors)]
-        outline_color = color
-        fill_color_for_mask = (color[0], color[1], color[2], mask_alpha)
-
-        draw.rectangle([x0, y0, x1, y1], outline=outline_color, width=3)
+        if not (0 <= x0 < img_width and 0 <= y0 < img_height and \
+                x0 < x1 <= img_width and y0 < y1 <= img_height): # Ensures x0<x1, y0<y1, and within bounds
+            # print(f"Debug: Box for '{label}' out of bounds or invalid size [{x0},{y0},{x1},{y1}]. Skipping.")
+            continue
         
-        try:
-            if hasattr(draw, 'textbbox'): text_bbox = draw.textbbox((0,0), label, font=font); text_height = text_bbox[3] - text_bbox[1]
-            else: text_size = draw.textsize(label, font=font); text_height = text_size[1]
-        except Exception: text_height = 20
+        box_width_px, box_height_px = x1 - x0, y1 - y0 # Used for mask sizing
 
-        text_x, text_y = x0, y0 - text_height - 5
-        if text_y < 5: text_y = x0 + 5
-        draw.text((text_x, text_y), label, fill=outline_color, font=font)
+        # 2. Determine Colors
+        base_rgb_color = color_palette_rgb[i % len(color_palette_rgb)]
+        box_outline_rgba = (*base_rgb_color, 255)
+        mask_fill_rgba = (*base_rgb_color, mask_overlay_alpha)
 
-        if mask_image_pil:
-            if not (w > 0 and h > 0):
-                print(f"Info: Box for '{label}' has zero area ({w}x{h}). Skipping mask overlay.")
-                # continue # If in a loop, otherwise handle as appropriate
+        # 3. Draw Bounding Box
+        draw.rectangle([x0, y0, x1, y1], outline=box_outline_rgba, width=3)
+
+        # 4. Draw Label with Background
+        try: # Measure text
+            if hasattr(draw, 'textbbox'): # Pillow 9.2.0+
+                text_bb = draw.textbbox((0,0), label, font=font) # Measure from (0,0)
+                text_w, text_h = text_bb[2] - text_bb[0], text_bb[3] - text_bb[1]
             else:
-                # --- Start of modifications ---
-                original_mask_pil_size = mask_image_pil.size # Should be (256, 256)
+                text_w, text_h = draw.textsize(label, font=font)
+        except Exception: text_w, text_h = 50, 18
 
-                # 1. Convert the (256,256,3) RGB image to a binary mask ("L" mode)
-                #    based on the threshold (pixel values > 127).
-                #    First, convert to grayscale if it's RGB.
-                #    If it's already "L", this conversion doesn't hurt.
-                try:
-                    if mask_image_pil.mode == "RGB" or mask_image_pil.mode == "RGBA":
-                        mask_grayscale_pil = mask_image_pil.convert("L")
-                    elif mask_image_pil.mode == "L":
-                        mask_grayscale_pil = mask_image_pil # Already grayscale
-                    else:
-                        print(f"Warning: Mask for '{label}' has unexpected mode '{mask_image_pil.mode}'. Attempting to convert to 'L'.")
-                        mask_grayscale_pil = mask_image_pil.convert("L")
+        text_padding = 2
+        label_bg_h = text_h + (text_padding * 2)
+        label_bg_y0 = y0 - label_bg_h - text_padding # Position above box
+        if label_bg_y0 < 0: label_bg_y0 = y1  # Adjust if off-screen
 
-                    # Apply threshold: pixels > 127 become 255 (mask), others 0 (background)
-                    # The .point method applies the lambda to each pixel value.
-                    # Output is an "L" mode image with 0s and 255s.
-                    actual_mask_for_pasting = mask_grayscale_pil.point(lambda p: 255 if p > 127 else 0, mode="L")
+        draw.rectangle( # Label background
+            [x0, label_bg_y0, x0 + text_w + text_padding * 2, label_bg_y0 + label_bg_h + text_padding * 2],
+            fill=box_outline_rgba
+        )
+        text_fill = (0,0,0,255) if sum(base_rgb_color) > 382 else (255,255,255,255) # Black/white text
+        draw.text((x0 + text_padding, label_bg_y0), label, fill=text_fill, font=font)
 
-                except Exception as e:
-                    print(f"Error processing input mask for '{label}' (thresholding step): {e}. Skipping mask overlay.")
-                    actual_mask_for_pasting = None # Ensure it's None so the rest of the block is skipped
+        # 5. Apply Mask Overlay (if available and box has area)
+        if mask_pil and box_width_px > 0 and box_height_px > 0: # Second part of check is implicit from box validation
+            try:
+                # Process mask: convert to 'L', threshold, resize
+                processed_mask = mask_pil.convert("L") if mask_pil.mode != "L" else mask_pil
+                processed_mask = processed_mask.point(lambda p: 255 if p > 127 else 0, mode="L")
+                if processed_mask.size != (box_width_px, box_height_px):
+                    processed_mask = processed_mask.resize((box_width_px, box_height_px), Image.Resampling.NEAREST)
 
-                if actual_mask_for_pasting:
-                    # 2. Check if the processed mask (still 256x256 at this point)
-                    #    needs to be resized to the bounding box dimensions (w,h).
-                    if actual_mask_for_pasting.size != (w, h):
-                        print(f"Info: Resizing mask for '{label}'. Original (after thresholding): {actual_mask_for_pasting.size}, Target BBox: ({w},{h}).")
-                        try:
-                            actual_mask_for_pasting = actual_mask_for_pasting.resize((w, h), Image.Resampling.NEAREST)
-                        except Exception as resize_err:
-                            print(f"         Could not resize mask for '{label}'. Skipping. Error: {resize_err}")
-                            actual_mask_for_pasting = None # Skip if resize fails
-
-                    if actual_mask_for_pasting: # Check again if resize was successful
-                        # 3. Create the colored patch with the size of the bounding box (w,h)
-                        colored_segment_patch = Image.new("RGBA", (w, h), fill_color_for_mask)
-                        temp_overlay = Image.new("RGBA", viz_image.size, (0, 0, 0, 0)) # Transparent overlay
-
-                        try:
-                            # Paste the colored patch onto the temporary overlay,
-                            # using the (potentially resized) actual_mask_for_pasting.
-                            # The actual_mask_for_pasting should now be (w,h) in size.
-                            temp_overlay.paste(colored_segment_patch, (x0, y0), actual_mask_for_pasting)
-                            viz_image = Image.alpha_composite(viz_image, temp_overlay)
-                        except ValueError as ve:
-                            # Common error: "bad transparency mask" if mask isn't "L" or "1" or size mismatch
-                            print(f"Error during mask composition for '{label}': {ve}")
-                            print(f"         Mask mode: {actual_mask_for_pasting.mode}, Mask size: {actual_mask_for_pasting.size}")
-                            print(f"         Patch size: {colored_segment_patch.size}, Paste coords: ({x0},{y0})")
-                        except Exception as e:
-                            print(f"Error during mask composition for '{label}': {e}")
-                # --- End of modifications ---
-
-        elif det.get("mask_base64_original") and det["mask_base64_original"].strip(): # type: ignore
-            print(f"Info: Mask for '{label}' was provided as base64 but failed to load or process. Not visualized.")
+                # Create colored patch and apply using the mask
+                color_patch = Image.new("RGBA", (box_width_px, box_height_px), mask_fill_rgba)
+                # Create a temporary full-image overlay for this single mask
+                temp_mask_overlay = Image.new("RGBA", viz_image.size, (0,0,0,0)) # Fully transparent
+                temp_mask_overlay.paste(color_patch, (x0, y0), processed_mask)
+                
+                # Composite this mask's overlay onto the current visualization image
+                viz_image = Image.alpha_composite(viz_image, temp_mask_overlay)
+                draw = ImageDraw.Draw(viz_image)
+            except Exception as e:
+                pass # Silently skip problematic mask, box/label are already drawn
+            
     return viz_image
 
-def process_image_and_save(image_source: str, output_dir_base: str = "output", use_mock_api: bool = True):
-    print(f"Processing image: {image_source}")
+def process_image_and_save(image_source: str, output_dir_base: str = "output", response_data : str | None=None, verbose : bool=False):
+    if verbose:
+        print(f"Processing image: {image_source}")
     original_image = load_image(image_source)
     if not original_image: return
 
-    print("Requesting segmentations from API...")
-    api_response_data = call_segmentation_api(original_image, use_mock=use_mock_api)
+    if response_data is None:
+        if verbose:
+            print("Requesting segmentations from API...")
+        api_response_data = call_segmentation_api(original_image, verbose=verbose)
+    else:
+        if verbose:
+            print("Loading saved response:", response_data)
+        with open(response_data, "r") as f:
+            api_response_data = json.load(f)
 
     if api_response_data is None: print("Failed to get API response. Exiting."); return
     if not api_response_data and isinstance(api_response_data, list):
         print("API returned no detections.")
 
-    print("Parsing API response...")
+    if verbose:
+        print("Parsing API response...")
     parsed_detections = parse_api_response(api_response_data)
 
-    print("Generating visualization...")
+    if verbose:
+        print("Generating visualization...")
     visualization_image = visualize_detections(original_image, parsed_detections)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     fname_base = "".join(c if c.isalnum() or c in (' ', '.', '_') else '_' for c in os.path.splitext(os.path.basename(image_source))[0])
     output_dir = os.path.join(output_dir_base, f"{fname_base.replace(' ', '_')}_{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
-    print(f"Saving outputs to: {output_dir}")
+    if verbose:
+        print(f"Saving outputs to: {output_dir}")
 
     visualization_image.save(os.path.join(output_dir, "visualization.png"))
-    print(f"  Visualization saved.")
+    if verbose:
+        print(f"  Visualization saved.")
     with open(os.path.join(output_dir, "api_function_call_args.json"), "w") as f:
         json.dump(api_response_data, f, indent=2)
-    print(f"  API function call args saved.")
+    if verbose:
+        print(f"  API function call args saved.")
     
     savable_parsed = [{"label": d["label"], "box_2d": d["box_2d"], "mask_base64": d["mask_base64_original"]} for d in parsed_detections]
     with open(os.path.join(output_dir, "parsed_detections_with_masks.json"), "w") as f:
         json.dump(savable_parsed, f, indent=2)
-    print(f"  Parsed detections saved.")
-    print("Processing complete.")
+    if verbose:
+        print(f"  Parsed detections saved.")
+        print("Processing complete.")
 
 if __name__ == "__main__":
-    IMAGE_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Green_Figbird.jpg/640px-Green_Figbird.jpg"
-    # IMAGE_URL = "https://storage.googleapis.com/gweb-cloudblog-publish/images/GettyImages-1193149035.max-2000x2000.jpg"
-    # IMAGE_URL = "your_local_image.jpg" # Test with a local image
+    IMAGE_URL = "https://chirpforbirds.com/wp-content/uploads/2021/03/bird-eating-insect-chirp.jpeg"
+    #\
+    # [
+    #     "https://thumbs.dreamstime.com/b/exotic-bird-holds-exotic-insect-beak-wildlife-animals-exotic-bird-holds-exotic-insect-beak-121183530.jpg",
+    #     "https://cdn.morningchores.com/wp-content/uploads/2020/08/purple-martin-800x533.jpg",
+    #     "https://cdn.prod.website-files.com/623236d8ac23bb57bd352b40/62c5470fdb796e2c27471393_Pair_of_Merops_apiaster_feeding.jpeg",
+    #     "https://www.rarebirdalert.co.uk/v2/Content/images/articles/2017-07-10Beeeater.jpg",
+    #     "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Green_Figbird.jpg/640px-Green_Figbird.jpg",
+    #     "https://nestboxlive.com/wp-content/uploads/2024/10/bee-eater-catching-a-bee.webp",
+    #     "https://media.gettyimages.com/id/1159343281/video/streak-eared-bulbul-with-a-night-butterfly-in-its-mouth-over-bright-clear-green-nature.jpg?s=640x640&k=20&c=qPl0Ckq9Wnvx_y7g6hdJwgv1aQ7l8Z3Yu62oFWCq0W4=",
+    #     "https://c02.purpledshub.com/uploads/sites/41/2018/08/iStock_3715752_LARGE-5f256a8.jpg"
+    # ]
+    STORED_RESPONSE = None
+    # STORED_RESPONSE = "/home/asger/mini_trainer/examples/output/bee_eater_catching_a_bee_20250528_101428/api_function_call_args.json"
+    VERBOSE = False
 
-    USE_MOCK_API_CALL = False  # <<< SET TO FALSE TO USE REAL GEMINI API >>>
-    # If using REAL API, ensure GOOGLE_API_KEY is set and consider GEMINI_MODEL_NAME.
-    # For potentially better mask/box results, try:
-    # GEMINI_MODEL_NAME = "gemini-1.5-pro-latest" # (and ensure it's set above too)
-
-
-    if not USE_MOCK_API_CALL:
-        if not GOOGLE_API_KEY or GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
-            print("ATTENTION: Real API call selected, but GOOGLE_API_KEY is not configured. Exiting.")
-            exit(1)
-        print(f"Running with REAL Gemini API: {GEMINI_MODEL_NAME}.")
-        if GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
-             print("WARNING: GOOGLE_API_KEY is placeholder. This will fail.")
-    else:
-        print("Running with MOCK API calls.")
+    if not GOOGLE_API_KEY or GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
+        print("ATTENTION: Real API call selected, but GOOGLE_API_KEY is not configured. Exiting.")
+        exit(1)
+    print(f"Running with REAL Gemini API: {GEMINI_MODEL_NAME}.")
+    if GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
+            print("WARNING: GOOGLE_API_KEY is placeholder. This will fail.")
 
     try:
         _ = ImageFont.load_default(size=10)
         print("Pillow font rendering with size supported.")
     except Exception: print("Pillow font rendering test failed.")
 
-    process_image_and_save(IMAGE_URL, use_mock_api=USE_MOCK_API_CALL)
-
-    print("\n--- MASK & BOUNDING BOX NOTES ---")
-    print("1. Mask Generation: This script asks Gemini to directly generate base64 PNG masks.")
-    print("   If masks are missing/poor, it's a hard task. 'gemini-1.5-pro-latest' might do better.")
-    print("   The most robust way is a 2-stage process (e.g., Gemini for boxes, then SAM for masks), not done here.")
-    print("2. Bounding Box Accuracy: The prompt now includes image dimensions to help Gemini.")
-    print("   If boxes are still off, it could be model limitations or image characteristics.")
-    print("   Check 'api_function_call_args.json' to see raw coordinates from Gemini.")
-    print("   The visualization code includes a warning if mask size != bbox size, which indicates an API error.")
-    print("--------------------------------")
+    if isinstance(IMAGE_URL, str):
+        process_image_and_save(IMAGE_URL, response_data=STORED_RESPONSE, verbose=VERBOSE)
+    else:
+        if STORED_RESPONSE is not None:
+            raise NotImplementedError(f"Using stored response ({STORED_RESPONSE}) for multiple images is not implemented.")
+        for im in TQDM(IMAGE_URL, desc="Predicting..."):
+            process_image_and_save(im, verbose=VERBOSE)

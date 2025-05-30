@@ -91,7 +91,7 @@ def tensorboard_logger_kwargs(name : str, output : str, resume : bool=False):
     from torch.utils.tensorboard.writer import SummaryWriter
 
     from mini_trainer.utils import increment_name_dir
-    from mini_trainer.utils.logging import MetricLoggerWrapper
+    from mini_trainer.utils.logging import MetricLogger
     from mini_trainer.utils.tensorboard import TensorboardLogger
     
     tensorboard_dir = os.path.join(output, "tensorboard")
@@ -103,7 +103,7 @@ def tensorboard_logger_kwargs(name : str, output : str, resume : bool=False):
     
     return {
         "verbose" : True,
-        "logger_cls" : [MetricLoggerWrapper, TensorboardLogger],
+        "logger_cls" : [MetricLogger, TensorboardLogger],
         "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
     }
 

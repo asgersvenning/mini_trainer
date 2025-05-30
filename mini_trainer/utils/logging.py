@@ -242,6 +242,9 @@ class _Statistic:
     def __bool__(self):
         return len(self) > 0
     
+    def __str__(self):
+        raise NotImplementedError()
+    
     @property
     def data(self) -> list[float]:
         raise NotImplementedError()
@@ -261,6 +264,9 @@ class _Logger:
         **`update`**: Add new values to a statistic.
         **`step`**: Function to indicate that the current iteration has completed. 
     """
+    def __str__(self):
+        raise NotImplementedError()
+    
     def add_stat(self, name : str, container : _Statistic):
         raise NotImplementedError()
     
@@ -281,9 +287,6 @@ class _Logger:
         """
         pass
 
-    def __str__(self):
-        raise NotImplementedError()
-
 L = TypeVar('L', bound=_Logger)
 
 class SmoothedValue(_Statistic):
@@ -298,7 +301,7 @@ class SmoothedValue(_Statistic):
         self.count = 0
         self.min = None
         self.fmt_vars = fmt_vars
-        self.fmt_digs = {var : deque(maxlen=window_size) for var in self.fmt_vars}
+        self.fmt_digs : dict[str, deque[int]] = {var : deque(maxlen=window_size*5) for var in self.fmt_vars}
 
     def __len__(self):
         return self.count
@@ -363,22 +366,16 @@ class SmoothedValue(_Statistic):
             value = getattr(self, var)
             cur_digs = float_signif_decimal(value)
             self.fmt_digs[var].append(cur_digs)
-            part = f'{value:.{max(self.fmt_digs[var], key=self.fmt_digs[var].count)}f}'
+            digs = max(self.fmt_digs[var])
+            part = f'{value:>{digs+3}.{digs}f}'
             parts.append(part)
         return "/".join(parts)
 
-class MetricLogger:
+class MetricLogger(_Logger):
     def __init__(self, delimiter=" | ", printer=print, **kwargs):
         self.meters = defaultdict(SmoothedValue)
         self.delimiter = delimiter
         self.printer = printer
-
-    def update(self, **kwargs):
-        for k, v in kwargs.items():
-            if isinstance(v, torch.Tensor):
-                v = v.item()
-            assert isinstance(v, (float, int))
-            self.meters[k].update(v)
 
     def __getattr__(self, attr):
         if attr in self.meters:
@@ -399,6 +396,12 @@ class MetricLogger:
 
     def add_meter(self, name, meter):
         self.meters[name] = meter
+
+    def add_stat(self, name, container):
+        self.add_meter(name=name, meter=container)
+
+    def get(self, name : str):
+        return self.meters[name]
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     """Maintains moving averages of model parameters using an exponential decay.
@@ -486,18 +489,11 @@ class BaseStatistic(_Statistic):
             mx = self.max
         digs = float_signif_decimal(min(filter(lambda x : x is not None and x != 0, map(abs, [m, mn, mx])), default=1))
         self.digs.append(digs)
-        digs = max(self.digs, key=self.digs.count)
-        return f'{m:.{digs}f} [{mn:.{digs}f}; {mx:.{digs}f}]'
+        digs = max(self.digs)
+        return f'{m:>{digs+2}.{digs}f} [{mn:>{digs+3}.{digs}f}; {mx:>{digs+3}.{digs}f}]'
     
     def __repr__(self):
         return f'BaseStatistic({str(self)})|{len(self)}|'
-
-class MetricLoggerWrapper(_Logger, MetricLogger):
-    def add_stat(self, name, container):
-        self.add_meter(name=name, meter=container)
-
-    def get(self, name : str):
-        return self.meters[name]
 
 def compute_aligned_steps(
         target_length: int,
@@ -523,10 +519,10 @@ class MultiLogger:
             name : str="log",
             statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
-            logger_cls : list[Type[_Logger]]=[MetricLoggerWrapper],
+            logger_cls : list[Type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
-                lambda : SmoothedValue(window_size=1, fmt_vars=["value"])
+                lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
             ],
             canonical_statistic : Optional[str]=None,
             save_interval : int=5,

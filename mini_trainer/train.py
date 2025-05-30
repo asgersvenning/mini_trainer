@@ -419,7 +419,7 @@ def cli(description="Train a classifier", **kwargs):
         f'e{args["epochs"]}'
     if args.pop("tensorboard"):
         from mini_trainer.utils.tensorboard import TensorboardLogger
-        from mini_trainer.utils.logging import MetricLoggerWrapper
+        from mini_trainer.utils.logging import MetricLogger
         from torch.utils.tensorboard.writer import SummaryWriter
         
         run_name = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
@@ -427,7 +427,7 @@ def cli(description="Train a classifier", **kwargs):
         
         args["logger_builder_kwargs"] = {
             "verbose" : True,
-            "logger_cls" : [MetricLoggerWrapper, TensorboardLogger],
+            "logger_cls" : [MetricLogger, TensorboardLogger],
             "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
         }
     
