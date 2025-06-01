@@ -339,7 +339,7 @@ class BaseBuilder:
         return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
 
     @staticmethod
-    def build_regularizer(strength : float=1e-1, *args, **kwargs):
+    def build_regularizer(strength : float=0.1, *args, **kwargs):
         strength = float(strength)
         if strength == 0:
             return lambda _: 0.

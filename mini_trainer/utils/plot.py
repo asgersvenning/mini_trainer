@@ -282,7 +282,7 @@ def plot_heatmap(
     return fig, ax
 
 def class_distance(classification_weights : torch.Tensor, probability : bool=True):
-    classification_weights = classification_weights.cpu().clone().to(torch.float64)
+    classification_weights = classification_weights.cpu().clone().detach().to(torch.float64)
     classification_weights -= classification_weights.mean(dim = 1, keepdim=True)
     classification_weights /= classification_weights.std(dim = 1, unbiased=True, keepdim=True)
 

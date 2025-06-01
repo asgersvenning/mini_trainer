@@ -147,4 +147,4 @@ def last_layer_weights(model : nn.Module):
         return None
     elif not isinstance(classification_head, Classifier):
         raise RuntimeError(f"Unexpected classification head type {type(classification_head)} found.")
-    return classification_head.linear._parameters["weight"].data
+    return classification_head.linear.weight
