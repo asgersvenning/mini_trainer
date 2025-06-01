@@ -239,6 +239,7 @@ def main(
                 start_epoch = int(start_epoch)
             else:
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
+        start_epoch = start_epoch + 1
 
     # Instantiate logger
     logger = builder.build_logger(
