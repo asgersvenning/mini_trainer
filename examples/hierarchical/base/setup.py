@@ -1,7 +1,7 @@
 import os, json
 from pyremotedata.implicit_mount import IOHandler
-from hierarchical.base.gbif import resolve_id, TAXONOMY_KEYS
-
+from hierarchical.base.gbif import resolve_id, name_to_id, TAXONOMY_KEYS
+from typing import Union
 from tqdm.contrib.concurrent import thread_map
 
 from collections import OrderedDict
@@ -10,17 +10,26 @@ def erda_list_files(id : str, **kwargs):
     with IOHandler(user=id, password=id, remote="io.erda.au.dk") as io:
         return io.get_file_index()
 
-def create_taxonomy(ids : list[int], level : str="family"):
+def resolve_name_or_id(name_or_id : Union[str, int]):
+    name_or_id = name_or_id.strip()
+    if isinstance(name_or_id, int) or name_or_id.isdigit():
+        return resolve_id(name_or_id)
+    id, rank, conf = name_to_id(name_or_id)
+    if "SPECIES" not in rank or conf < 90:
+        raise RuntimeError(f"Unable to unambigously resolve {name_or_id} to a GBIF species ID, best match {id} ({rank}) at {conf}%.")
+    return resolve_id(id)
+
+def create_taxonomy(names_or_ids : list[int], level : str="family"):
     level = level.strip().lower()
     if level not in TAXONOMY_KEYS:
         raise ValueError(f'Unknown taxonomic level "{level}", expected one of [{", ".join([f"\"{tk}\"" for tk in TAXONOMY_KEYS])}].')
     levels = TAXONOMY_KEYS[:(TAXONOMY_KEYS.index(level)+1)]
     del level
-    info = {taxonomy["species"][0] : OrderedDict([(key, value) for key, value in taxonomy.items() if key in levels]) for taxonomy in thread_map(resolve_id, ids, total=len(ids), desc="Querying the GBIF Species API...")}
+    info = {taxonomy["species"][0] : OrderedDict([(key, value) for key, value in taxonomy.items() if key in levels]) for taxonomy in thread_map(resolve_name_or_id, names_or_ids, total=len(names_or_ids), desc="Querying the GBIF Species API...")}
     return OrderedDict([(key, values) for key, values in sorted(info.items(), key=lambda x : [x[1][level][1] for level in levels])])
 
-def ids_to_combinations(ids, highest_level : str="family", verbose : bool=False):
-    taxonomy = create_taxonomy(ids, highest_level)
+def names_or_ids_to_combinations(names_or_ids, highest_level : str="family", verbose : bool=False):
+    taxonomy = create_taxonomy(names_or_ids, highest_level)
     if verbose:
         print(f'Created taxonomy of size {len(taxonomy)}:')
         for key, value in taxonomy.items():
@@ -46,5 +55,5 @@ def erda_to_combinations(id : str, verbose : bool=False):
     folders = list(set(int(file.split("/")[0]) for file in files))
     if verbose:
         print(f'Found {len(folders)} folders.')
-    return ids_to_combinations(folders, verbose=verbose)
+    return names_or_ids_to_combinations(folders, verbose=verbose)
 

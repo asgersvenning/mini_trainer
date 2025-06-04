@@ -94,7 +94,7 @@ class ETA:
         return f"{used_str}/{eta_str}"
 
 
-def accuracy(output, target, topk=(1,)):
+def accuracy(output : torch.Tensor, target : torch.Tensor, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.inference_mode():
         maxk = max(topk)
@@ -707,7 +707,10 @@ class MultiLogger:
             if self._n_classes is None:
                 self._n_classes = prediction.shape[1]
             self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
-            acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
+            if prediction.shape[1] >= 5:
+                acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
+            else:
+                acc1, acc5 = accuracy(prediction, target, topk=(1, ))[0], torch.nan
             self.log_statistic(acc1=acc1, acc5=acc5)
         else:
             if "acc1" in self._original_statistics:
@@ -719,7 +722,10 @@ class MultiLogger:
                 tl = target[:, lvl]
                 self._n_classes = tp.shape[1]
                 self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), lvl=lvl)
-                acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
+                if tp.shape[1] >= 5:
+                    acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
+                else:
+                    acc1, acc5 = accuracy(tp, tl, topk=(1, ))[0], torch.nan
                 self.log_statistic(**{f'acc1/lvl{lvl}' : acc1, f"acc5/lvl{lvl}" : acc5})
 
     def log_labels_predictions(
@@ -866,29 +872,27 @@ class MultiLogger:
                     counts[what].extend(cls_idxs)
             if hits == 0:
                 print(f"WARNING: No labels or predictions found for {self._epoch}!")
-            cm = raw_confusion_matrix(
-                *counts.values(),
-                n_classes = max(map(max, counts.values())) + 1
-            )
+            cm = raw_confusion_matrix(*counts.values())
+            m = cm.sum(axis=1) > 0
+            cm = cm[m][:, m]
             if not bool(np.any(np.isfinite(cm))):
                 print(f'Confusion matrix has no valid values, produced from counts: {counts}')
-            figs.append(plot_heatmap(cm, "magma")[0])
+            figs.append(plot_heatmap(cm, "magma"))
         return figs
 
-    def add_figure(self, name : str, figure : Figure):
+    def add_figure(self, name : str, figure : Union[Figure, np.ndarray, torch.Tensor]):
         for logger in self.loggers:
             logger.add_figure(name=name, figure=figure, epoch=self._epoch)
+        if isinstance(figure, Figure):
+            plt.close(figure)
 
     def figures(self, model : Optional[nn.Module]):
         cm_figs = self.confusion_matrix()
         if len(cm_figs) == 1:
             self.add_figure("Confusion matrix", cm_figs[0])
-            plt.close(cm_figs[0])
         for lvl, cm_fig in enumerate(cm_figs):
             self.add_figure(f"Confusion matrix/lvl{lvl}", cm_fig)
-            plt.close(cm_fig)
 
         if model is not None:
-            cdm_fig, _ = plot_model_class_distance(model)
+            cdm_fig = plot_model_class_distance(model)
             self.add_figure("Class distance", cdm_fig)
-            plt.close(cdm_fig)

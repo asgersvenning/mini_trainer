@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from hierarchical.base.loss import MultiLevelWeightedCrossEntropyLoss, MultiLevelCrossEntropyLoss
 from hierarchical.base.model import HierarchicalClassifier
-from hierarchical.base.setup import ids_to_combinations
+from hierarchical.base.setup import names_or_ids_to_combinations, resolve_name_or_id
 from hierarchical.base.utils import (create_hierarchy, leaf_to_parents,
                                      mask_hierarchy)
 from torch import nn as nn
@@ -176,7 +176,7 @@ class HierarchicalBuilder(BaseBuilder):
             if dir2comb_fn is None:
                 # This function can be used if the images are stored in a hierarchical directory structure:
                 # combinations = sorted(set(tuple(f.split(os.sep)[:-1]) for f in glob.glob("**", root_dir=dir, recursive=True) if not os.path.isdir(os.path.join(dir, f))))
-                combinations = ids_to_combinations(os.listdir(dir))
+                combinations = names_or_ids_to_combinations(os.listdir(dir))
             else:
                 combinations = dir2comb_fn(dir)
             classes = {i : [] for i in range(len(next(iter(combinations))))}
@@ -239,7 +239,7 @@ class HierarchicalBuilder(BaseBuilder):
             }
             for path in all_files:
                 data["path"].append(path)
-                data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[os.path.basename(os.path.dirname(path))])])
+                data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[resolve_name_or_id(os.path.basename(os.path.dirname(path)))["species"][0]])])
                 data["split"].append("train" if random.random() < train_proportion else "validation")
             data = {k : np.array(v) for k, v in data.items()}
             train_image_data = {k : v[data["split"] == np.array("train")] for k, v in data.items()}

@@ -123,7 +123,9 @@ class Classifier(nn.Module):
 
         if weights is not None:
             if isinstance(weights, str):
-                state : OrderedDict[str, torch.Tensor] = torch.load(weights, device, weights_only=True)
+                state : Union[dict[str, Any], OrderedDict[str, torch.Tensor]] = torch.load(weights, device, weights_only=True)
+                if "model" in state:
+                    state : OrderedDict[str, torch.Tensor] = state["model"]
             else:
                 state = weights
             for key in list(state.keys()):

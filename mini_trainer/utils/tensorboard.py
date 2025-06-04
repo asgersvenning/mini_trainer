@@ -52,6 +52,8 @@ class TensorboardLogger(_Logger):
         if isinstance(figure, plt.Figure):
             self.writer.add_figure(tag, figure, epoch, close=False)
         else:
+            if isinstance(figure, np.ndarray):
+                figure = np.permute_dims(figure, (2, 0, 1))
             self.writer.add_image(tag, figure, epoch)
 
     def step(self):

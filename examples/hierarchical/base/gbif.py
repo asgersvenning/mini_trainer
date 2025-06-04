@@ -24,7 +24,7 @@ def retrive_request(req):
 def resolve_id(id : str | int):
     req = f'{GBIF_SPECIES_API_ENDPOINT}{id}'
     data = retrive_request(req)
-    clean_data = OrderedDict([(key, [str(data[f'{key}Key']), str(data[key])]) for key in TAXONOMY_KEYS])
+    clean_data = OrderedDict([(key, (str(data[f'{key}Key']), str(data[key]))) for key in TAXONOMY_KEYS])
     return clean_data
 
 def name_to_id(name : str, author : str | None=None) -> tuple[int, str, int]:
