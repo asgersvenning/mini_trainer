@@ -17,6 +17,7 @@ from torchvision.transforms.functional import resize
 
 from mini_trainer.classifier import last_layer_weights
 from mini_trainer.utils import decimals
+from PIL.Image import fromarray
 
 
 def debug_augmentation(
@@ -76,11 +77,10 @@ def named_confusion_matrix(
 
     if plot_conf_mat:
         conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-        fig, _ = plot_heatmap(conf_mat_arr, "magma", percent=False)
+        arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
         if isinstance(plot_conf_mat, bool):
             plot_conf_mat = "confusion_matrix.png"
-        fig.savefig(plot_conf_mat)
-        plt.close(fig)
+        fromarray(arr).save(plot_conf_mat)
 
     # Print the confusion matrix (numbers only, aligned)
     if verbose:
