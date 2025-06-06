@@ -920,12 +920,16 @@ class MultiLogger:
             pass
         elif len(self._soft_confusion_matrix) == 1:
             cm = list(self._soft_confusion_matrix.values())[0]
+            zm = cm.max(dim=1).values < (1 / cm.sum())
+            cm = cm[~zm][:, ~zm]
             cm_rs = cm.sum(dim=1, keepdim=True)
             cm = cm / cm_rs
             cm = cm.clamp(1/cm_rs.sum().item(), 1)
             figs["Soft confusion matrix"] = plot_heatmap(cm)
         else:
             for lvl, cm in self._soft_confusion_matrix.items():
+                zm = cm.max(dim=1).values < (1 / cm.sum())
+                cm = cm[~zm][:, ~zm]
                 cm_rs = cm.sum(dim=1, keepdim=True)
                 cm = cm / cm_rs
                 cm = cm.clamp(1/cm_rs.sum().item(), 1)
