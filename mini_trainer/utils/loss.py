@@ -26,13 +26,13 @@ def class_weight_distribution_regularization(
         return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
 
     # Work with higher precision and ensure it's on the same device as weights
-    weights_f64 = classification_weights.to(dtype=torch.float64)
+    # weights_f64 = classification_weights.to(dtype=torch.float64)
 
     # 1. Normalize each class's weight vector (across embedding dimensions)
-    mean_weights = weights_f64.mean(dim=0, keepdim=True)
+    mean_weights = classification_weights.mean(dim=0, keepdim=True)
     # Add epsilon to std to prevent division by zero if a weight vector's components are all identical
-    std_weights = weights_f64.std(dim=0, unbiased=True, keepdim=True) + epsilon
-    normalized_weights = (weights_f64 - mean_weights) / std_weights
+    std_weights = classification_weights.std(dim=0, unbiased=True, keepdim=True) + epsilon
+    normalized_weights = (classification_weights - mean_weights) / std_weights
 
     # 2. Calculate squared Euclidean distances and the Chi2 statistic
     # D_sq_ij = ||w_i_norm - w_j_norm||^2
@@ -45,7 +45,7 @@ def class_weight_distribution_regularization(
     chi2_statistic_tril = chi2_statistic[*torch.tril_indices(*chi2_statistic.shape, -1)]
 
     # 3. CDF Transformation
-    dof_tensor = torch.tensor(float(num_embeddings), device=weights_f64.device, dtype=torch.float64)
+    dof_tensor = torch.tensor(float(num_embeddings), device=classification_weights.device, dtype=classification_weights.dtype)
     if dof_tensor <= 0: # Should not happen if num_embeddings > 0
         return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
         
@@ -53,4 +53,4 @@ def class_weight_distribution_regularization(
     chi2_expected = chi2_dist.mean
     # New method return mean negative log-likelihood of the lower triangle
     log_prob : torch.Tensor = chi2_dist.log_prob(chi2_statistic_tril[chi2_statistic_tril <= chi2_expected])
-    return -log_prob.sum() + torch.tensor((num_classes * (num_classes - 1) / 2), device=weights_f64.device, dtype=torch.float64).log()
+    return -log_prob.sum() + torch.tensor((num_classes * (num_classes - 1) / 2), device=classification_weights.device, dtype=classification_weights.dtype).log()
