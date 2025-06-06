@@ -816,20 +816,12 @@ class MultiLogger:
 
     def status(self):
         stats = " | ".join([f'{name}: {str(self.loggers[0].statistics[name])}' for name in self._original_statistics])
-        # cuda_memory_use = cuda_memory_stats()
-        # used = total = free = 0
-        # for dev_idx, mem_stats in cuda_memory_use.items():
-        #     used  += mem_stats["used_mb"]
-        #     free  += mem_stats["free_mb"]
-        #     total += mem_stats["total_mb"]
-        # pfree = used/free
-        # ptotal = used/total
         epoch = self._epoch
         if epoch is None:
             epoch = "?"
         else:
             epoch += 1
-        return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'# '(mem: {pfree:.1%} of free, {ptotal:.1%} of total)'
+        return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'
 
     def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
         parts = []

@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM, Formatter
-from mini_trainer.builders import BaseBuilder
+from mini_trainer.builders import BaseBuilder, AutoEmbedder
 from mini_trainer.utils.data import find_images
 from mini_trainer.utils.io import ImageLoader
 from mini_trainer.utils.logging import BaseResultCollector
@@ -23,6 +23,7 @@ def main(
     class_index : str="class_index.json",
     data_index : Optional[str]=None,
     split : Optional[str]="test",
+    embeddings : bool=False,
     batch_size : int=32,
     num_workers : Optional[int]=None,
     n_max : Optional[int]=None,
@@ -63,6 +64,10 @@ def main(
 
         split (str, optional):
             Name of the split to predict on (default="test"). Only applies when `data_index` is passed.
+
+        embeddings (bool):
+            Compute and store the embeddings (the embedding layer is automatically guessed from the architecture). 
+            Default is False.
 
         batch_size (int, optional):
             Batch size used during inference. Larger values require more VRAM.
@@ -134,6 +139,8 @@ def main(
         **{**extra_model_kwargs, **model_builder_kwargs}
     )
     nn_model.eval()
+    if embeddings:
+        nn_model = AutoEmbedder(nn_model)
         
     # Prepare image loader
     image_loader = ImageLoader(
@@ -176,10 +183,16 @@ def main(
             if len(batch.shape) == 3:
                 batch = batch.unsqueeze(0)
             with torch.autocast(device_type=device.type, dtype=dtype):
-                prediction = nn_model(batch.to(device))
+                if embeddings:
+                    prediction, embedding = nn_model(batch.to(device))
+                    kwargs = {"embeddings" : embedding}
+                else:
+                    prediction = nn_model(batch.to(device))
+                    kwargs = {}
             results.collect(
                 paths = images[i:(i+len(batch))],
-                predictions = prediction
+                predictions = prediction,
+                **kwargs
             )
     
     end.record()
@@ -263,6 +276,10 @@ def cli(description="Predict with a classifier", **kwargs):
         "Are the images in `input` stored in subfolders named by their class? "
         "If so, we can calculate accuracy statistics."
     )
+    out_args.add_argument(
+        "-e", "--embeddings", action="store_true", required=False,
+        help="Compute and store embeddings as well."
+    )
     cfg_args = parser.add_argument_group("Config [optional]")
     cfg_args.add_argument(
         "--batch_size", type=int, default=32, required=False,
@@ -291,6 +308,8 @@ def cli(description="Predict with a classifier", **kwargs):
         "training_format" : args.pop("training_format", False), 
         "verbose" : args.get("verbose", False)
     }
+    if args["embeddings"]:
+        args["result_collector_kwargs"]["additional_attributes"] = ["embeddings"]
     return args
 
 if __name__ == "__main__":  

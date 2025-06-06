@@ -276,7 +276,9 @@ def main(
 
     # Save result model
     nn_model.eval()
-    save_on_master(nn_model.state_dict(), os.path.join(output_dir, f"{name}.pt"))
+    weight_dst = os.path.abspath(os.path.join(output_dir, f"{name}.pt"))
+    save_on_master(nn_model.state_dict(), weight_dst)
+    print(f'Weights saved at: {weight_dst}')
 
 def cli(description="Train a classifier", **kwargs):
     parser = ArgumentParser(

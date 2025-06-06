@@ -20,8 +20,8 @@ if __name__ == "__main__":
         kwargs.pop(key, None)
     
     kwargs["criterion_builder_kwargs"]["weights"] = kwargs.pop("loss_weights")
-    import torch
-    torch.autograd.set_detect_anomaly(True)
+    # import torch
+    # torch.autograd.set_detect_anomaly(True)
     mt_train(
         **kwargs,
         builder=HierarchicalBuilder

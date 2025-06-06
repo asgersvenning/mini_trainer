@@ -19,12 +19,8 @@ class HierarchicalClassifier(Classifier):
         return super()._apply(fn)
 
     def forward(self, x):
-        if self.hidden:
-            x = nn.functional.leaky_relu(self.hidden(x), True)
-        x = self.batch_norm(x)
         # Compute the normalized log probabilities for the leaf nodes (level 0)
-        y0 = nn.functional.log_softmax(self.linear(x), dim = 1)
-        ys = [y0]
+        ys = [nn.functional.log_softmax(super().forward(x), dim = 1)]
         # Propagate the probabilities up the hierarchy using the masks
         for mask in self.masks:
             ys.append(nn.functional.log_softmax(torch.logsumexp(ys[-1].unsqueeze(2) + mask, dim = 1), dim=1))

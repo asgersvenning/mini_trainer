@@ -390,3 +390,47 @@ class BaseBuilder:
     @staticmethod
     def build_logger(**kwargs):
         return MultiLogger(**kwargs)
+    
+
+class AutoEmbedder(nn.Module):
+    def __init__(self, original_model : Classifier):
+        super().__init__()
+        self.original_model = original_model
+        self.embeddings = None
+        self._hook_handle = None
+        
+        # Attempt to find the final nn.Linear layer
+        last_linear_layer = None
+        for module in self.original_model.modules():
+            if isinstance(module, nn.Linear):
+                last_linear_layer = module
+        
+        if last_linear_layer is None:
+            if isinstance(self.original_model, nn.Linear): # Model itself is Linear
+                last_linear_layer = self.original_model
+            else: # Check last child
+                children = list(self.original_model.children())
+                if children and isinstance(children[-1], nn.Linear):
+                    last_linear_layer = children[-1]
+                else:
+                    raise ValueError("Could not automatically find a final nn.Linear layer to hook.")
+        
+        self._hook_handle = last_linear_layer.register_forward_hook(self._capture_embeddings_hook)
+
+    def _capture_embeddings_hook(self, module, input_args, output):
+        # input_args[0] is the input tensor to the hooked nn.Linear layer
+        if input_args:
+            self.embeddings = input_args[0].detach() # .clone() if modification is a concern
+
+    def forward(self, x):
+        self.embeddings = None # Reset
+        predictions = self.original_model(x)
+        return predictions, self.embeddings
+
+    def remove_hook(self):
+        if self._hook_handle:
+            self._hook_handle.remove()
+            self._hook_handle = None
+
+    def __del__(self):
+        self.remove_hook()

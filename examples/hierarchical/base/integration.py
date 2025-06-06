@@ -351,7 +351,14 @@ class MultiLevelResultCollector(BaseResultCollector):
         return super().eval_label_fn(data=data, prefix=prefix, *args, **kwargs)
 
 class HierarchicalResultCollector:
-    def __init__(self, levels : int, idx2cls : dict[int, dict[int, str]], combinations : list[tuple[int, int, int]], *args, **kwargs):
+    def __init__(
+            self, 
+            levels : int, 
+            idx2cls : dict[int, dict[int, str]], 
+            combinations : list[tuple[int, int, int]], 
+            *args, 
+            **kwargs
+        ):
         self.levels = levels
         self.idx2cls = idx2cls
         self.cls2cls = dict()
@@ -386,13 +393,13 @@ class HierarchicalResultCollector:
                     json.dump(results, f)
             return results
 
-    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : Optional[Union[int, list[int]]]=None):
+    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : Optional[Union[int, list[int]]]=None, **kwargs):
         if level is None:
             level = list(range(self.levels))
         if isinstance(level, int):
             level = [level]
         for lvl in level:
-            self.collectors[lvl].collect(paths, predictions[lvl])
+            self.collectors[lvl].collect(paths, predictions[lvl], **kwargs)
 
     @property
     def data(self):
