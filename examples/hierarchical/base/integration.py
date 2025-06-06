@@ -274,7 +274,7 @@ class HierarchicalBuilder(BaseBuilder):
             # num_workers -= num_workers % 2
             # num_workers = max(0, num_workers)
 
-        pin_memory = False # True
+        pin_memory = True
 
         train_loader = DataLoader(
             train_dataset,

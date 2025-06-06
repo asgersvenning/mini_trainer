@@ -80,7 +80,7 @@ def get_dataset_dataloader(
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = False # not dataset_is_small
+    pin_memory = not dataset_is_small
 
     train_loader = DataLoader(
         train_dataset,
