@@ -72,9 +72,9 @@ def get_dataset_dataloader(
         val_dataset   = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])])
 
         if num_workers is None:
-            num_workers = os.cpu_count()
+            num_workers = os.cpu_count() - 4
             # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
-            # num_workers -= num_workers % 2
+            num_workers -= num_workers % 2
             # num_workers = max(0, num_workers)
 
     train_sampler = RandomSampler(train_dataset)
