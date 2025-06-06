@@ -10,6 +10,8 @@ def class_weight_distribution_regularization(
     normalized class weight vectors, assuming a Chi-squared distribution prior
     for these distances.
 
+    The regularization term is defined as the average 
+
     Args:
         classification_weights: Tensor of shape [num_classes, num_embeddings],
                                 typically the weights of the final linear layer.
@@ -51,36 +53,4 @@ def class_weight_distribution_regularization(
     chi2_expected = chi2_dist.mean
     # New method return mean negative log-likelihood of the lower triangle
     log_prob : torch.Tensor = chi2_dist.log_prob(chi2_statistic_tril[chi2_statistic_tril <= chi2_expected])
-    return -log_prob.sum() / (num_classes * (num_classes - 1) / 2)
-
-    # Old method return sum of z-scores
-    # class_dmat_cdf = chi2_dist.cdf(chi2_statistic)
-
-    # # We only need the upper (or lower) triangle of the matrix, excluding the diagonal
-    # # as distances are symmetric (d_ij = d_ji) and d_ii = 0.
-    # indices = torch.triu_indices(num_classes, num_classes, offset=1, device=weights_f64.device)
-    # if indices.numel() == 0: # Handles num_classes < 2, though already checked
-    #     return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
-        
-    # unique_cdf_values = class_dmat_cdf[indices[0], indices[1]]
-
-    # # 4. Quantile-Quantile Transformation: CDF values to Z-scores
-    # # Clamp CDF values to (epsilon, 1-epsilon) to avoid -inf/inf from icdf for perfect 0 or 1
-    # clamped_cdf_values = torch.clamp(unique_cdf_values, min=epsilon, max=1.0 - epsilon)
-
-    # normal_dist = Normal(
-    #     torch.tensor(0.0, device=weights_f64.device, dtype=torch.float64),
-    #     torch.tensor(1.0, device=weights_f64.device, dtype=torch.float64)
-    # )
-    # z_scores = normal_dist.icdf(clamped_cdf_values) # Inverse CDF (probit)
-
-    # # 5. Regularization term: sum of squared Z-scores
-    # # This penalizes deviations where the observed distance was very unlikely (tail regions of Chi2).
-    # # Normalizing by the number of pairs to make it somewhat independent of num_classes.
-    # num_pairs = z_scores.numel()
-    # if num_pairs == 0: # Should be caught by num_classes < 2 earlier
-    #      return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
-
-    # reg_term = torch.sum(z_scores ** 2) / num_pairs
-
-    # return reg_term.to(classification_weights.dtype) # Cast back to original dtype
+    return -log_prob.sum() + torch.tensor((num_classes * (num_classes - 1) / 2), device=weights_f64.device, dtype=torch.float64).log()

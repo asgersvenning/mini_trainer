@@ -91,39 +91,6 @@ def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : 
     return _shape_fn
 
 
-def cuda_memory_stats() -> dict[int, dict[str, float]]:
-    """
-    Compute used, free, and total memory (in megabytes) for each CUDA device
-    that has non-zero allocations in the current PyTorch process.
-
-    Returns:
-        dict[int, dict[str, float]]: A mapping from device index to a dict with
-            'used_mb'  - bytes allocated by this process (MB)
-            'free_mb'  - free bytes on the device (MB)
-            'total_mb' - total device memory (MB)
-    """
-    stats = {}
-    for idx in range(torch.cuda.device_count()):
-        used = torch.cuda.memory_allocated(idx)
-        if used == 0:
-            continue  # skip devices with no allocations
-
-        # try driver‐level query for free/total
-        if hasattr(torch.cuda, 'mem_get_info'):
-            free, total = torch.cuda.mem_get_info(idx)
-        else:
-            total = torch.cuda.get_device_properties(idx).total_memory
-            free = total - torch.cuda.memory_reserved(idx)
-
-        stats[idx] = {
-            'used_mb':  used  / 1024**2,
-            'free_mb':  free  / 1024**2,
-            'total_mb': total / 1024**2,
-        }
-
-    return stats
-
-
 def setup_for_distributed(is_master):
     """
     This function disables printing when not in master process

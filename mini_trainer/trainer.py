@@ -58,22 +58,22 @@ def train_one_epoch(
                 raise RuntimeError(f'Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
+        
         (sum(loss) + regularizer(model)).backward()
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         optimizer.step()
         lr_scheduler.step()
         
-        with torch.no_grad():
-            logger.consume(
-                index=i,
-                batch=batch, 
-                target=target, 
-                prediction=output, 
-                loss=loss, 
-                optimizer=optimizer, 
-                start_time=start_time
-            )
+        logger.consume(
+            index=i,
+            batch=batch, 
+            target=target, 
+            prediction=output, 
+            loss=loss, 
+            optimizer=optimizer, 
+            start_time=start_time
+        )
         pbar.set_description_str(logger.status(), i % 25 == 0)
     model.eval()
 

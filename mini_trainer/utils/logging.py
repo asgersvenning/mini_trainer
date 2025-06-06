@@ -16,8 +16,8 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from torch import nn
 
-from mini_trainer.utils import (cuda_memory_stats, float_signif_decimal,
-                                increment_name_dir, reduce_across_processes)
+from mini_trainer.utils import (float_signif_decimal, increment_name_dir,
+                                reduce_across_processes)
 from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
@@ -574,6 +574,7 @@ class MultiLogger:
         self._batch_size = None
         self._idx = None
         self._n_classes = None
+        self._soft_confusion_matrix : dict[str, torch.Tensor] = dict()
 
     def compute_steps(self, epochs : int, train_steps : int, val_steps : int):
         return \
@@ -604,6 +605,7 @@ class MultiLogger:
         self._epoch = epoch
         self._type = type
         self._current_loggers : list[_Logger] = []
+        self._soft_confusion_matrix : dict[str, torch.Tensor] = dict() 
         for cls, kwargs, stat_factory in zip(
             self.logger_cls, 
             chain(self.logger_cls_extra_kwargs, repeat(dict())),
@@ -706,6 +708,7 @@ class MultiLogger:
         if not isinstance(prediction, list):
             if self._n_classes is None:
                 self._n_classes = prediction.shape[1]
+            self.render_soft_confusion_matrix(target, prediction)
             self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
             if prediction.shape[1] >= 5:
                 acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
@@ -721,7 +724,8 @@ class MultiLogger:
                 tp = prediction[lvl]
                 tl = target[:, lvl]
                 self._n_classes = tp.shape[1]
-                self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), lvl=lvl)
+                self.render_soft_confusion_matrix(tl, tp, level=lvl)
+                self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), level=lvl)
                 if tp.shape[1] >= 5:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
                 else:
@@ -732,14 +736,14 @@ class MultiLogger:
             self,
             labels : list[int], 
             predictions : list[int],
-            lvl : Optional[int]=None
+            level : Optional[int]=None
         ):
-        if lvl is None:
+        if level is None:
             self.store("labels", labels)
             self.store("predictions", predictions)
         else:
-            self.store(f"labels/lvl{lvl}", labels)
-            self.store(f"predictions/lvl{lvl}", predictions)
+            self.store(f"labels/lvl{level}", labels)
+            self.store(f"predictions/lvl{level}", predictions)
 
     def log_loss(
             self,
@@ -801,17 +805,19 @@ class MultiLogger:
         self.log_optim(optimizer)
         self.log_accuracy(target, prediction)
         self.log_loss(loss)
-        self.log_speed(start_time)
         self.log_memory_use()
+        self.log_speed(start_time)
 
         self._idx = self._batch_size = None
 
+    @torch.no_grad()
     def consume(self, **kwargs):
         default_consume_kwargs = ["index", "batch", "target", "prediction", "loss", "optimizer", "start_time"]
         dca = {key : kwargs.pop(key) for key in  default_consume_kwargs}
+        
+        self.log_statistic(**kwargs)
         if len(dca) == len(default_consume_kwargs):
             self.default_consume(**dca)
-        self.log_statistic(**kwargs)
         self.step()
 
     def status(self):
@@ -837,11 +843,33 @@ class MultiLogger:
             part = f'{stat}={value:>5.{float_signif_decimal(value)}f}'
             parts.append(part)
         return " | ".join(parts)
-    
+
+    def render_soft_confusion_matrix(
+            self, 
+            labels : torch.Tensor, 
+            predictions : torch.Tensor, 
+            level : int=0
+        ):
+        cf = self._soft_confusion_matrix.get(level, None)
+        new_cf = False
+        if cf is None:
+            new_cf = True
+            n_cls = predictions.shape[1]
+            cf = torch.zeros((n_cls, n_cls), dtype=torch.float32)
+        if not isinstance(cf, torch.Tensor) and cf.dtype == torch.float32 and cf.device.type == "cpu":
+            raise RuntimeError(f'Unexpected soft confusion matrix found {cf}, expected a torch.Tensor of torch.float32 with device="cpu".')
+        for lidx, plog_prob in zip(labels, predictions):
+            lidx = int(lidx.item())
+            pprob = plog_prob.exp().float().cpu()
+            cf[lidx] += pprob
+        if new_cf:
+            self._soft_confusion_matrix[level] = cf
+
     def confusion_matrix(self):
         lvl = None
-        figs = []
+        figs = dict()
         while True:
+            # Check if there is one or multiple levels, and if so if the current level exists
             if lvl is None:
                 counts = {"labels" : [], "predictions" : []}
                 lvl = 0
@@ -849,9 +877,10 @@ class MultiLogger:
                     continue
             else:
                 counts = {f"labels/lvl{lvl}" : [], f"predictions/lvl{lvl}" : []}
-                lvl += 1
                 if any([key not in self.heterogeneous_storage for key in counts]):
                     break
+            
+            # Find label and prediction combinations (at the current level if applicable)
             hits = 0
             for what in counts:
                 for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
@@ -864,12 +893,35 @@ class MultiLogger:
                     counts[what].extend(cls_idxs)
             if hits == 0:
                 print(f"WARNING: No labels or predictions found for {self._epoch}!")
+            
+            # Create confusion matrix from counts
             cm = raw_confusion_matrix(*counts.values())
             m = cm.sum(axis=1) > 0
             cm = cm[m][:, m]
             if not bool(np.any(np.isfinite(cm))):
                 print(f'Confusion matrix has no valid values, produced from counts: {counts}')
-            figs.append(plot_heatmap(cm, "magma"))
+            
+            cm_lab = "Confusion matrix"
+            if lvl is not None:
+                cm_lab += f"/lvl{lvl}"
+            figs[cm_lab] = plot_heatmap(cm)
+            
+            lvl += 1
+        
+        if len(self._soft_confusion_matrix) == 0:
+            pass
+        elif len(self._soft_confusion_matrix) == 1:
+            cm = list(self._soft_confusion_matrix.values())[0]
+            cm_rs = cm.sum(dim=1, keepdim=True)
+            cm = cm / cm_rs
+            cm = cm.clamp(1/cm_rs.sum().item(), 1)
+            figs["Soft confusion matrix"] = plot_heatmap(cm)
+        else:
+            for lvl, cm in self._soft_confusion_matrix.items():
+                cm_rs = cm.sum(dim=1, keepdim=True)
+                cm = cm / cm_rs
+                cm = cm.clamp(1/cm_rs.sum().item(), 1)
+                figs[f"Soft confusion matrix/lvl{lvl}"] = plot_heatmap(cm)
         return figs
 
     def add_figure(self, name : str, figure : Union[Figure, np.ndarray, torch.Tensor]):
@@ -880,10 +932,8 @@ class MultiLogger:
 
     def figures(self, model : Optional[nn.Module]):
         cm_figs = self.confusion_matrix()
-        if len(cm_figs) == 1:
-            self.add_figure("Confusion matrix", cm_figs[0])
-        for lvl, cm_fig in enumerate(cm_figs):
-            self.add_figure(f"Confusion matrix/lvl{lvl}", cm_fig)
+        for lab, fig in cm_figs.items():
+            self.add_figure(lab, fig)
 
         if model is not None:
             cdm_fig = plot_model_class_distance(model)
