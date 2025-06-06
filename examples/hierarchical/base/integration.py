@@ -284,7 +284,7 @@ class HierarchicalBuilder(BaseBuilder):
             drop_last=True, # Ensures compatibility with batch normalization
             num_workers=num_workers,
             pin_memory=pin_memory,
-            pin_memory_device=str(device),
+            pin_memory_device=str(device) if pin_memory else "",
             persistent_workers=pin_memory
         )
 
