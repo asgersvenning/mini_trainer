@@ -12,10 +12,10 @@ def class_weight_distribution_regularization(
     for these distances.
 
     The regularization term is defined as:
-        R = sum[ log(L_chi2( N_E , tril(WW) )) * 1_{tril(WW) < E(chi2( N_E ))} ] + |tril(WW)|
+        R = -sum[ log(L_chi2( N_E , tril(WW) )) * 1_{tril(WW) < E(chi2( N_E ))} ] + |tril(WW)|
     Where N_E is the number of embedding dimensions and tril(WW) is the lower triangle (not including the diagonal) of:
         WW = (|| W, W ||^2) / 2
-    Thus R corresponds to the log-likelihood of tril(WW) given a Chi2 distribution with N_E degrees of freedom, divided by the number of "samples".
+    Thus R corresponds to the negative log-likelihood of tril(WW) given a Chi2 distribution with N_E degrees of freedom, divided by the number of "samples".
 
     For efficiency instead of letting W be the full weight matrix, if `sparse=True`, a random subset of classes corresponding to ~sqrt(N_C) is used.
     This has the effect that the size of WW is O(N_C) instead of O(N_C^2), which is not ideal when you have thousands of classes.
