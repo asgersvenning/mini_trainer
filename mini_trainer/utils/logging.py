@@ -862,10 +862,14 @@ class MultiLogger:
             cf = torch.zeros((n_cls, n_cls), dtype=torch.float32)
         if not isinstance(cf, torch.Tensor) and cf.dtype == torch.float32 and cf.device.type == "cpu":
             raise RuntimeError(f'Unexpected soft confusion matrix found {cf}, expected a torch.Tensor of torch.float32 with device="cpu".')
-        for lidx, plog_prob in zip(labels, predictions):
-            lidx = int(lidx.item())
-            pprob = plog_prob.exp().float().cpu()
-            cf[lidx] += pprob
+        grps = labels.unique()
+        for gidx in grps:
+            lmask = labels == gidx
+            cf[gidx] += predictions[lmask, :].exp().sum(dim=0).float().cpu()
+        # for lidx, plog_prob in zip(labels, predictions):
+        #     lidx = int(lidx.item())
+        #     pprob = plog_prob.exp().float().cpu()
+        #     cf[lidx] += pprob
         if new_cf:
             self._soft_confusion_matrix[level] = cf
 
