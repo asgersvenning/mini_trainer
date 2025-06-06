@@ -73,9 +73,9 @@ def get_dataset_dataloader(
 
         if num_workers is None:
             num_workers = os.cpu_count()
-            num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
-            num_workers -= num_workers % 2
-            num_workers = max(0, num_workers)
+            # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
+            # num_workers -= num_workers % 2
+            # num_workers = max(0, num_workers)
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
@@ -90,7 +90,7 @@ def get_dataset_dataloader(
         drop_last=True, # Ensures compatibility with batch normalization
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
-        persistent_workers=pin_memory
+        persistent_workers=True # pin_memory
     )
 
     val_loader = DataLoader(
@@ -100,7 +100,7 @@ def get_dataset_dataloader(
         num_workers=num_workers, # min(max(2, os.cpu_count() - num_workers - 2), num_workers), 
         pin_memory=False,
         pin_memory_device="",
-        persistent_workers=False
+        persistent_workers=True # False
     )
 
     return train_dataset, val_dataset, train_loader, val_loader

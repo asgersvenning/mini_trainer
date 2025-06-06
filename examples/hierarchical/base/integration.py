@@ -270,9 +270,9 @@ class HierarchicalBuilder(BaseBuilder):
 
         if num_workers is None:
             num_workers = os.cpu_count()
-            num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
-            num_workers -= num_workers % 2
-            num_workers = max(0, num_workers)
+            # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
+            # num_workers -= num_workers % 2
+            # num_workers = max(0, num_workers)
 
         pin_memory = False # True
 
@@ -285,7 +285,7 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers=num_workers,
             pin_memory=pin_memory,
             pin_memory_device=str(device) if pin_memory else "",
-            persistent_workers=pin_memory
+            persistent_workers=True#pin_memory
         )
 
         val_loader = DataLoader(
@@ -296,7 +296,7 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers=num_workers, # min(2, num_workers), 
             pin_memory=False,
             pin_memory_device="",
-            persistent_workers=False
+            persistent_workers=True # False
         )
 
         return train_labels, train_loader, val_loader

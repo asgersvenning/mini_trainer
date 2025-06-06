@@ -155,6 +155,7 @@ def train(
         weight_store_rate : Optional[int]=None,
         **kwargs
     ):
+    model = torch.compile(model)
     if logger.verbose:
         print("Start training")
     start_time = time.time()

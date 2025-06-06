@@ -391,6 +391,10 @@ def cli(description="Train a classifier", **kwargs):
         "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(
+        "--num_workers", type=int, default=None, required=False,
+        help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
+    )
+    cfg_args.add_argument(
         "--seed", type=int, required=False,
         help=
         "Set the initial seed for the RNG in the core Python library `random`.\n"
@@ -408,7 +412,8 @@ def cli(description="Train a classifier", **kwargs):
         "batch_size" : args.pop("batch_size"),
         "resize_size" : 256, 
         "train_proportion" : 0.9,
-        "subsample" : args.pop("subsample")
+        "subsample" : args.pop("subsample"),
+        "num_workers" : args.pop("num_workers")
     }
     args["optimizer_builder_kwargs"] = {
         "lr" : args.pop("lr"),
