@@ -39,8 +39,8 @@ def train_one_epoch(
 
     nan_errs = 0
 
+    start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
-        start_time = time.time()
         batch, target = batch.to(device), target.to(device)
         if len(batch.shape) == 3:
                 batch = batch.unsqueeze(0)
@@ -75,6 +75,8 @@ def train_one_epoch(
             start_time=start_time
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
+        start_time = time.time()
+
     model.eval()
 
 def evaluate(
@@ -92,8 +94,8 @@ def evaluate(
     logger.update(epoch=epoch, type="eval")
 
     num_processed_samples = 0
+    start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
-        start_time = time.time()
         with torch.inference_mode():
             batch, target = batch.to(device), target.to(device)
             if len(batch.shape) == 3:
@@ -112,6 +114,7 @@ def evaluate(
             )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         num_processed_samples += len(batch)
+        start_time = time.time()
     
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
