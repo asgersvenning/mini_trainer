@@ -1,9 +1,10 @@
 import torch
-from torch.distributions import Chi2, Normal
+from torch.distributions import Chi2
 
 def class_weight_distribution_regularization(
     classification_weights: torch.Tensor,
-    epsilon: float = 1e-6 # For numerical stability
+    epsilon: float = 1e-6, # For numerical stability
+    proportion : float = 0.1 # For efficiency
 ):
     """
     Calculates a regularization term based on the pairwise distances of
@@ -16,17 +17,19 @@ def class_weight_distribution_regularization(
         classification_weights: Tensor of shape [num_classes, num_embeddings],
                                 typically the weights of the final linear layer.
         epsilon: Small value for numerical stability.
+        proportion: Proportion of classes to compute the regularization over. Will use a random subset of classes each time.
 
     Returns:
         A scalar tensor representing the regularization loss.
     """
+    if proportion < 1:
+        w = torch.randperm(len(classification_weights), device=classification_weights.device, dtype=torch.long)[:max(2, round(len(classification_weights)*proportion))]
+        classification_weights = classification_weights[w]
+
     num_classes, num_embeddings = classification_weights.shape
 
     if num_classes < 2 or num_embeddings == 0:
         return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
-
-    # Work with higher precision and ensure it's on the same device as weights
-    # weights_f64 = classification_weights.to(dtype=torch.float64)
 
     # 1. Normalize each class's weight vector (across embedding dimensions)
     mean_weights = classification_weights.mean(dim=0, keepdim=True)
