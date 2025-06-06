@@ -273,7 +273,7 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers -= num_workers % 2
             num_workers = max(0, num_workers)
 
-        pin_memory = True
+        pin_memory = False # True
 
         train_loader = DataLoader(
             train_dataset,
@@ -292,7 +292,7 @@ class HierarchicalBuilder(BaseBuilder):
             batch_size=batch_size, 
             sampler=val_sampler, 
             collate_fn=multi_level_collate,
-            num_workers=min(2, num_workers), 
+            num_workers=num_workers, # min(2, num_workers), 
             pin_memory=False,
             pin_memory_device="",
             persistent_workers=False

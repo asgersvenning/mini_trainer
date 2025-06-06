@@ -79,7 +79,7 @@ def get_dataset_dataloader(
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = not dataset_is_small
+    pin_memory = False # not dataset_is_small
 
     train_loader = DataLoader(
         train_dataset,
@@ -96,7 +96,7 @@ def get_dataset_dataloader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=min(max(2, os.cpu_count() - num_workers - 2), num_workers), 
+        num_workers=num_workers, # min(max(2, os.cpu_count() - num_workers - 2), num_workers), 
         pin_memory=False,
         pin_memory_device="",
         persistent_workers=False
