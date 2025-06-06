@@ -576,6 +576,9 @@ class MultiLogger:
         self._n_classes = None
         self._soft_confusion_matrix : dict[str, torch.Tensor] = dict()
 
+    def is_train(self):
+        return isinstance(self._type, str) and self._type.lower().strip().startswith("train")
+
     def compute_steps(self, epochs : int, train_steps : int, val_steps : int):
         return \
             [list(range(e*train_steps, (e+1)*train_steps)) for e in range(epochs)], \
@@ -585,10 +588,9 @@ class MultiLogger:
     def steps(self):
         if self._epoch is None:
             raise RuntimeError(f'Attempted to retrieve steps before starting an epoch (i.e. training).')
-        clean_type = self._type.lower().strip()
-        if clean_type.startswith("train"):
+        if self.is_train():
             return self.train_steps[self._epoch] 
-        elif clean_type.startswith("val") or clean_type.startswith("eval"):
+        else:
             return self.val_steps[self._epoch]
 
     def store(self, name : str, value : Any):
@@ -708,7 +710,8 @@ class MultiLogger:
         if not isinstance(prediction, list):
             if self._n_classes is None:
                 self._n_classes = prediction.shape[1]
-            self.render_soft_confusion_matrix(target, prediction)
+            if not self.is_train():
+                self.render_soft_confusion_matrix(target, prediction)
             self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
             if prediction.shape[1] >= 5:
                 acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
@@ -724,7 +727,8 @@ class MultiLogger:
                 tp = prediction[lvl]
                 tl = target[:, lvl]
                 self._n_classes = tp.shape[1]
-                self.render_soft_confusion_matrix(tl, tp, level=lvl)
+                if not self.is_train():
+                    self.render_soft_confusion_matrix(tl, tp, level=lvl)
                 self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), level=lvl)
                 if tp.shape[1] >= 5:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
