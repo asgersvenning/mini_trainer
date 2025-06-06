@@ -775,7 +775,7 @@ class MultiLogger:
 
     def log_speed(
             self,
-            start_time : int
+            start_time : float
         ):
         self.log_statistic(**{"item/s" : self._batch_size / (time.time() - start_time)})
 
@@ -795,7 +795,7 @@ class MultiLogger:
             prediction : Union[list[torch.Tensor], torch.Tensor],
             loss : Any,
             optimizer : torch.optim.Optimizer,
-            start_time : int
+            start_time : float
         ):    
         # These are set first, so they may be used while logging the other statistics
         self._idx = index
