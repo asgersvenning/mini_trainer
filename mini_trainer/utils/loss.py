@@ -4,7 +4,7 @@ from torch.distributions import Chi2
 def class_weight_distribution_regularization(
     classification_weights: torch.Tensor,
     epsilon: float = 1e-6, # For numerical stability
-    proportion : float = 0.1 # For efficiency
+    sparse : bool=True
 ):
     """
     Calculates a regularization term based on the pairwise distances of
@@ -17,13 +17,16 @@ def class_weight_distribution_regularization(
         classification_weights: Tensor of shape [num_classes, num_embeddings],
                                 typically the weights of the final linear layer.
         epsilon: Small value for numerical stability.
-        proportion: Proportion of classes to compute the regularization over. Will use a random subset of classes each time.
+        sparse: Use a sparse set of classes to compute the regularization over. 
+            The size of the set will be equal to the square root of the number of classes. 
+            Will use a random subset of classes each time.
 
     Returns:
         A scalar tensor representing the regularization loss.
     """
-    if proportion < 1:
-        w = torch.randperm(len(classification_weights), device=classification_weights.device, dtype=torch.long)[:max(2, round(len(classification_weights)*proportion))]
+    if sparse:
+        w_size = max(2, round(len(classification_weights) ** (1/2)))
+        w = torch.randperm(len(classification_weights), device=classification_weights.device, dtype=torch.long)[:w_size]
         classification_weights = classification_weights[w]
 
     num_classes, num_embeddings = classification_weights.shape
