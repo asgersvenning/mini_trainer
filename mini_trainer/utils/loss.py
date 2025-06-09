@@ -74,4 +74,4 @@ def class_weight_distribution_regularization(
     log_prob : torch.Tensor = 2 * chi2_dist.log_prob(chi2_statistic_tril[chi2_statistic_tril < chi2_expected])
     
     # Return the likelihood divided by the number of statistics
-    return -log_prob.sum() + torch.tensor((num_classes * (num_classes - 1) / 2), device=classification_weights.device, dtype=classification_weights.dtype).log()
+    return -log_prob.sum() / torch.tensor((num_classes * (num_classes - 1) / 2), device=classification_weights.device, dtype=classification_weights.dtype)
