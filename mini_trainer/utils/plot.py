@@ -417,7 +417,7 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
     classification_weights = classification_weights.cpu().clone().detach()
     classification_weights -= classification_weights.mean(dim=0, keepdim=True)
     classification_weights /= classification_weights.std(dim=0, unbiased=True, keepdim=True)
-    class_dmat = torch.cdist(classification_weights, classification_weights)
+    class_dmat = torch.cdist(classification_weights, classification_weights).float()
     if not probability:
         return class_dmat
     class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[1]).cdf((class_dmat ** 2 / 2))
@@ -427,6 +427,6 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
 
 def plot_model_class_distance(model : nn.Module, **kwargs):
     llw = last_layer_weights(model)
-    cdm = class_distance(llw, True).float()
+    cdm = class_distance(llw, True)
     cdm.fill_diagonal_(torch.nan)
     return plot_heatmap(cdm, **kwargs)

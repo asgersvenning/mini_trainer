@@ -236,6 +236,7 @@ class HierarchicalBuilder(BaseBuilder):
             # path2cls2idx = path2cls2idx_builder(cls2idx=cls2idx, **path2cls2idx_builder_kwargs)
             cls2comb = {comb[0] : comb for comb in combinations}
             all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f))]
+            random.shuffle(all_files)
             data = {
                 "path" : [],
                 "class" : [],
