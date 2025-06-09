@@ -414,7 +414,7 @@ def plot_heatmap(
     return final_rgb_image
 
 def class_distance(classification_weights : torch.Tensor, probability : bool=True):
-    classification_weights = classification_weights.cpu().clone().detach().to(torch.float64)
+    classification_weights = classification_weights.cpu().clone().detach()
     classification_weights -= classification_weights.mean(dim=0, keepdim=True)
     classification_weights /= classification_weights.std(dim=0, unbiased=True, keepdim=True)
     class_dmat = torch.cdist(classification_weights, classification_weights)
@@ -427,6 +427,6 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
 
 def plot_model_class_distance(model : nn.Module, **kwargs):
     llw = last_layer_weights(model)
-    cdm = class_distance(llw, True)
+    cdm = class_distance(llw, True).float()
     cdm.fill_diagonal_(torch.nan)
     return plot_heatmap(cdm, **kwargs)
