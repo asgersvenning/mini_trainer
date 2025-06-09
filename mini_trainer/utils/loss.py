@@ -40,7 +40,7 @@ def class_weight_distribution_regularization(
 
     # Select a subset of classes to regularize
     if sparse:
-        w_size = max(2, round(len(classification_weights) ** (1/2)))
+        w_size = max(2, min(len(classification_weights), 2 * round(len(classification_weights) ** (1/2))))
         w = torch.randperm(len(classification_weights), device=classification_weights.device, dtype=torch.long)[:w_size]
         classification_weights = classification_weights[w]
 
@@ -63,15 +63,13 @@ def class_weight_distribution_regularization(
     # 3. CDF Transformation
     dof_tensor = torch.tensor(float(num_embeddings), device=classification_weights.device, dtype=classification_weights.dtype)
     if dof_tensor <= 0: # Should not happen if num_embeddings > 0
-        return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)
-        
+        return torch.tensor(0.0, device=classification_weights.device, dtype=classification_weights.dtype)      
     chi2_dist = Chi2(dof_tensor)
-    chi2_expected = chi2_dist.mean
     
     # Calculate the density of the statistics for the values below the expected value
     # (since we only want to penalize classes which are too close, not too far)
     # and multiply by two to compensate
-    log_prob : torch.Tensor = 2 * chi2_dist.log_prob(chi2_statistic_tril[chi2_statistic_tril < chi2_expected])
+    log_prob : torch.Tensor = 2 * chi2_dist.log_prob(chi2_statistic_tril[chi2_statistic_tril < chi2_dist.mean])
     
     # Return the likelihood divided by the number of statistics
     return -log_prob.sum() / torch.tensor((num_classes * (num_classes - 1) / 2), device=classification_weights.device, dtype=classification_weights.dtype)

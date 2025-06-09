@@ -417,10 +417,10 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
     classification_weights = classification_weights.cpu().clone().detach().to(torch.float64)
     classification_weights -= classification_weights.mean(dim=0, keepdim=True)
     classification_weights /= classification_weights.std(dim=0, unbiased=True, keepdim=True)
-    class_dmat = torch.cdist(classification_weights.T, classification_weights.T)
+    class_dmat = torch.cdist(classification_weights, classification_weights)
     if not probability:
         return class_dmat
-    class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[0]).cdf((class_dmat ** 2 / 2))
+    class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[1]).cdf((class_dmat ** 2 / 2))
     if not isinstance(class_dmat_cdf, torch.Tensor):
         raise RuntimeError(f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix.")
     return class_dmat_cdf
