@@ -61,7 +61,7 @@ def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {}
 class Classifier(nn.Module):
     def __init__(self, in_features : int, out_features : int, hidden : bool=True, droprate : float=0.3):
         super().__init__()
-        # Create a BatchNormalization Layer
+        # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(in_features)
 
         # Create one hidden layer
@@ -69,6 +69,9 @@ class Classifier(nn.Module):
 
         # Create a dropout layer (if hidden is active)
         self.dropout = hidden and nn.Dropout(p=droprate)
+
+        # Create a hidden BatchNormalization layer
+        self.batch_norm_hidden = hidden and nn.BatchNorm1d(in_features)
 
         # Create a standard linear layer.
         self.linear = nn.Linear(in_features, out_features, bias=True)
@@ -85,6 +88,7 @@ class Classifier(nn.Module):
         if self.hidden:
             x = self.hidden(x)
             x = nn.functional.gelu(x)
+            x = self.batch_norm_hidden(x)
             x = self.dropout(x)
         # Classification
         return self.linear(x)

@@ -14,9 +14,7 @@ def resolve_name_or_id(name_or_id : Union[str, int]):
     name_or_id = name_or_id.strip()
     if isinstance(name_or_id, int) or name_or_id.isdigit():
         return resolve_id(name_or_id)
-    id, rank, conf = name_to_id(name_or_id)
-    if "SPECIES" not in rank or conf < 90:
-        raise RuntimeError(f"Unable to unambigously resolve {name_or_id} to a GBIF species ID, best match {id} ({rank}) at {conf}%.")
+    id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
     return resolve_id(id)
 
 def create_taxonomy(names_or_ids : list[int], level : str="family"):

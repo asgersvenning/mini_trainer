@@ -8,14 +8,18 @@ from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
-from hierarchical.base.loss import MultiLevelWeightedCrossEntropyLoss, MultiLevelCrossEntropyLoss
+from hierarchical.base.loss import (MultiLevelCrossEntropyLoss,
+                                    MultiLevelWeightedCrossEntropyLoss)
 from hierarchical.base.model import HierarchicalClassifier
-from hierarchical.base.setup import names_or_ids_to_combinations, resolve_name_or_id
+from hierarchical.base.setup import (names_or_ids_to_combinations,
+                                     resolve_name_or_id)
 from hierarchical.base.utils import (create_hierarchy, leaf_to_parents,
                                      mask_hierarchy)
 from torch import nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from tqdm.contrib.concurrent import thread_map
 
+from mini_trainer import TQDM
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.utils.data import get_image_data
 from mini_trainer.utils.io import ImageClassLoader
@@ -237,9 +241,12 @@ class HierarchicalBuilder(BaseBuilder):
                 "class" : [],
                 "split" : []
             }
+            dirnames = set([os.path.basename(os.path.dirname(path)) for path in all_files])
+            dir2spidx = dict(thread_map(lambda x : (x, resolve_name_or_id(x)["species"][0]), dirnames, tqdm_class=TQDM, desc="Resolving directory names...", total=len(dirnames)))
             for path in all_files:
                 data["path"].append(path)
-                data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[resolve_name_or_id(os.path.basename(os.path.dirname(path)))["species"][0]])])
+                species_id = dir2spidx[os.path.basename(os.path.dirname(path))]
+                data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[species_id])])
                 data["split"].append("train" if random.random() < train_proportion else "validation")
             data = {k : np.array(v) for k, v in data.items()}
             train_image_data = {k : v[data["split"] == np.array("train")] for k, v in data.items()}
