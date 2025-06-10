@@ -2,12 +2,8 @@ from typing import Any, Callable, Iterable, Optional, Union
 
 import torch
 from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import resize
-from torchvision.transforms.v2.functional import to_dtype
-
-from mini_trainer.utils import (convert2bf16, convert2fp16, convert2fp32,
-                                convert2uint8)
-
+from torchvision.transforms.functional import resize, InterpolationMode
+from mini_trainer.utils import make_convert_dtype
 
 def is_image(path: str) -> bool:
     try:
@@ -31,23 +27,16 @@ def make_read_and_resize_fn(
         size : tuple[int, int], 
         device : torch.types.Device,
         dtype : Union[torch.dtype, str], 
+        interpolation=InterpolationMode.NEAREST,
         **kwargs
     ):
     if isinstance(dtype, str):
         dtype = getattr(torch, dtype, None)
         if not isinstance(dtype, torch.dtype):
             raise ValueError(f'Specified data type "{dtype}" is not a known valid torch data type')
-    match dtype:
-        case torch.float16:
-            converter = convert2fp16
-        case torch.float32:
-            converter = convert2fp32
-        case torch.bfloat16:
-            converter = convert2bf16
-        case _:
-            raise ValueError("Only fp16 supported for now.")
+    converter = make_convert_dtype(dtype)
     def read_and_resize(path):
-        return resize(converter(decode_image(path, mode)), size=size, **kwargs).to(device)
+        return resize(converter(decode_image(path, mode)), size=size, interpolation=interpolation, **kwargs).to(device)
     return read_and_resize
 
 class LazyDataset(torch.utils.data.Dataset):
@@ -66,24 +55,18 @@ class LazyDataset(torch.utils.data.Dataset):
             yield self[i]
 
 class ImageLoader:
-    def __init__(self, preprocessor, dtype, device):
+    def __init__(self, size, dtype, device):
         self.dtype, self.device = dtype, device
-        self.preprocessor = preprocessor
-        match self.dtype:
-            case torch.float16:
-                self.converter = convert2fp16
-            case torch.float32:
-                self.converter = convert2fp32
-            case torch.bfloat16:
-                self.converter = convert2bf16
-            case _:
-                raise ValueError("Only fp16 supported for now.")
-        size = self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else 256
+        self.converter = make_convert_dtype(self.dtype)
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str):
-            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(x, ImageReadMode.RGB)), self.shape)).to(self.device)
+            img = decode_image(x, ImageReadMode.RGB)
+            ds = min([max(1, im_d // lo_d) for im_d, lo_d in zip(img.shape[-2:], self.shape)])
+            if ds > 1:
+                img = img[..., ::ds, ::ds]
+            proc_img : torch.Tensor = resize(self.converter(img), self.shape, InterpolationMode.NEAREST).to(self.device)
             return proc_img
         return LazyDataset(self, x)
     
@@ -93,34 +76,24 @@ class ImageClassLoader:
             class_decoder, 
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
             resize_size : Optional[int]=None, 
-            preprocessor : Optional[Callable[[torch.Tensor], torch.Tensor]]=None, 
             dtype=torch.uint8, 
             device=torch.device("cpu")
         ):
         self.dtype, self.device = dtype, device
-        self.preprocessor = preprocessor
+        self.converter = make_convert_dtype(self.dtype)
         self.splitter = item_splitter
         self.class_decoder = class_decoder
-        match self.dtype:
-            case torch.float16:
-                self.converter = convert2fp16
-            case torch.float32:
-                self.converter = convert2fp32
-            case torch.bfloat16:
-                self.converter = convert2bf16
-            case torch.uint8:
-                self.converter = convert2uint8
-            case _:
-                raise NotImplementedError("Only fp32/fp16/bf32/uint8 supported for now.")
-        size = resize_size if resize_size is not None else getattr(self.preprocessor, "resize_size", resize_size)
+        size = resize_size
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
-            proc_img : torch.Tensor = self.converter(resize(to_dtype(decode_image(p, ImageReadMode.RGB), scale=True), self.shape))
-            if self.preprocessor is not None:
-                proc_img = self.preprocessor(proc_img)
+            img = decode_image(p, ImageReadMode.RGB)
+            ds = min([max(1, im_d // lo_d) for im_d, lo_d in zip(img.shape[-2:], self.shape)])
+            if ds > 1:
+                img = img[..., ::ds, ::ds]
+            proc_img : torch.Tensor = resize(self.converter(img), self.shape, InterpolationMode.NEAREST)
             proc_img = proc_img.to(self.device)
             if len(proc_img.shape) == 4:
                 proc_img = proc_img[0]

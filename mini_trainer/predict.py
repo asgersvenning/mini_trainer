@@ -144,7 +144,7 @@ def main(
         
     # Prepare image loader
     image_loader = ImageLoader(
-        model_preprocess,
+        getattr(model_preprocess, "resize_size", 256),
         dtype,
         torch.device("cpu")
     )
@@ -184,10 +184,10 @@ def main(
                 batch = batch.unsqueeze(0)
             with torch.autocast(device_type=device.type, dtype=dtype):
                 if embeddings:
-                    prediction, embedding = nn_model(batch.to(device))
+                    prediction, embedding = nn_model(model_preprocess(batch.to(device)))
                     kwargs = {"embeddings" : embedding}
                 else:
-                    prediction = nn_model(batch.to(device))
+                    prediction = nn_model(model_preprocess(batch.to(device)))
                     kwargs = {}
             results.collect(
                 paths = images[i:(i+len(batch))],

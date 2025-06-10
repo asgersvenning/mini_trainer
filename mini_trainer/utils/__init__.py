@@ -10,12 +10,13 @@ from typing import Optional
 import psutil
 import torch
 from torch import distributed as dist
-from torchvision.transforms import ConvertImageDtype
+from torchvision.transforms.v2 import ToDtype
 
-convert2fp16 = ConvertImageDtype(torch.float16)
-convert2bf16 = ConvertImageDtype(torch.bfloat16)
-convert2fp32 = ConvertImageDtype(torch.float32)
-convert2uint8 = ConvertImageDtype(torch.uint8)
+def make_convert_dtype(dtype : torch.dtype, scale : bool=True):
+    """
+    See `torchvision.transforms.v2.ToDtype`.
+    """
+    return ToDtype(dtype=dtype, scale=scale)
 
 TERMINAL_WIDTH, _ = shutil.get_terminal_size()
 

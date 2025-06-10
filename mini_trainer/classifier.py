@@ -8,7 +8,7 @@ import torch.nn as nn
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
-from mini_trainer.utils import convert2fp16
+from mini_trainer.utils import make_convert_dtype
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
@@ -23,7 +23,7 @@ _UNSUPPORTED_MODELS = [
     'vit_b_16', 'vit_b_32', 'vit_h_14', 'vit_l_16', 'vit_l_32'
 ]
 
-def preprocess(item, transform, func):
+def preprocess(item, transform, func=None):
     if isinstance(item, str):
         path = str(item)
         if not os.path.exists(path):
@@ -33,10 +33,13 @@ def preprocess(item, transform, func):
         image = item
     else:
         raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
-    return transform(func(image))
+    if func:
+        image = func(image)
+    return transform(image)
 
 def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {},
-              classifier_name: Union[str, list[str]] = ["classifier", "fc"]):
+              classifier_name: Union[str, list[str]] = ["classifier", "fc"],
+              preprocess_dtype : Optional[torch.dtype]=None):
     default_transform = None
     if isinstance(backbone_model, str):
         if backbone_model in _UNSUPPORTED_MODELS:
@@ -56,10 +59,10 @@ def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {}
     if backbone_classifier_name is None:
         raise AttributeError(f"No classifier found with names {classifier_name}")
 
-    return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=convert2fp16)
+    return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype))
 
 class Classifier(nn.Module):
-    def __init__(self, in_features : int, out_features : int, hidden : bool=True, droprate : float=0.3):
+    def __init__(self, in_features : int, out_features : int, hidden : bool=True, droprate : float=0.1):
         super().__init__()
         # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(in_features)
@@ -87,7 +90,7 @@ class Classifier(nn.Module):
         # Hidden pass with dropout
         if self.hidden:
             x = self.hidden(x)
-            x = nn.functional.gelu(x)
+            x = nn.functional.leaky_relu(x)
             x = self.batch_norm_hidden(x)
             x = self.dropout(x)
         # Classification
@@ -126,7 +129,7 @@ class Classifier(nn.Module):
         dtype=torch.float32,
         **kwargs
     ):
-        architecture, head_name, model_preprocess = get_model(model_type)
+        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=dtype)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         

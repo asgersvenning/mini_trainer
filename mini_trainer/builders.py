@@ -11,13 +11,14 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torchvision.io import ImageReadMode
 
 from mini_trainer.classifier import Classifier, last_layer_weights
-from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion, convert2bf16, convert2fp16, convert2fp32, convert2uint8
+from mini_trainer.utils import (cosine_schedule_with_warmup,
+                                make_convert_dtype, memory_proportion)
+from mini_trainer.utils.augmentation import SaltAndPepper
 from mini_trainer.utils.data import (get_image_data, parse_class_index,
                                      prepare_split, write_metadata)
 from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
 from mini_trainer.utils.logging import MultiLogger
 from mini_trainer.utils.loss import class_weight_distribution_regularization
-from mini_trainer.utils.augmentation import SaltAndPepper
 
 
 def get_dataset_dataloader(
@@ -265,29 +266,17 @@ class BaseBuilder:
         Returns:
             transforms (`transforms.Compose`): A composition of augmentations.
         """
-        match dtype:
-            case torch.float32:
-                converter = convert2fp32
-            case torch.float16:
-                converter = convert2fp16
-            case torch.bfloat16:
-                converter = convert2bf16
-            case torch.uint8:
-                converter = convert2uint8
-            case _:
-                raise NotImplementedError(f'Augmentations have not been implemented for data type: {dtype}')
         return tt.Compose([
             tt.AugMix(severity=3),
-            SaltAndPepper(proportion=(0.05, 0.33), probability=0.75),
-            tt.RandomHorizontalFlip(p=0.5),
-            tt.RandomVerticalFlip(p=0.5),
-            tt.RandomRotation(degrees=15),
-            tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
+            tt.RandomHorizontalFlip(),
+            tt.RandomVerticalFlip(),
+            tt.RandomRotation(15),
+            tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1))
             # # tt.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
             # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             # # Convert back to tensor (in case some augmentations convert to PIL Image)
-            # tt.ToTensor(),
-            converter
+            # tt.ToTensor()
         ])
     
     @classmethod
@@ -355,7 +344,7 @@ class BaseBuilder:
         return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
 
     @staticmethod
-    def build_regularizer(strength : float=0, *args, **kwargs):
+    def build_regularizer(strength : float=1e-3, *args, **kwargs):
         strength = float(strength)
         if strength == 0:
             return lambda _: 0.

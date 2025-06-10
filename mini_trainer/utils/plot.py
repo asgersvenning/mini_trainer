@@ -1,7 +1,5 @@
 import math
-import os
-from random import sample
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
 import matplotlib as mpl
 import numpy as np
@@ -15,39 +13,6 @@ from torchvision.transforms.functional import resize
 
 from mini_trainer.classifier import last_layer_weights
 from PIL.Image import fromarray
-from mini_trainer.utils import convert2fp32
-
-
-def debug_augmentation(
-        augmentation : Callable[[torch.Tensor], torch.Tensor],
-        dataset : torch.utils.data.Dataset,
-        output_dir : Optional[str]=None,
-        strict : bool=True
-    ):
-    try:
-        n = min(3, len(dataset))
-        fig, axs = plt.subplots(3, n, figsize=(10, 5))
-
-        for j, i in enumerate(sample(range(len(dataset)), n)):
-            example_image : torch.Tensor = dataset[i][0].clone().cpu()
-            
-            axs[j, 0].imshow(example_image.permute(1,2,0))
-            axs[j, 1].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
-            axs[j, 2].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
-
-        plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
-        plt.close()
-    except Exception as e:
-        e_msg = (
-            "Error while attempting to create debug augmentation image."
-            "Perhaps the supplied dataloader doesn't return items (image, label) in the expected format."
-        )
-        e.add_note(e_msg)
-        if strict:
-            raise e
-        print(e_msg)
-        return False
-    return True
 
 
 def named_confusion_matrix(
