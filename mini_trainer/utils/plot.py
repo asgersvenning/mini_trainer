@@ -1,6 +1,6 @@
 import math
 import os
-from random import choice
+from random import sample
 from typing import Callable, Optional, Union
 
 import matplotlib as mpl
@@ -10,14 +10,12 @@ from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.backends import backend_agg
 from matplotlib.colors import LogNorm
-from matplotlib.figure import Figure
-from matplotlib.ticker import FixedLocator, NullLocator
 from torch import nn
 from torchvision.transforms.functional import resize
 
 from mini_trainer.classifier import last_layer_weights
-from mini_trainer.utils import decimals
 from PIL.Image import fromarray
+from mini_trainer.utils import convert2fp32
 
 
 def debug_augmentation(
@@ -27,12 +25,15 @@ def debug_augmentation(
         strict : bool=True
     ):
     try:
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+        n = min(3, len(dataset))
+        fig, axs = plt.subplots(3, n, figsize=(10, 5))
 
-        example_image : torch.Tensor = dataset[choice(range(len(dataset)))][0].clone().float().cpu()
-        
-        axs[0].imshow(example_image.permute(1,2,0))
-        axs[1].imshow(augmentation(example_image).permute(1,2,0))
+        for j, i in enumerate(sample(range(n))):
+            example_image : torch.Tensor = dataset[i][0].clone().cpu()
+            
+            axs[j, 0].imshow(example_image.permute(1,2,0))
+            axs[j, 1].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
+            axs[j, 2].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
 
         plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
         plt.close()

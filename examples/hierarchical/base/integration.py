@@ -262,7 +262,7 @@ class HierarchicalBuilder(BaseBuilder):
                 raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
         print(f"Building datasets with image size {resize_size}")
 
-        loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, preprocessor=lambda x : x, dtype=dtype, device=torch.device("cpu"))
+        loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, dtype=torch.uint8, device=torch.device("cpu"))
 
         if subsample is None or (isinstance(subsample, int) and subsample <= 1):
             train_labels = train_image_data["class"]

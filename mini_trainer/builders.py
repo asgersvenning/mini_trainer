@@ -11,7 +11,7 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torchvision.io import ImageReadMode
 
 from mini_trainer.classifier import Classifier, last_layer_weights
-from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion
+from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion, convert2bf16, convert2fp16, convert2fp32, convert2uint8
 from mini_trainer.utils.data import (get_image_data, parse_class_index,
                                      prepare_split, write_metadata)
 from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
@@ -62,7 +62,7 @@ def get_dataset_dataloader(
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
     else:
-        reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), dtype)
+        reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), torch.uint8)
         def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
             path, label = path_label
             if isinstance(label, (list, np.ndarray)):
@@ -257,7 +257,7 @@ class BaseBuilder:
         return train_image_data["class"], train_loader, val_loader
 
     @staticmethod
-    def build_augmentation():
+    def build_augmentation(dtype : torch.dtype):
         """
         Returns a training augmentation pipeline for normalized tensors.
         Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
@@ -265,9 +265,20 @@ class BaseBuilder:
         Returns:
             transforms (`transforms.Compose`): A composition of augmentations.
         """
+        match dtype:
+            case torch.float32:
+                converter = convert2fp32
+            case torch.float16:
+                converter = convert2fp16
+            case torch.bfloat16:
+                converter = convert2bf16
+            case torch.uint8:
+                converter = convert2uint8
+            case _:
+                raise NotImplementedError(f'Augmentations have not been implemented for data type: {dtype}')
         return tt.Compose([
             tt.AugMix(severity=3),
-            SaltAndPepper(proportion=(0.05, 0.33), probability=0.75)
+            SaltAndPepper(proportion=(0.05, 0.33), probability=0.75),
             # tt.RandomHorizontalFlip(p=0.5),
             # tt.RandomVerticalFlip(p=0.5),
             # tt.RandomRotation(degrees=15),
@@ -276,6 +287,7 @@ class BaseBuilder:
             # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             # # Convert back to tensor (in case some augmentations convert to PIL Image)
             # tt.ToTensor(),
+            converter
         ])
     
     @classmethod

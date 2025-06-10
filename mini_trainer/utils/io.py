@@ -1,10 +1,12 @@
-from typing import Iterable, Optional, Union, Callable, Any
+from typing import Any, Callable, Iterable, Optional, Union
 
 import torch
 from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms.functional import resize
+from torchvision.transforms.v2.functional import to_dtype
 
-from mini_trainer.utils import convert2bf16, convert2fp16, convert2fp32
+from mini_trainer.utils import (convert2bf16, convert2fp16, convert2fp32,
+                                convert2uint8)
 
 
 def is_image(path: str) -> bool:
@@ -91,8 +93,8 @@ class ImageClassLoader:
             class_decoder, 
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
             resize_size : Optional[int]=None, 
-            preprocessor : Callable[[torch.Tensor], torch.Tensor]=lambda x : x, 
-            dtype=torch.float32, 
+            preprocessor : Optional[Callable[[torch.Tensor], torch.Tensor]]=None, 
+            dtype=torch.uint8, 
             device=torch.device("cpu")
         ):
         self.dtype, self.device = dtype, device
@@ -106,15 +108,20 @@ class ImageClassLoader:
                 self.converter = convert2fp32
             case torch.bfloat16:
                 self.converter = convert2bf16
+            case torch.uint8:
+                self.converter = convert2uint8
             case _:
-                raise ValueError("Only fp16 supported for now.")
-        size = resize_size if resize_size is not None else self.preprocessor.resize_size if hasattr(self.preprocessor, "resize_size") else resize_size
+                raise NotImplementedError("Only fp32/fp16/bf32/uint8 supported for now.")
+        size = resize_size if resize_size is not None else getattr(self.preprocessor, "resize_size", resize_size)
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
-            proc_img : torch.Tensor = self.preprocessor(resize(self.converter(decode_image(p, ImageReadMode.RGB)), self.shape)).to(self.device)
+            proc_img : torch.Tensor = self.converter(resize(to_dtype(decode_image(p, ImageReadMode.RGB), scale=True), self.shape))
+            if self.preprocessor is not None:
+                proc_img = self.preprocessor(proc_img)
+            proc_img = proc_img.to(self.device)
             if len(proc_img.shape) == 4:
                 proc_img = proc_img[0]
             cls = self.class_decoder(c)

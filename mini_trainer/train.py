@@ -173,7 +173,7 @@ def main(
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
         )
 
-    augmentation = builder.build_augmentation(**augmentation_builder_kwargs)
+    augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     if not isinstance(augmentation, torchvision.transforms.Compose):
         raise TypeError(
             'Expected `augmentation_builder` to return an objects'
