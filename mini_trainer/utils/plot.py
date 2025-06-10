@@ -28,7 +28,7 @@ def debug_augmentation(
         n = min(3, len(dataset))
         fig, axs = plt.subplots(3, n, figsize=(10, 5))
 
-        for j, i in enumerate(sample(range(n))):
+        for j, i in enumerate(sample(range(len(dataset)), n)):
             example_image : torch.Tensor = dataset[i][0].clone().cpu()
             
             axs[j, 0].imshow(example_image.permute(1,2,0))

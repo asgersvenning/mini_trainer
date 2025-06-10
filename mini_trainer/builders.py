@@ -279,10 +279,10 @@ class BaseBuilder:
         return tt.Compose([
             tt.AugMix(severity=3),
             SaltAndPepper(proportion=(0.05, 0.33), probability=0.75),
-            # tt.RandomHorizontalFlip(p=0.5),
-            # tt.RandomVerticalFlip(p=0.5),
-            # tt.RandomRotation(degrees=15),
-            # tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            tt.RandomHorizontalFlip(p=0.5),
+            tt.RandomVerticalFlip(p=0.5),
+            tt.RandomRotation(degrees=15),
+            tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
             # # tt.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
             # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             # # Convert back to tensor (in case some augmentations convert to PIL Image)
