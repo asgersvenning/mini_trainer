@@ -10,6 +10,7 @@ from torchvision.transforms.functional import InterpolationMode, resize
 
 from mini_trainer.utils import make_convert_dtype
 from mini_trainer import TQDM
+from tqdm.contrib.concurrent import thread_map
 
 
 def is_image(path: str) -> bool:
@@ -77,18 +78,19 @@ class LazyDataset(torch.utils.data.Dataset):
     def _cache_disk(self):
         os.makedirs(self.cache_dir, exist_ok=True)
         self._disk_paths = []
-        for item_str in TQDM(self.items, desc="Caching dataset on disk...", leave=False):
+        def _store_one(item_str):
             hashed_name = hashlib.sha256(item_str.encode()).hexdigest()
             path = os.path.join(self.cache_dir, f"{hashed_name}.npz")
             self._disk_paths.append(path)
 
             if os.path.exists(path):
-                continue
+                return
 
             data = self.func(item_str)
             tensors_to_save = [data] if isinstance(data, torch.Tensor) else data
             save_dict = {str(i): t.numpy() for i, t in enumerate(tensors_to_save)}
             np.savez(path, **save_dict)
+        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False)            
 
     def _cache_ram(self):
         if not self.items:
@@ -97,7 +99,7 @@ class LazyDataset(torch.utils.data.Dataset):
             return
 
         # 1. Process all items into a list
-        processed_items = [self.func(item) for item in TQDM(self.items, desc="Caching dataset in RAM...", leave=False)]
+        processed_items = thread_map(self.func, self.items, tqmd_class=TQDM, desc="Caching dataset in RAM...", leave=False)
         first_item = processed_items[0]
 
         # 2. Check if the function returns a single tensor or a sequence
