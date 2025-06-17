@@ -33,8 +33,14 @@ if __name__ == "__main__":
     reader = make_read_and_resize_fn(ImageReadMode.RGB, (args.size, args.size), torch.device("cpu"), torch.float16)
     convert2uint8 = make_convert_dtype(torch.uint8)
     def rewrite_image(src : str, dst : str):
+        if os.path.exists(dst):
+            return
         write_jpeg(convert2uint8(reader(src)), dst, 95)
 
     pattern = re.compile(args.image_pattern, re.IGNORECASE)
     imgs = list(filter(lambda x : bool(re.search(pattern, x)), iglob(os.path.join(args.input_dir, "**", "*"))))
-    thread_map(lambda x : os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image(x, dst), imgs)
+    thread_map(
+        lambda x : os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image(x, dst), 
+        imgs,
+        max_workers = min(16, max(1, os.cpu_count() // 2))
+    )
