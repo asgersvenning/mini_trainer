@@ -5,7 +5,7 @@ from glob import iglob
 
 import torch
 from torchvision.io import ImageReadMode, write_jpeg
-from tqdm.contrib.concurrent import thread_map
+from tqdm.contrib.concurrent import process_map
 
 from mini_trainer.builders import make_read_and_resize_fn
 from mini_trainer.utils import make_convert_dtype
@@ -36,11 +36,14 @@ if __name__ == "__main__":
         if os.path.exists(dst):
             return
         write_jpeg(convert2uint8(reader(src)), dst, 95)
+    def proc_one(x):
+        os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image(x, dst)
 
     pattern = re.compile(args.image_pattern, re.IGNORECASE)
     imgs = list(filter(lambda x : bool(re.search(pattern, x)), iglob(os.path.join(args.input_dir, "**", "*"))))
-    thread_map(
-        lambda x : os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image(x, dst), 
+    process_map(
+        proc_one, 
         imgs,
-        max_workers = min(16, max(1, os.cpu_count() // 2))
+        max_workers = min(8, max(1, os.cpu_count() // 2)),
+        chunksize = 32
     )
