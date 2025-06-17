@@ -3,6 +3,7 @@ import hashlib
 import math
 import os
 import shutil
+import tempfile
 from collections import OrderedDict
 from glob import glob
 from typing import Optional
@@ -11,6 +12,7 @@ import psutil
 import torch
 from torch import distributed as dist
 from torchvision.transforms.v2 import ToDtype
+
 
 def make_convert_dtype(dtype : torch.dtype, scale : bool=True):
     """
@@ -51,11 +53,14 @@ def memory_proportion(
     bpe = torch.empty(0, dtype=dtype).element_size()
     required = numel * bpe
 
-    dev = torch.device(device)
-    if dev.type == 'cuda':
-        free, _ = torch.cuda.mem_get_info(dev)
+    if isinstance(device, str) and "disk" in device.lower().strip():
+        free = shutil.disk_usage(tempfile.gettempdir()).free
     else:
-        free = psutil.virtual_memory().available
+        dev = torch.device(device)
+        if dev.type == 'cuda':
+            free, _ = torch.cuda.mem_get_info(dev)
+        else:
+            free = psutil.virtual_memory().available
 
     return required / free
 

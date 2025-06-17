@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch import autocast
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
+from torch.amp import GradScaler
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
@@ -22,6 +23,7 @@ def train_one_epoch(
         model : nn.Module, 
         criterion : _Loss, 
         optimizer : Optimizer, 
+        scaler : GradScaler,
         lr_scheduler : LRScheduler,
         data_loader : DataLoader, 
         epoch : int, 
@@ -59,10 +61,12 @@ def train_one_epoch(
         else:
             nan_errs = 0
         
-        (sum(loss) + regularizer(model)).backward()
+        scaler.scale(sum(loss) + regularizer(model)).backward()
+        scaler.unscale_(optimizer)
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         lr_scheduler.step()
         
         logger.consume(
@@ -160,8 +164,9 @@ def train(
         print("Start training")
     start_time = time.time()
 
+    scaler = GradScaler(device=device)
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, criterion, optimizer, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
+        train_one_epoch(model, criterion, optimizer, scaler, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
         evaluate(model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         if output_dir:
             checkpoint = {

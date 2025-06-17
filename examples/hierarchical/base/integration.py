@@ -21,6 +21,7 @@ from tqdm.contrib.concurrent import thread_map
 
 from mini_trainer import TQDM
 from mini_trainer.builders import BaseBuilder
+from mini_trainer.utils import memory_proportion
 from mini_trainer.utils.data import get_image_data
 from mini_trainer.utils.io import ImageClassLoader
 from mini_trainer.utils.logging import BaseResultCollector
@@ -262,17 +263,27 @@ class HierarchicalBuilder(BaseBuilder):
                 raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
         print(f"Building datasets with image size {resize_size}")
 
-        loader = ImageClassLoader(torch.tensor, lambda x : x, resize_size=resize_size, dtype=torch.uint8, device=torch.device("cpu"))
-
-        if subsample is None or (isinstance(subsample, int) and subsample <= 1):
-            train_labels = train_image_data["class"]
-            train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
-            val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
+        if subsample is None or subsample <= 1:
+            pass
         else:
-            train_labels = train_image_data["class"][::subsample]
-            train_dataset = loader(list(zip(train_image_data["path"][::subsample], train_image_data["class"][::subsample])))
-            val_dataset = loader(list(zip(val_image_data["path"][::subsample], val_image_data["class"][::subsample])))
+            train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
+            val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
 
+        dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *((resize_size, resize_size) if isinstance(resize_size, int) else resize_size))
+        dataset_fits_in_cuda = False # memory_proportion(dataset_shape, device, dtype) < 0.25
+        dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
+        dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
+
+        loader = ImageClassLoader(
+            class_decoder=torch.tensor, 
+            item_splitter=lambda x : x, 
+            resize_size=resize_size, 
+            dtype=torch.uint8,
+            cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+        )
+
+        train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
+        val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
         train_sampler = RandomSampler(train_dataset)
         val_sampler = SequentialSampler(val_dataset)
 
@@ -281,8 +292,11 @@ class HierarchicalBuilder(BaseBuilder):
             # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
             num_workers -= num_workers % 2
             # num_workers = max(0, num_workers)
+        if dataset_fits_in_cuda or dataset_fits_in_cpu:
+            # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
+            num_workers = 0
 
-        pin_memory = True
+        pin_memory = num_workers > 0
 
         train_loader = DataLoader(
             train_dataset,
@@ -293,7 +307,7 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers=num_workers,
             pin_memory=pin_memory,
             pin_memory_device=str(device) if pin_memory else "",
-            persistent_workers=True#pin_memory
+            persistent_workers=num_workers > 0#pin_memory
         )
 
         val_loader = DataLoader(
@@ -304,10 +318,10 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers=num_workers, # min(2, num_workers), 
             pin_memory=False,
             pin_memory_device="",
-            persistent_workers=True # False
+            persistent_workers=num_workers > 0 # False
         )
 
-        return train_labels, train_loader, val_loader
+        return train_image_data["class"], train_loader, val_loader
     
     @staticmethod
     def build_criterion(

@@ -6,16 +6,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as tt
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
-                              TensorDataset)
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torchvision.io import ImageReadMode
 
 from mini_trainer.classifier import Classifier, last_layer_weights
-from mini_trainer.utils import (cosine_schedule_with_warmup,
-                                make_convert_dtype, memory_proportion)
+from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion
 from mini_trainer.utils.augmentation import SaltAndPepper
 from mini_trainer.utils.data import (get_image_data, parse_class_index,
-                                     prepare_split, write_metadata)
+                                     write_metadata)
 from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
 from mini_trainer.utils.logging import MultiLogger
 from mini_trainer.utils.loss import class_weight_distribution_regularization
@@ -38,51 +36,48 @@ def get_dataset_dataloader(
             raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
         
     print(f"Building datasets with image size {resize_size}")
-    dataset_is_small = memory_proportion((len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size), device, dtype) < 0.25
     if subsample is None or subsample <= 1:
         pass
     else:
         train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
         val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
-    if dataset_is_small:
-        train_tensor = prepare_split(train_image_data["path"], "Preprocessing training images...", resize_size, device, dtype)
-        val_tensor = prepare_split(val_image_data["path"], "Preprocessing validation images...", resize_size, device, dtype)
+    
+    dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size)
+    dataset_fits_in_cuda = False # memory_proportion(dataset_shape, device, dtype) < 0.25
+    dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
+    dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
+    
+    reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), torch.uint8)
+    def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
+        path, label = path_label
+        if isinstance(label, (list, np.ndarray)):
+            label = label[0]
+        return reader(path), torch.tensor(label, dtype=torch.long)
 
-        train_labels = torch.tensor([
-            cls[0] if isinstance(cls, (list, np.ndarray)) else cls 
-            for cls in train_image_data["class"] 
-        ]).long().to(device)
-        val_labels = torch.tensor([
-            cls[0] if isinstance(cls, (list, np.ndarray)) else cls
-            for cls in val_image_data["class"]
-        ]).long().to(device)
+    train_dataset = LazyDataset(
+        func=proc_path_label, 
+        items=[(path, cls) for path, cls in zip(train_image_data["path"], train_image_data["class"])],
+        cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+    )
+    val_dataset = LazyDataset(
+        func=proc_path_label, 
+        items=[(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])],
+        cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+    )
 
-        train_dataset = TensorDataset(train_tensor, train_labels)
-        val_dataset = TensorDataset(val_tensor, val_labels)
-        
+    if num_workers is None:
+        num_workers = os.cpu_count() - 4
+        # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
+        num_workers -= num_workers % 2
+        # num_workers = max(0, num_workers)
+    if dataset_fits_in_cuda or dataset_fits_in_cpu:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
-    else:
-        reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), torch.uint8)
-        def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
-            path, label = path_label
-            if isinstance(label, (list, np.ndarray)):
-                label = label[0]
-            return reader(path), torch.tensor(label, dtype=torch.long)
-
-        train_dataset = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(train_image_data["path"], train_image_data["class"])])
-        val_dataset   = LazyDataset(proc_path_label, [(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])])
-
-        if num_workers is None:
-            num_workers = os.cpu_count() - 4
-            # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
-            num_workers -= num_workers % 2
-            # num_workers = max(0, num_workers)
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = not dataset_is_small
+    pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
 
     train_loader = DataLoader(
         train_dataset,
@@ -92,17 +87,17 @@ def get_dataset_dataloader(
         drop_last=True, # Ensures compatibility with batch normalization
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
-        persistent_workers=True # pin_memory
+        persistent_workers=num_workers > 0 # pin_memory
     )
 
     val_loader = DataLoader(
         val_dataset, 
         batch_size=batch_size, 
         sampler=val_sampler, 
-        num_workers=num_workers, # min(max(2, os.cpu_count() - num_workers - 2), num_workers), 
+        num_workers=num_workers,
         pin_memory=False,
         pin_memory_device="",
-        persistent_workers=True # False
+        persistent_workers=num_workers > 0 # False
     )
 
     return train_dataset, val_dataset, train_loader, val_loader
@@ -317,6 +312,12 @@ class BaseBuilder:
         if 'lr' not in optimizer_kwargs:
             optimizer_kwargs['lr'] = head_lr # A sensible default
 
+        # Clip gradients during backprop (prevent gradient explosion)
+        backbone_params = [pg["params"] for pg in param_groups if pg["name"] == "backbone"][0]
+        for p in backbone_params:
+            if p.requires_grad:
+                p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
+
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
     
     @staticmethod
@@ -344,7 +345,7 @@ class BaseBuilder:
         return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
 
     @staticmethod
-    def build_regularizer(strength : float=1e-3, *args, **kwargs):
+    def build_regularizer(strength : float=1e-5, *args, **kwargs):
         strength = float(strength)
         if strength == 0:
             return lambda _: 0.

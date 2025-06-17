@@ -352,8 +352,8 @@ def cli(description="Train a classifier", **kwargs):
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", type=float, default=0.0001, required=False,
-        help="Initial learning rate after warmup (default=0.0001)."
+        "--lr", "--learning_rate", type=float, default=0.001, required=False,
+        help="Initial learning rate after warmup (default=0.001)."
     )
     train_args.add_argument(
         "--batch_size", type=int, default=16, required=False,
@@ -400,7 +400,13 @@ def cli(description="Train a classifier", **kwargs):
         "Set the initial seed for the RNG in the core Python library `random`.\n"
         "This is particularly important for reproducible train/validation splits."
     )
+    cfg_args.add_argument(
+        "-v", "--verbose", action="store_true", required=False,
+        help="Print training statistics in the terminal."
+    )
+
     args = vars(parser.parse_args())
+    
     # Distribute builder arguments to the relevant functions
     args["model_builder_kwargs"] = {
         "model_type" : args.pop("model"),
@@ -428,12 +434,17 @@ def cli(description="Train a classifier", **kwargs):
         "min_factor" : 1 / 10**6, 
         "start_factor" : 1 / 10**2
     }
+    args["logger_builder_kwargs"] = {
+        "verbose" : args.pop("verbose")
+    }
+
     # Set reasonable default name for unspecified CLI training runs
     if args["name"] is None:
         args["name"] = \
         f'{args["model_builder_kwargs"]["model_type"]}_' \
         f'{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_' \
         f'e{args["epochs"]}'
+    
     if args.pop("tensorboard"):
         from mini_trainer.utils.tensorboard import TensorboardLogger
         from mini_trainer.utils.logging import MetricLogger
@@ -442,11 +453,8 @@ def cli(description="Train a classifier", **kwargs):
         run_name = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
         tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, run_name), flush_secs=30)
         
-        args["logger_builder_kwargs"] = {
-            "verbose" : True,
-            "logger_cls" : [MetricLogger, TensorboardLogger],
-            "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
-        }
+        args["logger_builder_kwargs"]["logger_cls"] = [MetricLogger, TensorboardLogger]
+        args["logger_builder_kwargs"]["logger_cls_extra_kwargs"] = [{}, {"writer" : tensorboard_writer}]
     
     # Call the Python training API
     return args

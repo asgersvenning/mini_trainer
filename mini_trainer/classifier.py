@@ -70,11 +70,8 @@ class Classifier(nn.Module):
         # Create one hidden layer
         self.hidden = hidden and nn.Linear(in_features, in_features)
 
-        # Create a dropout layer (if hidden is active)
+        # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
-
-        # Create a hidden BatchNormalization layer
-        self.batch_norm_hidden = hidden and nn.BatchNorm1d(in_features)
 
         # Create a standard linear layer.
         self.linear = nn.Linear(in_features, out_features, bias=True)
@@ -85,15 +82,11 @@ class Classifier(nn.Module):
         self.linear.bias.requires_grad_(False)
 
     def forward(self, x):
-        # Normalize embeddings to a "MVN"
-        x = self.batch_norm(x)
-        # Hidden pass with dropout
         if self.hidden:
+            x = self.dropout(x)
             x = self.hidden(x)
             x = nn.functional.leaky_relu(x)
-            x = self.batch_norm_hidden(x)
-            x = self.dropout(x)
-        # Classification
+        x = self.batch_norm(x)
         return self.linear(x)
 
     @classmethod
