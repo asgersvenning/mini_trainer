@@ -112,7 +112,7 @@ class LazyDataset(torch.utils.data.Dataset):
         # 3. Pre-allocate the final large tensors on CPU
         num_items = len(self.items)
         allocated_tensors = [
-            torch.empty((num_items, *comp.shape), dtype=comp.dtype, pin_memory=True) for comp in components
+            torch.empty((num_items, *comp.shape), dtype=comp.dtype, pin_memory=False) for comp in components
         ]
 
         def process_and_fill(args):
@@ -146,7 +146,7 @@ class LazyDataset(torch.utils.data.Dataset):
                 max_workers=min(48, max(32, os.cpu_count() + 4))
             )
 
-        self._ram_cache = torch.utils.data.TensorDataset(*allocated_tensors)
+        self._ram_cache = torch.utils.data.TensorDataset(*[t.pin_memory() for t in allocated_tensors])
 
 
     def _read_disk_cache(self, i: int) -> Union[torch.Tensor, list[torch.Tensor]]:
