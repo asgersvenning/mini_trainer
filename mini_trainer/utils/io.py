@@ -98,22 +98,55 @@ class LazyDataset(torch.utils.data.Dataset):
             self._ram_was_single_tensor = False
             return
 
-        # 1. Process all items into a list
-        processed_items = thread_map(self.func, self.items, tqdm_class=TQDM, desc="Caching dataset in RAM...", leave=False, max_workers=min(100, max(32, os.cpu_count() + 4)))
-        first_item = processed_items[0]
+        first_item_processed = self.func(self.items[0])
 
-        # 2. Check if the function returns a single tensor or a sequence
-        if isinstance(first_item, torch.Tensor):
+        if isinstance(first_item_processed, torch.Tensor):
             self._ram_was_single_tensor = True
-            stacked_tensors = [torch.stack(processed_items).pin_memory()]
-        elif isinstance(first_item, (tuple, list)):
+            components = [first_item_processed]
+        elif isinstance(first_item_processed, (tuple, list)):
             self._ram_was_single_tensor = False
-            unzipped = zip(*processed_items)
-            stacked_tensors = [torch.stack(list(tensors)).pin_memory() for tensors in unzipped]
+            components = list(first_item_processed)
         else:
-            raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item)}")
+            raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
 
-        self._ram_cache = torch.utils.data.TensorDataset(*stacked_tensors)
+        # 3. Pre-allocate the final large tensors on CPU
+        num_items = len(self.items)
+        allocated_tensors = [
+            torch.empty((num_items, *comp.shape), dtype=comp.dtype, pin_memory=True) for comp in components
+        ]
+
+        def process_and_fill(args):
+            idx, item = args
+            # The worker function's side-effect is to fill the tensors, no return value is needed.
+            try:
+                processed_item = self.func(item)
+                if self._ram_was_single_tensor:
+                    allocated_tensors[0][idx] = processed_item
+                else:
+                    for i, p in enumerate(processed_item):
+                        allocated_tensors[i][idx] = p
+            except Exception as e:
+                print(f"Error processing item {idx}: {e}")
+                raise e
+
+        if self._ram_was_single_tensor:
+            allocated_tensors[0][0] = components[0]
+        else:
+            for i, comp in enumerate(components):
+                allocated_tensors[i][0] = comp
+        
+        items_to_process = list(enumerate(self.items))[1:]
+        if items_to_process: # Only run if there's more than one item
+            thread_map(
+                process_and_fill,
+                items_to_process,
+                tqdm_class=TQDM,
+                desc="Caching dataset in RAM...",
+                leave=False,
+                max_workers=min(100, max(32, os.cpu_count() + 4))
+            )
+
+        self._ram_cache = torch.utils.data.TensorDataset(*allocated_tensors)
 
 
     def _read_disk_cache(self, i: int) -> Union[torch.Tensor, list[torch.Tensor]]:
