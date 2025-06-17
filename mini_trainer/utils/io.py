@@ -90,7 +90,7 @@ class LazyDataset(torch.utils.data.Dataset):
             tensors_to_save = [data] if isinstance(data, torch.Tensor) else data
             save_dict = {str(i): t.numpy() for i, t in enumerate(tensors_to_save)}
             np.savez(path, **save_dict)
-        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False, max_workers=min(48, max(32, os.cpu_count() + 4)))            
+        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False, max_workers=min(16, max(1, os.cpu_count() - 4)))            
 
     def _cache_ram(self):
         if not self.items:
@@ -143,7 +143,7 @@ class LazyDataset(torch.utils.data.Dataset):
                 tqdm_class=TQDM,
                 desc="Caching dataset in RAM...",
                 leave=False,
-                max_workers=min(48, max(32, os.cpu_count() + 4))
+                max_workers=min(16, max(1, os.cpu_count() - 4))
             )
 
         self._ram_cache = torch.utils.data.TensorDataset(*[t.pin_memory() for t in allocated_tensors])
