@@ -142,7 +142,7 @@ class Classifier(nn.Module):
             for key in list(state.keys()):
                 if isinstance(state[key], torch.Tensor):
                     state[key] = state[key].to(device, dtype)
-            num_classes, _ = state[f"{head_name}.linear.weight"].shape
+            num_classes, _ = state.get(f"{head_name}.linear.weight", state.get(f"{head_name}.linear.parametrizations.weight.original1")).shape
         else:
             if isinstance(num_classes, list):
                 # Here we assume that the number of classes for each level has been passed 
