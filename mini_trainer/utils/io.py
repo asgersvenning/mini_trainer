@@ -128,7 +128,7 @@ class LazyDataset(torch.utils.data.Dataset):
         )
         tensors_stacked = [torch.stack(tensors) for tensors in zip(*tensors_transposed)]
 
-        self._ram_cache = torch.utils.data.TensorDataset(*[t.pin_memory() for t in tensors_stacked])
+        self._ram_cache = torch.utils.data.TensorDataset(*[t for t in tensors_stacked])
 
 
     def _read_disk_cache(self, i: int) -> Union[torch.Tensor, list[torch.Tensor]]:

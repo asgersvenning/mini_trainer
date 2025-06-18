@@ -53,20 +53,22 @@ def parquet_to_dataindex(
     if test == 0:
         warnings.warn("No folds allocated to testing! Likely has no effect on training, but is likely incorrect.")
     # Translate folds to splits
-    spl = [fld2spl[fld] for fld in flds]
+    data["di_split"] = [fld2spl[fld] for fld in flds]
     
     # Construct image paths by joining the data directory with the species and file name.
-    paths = [path for sp, fn in zip(data["speciesKey"].tolist(), data["filename"].tolist()) if os.path.exists(path := os.path.join(dir, sp, fn))]
+    data["di_path"] = [os.path.join(dir, sp, fn) for sp, fn in zip(data["speciesKey"].tolist(), data["filename"].tolist())]
 
     # Construct index-based class labels
     with open(class_index, "r") as f:
         cls2idx = json.load(f)["cls2idx"]
-    cls = [[cls2idx[str(lvl)][c] for lvl, c in enumerate(sgf)] for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]])]
+    data["di_cls"] = [[cls2idx[str(lvl)][c] for lvl, c in enumerate(sgf)] for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]])]
     
+    data = data[data["di_path"].map(os.path.exists)]
+
     return {
-        "split" : spl,
-        "class" : cls,
-        "path"  : paths
+        "split" : list(data["di_split"]),
+        "class" : list(data["di_cls"]),
+        "path"  : list(data["di_path"])
     }
 
 def parquet_to_combinations(path : str):
