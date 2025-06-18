@@ -70,14 +70,14 @@ def get_dataset_dataloader(
         # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
         num_workers -= num_workers % 2
         # num_workers = max(0, num_workers)
-    if dataset_fits_in_cuda or dataset_fits_in_cpu:
+    if dataset_fits_in_cuda:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
+    pin_memory = not dataset_fits_in_cuda
 
     train_loader = DataLoader(
         train_dataset,
@@ -262,7 +262,7 @@ class BaseBuilder:
             transforms (`transforms.Compose`): A composition of augmentations.
         """
         return tt.Compose([
-            tt.AugMix(severity=3),
+            # tt.AugMix(severity=3),
             SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
             tt.RandomHorizontalFlip(),
             tt.RandomVerticalFlip(),

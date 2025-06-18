@@ -8,7 +8,7 @@ import torch.nn as nn
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
-from mini_trainer.utils import make_convert_dtype
+from mini_trainer.utils import make_convert_dtype, recursive_dfs_attr
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
@@ -126,7 +126,7 @@ class Classifier(nn.Module):
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         
-        num_embeddings = getattr(architecture, head_name)[1].in_features
+        num_embeddings = recursive_dfs_attr(getattr(architecture, head_name), "in_features", lambda x : isinstance(x, int))
         state = None
 
         if weights is not None:

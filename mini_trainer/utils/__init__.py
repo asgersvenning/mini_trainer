@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from collections import OrderedDict
 from glob import glob
-from typing import Optional
+from typing import Any, Callable, Iterable, Optional
 
 import psutil
 import torch
@@ -85,6 +85,26 @@ def increment_name_dir(name : str, dir : Optional[str]=None, max_iter : int=1000
     
     raise RuntimeError(f'Unable to create a new model name from {name} in {dir}, the maximum number of model iterations with the same base name {max_iter} has been reached. OBS: The name check is file-extension agnostic!')
 
+def recursive_dfs_attr(obj: Any, attr: str,
+                       predicate: Callable[[Any], bool] = lambda x: True) -> Any:
+    seen = set()
+    stack = [obj]
+    while stack:
+        current = stack.pop()
+        obj_id = id(current)
+        if obj_id in seen:
+            continue
+        seen.add(obj_id)
+        if hasattr(current, attr):
+            value = getattr(current, attr)
+            if predicate(value):
+                return value
+        if isinstance(current, Iterable) and not isinstance(current, (str, bytes, bytearray)):
+            try:
+                stack.extend(current)
+            except TypeError:
+                pass  # non-iterable despite isinstance claiming so (rare, but safe)
+    raise StopIteration(f"No attribute '{attr}' found passing predicate.")
 
 def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : float):
     def _shape_fn(step : int):
