@@ -5,10 +5,10 @@ from argparse import ArgumentParser
 
 import pandas as pd
 from hierarchical.base.integration import HierarchicalBuilder
+from tqdm.contrib.concurrent import thread_map
 
-from mini_trainer import Formatter
+from mini_trainer import TQDM, Formatter
 from mini_trainer.train import main as mt_train
-from mini_trainer.utils import increment_name_dir
 
 
 def parquet_to_dataindex(
@@ -63,7 +63,7 @@ def parquet_to_dataindex(
         cls2idx = json.load(f)["cls2idx"]
     data["di_cls"] = [[cls2idx[str(lvl)][c] for lvl, c in enumerate(sgf)] for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]])]
     
-    data = data[data["di_path"].map(os.path.exists)]
+    data = data[thread_map(os.path.exists, data["di_path"], tqdm_class=TQDM, desc="Checking parquet paths...")]
 
     return {
         "split" : list(data["di_split"]),
