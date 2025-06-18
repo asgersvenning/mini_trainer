@@ -36,6 +36,6 @@ if __name__ == "__main__":
     process_map(
         proc_one, 
         imgs,
-        max_workers = min(8, max(1, os.cpu_count() // 2)),
+        max_workers = min(64, max(1, os.cpu_count() // 2)),
         chunksize = 32
     )
