@@ -23,7 +23,7 @@ from mini_trainer import TQDM
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.utils import memory_proportion
 from mini_trainer.utils.data import get_image_data
-from mini_trainer.utils.io import ImageClassLoader
+from mini_trainer.utils.io import ImageClassLoader, is_image
 from mini_trainer.utils.logging import BaseResultCollector
 
 DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
@@ -236,7 +236,7 @@ class HierarchicalBuilder(BaseBuilder):
             #     raise RuntimeError(f'If no data index is passed a function factory (higher order function) that generates a function which computes the class/label from the path must be passed.')
             # path2cls2idx = path2cls2idx_builder(cls2idx=cls2idx, **path2cls2idx_builder_kwargs)
             cls2comb = {comb[0] : comb for comb in combinations}
-            all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f))]
+            all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f)) and is_image(path)]
             random.shuffle(all_files)
             data = {
                 "path" : [],

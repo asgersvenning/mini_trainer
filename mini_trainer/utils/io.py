@@ -14,6 +14,9 @@ from tqdm.contrib.concurrent import thread_map
 
 
 def is_image(path: str) -> bool:
+    if not os.path.exists(path):
+        return False
+    
     try:
         with open(path, "rb") as f:
             header = f.read(16)  # read enough bytes for JPEG and PNG signatures
