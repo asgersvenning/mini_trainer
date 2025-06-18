@@ -3,12 +3,8 @@ import re
 from argparse import ArgumentParser
 from glob import iglob
 
-import torch
-from torchvision.io import ImageReadMode, write_jpeg
+from PIL import Image
 from tqdm.contrib.concurrent import process_map
-
-from mini_trainer.builders import make_read_and_resize_fn
-from mini_trainer.utils import make_convert_dtype
 
 if __name__ == "__main__":
     parser = ArgumentParser(prog = "resizer")
@@ -30,14 +26,13 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    reader = make_read_and_resize_fn(ImageReadMode.RGB, (args.size, args.size), torch.device("cpu"), torch.float16)
-    convert2uint8 = make_convert_dtype(torch.uint8)
-    def rewrite_image(src : str, dst : str):
-        if os.path.exists(dst):
-            return
-        write_jpeg(convert2uint8(reader(src)), dst, 95)
+    def rewrite_image_pillow(src: str, dst: str, size: int = 256):
+        if dst is None:
+            if dst_dir is not None:
+                dst = os.path.join(dst_dir, str(uuid4()) + ".jpg")
+        Image.open(src).convert("RGB").resize((size, size), Image.Resampling.NEAREST).save(dst, "JPEG", quality=95)
     def proc_one(x):
-        os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image(x, dst)
+        os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image_pillow(x, dst, args.size)
 
     pattern = re.compile(args.image_pattern, re.IGNORECASE)
     imgs = list(filter(lambda x : bool(re.search(pattern, x)), iglob(os.path.join(args.input_dir, "**", "*"))))
