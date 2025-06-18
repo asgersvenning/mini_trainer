@@ -27,9 +27,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     def rewrite_image_pillow(src: str, dst: str, size: int = 256):
-        if dst is None:
-            if dst_dir is not None:
-                dst = os.path.join(dst_dir, str(uuid4()) + ".jpg")
         Image.open(src).convert("RGB").resize((size, size), Image.Resampling.NEAREST).save(dst, "JPEG", quality=95)
     def proc_one(x):
         os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image_pillow(x, dst, args.size)
