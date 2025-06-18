@@ -101,7 +101,7 @@ class LazyDataset(torch.utils.data.Dataset):
             tensors_to_save = [data] if isinstance(data, torch.Tensor) else data
             save_dict = {str(i): t.numpy() for i, t in enumerate(tensors_to_save)}
             np.savez(path, **save_dict)
-        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False, max_workers=min(64, max(1, os.cpu_count())))            
+        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", max_workers=min(64, max(1, os.cpu_count())))            
 
     def _cache_ram(self):
         if not self.items:
@@ -123,7 +123,6 @@ class LazyDataset(torch.utils.data.Dataset):
             self.items,
             tqdm_class=TQDM,
             desc="Caching dataset in RAM...",
-            leave=False,
             max_workers=min(64, max(1, os.cpu_count()))
         )
         tensors_stacked = [torch.stack(tensors) for tensors in zip(*tensors_transposed)]
