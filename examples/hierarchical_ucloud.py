@@ -56,7 +56,7 @@ def parquet_to_dataindex(
     spl = [fld2spl[fld] for fld in flds]
     
     # Construct image paths by joining the data directory with the species and file name.
-    paths = [os.path.join(dir, sp, fn) for sp, fn in zip(data["speciesKey"].tolist(), data["filename"].tolist())]
+    paths = [path for sp, fn in zip(data["speciesKey"].tolist(), data["filename"].tolist()) if os.path.exists(path := os.path.join(dir, sp, fn))]
 
     # Construct index-based class labels
     with open(class_index, "r") as f:
