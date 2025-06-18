@@ -73,8 +73,11 @@ class Classifier(nn.Module):
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        # Create a standard linear layer.
-        self.linear = nn.Linear(in_features, out_features, bias=True)
+        # Create a standard linear layer with unit vector per class
+        self.linear = nn.utils.parametrizations.weight_norm(nn.Linear(in_features, out_features, bias=True), name="weight", dim=0)
+        with torch.no_grad():
+            self.linear.parametrizations.weight.original0.fill_(1)    
+        self.linear.parametrizations.weight.original0.requires_grad_(False)
         
         # Set the bias to -1 and freeze it.
         with torch.no_grad():
