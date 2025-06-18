@@ -57,8 +57,10 @@ def iinfo_maxval_static(dtype : torch.dtype):
         return 4294967295
     elif dtype == torch.int8:
         return 127
-    elif dtype == torch.int32:
+    elif dtype == torch.int16:
         return 32767
+    elif dtype == torch.int32:
+        return 2147483647
     raise ValueError(f'Unsupported integer max-value for {dtype}.')
 
 @torch.jit.script
