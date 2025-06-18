@@ -1,16 +1,18 @@
 import hashlib
 import os
-from tempfile import mkdtemp, gettempdir
+from tempfile import gettempdir, mkdtemp
 from typing import Any, Callable, Iterable, Optional, Union
 
 import numpy as np
 import torch
+from PIL import Image
 from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import InterpolationMode, resize
-
-from mini_trainer.utils import make_convert_dtype
-from mini_trainer import TQDM
+from torchvision.transforms.functional import (InterpolationMode,
+                                               pil_to_tensor, resize)
 from tqdm.contrib.concurrent import thread_map
+
+from mini_trainer import TQDM
+from mini_trainer.utils import make_convert_dtype
 
 
 def is_image(path: str) -> bool:
@@ -34,20 +36,26 @@ def is_image(path: str) -> bool:
     return False
 
 def make_read_and_resize_fn(
-        mode : ImageReadMode, 
-        size : tuple[int, int], 
-        device : torch.types.Device,
-        dtype : Union[torch.dtype, str], 
-        interpolation=InterpolationMode.NEAREST,
-        **kwargs
-    ):
+    size: tuple[int, int],
+    device: torch.device,
+    dtype: Union[torch.dtype, str],
+    interpolation=Image.Resampling.NEAREST,
+    **kwargs
+):
     if isinstance(dtype, str):
         dtype = getattr(torch, dtype, None)
         if not isinstance(dtype, torch.dtype):
-            raise ValueError(f'Specified data type "{dtype}" is not a known valid torch data type')
+            raise ValueError(f'Unknown dtype "{dtype}"')
+
     converter = make_convert_dtype(dtype)
-    def read_and_resize(path):
-        return resize(converter(decode_image(path, mode)), size=size, interpolation=interpolation, **kwargs).to(device)
+
+    def read_and_resize(path: str) -> torch.Tensor:
+        img = Image.open(path).convert("RGB").resize(size, interpolation)
+        tensor = pil_to_tensor(img)  # returns torch.uint8 [C,H,W]
+        if tensor.dtype != dtype:
+            tensor = converter(tensor)
+        return tensor.to(device)
+
     return read_and_resize
 
 class LazyDataset(torch.utils.data.Dataset):
@@ -93,7 +101,7 @@ class LazyDataset(torch.utils.data.Dataset):
             tensors_to_save = [data] if isinstance(data, torch.Tensor) else data
             save_dict = {str(i): t.numpy() for i, t in enumerate(tensors_to_save)}
             np.savez(path, **save_dict)
-        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False, max_workers=min(48, max(32, os.cpu_count() + 4)))            
+        thread_map(_store_one, self.items, tqdm_class=TQDM, desc="Caching dataset on disk...", leave=False, max_workers=min(64, max(1, os.cpu_count())))            
 
     def _cache_ram(self):
         if not self.items:
@@ -105,51 +113,22 @@ class LazyDataset(torch.utils.data.Dataset):
 
         if isinstance(first_item_processed, torch.Tensor):
             self._ram_was_single_tensor = True
-            components = [first_item_processed]
         elif isinstance(first_item_processed, (tuple, list)):
             self._ram_was_single_tensor = False
-            components = list(first_item_processed)
         else:
             raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
 
-        # 3. Pre-allocate the final large tensors on CPU
-        num_items = len(self.items)
-        allocated_tensors = [
-            torch.empty((num_items, *comp.shape), dtype=comp.dtype, pin_memory=False) for comp in components
-        ]
+        tensors_transposed = thread_map(
+            self.func,
+            self.items,
+            tqdm_class=TQDM,
+            desc="Caching dataset in RAM...",
+            leave=False,
+            max_workers=min(64, max(1, os.cpu_count()))
+        )
+        tensors_stacked = [torch.stack(tensors) for tensors in zip(*tensors_transposed)]
 
-        def process_and_fill(args):
-            idx, item = args
-            # The worker function's side-effect is to fill the tensors, no return value is needed.
-            try:
-                processed_item = self.func(item)
-                if self._ram_was_single_tensor:
-                    allocated_tensors[0][idx] = processed_item
-                else:
-                    for i, p in enumerate(processed_item):
-                        allocated_tensors[i][idx] = p
-            except Exception as e:
-                print(f"Error processing item {idx}: {e}")
-                raise e
-
-        if self._ram_was_single_tensor:
-            allocated_tensors[0][0] = components[0]
-        else:
-            for i, comp in enumerate(components):
-                allocated_tensors[i][0] = comp
-        
-        items_to_process = list(enumerate(self.items))[1:]
-        if items_to_process: # Only run if there's more than one item
-            thread_map(
-                process_and_fill,
-                items_to_process,
-                tqdm_class=TQDM,
-                desc="Caching dataset in RAM...",
-                leave=False,
-                max_workers=min(48, max(32, os.cpu_count() + 4))
-            )
-
-        self._ram_cache = torch.utils.data.TensorDataset(*[t.pin_memory() for t in allocated_tensors])
+        self._ram_cache = torch.utils.data.TensorDataset(*[t.pin_memory() for t in tensors_stacked])
 
 
     def _read_disk_cache(self, i: int) -> Union[torch.Tensor, list[torch.Tensor]]:

@@ -47,7 +47,7 @@ def get_dataset_dataloader(
     dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
     dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
     
-    reader = make_read_and_resize_fn(ImageReadMode.RGB, resize_size, torch.device("cpu"), torch.uint8)
+    reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
     def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
         path, label = path_label
         if isinstance(label, (list, np.ndarray)):

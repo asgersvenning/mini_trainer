@@ -82,7 +82,7 @@ def prepare_split(
     ):
     shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
     tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
-    reader = make_read_and_resize_fn(ImageReadMode.RGB, shape, device, dtype)
+    reader = make_read_and_resize_fn(shape, device, dtype)
     def _read_and_resize_one_image(args):
         idx, path = args
         try:
