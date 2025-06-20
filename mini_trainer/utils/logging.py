@@ -536,7 +536,7 @@ class MultiLogger:
                 lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
             ],
             canonical_statistic : Optional[str]=None,
-            save_interval : int=5,
+            clear_store_on_update : bool=True,
             verbose : bool=False
         ):
         self.total_epochs = epochs
@@ -552,7 +552,7 @@ class MultiLogger:
         self.heterogeneous_storage = defaultdict(list)
         self.output_path = os.path.join(output, increment_name_dir(name, output) + ".json")
         os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
-        self.save_interval = save_interval
+        self.clear_store_on_update = clear_store_on_update
         
         self.logger_cls = logger_cls
         self.logger_cls_extra_kwargs = logger_cls_extra_kwargs
@@ -604,6 +604,11 @@ class MultiLogger:
         if self._start_time is None:
             self._start_time = time.time()
             self.eta = ETA(self.total_steps, 0.999)
+        else:
+            self.save()
+            if self.clear_store_on_update:
+                self.statistics_storage = defaultdict(list)
+                self.heterogeneous_storage = defaultdict(list)
         self._epoch = epoch
         self._type = type
         self._current_loggers : list[_Logger] = []
@@ -630,8 +635,6 @@ class MultiLogger:
         self.log_statistic(eta=self.eta.eta)
         self.log_statistic(epoch=self._epoch)
         self.log_statistic(type=self._type)
-        if (time.time() - self._last_save) >= self.save_interval:
-            self.save()
 
     @property
     def loggers(self) -> list[_Logger]:
