@@ -184,6 +184,7 @@ class HierarchicalBuilder(BaseBuilder):
                 combinations = names_or_ids_to_combinations(os.listdir(dir))
             else:
                 combinations = dir2comb_fn(dir)
+            combinations = sorted(combinations)
             classes = {i : [] for i in range(len(next(iter(combinations))))}
             for e in combinations:
                 for lvl, cls in enumerate(e):
