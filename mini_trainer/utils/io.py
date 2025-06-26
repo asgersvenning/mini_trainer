@@ -10,10 +10,7 @@ import numpy as np
 import torch
 import zarr
 from PIL import Image
-from torchvision.io import ImageReadMode, decode_image
-from torchvision.transforms.functional import (InterpolationMode,
-                                               pil_to_tensor, resize)
-from tqdm.contrib.concurrent import thread_map
+from torchvision.transforms.functional import pil_to_tensor
 from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
@@ -258,28 +255,51 @@ class LazyDataset(torch.utils.data.Dataset):
 
         max_workers = min(64, os.cpu_count() or 1)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue = Queue(max(32, max_workers*2))
-        insert_buffer = dict()
-        insert_queue = Queue()
+        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, max_workers*2))
+        insert_buffer : dict[int, torch.Tensor] = dict()
+        insert_queue : Queue[tuple[int, torch.Tensor]] = Queue()
 
         def _fetch_one(idx_item):
             idx, item = idx_item
             data = self.func(item)
             fetched_queue.put((idx, data))
 
+        def _contiguous_write(
+                indexes : list[int], 
+                data : Union[list[torch.Tensor], list[list[torch.Tensor]]]
+            ) -> None:
+            """
+            Args:
+                idx (`list[int]`): A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
+                data (`list[torch.Tensor]`): A list of torch.Tensor with the same length as `idx`.
+            """
+            if len(indexes) == 0:
+                return
+            slc = slice(indexes[0], indexes[-1]+1)
+            # Insert data into slice along first dimension in dst (in-place)
+            if self._ram_was_single_tensor:
+                torch.stack(data, out=stacked_tensors[0][slc])
+            else:
+                for i, elements in enumerate(zip(*data)):
+                    torch.stack(elements, out=stacked_tensors[i][slc])
+
+
         def _write():
             end_idx = len(self) - 1
             pbar = TQDM(range(len(self)), desc="Writing to CPU RAM cache...")
+            batch_size = 32
+            batch = ([], [])
             while True:
                 idx, data = insert_queue.get()
-                if self._ram_was_single_tensor:
-                    stacked_tensors[0][idx] = data
-                else:
-                    for i, element in enumerate(data):
-                        stacked_tensors[i][idx] = element
+                batch[0].append(idx)
+                batch[1].append(data)
+                if len(batch[0]) >= batch_size:
+                    _contiguous_write(*batch)
+                    batch = ([], [])
                 pbar.update()
                 if idx == end_idx:
                     break
+            _contiguous_write(*batch)
         
         write_thread = Thread(target=_write, daemon=True)
         write_thread.start()
