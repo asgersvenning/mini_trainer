@@ -49,7 +49,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
             for i in self.class_weights:
                 i.requires_grad = False
 
-        # The adjustment: ls(L)=1-(1-ls(0))^(1/(L+1))
+        # The adjustment: ls(L)=1-(1-ls(0))^(1/(L+1)), ls(0)=k
         # is to avoid a situation where the model gives the target probability for the correct leaf class,
         # e.g. if ls=0.1, the model predicts P(Correct_0 | Model, Data) = 1 - ls = 0.9, and distributes the remaining 
         # probability mass to the correct class siblings (i.e. other species in the correct genus), then the model must 

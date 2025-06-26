@@ -325,13 +325,13 @@ class HierarchicalBuilder(BaseBuilder):
             *args, 
             weighted : bool=False,
             labels : Optional[np.ndarray]=None, 
-            num_classes : Optional[list[int]], 
+            num_classes : Optional[list[int]]=None, 
             device : Optional[torch.types.Device]=None,
             dtype : Optional[torch.dtype]=None,
             **kwargs
         ):
         if not weighted or labels is None or num_classes is None:
-            return MultiLevelWeightedCrossEntropyLoss(*args, **kwargs)
+            return MultiLevelWeightedCrossEntropyLoss(*args, device=device, dtype=dtype, **kwargs)
         class_weights = []
         for lvl, ncls in enumerate(num_classes):
             counts = torch.ones((ncls, ))

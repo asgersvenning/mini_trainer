@@ -62,7 +62,7 @@ def parquet_to_dataindex(
     # Construct index-based class labels
     with open(class_index, "r") as f:
         cls2idx = json.load(f)["cls2idx"]
-    data["di_cls"] = [[cls2idx[str(lvl)].get("c", None) for lvl, c in enumerate(sgf)] for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]])]
+    data["di_cls"] = [[cls2idx[str(lvl)].get(c, None) for lvl, c in enumerate(sgf)] for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]])]
     
     data = data[[cls[0] is not None for cls in data["di_cls"]]]
     data = data[thread_map(os.path.exists, data["di_path"], tqdm_class=TQDM, desc="Checking parquet paths...")]
