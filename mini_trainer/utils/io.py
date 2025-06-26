@@ -287,7 +287,7 @@ class LazyDataset(torch.utils.data.Dataset):
         def _write():
             end_idx = len(self) - 1
             pbar = TQDM(range(len(self)), desc="Writing to CPU RAM cache...")
-            batch_size = 32
+            batch_size = 128
             batch = ([], [])
             while True:
                 idx, data = insert_queue.get()
