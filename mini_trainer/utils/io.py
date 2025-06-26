@@ -3,7 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
 from tempfile import gettempdir
-from threading import Thread, Semaphore
+from threading import Semaphore, Thread
 from typing import Any, Callable, Iterable, Optional, Union
 
 import numpy as np
@@ -305,11 +305,11 @@ class ImageLoader:
     
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str):
-            img = decode_image(x, ImageReadMode.RGB)
-            ds = min([max(1, im_d // lo_d) for im_d, lo_d in zip(img.shape[-2:], self.shape)])
-            if ds > 1:
-                img = img[..., ::ds, ::ds]
-            proc_img : torch.Tensor = resize(self.converter(img), self.shape, InterpolationMode.NEAREST).to(self.device)
+            img = Image.open(x).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
+            proc_img = pil_to_tensor(img).to(self.device)
+            proc_img = self.converter(proc_img)
+            if len(proc_img.shape) == 4:
+                proc_img = proc_img[0]
             return proc_img
         return LazyDataset(self, x, self.cache)
     
@@ -318,7 +318,7 @@ class ImageClassLoader:
             self, 
             class_decoder, 
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
-            resize_size : Optional[int]=None, 
+            resize_size : int=256, 
             cache : Optional[str]=None,
             dtype : torch.dtype=torch.uint8
         ):
@@ -333,12 +333,9 @@ class ImageClassLoader:
     def __call__(self, x : Union[str, Iterable]):
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
-            img = decode_image(p, ImageReadMode.RGB)
-            ds = min([max(1, im_d // lo_d) for im_d, lo_d in zip(img.shape[-2:], self.shape)])
-            if ds > 1:
-                img = img[..., ::ds, ::ds]
-            proc_img : torch.Tensor = resize(self.converter(img), self.shape, InterpolationMode.NEAREST)
-            proc_img = proc_img.to(self.device)
+            img = Image.open(p).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
+            proc_img = pil_to_tensor(img).to(self.device)
+            proc_img = self.converter(proc_img)
             if len(proc_img.shape) == 4:
                 proc_img = proc_img[0]
             cls = self.class_decoder(c)
