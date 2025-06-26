@@ -253,9 +253,10 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        max_workers = min(64, os.cpu_count() or 1)
+        max_workers = min(128, ((os.cpu_count() - 2) // 2)*2 or 1)
+        batch_size = 512
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, max_workers*2))
+        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 2))
         insert_buffer : dict[int, torch.Tensor] = dict()
         insert_queue : Queue[tuple[int, torch.Tensor]] = Queue()
 
@@ -286,7 +287,6 @@ class LazyDataset(torch.utils.data.Dataset):
         def _write():
             end_idx = len(self) - 1
             pbar = TQDM(range(len(self)), desc="Writing to CPU RAM cache...")
-            batch_size = 128
             batch = ([], [])
             while True:
                 idx, data = insert_queue.get()
