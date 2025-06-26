@@ -9,7 +9,8 @@ from typing import Any, Callable, Optional, Union
 import numpy as np
 import torch
 from torch import nn as nn
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
+                              SequentialSampler)
 from tqdm.contrib.concurrent import thread_map
 
 from mini_trainer import TQDM
@@ -25,24 +26,6 @@ from mini_trainer.utils.io import ImageClassLoader, is_image
 from mini_trainer.utils.logging import BaseResultCollector
 
 DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
-
-# def hierarchical_base_path2cls2idx_builder(cls2idx):
-#     def path2cls2idx(path, cls2idx=cls2idx, nlvl=len(cls2idx)):
-#         return torch.tensor(list(reversed([cls2idx[lvl][cls] for lvl, cls in enumerate(path.split(os.sep)[:-1][-nlvl:])]))).long()
-#     return path2cls2idx
-
-# def hierarchical_path2cls2idx_w_classindex(*args, class_index : str, **kwargs):
-#     with open(class_index, "r") as f:
-#         class_index = json.load(f)
-#     cls2idx = class_index["cls2idx"]
-#     combinations = class_index["combinations"]
-#     cls2idxs = {comb[0] : [cls2idx[str(lvl)][c] for lvl, c in enumerate(comb)] for comb in combinations}
-#     def path2cls2idx(path):
-#         return torch.tensor(cls2idxs[os.pathname(os.path.dirname(path))])
-#     return path2cls2idx
-
-def multi_level_collate(batch):
-    return tuple(torch.stack(v) for v in zip(*batch))
 
 def hierarchical_class_index_to_standard(path : str):
     with open(path, "r") as f:
@@ -281,8 +264,8 @@ class HierarchicalBuilder(BaseBuilder):
 
         train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
         val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
-        train_sampler = RandomSampler(train_dataset)
-        val_sampler = SequentialSampler(val_dataset)
+        train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size=batch_size, drop_last=True)
+        val_sampler = BatchSampler(SequentialSampler(val_dataset), batch_size=batch_size, drop_last=False)
 
         if num_workers is None:
             num_workers = os.cpu_count() - 4
@@ -297,10 +280,7 @@ class HierarchicalBuilder(BaseBuilder):
 
         train_loader = DataLoader(
             train_dataset,
-            batch_size=batch_size,
-            sampler=train_sampler,
-            collate_fn=multi_level_collate,
-            drop_last=True, # Ensures compatibility with batch normalization
+            batch_sampler=train_sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
             pin_memory_device=str(device) if pin_memory else "",
@@ -308,10 +288,8 @@ class HierarchicalBuilder(BaseBuilder):
         )
 
         val_loader = DataLoader(
-            val_dataset, 
-            batch_size=batch_size, 
-            sampler=val_sampler, 
-            collate_fn=multi_level_collate,
+            val_dataset,  
+            batch_sampler=val_sampler, 
             num_workers=num_workers, # min(2, num_workers), 
             pin_memory=False,
             pin_memory_device="",

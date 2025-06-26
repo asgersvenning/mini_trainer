@@ -328,7 +328,17 @@ class LazyDataset(torch.utils.data.Dataset):
     def __getitem__(self, i):
         match self._cache_mode:
             case None:
-                return self.func(self.items[i])
+                if isinstance(i, int):
+                    return self.func(self.items[i])
+                if isinstance(i, (torch.Tensor, np.ndarray)):
+                    i = i.tolist()
+                if isinstance(i, list):
+                    elements = [self.func(self.items[j]) for j in i]
+                elif isinstance(i, slice): 
+                    elements = [self.func(item) for item in self.items[i]]
+                else:
+                    raise NotImplementedError(f'Indexing with {i} is not implemented. Only integer, slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.')
+                return [torch.stack(values) for values in zip(*elements)]
             case "disk":
                 return self._load_from_zarr(i)
             case "ram":
