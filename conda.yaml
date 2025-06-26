@@ -11,3 +11,4 @@ dependencies:
   - psutil
   - tensorboard
   - pandas
+  - zarr
