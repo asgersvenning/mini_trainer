@@ -129,7 +129,7 @@ class LazyDataset(torch.utils.data.Dataset):
         
         # Create a Zarr array for each component of the data
         zarr_arrays = []
-        shard_size = 256
+        shard_size = 2048
         for i, component in enumerate(first_item_processed):
             if isinstance(component, torch.Tensor):
                 component = component.detach().cpu().numpy()
@@ -148,7 +148,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
         # We need two pools: one for CPU-bound producers, one for I/O-bound writers
         producer_workers = min(64, (os.cpu_count() - 1) or 1) # Can be high
-        writer_workers = min(64, (os.cpu_count() // 2) or 1) # Lower, I/O-limited
+        writer_workers = min(8, (os.cpu_count() // 2) or 1) # Lower, I/O-limited
         
         results_queue = Queue(maxsize=shard_size*2)
         producer_pool = ThreadPoolExecutor(max_workers=producer_workers, thread_name_prefix="producer")
@@ -165,7 +165,7 @@ class LazyDataset(torch.utils.data.Dataset):
             try:
                 shard_start, shard_end = indices[0], indices[-1] + 1
                 for i, chunk in enumerate(components):
-                    zarr_arrays[i][shard_start : shard_end, ...] = np.stack(chunk)
+                    np.stack(chunk, out=zarr_arrays[i][shard_start : shard_end, ...])
             finally:
                 writer_semaphore.release()
 
@@ -282,7 +282,6 @@ class LazyDataset(torch.utils.data.Dataset):
             else:
                 for i, elements in enumerate(zip(*data)):
                     torch.stack(elements, out=stacked_tensors[i][slc])
-
 
         def _write():
             end_idx = len(self) - 1
