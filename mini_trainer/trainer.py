@@ -60,7 +60,6 @@ def train_one_epoch(
                 raise RuntimeError(f'Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
-        
         scaler.scale(sum(loss) + regularizer(model)).backward()
         scaler.unscale_(optimizer)
         if clip_grad_norm is not None:

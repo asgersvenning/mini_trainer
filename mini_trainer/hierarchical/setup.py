@@ -1,6 +1,6 @@
 import os, json
 from pyremotedata.implicit_mount import IOHandler
-from hierarchical.base.gbif import resolve_id, name_to_id, TAXONOMY_KEYS
+from mini_trainer.hierarchical.gbif import resolve_id, name_to_id, TAXONOMY_KEYS
 from typing import Union
 from tqdm.contrib.concurrent import thread_map
 

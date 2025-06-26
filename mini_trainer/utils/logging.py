@@ -671,7 +671,7 @@ class MultiLogger:
     def data(self):
         return {
             "statistics" : dict(self.statistics_storage),
-            "extra" : dict(self.heterogeneous_storage)
+            "extra" : dict() #dict(self.heterogeneous_storage)
         }
 
     def save(self, fp: Optional[Union[str, TextIO]] = None, encoding: str = "utf-8", **kwargs):
@@ -691,13 +691,13 @@ class MultiLogger:
             
             shutil.move(temp_file_name, fp)
             self._last_save = time.time() # Assuming self._last_save is defined
-        except Exception:
+        except Exception as e:
             if temp_file_name and os.path.exists(temp_file_name):
                 try:
                     os.remove(temp_file_name)
                 except OSError:
                     pass # Suppress error during cleanup
-            raise
+            raise e
 
     def log_batch(self, batch):
         pass

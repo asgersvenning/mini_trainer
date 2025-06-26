@@ -1,14 +1,15 @@
 import json
 import os
 import warnings
-from argparse import ArgumentParser
 
 import pandas as pd
-from hierarchical.base.integration import HierarchicalBuilder
 from tqdm.contrib.concurrent import thread_map
 
-from mini_trainer import TQDM, Formatter
+from mini_trainer import TQDM
+from mini_trainer.hierarchical.integration import HierarchicalBuilder
+from mini_trainer.hierarchical.train import cli as mth_train_args
 from mini_trainer.train import main as mt_train
+from collections import defaultdict
 
 
 def parquet_to_dataindex(
@@ -73,201 +74,46 @@ def parquet_to_dataindex(
 
 def parquet_to_combinations(path : str):
     data = pd.read_parquet(path)
-    combinations = set()
+    combinations = defaultdict(lambda : 0)
     for sgf in zip(*[data[f'{tl}Key'] for tl in ["species", "genus", "family"]]):
-        combinations.add(tuple(sgf))
-    return [list(sgf) for sgf in sorted(combinations)]
-
-def tensorboard_logger_kwargs(name : str, output : str, resume : bool=False):
-    from torch.utils.tensorboard.writer import SummaryWriter
-
-    from mini_trainer.utils import increment_name_dir
-    from mini_trainer.utils.logging import MetricLogger
-    from mini_trainer.utils.tensorboard import TensorboardLogger
-    
-    tensorboard_dir = os.path.join(output, "tensorboard")
-    if resume:
-        run_name = name
-    else:
-        run_name = increment_name_dir(name, tensorboard_dir)
-    tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, run_name), flush_secs=30)
-    
-    return {
-        "verbose" : True,
-        "logger_cls" : [MetricLogger, TensorboardLogger],
-        "logger_cls_extra_kwargs" : [{}, {"writer" : tensorboard_writer}]
-    }
+        combinations[tuple(sgf)] += 1
+    return [list(sgf) for sgf, count in sorted(combinations.items(), key=lambda x : x[1]) if count > 25]
 
 def cli():
-    parser = ArgumentParser(
-        prog="hierarchical_train",
-        description="Train a hierarchical model.",
-        formatter_class=Formatter
+    kwargs = mth_train_args(
+        parquet={
+            None : "-P",
+            "type" : str, 
+            "required" : True,
+            "help" : "Path to the parquet metadata file produced by `gbifxdl`."
+        }
     )
-    input_args = parser.add_argument_group("Input [mandatory]")
-    input_args.add_argument(
-        "-i", "--input", type=str, required=True,
-        help=
-        "Path to a directory containing a subdirectory for each class,\n" 
-        "where the name of each subdirectory should correspond to the name of the class."
-    )
-    input_args.add_argument(
-        "-P", "--parquet", type=str, required=True,
-        help="Path to the parquet metadata file produced by `gbifxdl`."
-    )
-    out_args = parser.add_argument_group("Output [optional]")
-    out_args.add_argument(
-        "-o", "--output", type=str, default=".", required=False,
-        help=
-        "Root directory for all created files and directories.\n"
-        "Default is current working directory ('.')."
-    )
-    out_args.add_argument(
-        "-n", "--name", type=str, required=False,
-        help=
-        "Name of the output model.\n"
-        "If not provided, a helpful name will be inferred from the other arguments."
-    )
-    out_args.add_argument(
-        "-t", "--tensorboard", action="store_true", required=False,
-        help="Enable tensorboard logging."
-    )
-    mod_args = parser.add_argument_group("Model [optional]")
-    mod_args.add_argument(
-        "-m", "--model", type=str, default="efficientnet_v2_s", required=False,
-        help=
-        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
-        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
-    )
-    mod_args.add_argument(
-        "-c", "--checkpoint", type=str, nargs="+", required=False,
-        help= 
-        "Path to [a] checkpoint file(s) for restarting training.\n"
-        "If multiple files are supplied training is restarted from an 'average' of checkpoint states."
-    )
-    mod_args.add_argument(
-        "-w", "--weights", type=str, required=False,
-        help="Model weights used to initialize model before training."
-    )
-    train_args = parser.add_argument_group("Training [optional]")
-    train_args.add_argument(
-        "-e", "--epochs", type=int, default=15, required=False,
-        help="Number of training epochs (default=15)."
-    )
-    train_args.add_argument(
-        "--loss_weights", type=float, nargs="+", default=(1., 1., 1.), required=False,
-        help="Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied."
-    )
-    train_args.add_argument(
-        "--lr", "--learning_rate", type=float, default=0.001, required=False,
-        help="Initial learning rate after warmup (default=0.001)."
-    )
-    train_args.add_argument(
-        "--batch_size", type=int, default=16, required=False,
-        help="Number of images used in each mini-batch for training/validation (default=16)."
-    )
-    train_args.add_argument(
-        "--warmup_epochs", type=float, default=2.0, required=False,
-        help="Number of warmup epochs (default=2.0)."
-    )
-    train_args.add_argument(
-        "--label_smoothing", type=float, default=0.1, required=False,
-        help="Label smoothing applied to training (default=0.1)."
-    )
-    train_args.add_argument(
-        "--class_weighted", action="store_true", required=False,
-        help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
-    )
-    train_args.add_argument(
-        "--fine_tune", action="store_true", required=False,
-        help="OBS: This should probably not be used. Update only the classifier weights."
-    )
-    cfg_args = parser.add_argument_group("Config [optional]")
-    cfg_args.add_argument(
-        "--subsample", type=int, default=None, required=False,
-        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
-    )
-    cfg_args.add_argument(
-        "--device", type=str, default="cuda:0"
-    )
-    cfg_args.add_argument(
-        "--dtype", type=str, default="bfloat16"
-    )
-    cfg_args.add_argument(
-        "--num_workers", type=int, default=None, required=False,
-        help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
-    )
-    cfg_args.add_argument(
-        "--seed", type=int, required=False,
-        help=
-        "Set the initial seed for the RNG in the core Python library `random`.\n"
-        "This is particularly important for reproducible train/validation splits."
-    )
-
-    args = vars(parser.parse_args())
-    
-    # Distribute builder arguments to the relevant functions
-    args["model_builder_kwargs"] = {
-        "model_type" : args.pop("model"),
-        "weights" : args.pop("weights"),
-        "fine_tune" : args.pop("fine_tune")
-    }
-    args["dataloader_builder_kwargs"] = {
-        "batch_size" : args.pop("batch_size"),
-        "resize_size" : 256, 
-        "train_proportion" : 0.9,
-        "subsample" : args.pop("subsample"),
-        "num_workers" : args.pop("num_workers")
-    }
-    args["optimizer_builder_kwargs"] = {
-        "lr" : args.pop("lr"),
-        "weight_decay" : 1e-4
-    }
-    args["criterion_builder_kwargs"] = {
-        "weights" : args.pop("loss_weights"),
-        "label_smoothing" : args.pop("label_smoothing"),
-        "weighted" : args.pop("class_weighted")
-    }
-    args["lr_schedule_builder_kwargs"] = {
-        "warmup_epochs" : args.pop("warmup_epochs"),
-        "min_factor" : 1 / 10**6, 
-        "start_factor" : 1 / 10**2
-    }
-    # Set reasonable default name for unspecified CLI training runs
-    if args["name"] is None:
-        args["name"] = \
-        f'{args["model_builder_kwargs"]["model_type"]}_' \
-        f'{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_' \
-        f'e{args["epochs"]}'
-    if args.pop("tensorboard"):
-        args["logger_builder_kwargs"] = tensorboard_logger_kwargs(args["name"], output=args["output"], resume=bool(args["checkpoint"]))
 
     # Create class and data index from parquet
-    class_index_path = os.path.join(args["output"], "class_index.json")
+    class_index_path = os.path.join(kwargs["output"], "class_index.json")
     HierarchicalBuilder.spec_model_dataloader(
         class_index_path,
-        args["parquet"],
+        kwargs["parquet"],
         parquet_to_combinations
     )
-    args["class_index"] = class_index_path
-    data_index_path = os.path.join(args["output"], "data_index.json")
+    kwargs["class_index"] = class_index_path
+    data_index_path = os.path.join(kwargs["output"], "data_index.json")
     with open(data_index_path, "w") as f:
         json.dump(
             obj=parquet_to_dataindex(
-                path=args["parquet"],
-                dir=args["input"],
+                path=kwargs["parquet"],
+                dir=kwargs["input"],
                 class_index=class_index_path
             ),
             fp=f
         )
-    args["dataloader_builder_kwargs"]["data_index"] = data_index_path
-
-    args.pop("parquet")
+    kwargs["dataloader_builder_kwargs"]["data_index"] = data_index_path
+    kwargs.pop("parquet")
     
     # Call the Python training API
     mt_train(
+        **kwargs,
         builder=HierarchicalBuilder,
-        **args
     )
 
 if __name__ == "__main__":

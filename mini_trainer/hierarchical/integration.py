@@ -8,19 +8,17 @@ from typing import Any, Callable, Optional, Union
 
 import numpy as np
 import torch
-from hierarchical.base.loss import (MultiLevelCrossEntropyLoss,
-                                    MultiLevelWeightedCrossEntropyLoss)
-from hierarchical.base.model import HierarchicalClassifier
-from hierarchical.base.setup import (names_or_ids_to_combinations,
-                                     resolve_name_or_id)
-from hierarchical.base.utils import (create_hierarchy, leaf_to_parents,
-                                     mask_hierarchy)
 from torch import nn as nn
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm.contrib.concurrent import thread_map
 
 from mini_trainer import TQDM
 from mini_trainer.builders import BaseBuilder
+from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
+from mini_trainer.hierarchical.model import HierarchicalClassifier
+from mini_trainer.hierarchical.setup import (names_or_ids_to_combinations,
+                                             resolve_name_or_id)
+from mini_trainer.hierarchical.utils import create_hierarchy, mask_hierarchy
 from mini_trainer.utils import memory_proportion
 from mini_trainer.utils.data import get_image_data
 from mini_trainer.utils.io import ImageClassLoader, is_image
@@ -40,7 +38,7 @@ DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
 #     combinations = class_index["combinations"]
 #     cls2idxs = {comb[0] : [cls2idx[str(lvl)][c] for lvl, c in enumerate(comb)] for comb in combinations}
 #     def path2cls2idx(path):
-#         return torch.tensor(cls2idxs[os.path.basename(os.path.dirname(path))])
+#         return torch.tensor(cls2idxs[os.pathname(os.path.dirname(path))])
 #     return path2cls2idx
 
 def multi_level_collate(batch):
@@ -170,7 +168,8 @@ class HierarchicalBuilder(BaseBuilder):
     def spec_model_dataloader(
             path : Optional[str]=None, 
             dir : Optional[str]=None, 
-            dir2comb_fn : Optional[Callable[[str], list[tuple[str, ...]]]]=None
+            dir2comb_fn : Callable[[str], list[tuple[str, ...]]]=\
+                lambda dir : names_or_ids_to_combinations(list(filter(lambda subdir : len(os.listdir(os.path.join(dir, subdir))) > 25, os.listdir(dir))))
         ):
         """
         Accepts a path to a class index file or a directory with named subdirectories for each class.
@@ -178,13 +177,8 @@ class HierarchicalBuilder(BaseBuilder):
         Alternatively `dir` can be used with a custom function. The custom function should return a topologically sorted list of all combinations of classes (root-to-leaf) as a tuple of strings.
         """
         if path is None or not os.path.exists(path):
-            if dir2comb_fn is None:
-                # This function can be used if the images are stored in a hierarchical directory structure:
-                # combinations = sorted(set(tuple(f.split(os.sep)[:-1]) for f in glob.glob("**", root_dir=dir, recursive=True) if not os.path.isdir(os.path.join(dir, f))))
-                combinations = names_or_ids_to_combinations(os.listdir(dir))
-            else:
-                combinations = dir2comb_fn(dir)
-            combinations = sorted(combinations)
+            combinations = dir2comb_fn(dir)
+            combinations = sorted(combinations, key=lambda x : x[::-1])
             classes = {i : [] for i in range(len(next(iter(combinations))))}
             for e in combinations:
                 for lvl, cls in enumerate(e):
@@ -247,8 +241,10 @@ class HierarchicalBuilder(BaseBuilder):
             dirnames = set([os.path.basename(os.path.dirname(path)) for path in all_files])
             dir2spidx = dict(thread_map(lambda x : (x, resolve_name_or_id(x)["species"][0]), dirnames, tqdm_class=TQDM, desc="Resolving directory names...", total=len(dirnames)))
             for path in all_files:
-                data["path"].append(path)
                 species_id = dir2spidx[os.path.basename(os.path.dirname(path))]
+                if species_id not in cls2comb:
+                    continue
+                data["path"].append(path)
                 data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[species_id])])
                 data["split"].append("train" if random.random() < train_proportion else "validation")
             data = {k : np.array(v) for k, v in data.items()}
@@ -270,8 +266,8 @@ class HierarchicalBuilder(BaseBuilder):
             train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
             val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
 
-        dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *((resize_size, resize_size) if isinstance(resize_size, int) else resize_size))
-        dataset_fits_in_cuda = False # memory_proportion(dataset_shape, device, dtype) < 0.25
+        dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *((resize_size, resize_size) if isinstance(resize_size, int) else resize_size), 3)
+        dataset_fits_in_cuda = False
         dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
         dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
 
@@ -297,7 +293,7 @@ class HierarchicalBuilder(BaseBuilder):
             # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
             num_workers = 0
 
-        pin_memory = not dataset_fits_in_cuda
+        pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
 
         train_loader = DataLoader(
             train_dataset,
@@ -335,7 +331,7 @@ class HierarchicalBuilder(BaseBuilder):
             **kwargs
         ):
         if not weighted or labels is None or num_classes is None:
-            return MultiLevelCrossEntropyLoss(*args, **kwargs)
+            return MultiLevelWeightedCrossEntropyLoss(*args, **kwargs)
         class_weights = []
         for lvl, ncls in enumerate(num_classes):
             counts = torch.ones((ncls, ))
@@ -363,7 +359,7 @@ class MultiLevelResultCollector(BaseResultCollector):
         if labels is not None:
             return super().collect(paths, *args, **kwargs, labels=labels)
         if self._training_format:
-            leaf_labels = [os.path.basename(os.path.dirname(path)) for path in paths]
+            leaf_labels = [os.pathname(os.path.dirname(path)) for path in paths]
             labels = [self.cls2cls[ll] for ll in leaf_labels]
             return super().collect(paths, *args, **kwargs, labels=labels)
         return super().collect(paths, *args, **kwargs)

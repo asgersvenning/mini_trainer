@@ -79,7 +79,11 @@ def increment_name_dir(name : str, dir : Optional[str]=None, max_iter : int=1000
         return f'{name}_{i}'
 
     fs = set([os.path.splitext(os.path.basename(f))[0] for f in glob(name + "*", root_dir=dir)])
-    for i in range(max_iter+1):
+    i0 = 0
+    if "_" in name and (parts := name.split("_"))[-1].isdigit():
+        i0 = int(parts[-1])
+        name = "_".join(parts[:-1])
+    for i in range(i0, max_iter+1):
         if (this := _name(i)) not in fs:
             return this
     

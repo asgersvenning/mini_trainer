@@ -1,7 +1,7 @@
 from mini_trainer.predict import cli as mt_pred_args
 from mini_trainer.predict import main as mt_predict
 
-from hierarchical.base.integration import HierarchicalBuilder, HierarchicalResultCollector
+from mini_trainer.hierarchical.integration import HierarchicalBuilder, HierarchicalResultCollector
 
 overrides = [] # Unused ATM
 

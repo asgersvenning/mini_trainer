@@ -42,8 +42,8 @@ def get_dataset_dataloader(
         train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
         val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
     
-    dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size)
-    dataset_fits_in_cuda = False # memory_proportion(dataset_shape, device, dtype) < 0.25
+    dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size, 3)
+    dataset_fits_in_cuda = False
     dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
     dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
     
@@ -77,7 +77,7 @@ def get_dataset_dataloader(
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = not dataset_fits_in_cuda
+    pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
 
     train_loader = DataLoader(
         train_dataset,

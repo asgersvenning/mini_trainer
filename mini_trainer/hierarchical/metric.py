@@ -1,14 +1,10 @@
-import json
+from itertools import chain
 from typing import Union
 
-import numpy as np
-from hierarchical.base.gbif import resolve_id
-from hierarchical.base.integration import DEFAULT_HIERARCHY_LEVELS
 from tqdm import tqdm as TQDM
 
-from itertools import chain
-
-from mini_trainer.utils.plot import raw_confusion_matrix, plot_heatmap
+from mini_trainer.hierarchical.gbif import resolve_id
+from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
 
 
 def rank_error(

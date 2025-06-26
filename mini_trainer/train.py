@@ -117,7 +117,7 @@ def main(
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
-        torch.seed(seed)
+        torch.manual_seed(seed)
     
     input_dir = os.path.abspath(input)
     output_dir = os.path.abspath(output)
@@ -252,6 +252,7 @@ def main(
     )
 
     # Run training
+
     train(
         model=nn_model, 
         train_loader=train_loader,
@@ -280,16 +281,24 @@ def main(
     save_on_master(nn_model.state_dict(), weight_dst)
     print(f'Weights saved at: {weight_dst}')
 
-def cli(description="Train a classifier", **kwargs):
+def cli(description="Train a classifier", **extra_kwargs):
     parser = ArgumentParser(
         prog="train",
         description=description,
         formatter_class=Formatter
     )
 
-    if kwargs:
-        for argname, args in kwargs.items():
-            parser.add_argument(f'--{argname}', **args)
+    if extra_kwargs:
+        for argname, kwargs in extra_kwargs.items():
+            args = []
+            if None in kwargs:
+                args = kwargs.pop(None)
+                if not hasattr(args, "__iter__") or isinstance(args, str):
+                    args = [args]
+                else:
+                    args = list(args)
+            args.insert(0, f'--{argname}')
+            parser.add_argument(*args, **kwargs)
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
@@ -450,8 +459,8 @@ def cli(description="Train a classifier", **kwargs):
         from mini_trainer.utils.logging import MetricLogger
         from torch.utils.tensorboard.writer import SummaryWriter
         
-        run_name = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
-        tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, run_name), flush_secs=30)
+        args["name"] = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
+        tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, args["name"]), flush_secs=30)
         
         args["logger_builder_kwargs"]["logger_cls"] = [MetricLogger, TensorboardLogger]
         args["logger_builder_kwargs"]["logger_cls_extra_kwargs"] = [{}, {"writer" : tensorboard_writer}]
