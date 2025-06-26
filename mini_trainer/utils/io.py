@@ -256,23 +256,50 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        def _proc_one(idx_item):
+        max_workers = min(64, os.cpu_count() or 1)
+        fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
+        fetched_queue = Queue(max(32, max_workers*2))
+        insert_buffer = dict()
+        insert_queue = Queue()
+
+        def _fetch_one(idx_item):
             idx, item = idx_item
             data = self.func(item)
-            if self._ram_was_single_tensor:
-                stacked_tensors[0][idx] = data
-            else:
-                for i, element in enumerate(data):
-                    stacked_tensors[i][idx] = element
+            fetched_queue.put((idx, data))
 
-        thread_map(
-            _proc_one,
-            enumerate(self.items),
-            tqdm_class=TQDM,
-            total=len(self),
-            desc="Caching dataset in RAM...",
-            max_workers=min(64, os.cpu_count() or 1)
-        )
+        def _write():
+            end_idx = len(self) - 1
+            pbar = TQDM(range(len(self)), desc="Writing to CPU RAM cache...")
+            while True:
+                idx, data = insert_queue.get()
+                if self._ram_was_single_tensor:
+                    stacked_tensors[0][idx] = data
+                else:
+                    for i, element in enumerate(data):
+                        stacked_tensors[i][idx] = element
+                pbar.update()
+                if idx == end_idx:
+                    break
+        
+        write_thread = Thread(target=_write, daemon=True)
+        write_thread.start()
+
+        fetch_pool.map(_fetch_one, enumerate(self.items))
+
+        nxt_idx = 0
+        for _ in range(len(self)):
+            idx, data = fetched_queue.get()
+            if idx == nxt_idx:
+                insert_queue.put((idx, data))
+                nxt_idx += 1
+                while nxt_idx in insert_buffer:
+                    insert_queue.put((nxt_idx, insert_buffer.pop(nxt_idx)))
+                    nxt_idx += 1
+            else:
+                insert_buffer[idx] = data
+
+        write_thread.join()
+        fetch_pool.shutdown()
 
         self._ram_cache = torch.utils.data.TensorDataset(*[t for t in stacked_tensors])
     
