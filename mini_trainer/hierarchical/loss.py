@@ -73,7 +73,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         ) -> "MultiLevelLoss":
         targets = targets.transpose(0, 1)
         if self.class_weights is None:
-            item_weights = [targets[i].new_ones() for i in range(self.n_levels)]
+            item_weights = [targets[i].new_ones(targets[i].shape) for i in range(self.n_levels)]
         else:
             item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
         return list(MultiLevelLoss(
