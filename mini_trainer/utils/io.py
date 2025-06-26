@@ -254,9 +254,9 @@ class LazyDataset(torch.utils.data.Dataset):
         ]
 
         max_workers = min(128, ((os.cpu_count() - 2) // 2)*2 or 1)
-        batch_size = 512
+        batch_size = 256
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 2))
+        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 4))
         insert_buffer : dict[int, torch.Tensor] = dict()
         insert_queue : Queue[tuple[int, torch.Tensor]] = Queue()
 
