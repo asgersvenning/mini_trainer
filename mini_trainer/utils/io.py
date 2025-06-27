@@ -14,8 +14,55 @@ from torchvision.transforms.functional import pil_to_tensor
 from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
-from mini_trainer.utils import make_convert_dtype
+from mini_trainer.utils import make_convert_dtype, memory_proportion
+from enum import Enum
 
+class CACHE_MODE(int, Enum):
+    NONE  = 0
+    GUESS = 1
+    DISK  = 2
+    CPU   = 3
+    CUDA  = 4
+    @classmethod
+    def _missing_(cls, value):
+        if value is None:
+            return cls.NONE
+        if isinstance(value, str):
+            name = value.strip().upper()
+            try:
+                return cls[name]
+            except KeyError:
+                raise ValueError(f'Only cache modes "NONE", "GUESS", "DISK", "CPU" or "CUDA" are defined, not {value!r}.')
+        # let IntEnum's default handling raise for bad ints:
+        return super()._missing_(value)
+
+DEFAULT_THRESHOLDS = {
+    CACHE_MODE.NONE : -1,
+    CACHE_MODE.GUESS : None,
+    CACHE_MODE.DISK : 0.5,
+    CACHE_MODE.CPU : 0.5,
+    CACHE_MODE.CUDA : None
+}
+
+def guess_cache_mode(
+        shape : list[int], 
+        dtype : torch.dtype,
+        thresholds : Optional[dict[CACHE_MODE, Union[float, int]]]=None
+    ):
+    if thresholds is None:
+        thresholds = dict()
+    for mode, default in DEFAULT_THRESHOLDS.items():
+        if mode not in thresholds:
+            thresholds[mode] = default
+    accepted : list[CACHE_MODE] = []
+    for mode, threshold in thresholds.items():
+        if threshold is None:
+            continue
+        if threshold < 0 or memory_proportion(shape, mode.name, dtype) < threshold:
+            accepted.append(mode)
+    if len(accepted) == 0:
+        raise RuntimeError(f'Unable to determine a valid caching location using thresholds:\n{thresholds}')
+    return sorted(accepted)[-1]
 
 def is_image(path: str) -> bool:
     if not os.path.exists(path):
@@ -68,13 +115,13 @@ class LazyDataset(torch.utils.data.Dataset):
             self, 
             func : Callable[[Any], Union[torch.Tensor, tuple[torch.Tensor, ...], list[torch.Tensor]]], 
             items : list[str],
-            cache : Optional[str]=None
+            cache : Optional[Union[str, int, CACHE_MODE]]=None
         ):
         self.func = func
         self.items = items
         self._zarr_root = None
         self.cache_dir = None
-        self._cache_mode = cache # one of None (no caching), disk (precompute .npy files), ram (preload cpu tensor)
+        self._cache_mode = CACHE_MODE(cache) # one of None (no caching), disk (precompute .npy files), cpu (preload cpu tensor)
         self._init_cache()
 
     @staticmethod
@@ -92,17 +139,18 @@ class LazyDataset(torch.utils.data.Dataset):
         return s256.hexdigest()
 
     def _init_cache(self):
-        if self._cache_mode is None:
-            print("On-the-fly data loading enabled (no cache).")
-            return
-        if self._cache_mode == "disk":
-            cache_dir = os.path.join(gettempdir(), ".mini_trainer")
-            self.cache_path = os.path.join(cache_dir, f"{self._get_cache_hash()}.zarr")
-            self._cache_disk_zarr()
-        elif self._cache_mode == "ram":
-            self._cache_ram()
-        else:
-            raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'ram'].")
+        match self._cache_mode:
+            case CACHE_MODE.NONE:
+                print("On-the-fly data loading enabled (no cache).")
+                return
+            case CACHE_MODE.DISK:
+                cache_dir = os.path.join(gettempdir(), ".mini_trainer")
+                self.cache_path = os.path.join(cache_dir, f"{self._get_cache_hash()}.zarr")
+                self._cache_disk_zarr()
+            case CACHE_MODE.CPU:
+                self._cache_ram()
+            case _:
+                raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'cpu'].")
 
     def _cache_disk_zarr(self):
         print(f"Using Zarr disk cache at: {self.cache_path}")
@@ -327,7 +375,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         match self._cache_mode:
-            case None:
+            case CACHE_MODE.NONE:
                 if isinstance(i, int):
                     return self.func(self.items[i])
                 if isinstance(i, (torch.Tensor, np.ndarray)):
@@ -339,13 +387,13 @@ class LazyDataset(torch.utils.data.Dataset):
                 else:
                     raise NotImplementedError(f'Indexing with {i} is not implemented. Only integer, slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.')
                 return [torch.stack(values) for values in zip(*elements)]
-            case "disk":
+            case CACHE_MODE.DISK:
                 return self._load_from_zarr(i)
-            case "ram":
+            case CACHE_MODE.CPU:
                 data = self._ram_cache[i]
                 return data[0] if self._ram_was_single_tensor else data
             case _:
-                raise RuntimeError(f'Invalid caching mode found {self._cache}, expected one of None, "disk" or "ram".')
+                raise RuntimeError(f'Invalid caching mode found {self._cache}, expected one of None, "disk" or "cpu".')
 
 class ImageLoader:
     def __init__(

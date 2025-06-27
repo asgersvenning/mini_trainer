@@ -7,14 +7,14 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as tt
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torchvision.io import ImageReadMode
 
 from mini_trainer.classifier import Classifier, last_layer_weights
-from mini_trainer.utils import cosine_schedule_with_warmup, memory_proportion
+from mini_trainer.utils import cosine_schedule_with_warmup
 from mini_trainer.utils.augmentation import SaltAndPepper
 from mini_trainer.utils.data import (get_image_data, parse_class_index,
                                      write_metadata)
-from mini_trainer.utils.io import LazyDataset, make_read_and_resize_fn
+from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
+                                   make_read_and_resize_fn)
 from mini_trainer.utils.logging import MultiLogger
 from mini_trainer.utils.loss import class_weight_distribution_regularization
 
@@ -26,8 +26,9 @@ def get_dataset_dataloader(
         batch_size : int=16, 
         num_workers : Optional[int]=None,
         subsample : Optional[int]=None,
-        device=torch.device("cpu"), 
-        dtype=torch.float32
+        device : Union[torch.device, str]=torch.device("cpu"), 
+        dtype : torch.dtype=torch.float32,
+        cache : Optional[Union[CACHE_MODE, str, int]]=None
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
@@ -43,9 +44,9 @@ def get_dataset_dataloader(
         val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
     
     dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size, 3)
-    dataset_fits_in_cuda = False
-    dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
-    dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
+    cache = CACHE_MODE(cache)
+    if cache is CACHE_MODE.GUESS:
+        cache = guess_cache_mode(dataset_shape, dtype)
     
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
     def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
@@ -57,12 +58,12 @@ def get_dataset_dataloader(
     train_dataset = LazyDataset(
         func=proc_path_label, 
         items=[(path, cls) for path, cls in zip(train_image_data["path"], train_image_data["class"])],
-        cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+        cache=cache
     )
     val_dataset = LazyDataset(
         func=proc_path_label, 
         items=[(path, cls) for path, cls in zip(  val_image_data["path"],   val_image_data["class"])],
-        cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+        cache=cache
     )
 
     if num_workers is None:
@@ -70,14 +71,14 @@ def get_dataset_dataloader(
         # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
         num_workers -= num_workers % 2
         # num_workers = max(0, num_workers)
-    if dataset_fits_in_cuda:
+    if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
 
     train_sampler = RandomSampler(train_dataset)
     val_sampler = SequentialSampler(val_dataset)
 
-    pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
+    pin_memory = not ((cache is CACHE_MODE.CUDA) or (cache is CACHE_MODE.CPU))
 
     train_loader = DataLoader(
         train_dataset,
@@ -221,11 +222,13 @@ class BaseBuilder:
             device : torch.device,
             dtype = torch.dtype,
             data_index : Optional[str]=None,
+            num_workers : Optional[int]=None,
             resize_size : Optional[int]=None,
+            subsample : Optional[int]=None,
+            cache : Optional[Union[int, str]]=None,
             train_proportion : float=0.9,
-            subsample : int | None=None,
             idx2cls : Optional[dict[int, str]]=None,
-            num_workers : Optional[int]=None
+            combinations : Optional[list[tuple[str, str, str]]]=None
         ):
         """
         Returns:
@@ -247,7 +250,8 @@ class BaseBuilder:
             num_workers=num_workers,
             subsample=subsample,
             device=device, 
-            dtype=dtype
+            dtype=dtype,
+            cache=cache
         )
 
         return train_image_data["class"], train_loader, val_loader

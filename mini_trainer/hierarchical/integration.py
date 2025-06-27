@@ -20,9 +20,9 @@ from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.hierarchical.setup import (names_or_ids_to_combinations,
                                              resolve_name_or_id)
 from mini_trainer.hierarchical.utils import create_hierarchy, mask_hierarchy
-from mini_trainer.utils import memory_proportion
 from mini_trainer.utils.data import get_image_data
-from mini_trainer.utils.io import ImageClassLoader, is_image
+from mini_trainer.utils.io import (CACHE_MODE, ImageClassLoader,
+                                   guess_cache_mode, is_image)
 from mini_trainer.utils.logging import BaseResultCollector
 
 DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
@@ -198,21 +198,16 @@ class HierarchicalBuilder(BaseBuilder):
             batch_size : int,
             device : torch.device,
             dtype = torch.dtype,
+            num_workers : Optional[int]=None,
             resize_size : Optional[int]=None,
+            subsample : Optional[int]=None,
+            cache : Optional[Union[int, str]]=None,
             train_proportion : float=0.9,
             idx2cls : Optional[dict[int, str]]=None,
-            num_workers : Optional[int]=None,
-            combinations : Optional[list[tuple[str, str, str]]]=None,
-            subsample : Optional[int]=None
-            # hierarchy : Optional[list[list[list[int]]]]=None,
-            # path2cls2idx_builder : Optional[Callable[[Any], Callable[[str], torch.Tensor]]]=hierarchical_base_path2cls2idx_builder,
-            # path2cls2idx_builder_kwargs : dict[str, Any]={}
+            combinations : Optional[list[tuple[str, str, str]]]=None
         ):
         # Prepare datasets/dataloaders
         if data_index is None:
-            # if path2cls2idx_builder is None:
-            #     raise RuntimeError(f'If no data index is passed a function factory (higher order function) that generates a function which computes the class/label from the path must be passed.')
-            # path2cls2idx = path2cls2idx_builder(cls2idx=cls2idx, **path2cls2idx_builder_kwargs)
             cls2comb = {comb[0] : comb for comb in combinations}
             all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f)) and is_image(path)]
             random.shuffle(all_files)
@@ -250,16 +245,16 @@ class HierarchicalBuilder(BaseBuilder):
             val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
 
         dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *((resize_size, resize_size) if isinstance(resize_size, int) else resize_size), 3)
-        dataset_fits_in_cuda = False
-        dataset_fits_in_cpu = memory_proportion(dataset_shape, "cpu", dtype) < 0.5
-        dataset_fits_on_disk = memory_proportion(dataset_shape, "disk", dtype) < 0.5
+        cache = CACHE_MODE(cache)
+        if cache is CACHE_MODE.GUESS:
+            cache = guess_cache_mode(dataset_shape, dtype)
 
         loader = ImageClassLoader(
             class_decoder=torch.tensor, 
             item_splitter=lambda x : x, 
             resize_size=resize_size, 
             dtype=torch.uint8,
-            cache=device if dataset_fits_in_cuda else "ram" if dataset_fits_in_cpu else "disk" if dataset_fits_on_disk else None
+            cache=cache
         )
 
         train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
@@ -272,11 +267,11 @@ class HierarchicalBuilder(BaseBuilder):
             # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
             num_workers -= num_workers % 2
             # num_workers = max(0, num_workers)
-        if dataset_fits_in_cuda:
+        if cache is CACHE_MODE.CUDA:
             # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
             num_workers = 0
 
-        pin_memory = not (dataset_fits_in_cuda or dataset_fits_in_cpu)
+        pin_memory = not ((cache is CACHE_MODE.CUDA) or (cache is CACHE_MODE.CPU))
 
         train_loader = DataLoader(
             train_dataset,

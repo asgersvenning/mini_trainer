@@ -52,8 +52,9 @@ def memory_proportion(
     # bytes per element
     bpe = torch.empty(0, dtype=dtype).element_size()
     required = numel * bpe
-
-    if isinstance(device, str) and "disk" in device.lower().strip():
+    if isinstance(device, str):
+        device = device.lower().strip()
+    if isinstance(device, str) and "disk" in device:
         free = shutil.disk_usage(tempfile.gettempdir()).free
     else:
         dev = torch.device(device)

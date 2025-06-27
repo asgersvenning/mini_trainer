@@ -390,6 +390,10 @@ def cli(description="Train a classifier", **extra_kwargs):
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
     )
     cfg_args.add_argument(
+        "--cache", type=str, default=None, required=False,
+        help='Cache/Preload datasets for faster dataloading. Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet). Mainly relevant for inefficiently stored training data or slow filesystems.'
+    )
+    cfg_args.add_argument(
         "--device", type=str, default="cuda:0", required=False,
         help='Device used for training (default="cuda:0").'
     )
@@ -428,7 +432,8 @@ def cli(description="Train a classifier", **extra_kwargs):
         "resize_size" : 256, 
         "train_proportion" : 0.9,
         "subsample" : args.pop("subsample"),
-        "num_workers" : args.pop("num_workers")
+        "num_workers" : args.pop("num_workers"),
+        "cache" : args.pop("cache")
     }
     args["optimizer_builder_kwargs"] = {
         "lr" : args.pop("lr"),
