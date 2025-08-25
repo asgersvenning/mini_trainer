@@ -2,6 +2,7 @@ from typing import Iterable
 
 import torch
 
+
 def leaf_to_parents(h):
     l2p = []
     p2c = None

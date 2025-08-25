@@ -30,7 +30,7 @@ def parquet_to_dataindex(
             clean_fld = fld.strip()
         else:
             clean_fld = fld
-        if (isinstance(clean_fld, int) or clean_fld.isdigit()) and not (int(clean_fld) in test_split):
+        if (isinstance(clean_fld, int) or clean_fld.isdigit()) and int(clean_fld) not in test_split:
             split = "validation"
             if train == 0 or (train / max(1, train + val)) < train_prop:
                 split = "train"

@@ -1,7 +1,7 @@
 import os
 from collections import OrderedDict
 from functools import partial
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -37,8 +37,8 @@ def preprocess(item, transform, func=None):
         image = func(image)
     return transform(image)
 
-def get_model(backbone_model: Union[str, torch.nn.Module], model_args: dict = {},
-              classifier_name: Union[str, list[str]] = ["classifier", "fc"],
+def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
+              classifier_name: str | list[str] = ["classifier", "fc"],
               preprocess_dtype : Optional[torch.dtype]=None):
     default_transform = None
     if isinstance(backbone_model, str):
@@ -98,7 +98,7 @@ class Classifier(nn.Module):
         architecture_class : str,
         architecture_output_name : str,
         architecture : nn.Module,
-        state : Optional[OrderedDict[str, Union[torch.Tensor, Any]]],
+        state : Optional[OrderedDict[str, torch.Tensor | Any]],
         device : torch.types.Device,
         dtype : torch.dtype,
         **kwargs
@@ -119,8 +119,8 @@ class Classifier(nn.Module):
     def build(
         cls,
         model_type : str, 
-        weights : Optional[Union[str, OrderedDict[str, Union[torch.Tensor, Any]]]]=None, 
-        num_classes : Optional[Union[list[int], int]]=None,
+        weights : Optional[str | OrderedDict[str, torch.Tensor | Any]]=None, 
+        num_classes : Optional[list[int] | int]=None,
         device=torch.device("cpu"), 
         dtype=torch.float32,
         **kwargs
@@ -134,7 +134,7 @@ class Classifier(nn.Module):
 
         if weights is not None:
             if isinstance(weights, str):
-                state : Union[dict[str, Any], OrderedDict[str, torch.Tensor]] = torch.load(weights, device, weights_only=True)
+                state : dict[str, Any] | OrderedDict[str, torch.Tensor] = torch.load(weights, device, weights_only=True)
                 if "model" in state:
                     state : OrderedDict[str, torch.Tensor] = state["model"]
             else:

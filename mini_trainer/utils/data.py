@@ -2,14 +2,13 @@ import json
 import os
 import random
 from glob import glob
-from typing import Optional, Union
+from typing import Optional
 
 import numpy as np
 import torch
-from torchvision.io import ImageReadMode
+from tqdm.contrib.concurrent import thread_map
 
 from mini_trainer import TQDM
-from tqdm.contrib.concurrent import thread_map
 from mini_trainer.utils.io import is_image, make_read_and_resize_fn
 
 
@@ -76,7 +75,7 @@ def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
 
 def prepare_split(
         paths : list[str], desc="Preprocessing images for split...", 
-        resize_size : Union[int, tuple[int, int]]=256, 
+        resize_size : int | tuple[int, int]=256, 
         device=torch.device("cpu"), 
         dtype=torch.bfloat16
     ):

@@ -1,16 +1,19 @@
-import os, json
+import json
+import os
+from collections import OrderedDict
+
 from pyremotedata.implicit_mount import IOHandler
-from mini_trainer.hierarchical.gbif import resolve_id, name_to_id, TAXONOMY_KEYS
-from typing import Union
 from tqdm.contrib.concurrent import thread_map
 
-from collections import OrderedDict
+from mini_trainer.hierarchical.gbif import (TAXONOMY_KEYS, name_to_id,
+                                            resolve_id)
+
 
 def erda_list_files(id : str, **kwargs):
     with IOHandler(user=id, password=id, remote="io.erda.au.dk") as io:
         return io.get_file_index()
 
-def resolve_name_or_id(name_or_id : Union[str, int]):
+def resolve_name_or_id(name_or_id : str | int):
     name_or_id = name_or_id.strip()
     if isinstance(name_or_id, int) or name_or_id.isdigit():
         return resolve_id(name_or_id)

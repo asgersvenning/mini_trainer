@@ -1,6 +1,7 @@
 import torch
 from torch.distributions import Chi2
 
+
 def class_weight_distribution_regularization(
     classification_weights: torch.Tensor,
     epsilon: float = 1e-6, # For numerical stability

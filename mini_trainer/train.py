@@ -1,7 +1,7 @@
 import os
 import random
 from argparse import ArgumentParser
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -25,7 +25,7 @@ def main(
     device : str="cuda:0",
     dtype : str="bfloat16",
     seed : Optional[int]=None,
-    builder : Type[BaseBuilder]=BaseBuilder,
+    builder : type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : dict[str, Any]={},
     model_builder_kwargs : dict[str, Any]={
         "model_name" : "efficientnet_v2_s",
@@ -135,7 +135,7 @@ def main(
             dir=input_dir,
             **spec_model_dataloader_kwargs
         )
-    except Exception as e:
+    except Exception as _:
         extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
             path=class_index, 
             dir=input_dir,
@@ -460,9 +460,10 @@ def cli(description="Train a classifier", **extra_kwargs):
         f'e{args["epochs"]}'
     
     if args.pop("tensorboard"):
-        from mini_trainer.utils.tensorboard import TensorboardLogger
-        from mini_trainer.utils.logging import MetricLogger
         from torch.utils.tensorboard.writer import SummaryWriter
+
+        from mini_trainer.utils.logging import MetricLogger
+        from mini_trainer.utils.tensorboard import TensorboardLogger
         
         args["name"] = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
         tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, args["name"]), flush_secs=30)

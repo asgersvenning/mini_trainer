@@ -2,14 +2,14 @@ import datetime
 import os
 import time
 import warnings
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
 from torch import autocast
+from torch.amp import GradScaler
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
-from torch.amp import GradScaler
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
@@ -48,7 +48,7 @@ def train_one_epoch(
                 batch = batch.unsqueeze(0)
         with autocast(device_type=device.type, dtype=dtype):
             output = model(preprocess(augmentation(batch)))
-            loss : Union[list[torch.Tensor], torch.Tensor] = criterion(output, target) 
+            loss : list[torch.Tensor] | torch.Tensor = criterion(output, target) 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss = [loss]
         optimizer.zero_grad()
@@ -57,7 +57,7 @@ def train_one_epoch(
             if nan_errs < 5:
                 continue
             else:
-                raise RuntimeError(f'Interrupted training due to persistent nan\'s detected in the loss.')
+                raise RuntimeError('Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
         scaler.scale(sum(loss) + regularizer(model)).backward()

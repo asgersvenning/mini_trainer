@@ -1,26 +1,4 @@
-## REFERENCE IMPLEMENTATION
-# loss_weights = [species_weight, genus_weight, family_weight]
-# loss_weights = [len(loss_weights) * i / sum(loss_weights) for i in loss_weights]
-
-# class_counts = full_dataset.class_counts
-# class_weights = [cc.to(dtype) for cc in class_counts]
-# class_weights = [1 / (w + w.mean()) for w in class_weights]
-# class_weights = [w / w.mean() for w in class_weights]
-# # class_weights = [torch.ones_like(i) for i in class_weights] # Uncomment this line to disable class weighting
-# for i in class_weights:
-#     i.requires_grad = False
-# loss_fn = [
-#     nn.CrossEntropyLoss(
-#         weight=class_weights[i], 
-#         reduction="none", 
-#         # label_smoothing=1/class_weights[i].shape[0]
-#     ) for i in range(N_LEVELS)
-# ]
-# item_weights = [class_weights[i][labels[i]] for i in range(N_LEVELS)]
-# [(loss_fn[i](pred[i], labels[i].to(device)) * item_weights[i]).mean() for i in range(N_LEVELS)]
-
-# Imports
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 from torch import nn
@@ -31,7 +9,7 @@ from torch.types import _dtype
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
             self, 
-            weights : Union[list[Union[float, int]], torch.Tensor],
+            weights : list[float | int] | torch.Tensor,
             device : DeviceLikeType, 
             dtype : _dtype, 
             class_weights : Optional[list[torch.Tensor]]=None,
@@ -88,7 +66,7 @@ class MultiLevelLoss:
     def __init__(
             self, 
             losses : list[torch.Tensor], 
-            weights : list[Union[float, int]]
+            weights : list[float | int]
         ):
         self.losses = losses
         self.weights = weights
@@ -98,17 +76,17 @@ class MultiLevelLoss:
     def aggregate(self) -> torch.Tensor:
         return sum([self.losses[i] * self.weights[i] for i in range(len(self.weights)) if self.weights[i] > 0])
     
-    def __getitem__(self, idx : Union[int, slice]) -> torch.Tensor:
+    def __getitem__(self, idx : int | slice) -> torch.Tensor:
         return self.losses[idx] * self.weights[idx]
     
     def __len__(self) -> int:
         return sum([int(w > 0 for w in self.weights)])
 
     def __iter__(self):
-        for w, l in zip(self.weights, self.losses):
-            if w == 0:
+        for weight, loss in zip(self.weights, self.losses):
+            if weight == 0:
                 continue
-            yield w * l
+            yield weight * loss
     
     def __repr__(self):
         return f'Losses: [{", ".join([f"{loss.item():.1f}" for loss in self.losses])}]\nWeights: [{", ".join([f"{weight:.1f}" for weight in self.weights])}]'

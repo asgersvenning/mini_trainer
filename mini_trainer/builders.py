@@ -1,12 +1,13 @@
 import os
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Optional, Type, Union
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as tt
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, BatchSampler
+from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
+                              SequentialSampler)
 
 from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
@@ -22,13 +23,13 @@ from mini_trainer.utils.loss import class_weight_distribution_regularization
 def get_dataset_dataloader(
         train_image_data : dict, 
         val_image_data : dict, 
-        resize_size : Union[int, tuple[int, int]],
+        resize_size : int | tuple[int, int],
         batch_size : int=16, 
         num_workers : Optional[int]=None,
         subsample : Optional[int]=None,
-        device : Union[torch.device, str]=torch.device("cpu"), 
+        device : torch.device | str=torch.device("cpu"), 
         dtype : torch.dtype=torch.float32,
-        cache : Optional[Union[CACHE_MODE, str, int]]=None
+        cache : Optional[CACHE_MODE | str | int]=None
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
@@ -49,7 +50,7 @@ def get_dataset_dataloader(
         cache = guess_cache_mode(dataset_shape, dtype)
     
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
-    def proc_path_label(path_label : tuple[str, Union[int, list[int], np.ndarray]]):
+    def proc_path_label(path_label : tuple[str, int | list[int] | np.ndarray]):
         path, label = path_label
         if isinstance(label, (list, np.ndarray)):
             label = label[0]
@@ -132,7 +133,7 @@ class BaseBuilder:
     @staticmethod
     def build_model(
             fine_tune : bool=False,
-            cls : Type[Classifier]=Classifier,
+            cls : type[Classifier]=Classifier,
             **kwargs : Any
         ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
         """
@@ -144,7 +145,7 @@ class BaseBuilder:
         model, model_preprocess = cls.build(**kwargs)
         if fine_tune:
             for name, param in model.named_parameters():
-                if param.requires_grad and not model._architecture_output_name in name:
+                if param.requires_grad and model._architecture_output_name not in name:
                     param.requires_grad_(False)
         return model, model_preprocess
     
@@ -204,7 +205,7 @@ class BaseBuilder:
             })
         
         if not param_groups and list(model.parameters()):
-            raise RuntimeError(f"Model has parameters, but no distinct head/backbone groups formed.")
+            raise RuntimeError("Model has parameters, but no distinct head/backbone groups formed.")
 
 
         return param_groups
@@ -222,7 +223,7 @@ class BaseBuilder:
             num_workers : Optional[int]=None,
             resize_size : Optional[int]=None,
             subsample : Optional[int]=None,
-            cache : Optional[Union[int, str]]=None,
+            cache : Optional[int | str]=None,
             train_proportion : float=0.9,
             idx2cls : Optional[dict[int, str]]=None,
             combinations : Optional[list[tuple[str, str, str]]]=None
@@ -279,7 +280,7 @@ class BaseBuilder:
     def build_optimizer(
         cls,
         model: nn.Module,
-        optimizer_cls: Type[torch.optim.Optimizer] = torch.optim.AdamW,
+        optimizer_cls: type[torch.optim.Optimizer] = torch.optim.AdamW,
         lr: float=1e-3,
         weight_decay: float=0.0001,
         backbone_lr: Optional[float]=None,
@@ -327,7 +328,7 @@ class BaseBuilder:
             weighted : bool=False,
             labels : Optional[np.ndarray]=None, 
             num_classes : Optional[int]=None, 
-            criterion_cls : Type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, 
+            criterion_cls : type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, 
             device : Optional[torch.types.Device]=None,
             dtype : Optional[torch.dtype]=None,
             **kwargs

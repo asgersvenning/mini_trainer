@@ -1,4 +1,3 @@
-import datetime
 import json
 import os
 import shutil
@@ -8,7 +7,7 @@ from itertools import chain, repeat
 from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
-from typing import Any, Callable, Optional, TextIO, Type, TypeVar, Union
+from typing import Any, Callable, Optional, TextIO, TypeVar
 
 import numpy as np
 import torch
@@ -169,7 +168,7 @@ class BaseResultCollector(_ResultsCollector):
         self.preds.extend([self.idx2cls[idx] for idx in predictions.argmax(1).tolist()])
         self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
-    def _collect_extra_attributes(self, **kwargs : Union[list, tuple, GeneratorType, np.ndarray, torch.Tensor]):
+    def _collect_extra_attributes(self, **kwargs : list | tuple | GeneratorType | np.ndarray | torch.Tensor):
         if len(self._extra_attr) == 0:
             return
         if not all([attr in kwargs for attr in self._extra_attr]):
@@ -273,12 +272,12 @@ class _Logger:
     def get(self, name : str) -> _Statistic:
         raise NotImplementedError()
 
-    def update(self, name, values : Union[float, int, list[Union[float, int]], torch.Tensor, np.ndarray]):
+    def update(self, name, values : float | int | list[float | int] | torch.Tensor | np.ndarray):
         if isinstance(values, (torch.Tensor, np.ndarray)):
             values = values.tolist()
         self.get(name).update(values)
 
-    def add_figure(self, name : str, figure : Union[plt.Figure, str], **kwargs):
+    def add_figure(self, name : str, figure : plt.Figure | str, **kwargs):
         pass
 
     def step(self):
@@ -428,7 +427,7 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
         super().__init__(model, device, ema_avg, use_buffers=True)
 
 class BaseStatistic(_Statistic):
-    def __init__(self, values : Optional[list[Union[float, int]]]=None):
+    def __init__(self, values : Optional[list[float | int]]=None):
         """
         A basic thread-safeish statistic container.
 
@@ -463,7 +462,7 @@ class BaseStatistic(_Statistic):
     def data(self):
         return self.values
 
-    def update(self, value : Union[float, int, list[Union[int, float]], np.ndarray, torch.Tensor], **kwargs):
+    def update(self, value : float | int | list[int | float] | np.ndarray | torch.Tensor, **kwargs):
         if isinstance(value, (torch.Tensor, np.ndarray)):
             if sum(s > 1 for s in value.shape) <= 1:
                 value = value.flatten()
@@ -530,7 +529,7 @@ class MultiLogger:
             name : str="log",
             statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
-            logger_cls : list[Type[_Logger]]=[MetricLogger],
+            logger_cls : list[type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
                 lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
@@ -587,7 +586,7 @@ class MultiLogger:
     @property
     def steps(self):
         if self._epoch is None:
-            raise RuntimeError(f'Attempted to retrieve steps before starting an epoch (i.e. training).')
+            raise RuntimeError('Attempted to retrieve steps before starting an epoch (i.e. training).')
         if self.is_train():
             return self.train_steps[self._epoch] 
         else:
@@ -642,7 +641,7 @@ class MultiLogger:
             raise RuntimeError("Attempted to log statistics before initializing loggers.")
         return self._current_loggers
     
-    def get_logger(self, cls : Type[L]) -> L:
+    def get_logger(self, cls : type[L]) -> L:
         for logger in self.loggers:
             if isinstance(logger, cls):
                 return logger
@@ -674,7 +673,7 @@ class MultiLogger:
             "extra" : dict() #dict(self.heterogeneous_storage)
         }
 
-    def save(self, fp: Optional[Union[str, TextIO]] = None, encoding: str = "utf-8", **kwargs):
+    def save(self, fp: Optional[str | TextIO] = None, encoding: str = "utf-8", **kwargs):
         if fp is None:
             fp = self.output_path
         if isinstance(fp, TextIO):
@@ -705,7 +704,7 @@ class MultiLogger:
     def log_accuracy(
             self, 
             target : torch.Tensor, 
-            prediction : Union[list[torch.Tensor], torch.Tensor]
+            prediction : list[torch.Tensor] | torch.Tensor
         ):
         if isinstance(prediction, list) and len(prediction) == 1:
             prediction = prediction[0]
@@ -754,7 +753,7 @@ class MultiLogger:
 
     def log_loss(
             self,
-            loss : Union[torch.Tensor, list[torch.Tensor]]
+            loss : torch.Tensor | list[torch.Tensor]
         ):
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss : float = loss.item()
@@ -799,7 +798,7 @@ class MultiLogger:
             index : int,
             batch : torch.Tensor,
             target : torch.Tensor,
-            prediction : Union[list[torch.Tensor], torch.Tensor],
+            prediction : list[torch.Tensor] | torch.Tensor,
             loss : Any,
             optimizer : torch.optim.Optimizer,
             start_time : float
@@ -939,7 +938,7 @@ class MultiLogger:
                 figs[f"Soft confusion matrix/lvl{lvl}"] = plot_heatmap(cm)
         return figs
 
-    def add_figure(self, name : str, figure : Union[Figure, np.ndarray, torch.Tensor]):
+    def add_figure(self, name : str, figure : Figure | np.ndarray | torch.Tensor):
         for logger in self.loggers:
             logger.add_figure(name=name, figure=figure, epoch=self._epoch)
         if isinstance(figure, Figure):

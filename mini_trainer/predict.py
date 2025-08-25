@@ -4,13 +4,13 @@ import re
 import warnings
 from argparse import ArgumentParser
 from math import ceil
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 import torch
 from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM, Formatter
-from mini_trainer.builders import BaseBuilder, AutoEmbedder
+from mini_trainer.builders import AutoEmbedder, BaseBuilder
 from mini_trainer.utils.data import find_images
 from mini_trainer.utils.io import ImageLoader
 from mini_trainer.utils.logging import BaseResultCollector
@@ -30,7 +30,7 @@ def main(
     device : str="cuda:0",
     dtype : str="bfloat16",
     verbose : bool=False,
-    builder : Type[BaseBuilder]=BaseBuilder,
+    builder : type[BaseBuilder]=BaseBuilder,
     spec_model_dataloader_kwargs : dict[str, Any]={},
     model_builder_kwargs : dict[str, Any]={},
     result_collector=BaseResultCollector,
@@ -149,7 +149,7 @@ def main(
     )
 
     if data_index:
-        assert split is not None, ValueError(f'Prediction `split` must be passed when `data_index` is used.')
+        assert split is not None, ValueError('Prediction `split` must be passed when `data_index` is used.')
         split = split.strip().lower()
         with open(data_index, "r") as f:
             data_index_data = json.load(f)

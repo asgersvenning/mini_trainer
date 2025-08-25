@@ -1,6 +1,7 @@
-from tqdm import tqdm as TQDM # TODO: Context dependent progress bars
-
 from argparse import RawTextHelpFormatter
+
+from tqdm import tqdm as TQDM  # # noqa: F401 TODO: Context dependent progress bars
+
 
 class Formatter(RawTextHelpFormatter):
     # only change how the “invocation” is rendered

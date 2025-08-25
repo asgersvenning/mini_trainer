@@ -4,7 +4,7 @@ import math
 import os
 import random
 from collections import defaultdict
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -201,7 +201,7 @@ class HierarchicalBuilder(BaseBuilder):
             num_workers : Optional[int]=None,
             resize_size : Optional[int]=None,
             subsample : Optional[int]=None,
-            cache : Optional[Union[int, str]]=None,
+            cache : Optional[int | str]=None,
             train_proportion : float=0.9,
             idx2cls : Optional[dict[int, str]]=None,
             combinations : Optional[list[tuple[str, str, str]]]=None
@@ -365,7 +365,7 @@ class HierarchicalResultCollector:
             for lvl in range(self.levels)
         ])
 
-    def evaluate(self, outdir : Optional[str]=None, prefix : str="", level : Optional[Union[int, list[int]]]=None):
+    def evaluate(self, outdir : Optional[str]=None, prefix : str="", level : Optional[int | list[int]]=None):
         if level is None:
             level = list(range(self.levels))
         if isinstance(level, int):
@@ -386,7 +386,7 @@ class HierarchicalResultCollector:
                     json.dump(results, f)
             return results
 
-    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : Optional[Union[int, list[int]]]=None, **kwargs):
+    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : Optional[int | list[int]]=None, **kwargs):
         if level is None:
             level = list(range(self.levels))
         if isinstance(level, int):

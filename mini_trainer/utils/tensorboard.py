@@ -1,13 +1,12 @@
-from typing import Optional, Type, Union
+from collections import defaultdict
+from typing import Optional
 
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
-
-from matplotlib import pyplot as plt
-from collections import defaultdict
 
 
 def make_empty_array(s : int) -> np.typing.NDArray[np.float64]:
@@ -20,7 +19,7 @@ class TensorboardLogger(_Logger):
             self, 
             writer : SummaryWriter, 
             steps : list[int], 
-            tag : Optional[Union[str, list[str]]]=None,
+            tag : Optional[str | list[str]]=None,
             flush_rate : int=5
         ):
         self.writer = writer
@@ -36,7 +35,7 @@ class TensorboardLogger(_Logger):
         self.clear_buffer()
 
 
-    def add_stat(self, name : str, container : Union[_Statistic, Type[_Statistic]]=BaseStatistic):
+    def add_stat(self, name : str, container : _Statistic | type[_Statistic]=BaseStatistic):
         if isinstance(container, type):
             container = container()
         self._statistics[name] = container
@@ -80,7 +79,7 @@ class TensorboardLogger(_Logger):
                 self.buffer_scalar(tag, v, self._idx + i)
         super().update(name, values)
 
-    def add_figure(self, name : str, figure : Union[plt.Figure, str], epoch : int):
+    def add_figure(self, name : str, figure : plt.Figure | str, epoch : int):
         tag = self._make_scalar_hierarchical_tag(name)
         if isinstance(figure, plt.Figure):
             self.writer.add_figure(tag, figure, epoch, close=False)

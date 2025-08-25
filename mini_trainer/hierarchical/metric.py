@@ -1,5 +1,4 @@
 from itertools import chain
-from typing import Union
 
 from tqdm import tqdm as TQDM
 
@@ -8,29 +7,29 @@ from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
 
 
 def rank_error(
-        predictions : Union[list[Union[str, int]], list[tuple[Union[str, int], ...]]], 
-        labels : list[Union[int, str]],
+        predictions : list[str | int] | list[tuple[str | int, ...]], 
+        labels : list[int | str],
         progress : bool=False
     ):
     ranks = []
     elements = zip(predictions, labels)
     if progress:
         elements = TQDM(elements, total=len(labels))
-    for ps, ls in elements:
-        if not isinstance(ps, (list, tuple, dict)):
-            ps = resolve_id(ps).values()
-        ls = resolve_id(ls).values()
-        for lvl, (p, l) in enumerate(zip(ps, ls)):
-            if p == l:
+    for predictions, labels in elements:
+        if not isinstance(predictions, (list, tuple, dict)):
+            predictions = resolve_id(predictions).values()
+        labels = resolve_id(labels).values()
+        for level, (prediction, label) in enumerate(zip(predictions, labels)):
+            if prediction == label:
                 break
-        ranks.append(lvl)
+        ranks.append(level)
     # return Counter(ranks)
     return sum(ranks) / len(ranks)
 
 
 def confusion_matrices(
-        predictions : Union[list[Union[str, int]], list[tuple[Union[str, int], ...]]], 
-        labels : list[Union[int, str]], 
+        predictions : list[str | int] | list[tuple[str | int, ...]], 
+        labels : list[int | str], 
         levels : int=len(DEFAULT_HIERARCHY_LEVELS),
         progress : bool=False
     ):
@@ -39,12 +38,12 @@ def confusion_matrices(
     elements = zip(predictions, labels)
     if progress:
         elements = TQDM(elements, total=len(labels))
-    for ps, ls in elements:
-        if not isinstance(ps, (list, tuple, dict)):
-            ps = resolve_id(ps).values()
-        ls = resolve_id(ls).values()
-        for lvl, (p, l) in enumerate(zip(ps, ls)):
-            pred_long[lvl].append(p)
-            lab_long[lvl].append(l)
+    for predictions, labels in elements:
+        if not isinstance(predictions, (list, tuple, dict)):
+            predictions = resolve_id(predictions).values()
+        labels = resolve_id(labels).values()
+        for lvl, (prediction, label) in enumerate(zip(predictions, labels)):
+            pred_long[lvl].append(prediction)
+            lab_long[lvl].append(label)
     comb = sorted(set(list(chain(zip(*pred_long), zip(*lab_long)))))
     return comb

@@ -1,10 +1,11 @@
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
-from typing import Any, Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable, Optional
 
 import numpy as np
 import torch
@@ -15,7 +16,7 @@ from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
 from mini_trainer.utils import make_convert_dtype, memory_proportion
-from enum import Enum
+
 
 class CACHE_MODE(int, Enum):
     NONE  = 0
@@ -47,7 +48,7 @@ DEFAULT_THRESHOLDS = {
 def guess_cache_mode(
         shape : list[int], 
         dtype : torch.dtype,
-        thresholds : Optional[dict[CACHE_MODE, Union[float, int]]]=None
+        thresholds : Optional[dict[CACHE_MODE, float | int]]=None
     ):
     if thresholds is None:
         thresholds = dict()
@@ -87,7 +88,7 @@ def is_image(path: str) -> bool:
 def make_read_and_resize_fn(
     size: tuple[int, int],
     device: torch.device,
-    dtype: Union[torch.dtype, str],
+    dtype: torch.dtype | str,
     interpolation=Image.Resampling.NEAREST,
     **kwargs
 ):
@@ -113,7 +114,7 @@ def _normalize_to_tuple(data):
 # From `flatbug`: https://github.com/darsa-group/flat-bug/blob/9093de0f89756b7f59e63f3bd7161f5574eb90ac/src/flat_bug/datasets.py#L42
 def reweight(
         weights : list[float], 
-        target_sum : Union[float, int]
+        target_sum : float | int
     ) -> list[float]:
     """
     Reweights the provided list of weights so that their sum equals the target sum.
@@ -129,7 +130,7 @@ def reweight(
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
 
 def generate_indices(
-        weights : list[Union[float, int]], 
+        weights : list[float | int], 
         target_size : Optional[int]=None
     ) -> list[int]:
     """
@@ -142,7 +143,6 @@ def generate_indices(
     Returns:
         out (`tuple[list[int], list[int]]`): tuple of list of indices to oversample the items and list of final weights.
     """
-    n = len(weights)
     weights = [max(round(w), 1) for w in weights]
     indices = []
 
@@ -161,8 +161,8 @@ class Reindexed:
     def __init__(
             self, 
             items : list, 
-            weights : list[Union[float, int]], 
-            inflation : Union[float, int]=2
+            weights : list[float | int], 
+            inflation : float | int=2
         ):
         self.items = items
         self._length = len(self.items)
@@ -185,9 +185,9 @@ class Reindexed:
 class LazyDataset(torch.utils.data.Dataset):
     def __init__(
             self, 
-            func : Callable[[Any], Union[torch.Tensor, tuple[torch.Tensor, ...], list[torch.Tensor]]], 
+            func : Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]], 
             items : list[str],
-            cache : Optional[Union[str, int, CACHE_MODE]]=None
+            cache : Optional[str | int | CACHE_MODE]=None
         ):
         self.func = func
         self.items = items
@@ -198,7 +198,8 @@ class LazyDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def _hash_item(item):
-        if isinstance(item, str): return item.encode('utf-8')
+        if isinstance(item, str): 
+            return item.encode('utf-8')
         if isinstance(item, (list, tuple)):
             str_item = next((e for e in item if isinstance(e, str)), str(item))
             return str_item.encode('utf-8')
@@ -239,7 +240,8 @@ class LazyDataset(torch.utils.data.Dataset):
         print("Building Zarr disk cache...")
 
         # Process the first item to determine shapes and dtypes for Zarr arrays
-        if not self.items: return
+        if not self.items: 
+            return
         
         first_item_processed = _normalize_to_tuple(self.func(self.items[0]))
         self._disk_cache_is_single_array = len(first_item_processed) == 1
@@ -390,7 +392,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
         def _contiguous_write(
                 indexes : list[int], 
-                data : Union[list[torch.Tensor], list[list[torch.Tensor]]]
+                data : list[torch.Tensor] | list[list[torch.Tensor]]
             ) -> None:
             """
             Args:
@@ -473,7 +475,7 @@ class LazyDataset(torch.utils.data.Dataset):
 class ImageLoader:
     def __init__(
             self, 
-            size : Union[int, tuple[int, int]], 
+            size : int | tuple[int, int], 
             cache : Optional[str]=None, 
             dtype : torch.dtype=torch.uint8
         ):
@@ -482,7 +484,7 @@ class ImageLoader:
         self.converter = make_convert_dtype(self.dtype)
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
-    def __call__(self, x : Union[str, Iterable]):
+    def __call__(self, x : str | Iterable):
         if isinstance(x, str):
             img = Image.open(x).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
             proc_img = pil_to_tensor(img).to(self.device)
@@ -509,7 +511,7 @@ class ImageClassLoader:
         size = resize_size
         self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
     
-    def __call__(self, x : Union[str, Iterable]):
+    def __call__(self, x : str | Iterable):
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
             img = Image.open(p).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)

@@ -1,18 +1,17 @@
 import math
-from typing import Optional, Union
+from typing import Optional
 
 import matplotlib as mpl
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
-from matplotlib.axes import Axes
 from matplotlib.backends import backend_agg
 from matplotlib.colors import LogNorm
+from PIL.Image import fromarray
 from torch import nn
 from torchvision.transforms.functional import resize
 
 from mini_trainer.classifier import last_layer_weights
-from PIL.Image import fromarray
 
 
 def named_confusion_matrix(
@@ -20,7 +19,7 @@ def named_confusion_matrix(
         idx2cls : dict[int, str], 
         keys : tuple[str, str]=("preds", "labels"),
         verbose : bool=False, 
-        plot_conf_mat : Union[bool, str]=False
+        plot_conf_mat : bool | str=False
     ):
     # Build confusion matrix and compute accuracies
     classes = [idx2cls[i] for i in sorted(list(idx2cls))]
@@ -33,13 +32,13 @@ def named_confusion_matrix(
     per_class_correct = {cls: 0 for cls in classes}
 
     # Populate confusion matrix and count correct predictions
-    for p, l in zip(results[keys[0]], results[keys[1]]):
-        conf_mat[l][p] += 1
+    for prediction, label in zip(results[keys[0]], results[keys[1]]):
+        conf_mat[label][prediction] += 1
         total_samples += 1
-        per_class_total[l] += 1
-        if l.lower().strip() == p.lower().strip():
+        per_class_total[label] += 1
+        if label.lower().strip() == prediction.lower().strip():
             total_correct += 1
-            per_class_correct[l] += 1
+            per_class_correct[label] += 1
 
     if plot_conf_mat:
         conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
@@ -93,8 +92,8 @@ def named_confusion_matrix(
     }
 
 def raw_confusion_matrix(
-        labels : Union[list[int], torch.Tensor, np.ndarray], 
-        predictions : Union[list[int], torch.Tensor, np.ndarray], 
+        labels : list[int] | torch.Tensor | np.ndarray, 
+        predictions : list[int] | torch.Tensor | np.ndarray, 
         n_classes : Optional[int]=None
     ):
     labels = np.asarray(labels).ravel().astype(np.int64)
@@ -150,7 +149,8 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     block_c = math.ceil(orig_cols / MAX_DISPLAY_DIM_HEATMAP) if orig_cols > MAX_DISPLAY_DIM_HEATMAP else 1
 
     if block_r > 1 or block_c > 1:
-        if processed_mat is mat: processed_mat = mat.copy() # Copy if modifying
+        if processed_mat is mat: 
+            processed_mat = mat.copy() # Copy if modifying
         processed_mat = _aggregate_matrix_max(processed_mat, (block_r, block_c))
     
     curr_rows, curr_cols = processed_mat.shape
@@ -167,7 +167,8 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     final_k = int(max(1, min(k_ideal, k_cap)))
 
     if final_k > 1:
-        if processed_mat is mat: processed_mat = mat.copy() # Copy if modifying
+        if processed_mat is mat: 
+            processed_mat = mat.copy() # Copy if modifying
         return np.kron(processed_mat, np.ones((final_k, final_k), dtype=processed_mat.dtype))
     
     return processed_mat.copy() if processed_mat is mat else processed_mat
@@ -233,10 +234,15 @@ def _generate_heatmap_rgb_array(
 
 # --- Helper: Colorbar Ticks ---
 def _get_colorbar_ticks_and_labels(
-    norm_vmin: float, norm_vmax: float, max_ticks: int, percent: bool
-) -> tuple[list[float], list[str]]:
-    """Generates tick values and labels for the colorbar."""
-    if not (norm_vmin > 0 and norm_vmax > 0 and norm_vmin < norm_vmax): return [], []
+        norm_vmin: float, 
+        norm_vmax: float, 
+        max_ticks: int, percent: bool
+    ) -> tuple[list[float], list[str]]:
+    """
+    Generates tick values and labels for the colorbar.
+    """
+    if not (norm_vmin > 0 and norm_vmax > 0 and norm_vmin < norm_vmax): 
+        return [], []
 
     num_decades = math.log10(norm_vmax / norm_vmin) if norm_vmin > 0 and norm_vmax > 0 else 1
     multipliers = [1, 2, 5] if num_decades < 2 else [1, 1.5, 2, 3, 5, 7] #Fewer for small ranges
@@ -258,8 +264,10 @@ def _get_colorbar_ticks_and_labels(
         indices = np.round(np.linspace(0, len(sorted_ticks) - 1, max_ticks)).astype(int)
         final_ticks = [sorted_ticks[i] for i in sorted(list(set(indices)))]
         # Ensure original vmin and vmax are considered if space allows
-        if max_ticks >= 1 and not np.isclose(final_ticks[0], norm_vmin): final_ticks.insert(0,norm_vmin)
-        if max_ticks >= 2 and not np.isclose(final_ticks[-1], norm_vmax): final_ticks.append(norm_vmax)
+        if max_ticks >= 1 and not np.isclose(final_ticks[0], norm_vmin): 
+            final_ticks.insert(0,norm_vmin)
+        if max_ticks >= 2 and not np.isclose(final_ticks[-1], norm_vmax): 
+            final_ticks.append(norm_vmax)
         final_ticks = sorted(list(set(t for t in final_ticks if norm_vmin <= t <= norm_vmax)))[:max_ticks]
     else:
         final_ticks = sorted_ticks
@@ -267,7 +275,8 @@ def _get_colorbar_ticks_and_labels(
     # Ensure at least two ticks (min/max) if possible, if list became empty by max_ticks=0 or 1
     if not final_ticks and len(sorted_ticks) >= 1:
         final_ticks = [sorted_ticks[0]]
-        if len(sorted_ticks) > 1: final_ticks.append(sorted_ticks[-1])
+        if len(sorted_ticks) > 1: 
+            final_ticks.append(sorted_ticks[-1])
         final_ticks = sorted(list(set(final_ticks)))
 
 
@@ -276,12 +285,17 @@ def _get_colorbar_ticks_and_labels(
         val_fmt = v_tick * 100 if percent else v_tick
         lab_str = ""
         if percent:
-            if abs(val_fmt) < 0.01 and val_fmt != 0: lab_str = f"{val_fmt:.1e}%"
-            elif np.isclose(val_fmt, round(val_fmt)): lab_str = f"{int(round(val_fmt))}%"
-            else: lab_str = f"{val_fmt:.2g}%"
+            if abs(val_fmt) < 0.01 and val_fmt != 0: 
+                lab_str = f"{val_fmt:.1e}%"
+            elif np.isclose(val_fmt, round(val_fmt)): 
+                lab_str = f"{int(round(val_fmt))}%"
+            else: 
+                lab_str = f"{val_fmt:.2g}%"
         else: # Non-percent
-            if abs(v_tick) >= 1000 or (abs(v_tick) < 0.001 and v_tick != 0): lab_str = f"{v_tick:.2g}"
-            else: lab_str = f"{v_tick:.3g}".rstrip('0').rstrip('.') # General, remove trailing .0
+            if abs(v_tick) >= 1000 or (abs(v_tick) < 0.001 and v_tick != 0): 
+                lab_str = f"{v_tick:.2g}"
+            else: 
+                lab_str = f"{v_tick:.3g}".rstrip('0').rstrip('.') # General, remove trailing .0
         labels.append(lab_str)
         
     return final_ticks, labels
@@ -328,7 +342,7 @@ def _generate_colorbar_rgb_array(
 
 # --- Main Plotting Function ---
 def plot_heatmap(
-    mat : Union[np.ndarray, torch.Tensor],
+    mat : np.ndarray | torch.Tensor,
     cmap_name : str='magma',
     font_size : int=10, # For colorbar labels
     max_colorbar_ticks : int=8,
