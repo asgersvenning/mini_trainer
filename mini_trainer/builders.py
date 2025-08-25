@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as tt
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, BatchSampler
 
 from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
@@ -75,17 +75,15 @@ def get_dataset_dataloader(
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
 
-    train_sampler = RandomSampler(train_dataset)
-    val_sampler = SequentialSampler(val_dataset)
+    train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size=batch_size, drop_last=True)
+    val_sampler = BatchSampler(SequentialSampler(val_dataset), batch_size=batch_size, drop_last=False)
 
     pin_memory = not ((cache is CACHE_MODE.CUDA) or (cache is CACHE_MODE.CPU))
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
-        sampler=train_sampler,
+        batch_sampler=train_sampler,
         num_workers=num_workers,
-        drop_last=True, # Ensures compatibility with batch normalization
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
         persistent_workers=num_workers > 0 # pin_memory
@@ -93,8 +91,7 @@ def get_dataset_dataloader(
 
     val_loader = DataLoader(
         val_dataset, 
-        batch_size=batch_size, 
-        sampler=val_sampler, 
+        batch_sampler=val_sampler,
         num_workers=num_workers,
         pin_memory=False,
         pin_memory_device="",
@@ -400,7 +397,6 @@ class BaseBuilder:
     @staticmethod
     def build_logger(**kwargs):
         return MultiLogger(**kwargs)
-    
 
 class AutoEmbedder(nn.Module):
     def __init__(self, original_model : Classifier):

@@ -110,6 +110,78 @@ def make_read_and_resize_fn(
 def _normalize_to_tuple(data):
     return data if isinstance(data, (tuple, list)) else (data,)
 
+# From `flatbug`: https://github.com/darsa-group/flat-bug/blob/9093de0f89756b7f59e63f3bd7161f5574eb90ac/src/flat_bug/datasets.py#L42
+def reweight(
+        weights : list[float], 
+        target_sum : Union[float, int]
+    ) -> list[float]:
+    """
+    Reweights the provided list of weights so that their sum equals the target sum.
+    
+    Args:
+        weights (`list[float]`): List of weights to reweight.
+        target_sum (`Union[float, int]`): Desired sum of the weights.
+    
+    Returns:
+        out (`list[float]`): Reweighted weights.
+    """
+    sum_weights = sum(weights)
+    return [max(round(w * target_sum / sum_weights), 1) for w in weights]
+
+def generate_indices(
+        weights : list[Union[float, int]], 
+        target_size : Optional[int]=None
+    ) -> list[int]:
+    """
+    Deterministically generates a list of indices based on the provided weights to oversample the items.
+    
+    Args:
+        weights (`list[float]`): List of weights for each item, the weights should correspond to the desired oversampling rate for each item.
+        target_size (`Optional[int]`, optional): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+
+    Returns:
+        out (`tuple[list[int], list[int]]`): tuple of list of indices to oversample the items and list of final weights.
+    """
+    n = len(weights)
+    weights = [max(round(w), 1) for w in weights]
+    indices = []
+
+    if target_size is not None:
+        for _ in range(10):
+            if abs(sum(weights) - target_size)/target_size < 0.01:
+                break
+            weights = reweight(weights, target_size)
+
+    for i, w in enumerate(weights):
+        indices.extend([i] * w)
+
+    return indices, weights
+
+class Reindexed:
+    def __init__(
+            self, 
+            items : list, 
+            weights : list[Union[float, int]], 
+            inflation : Union[float, int]=2
+        ):
+        self.items = items
+        self._length = len(self.items)
+        if len(weights) != len(self):
+            raise ValueError(f'Length of the supplied items ({len(items)}) to reindex does not match the length of the supplied weights ({len(weights)}).')
+        self._indices, self.weights = generate_indices(weights, round(len(self)*inflation))
+    
+    def __len__(self):
+        return self._length
+    
+    def __getitem__(self, x):
+        indices = self._indices[x]
+        if isinstance(indices, int):
+            return self.items[indices]
+        return [self.items[idx] for idx in indices]
+
+    def __repr__(self):
+        return f'[{", ".join(f"({repr(e)} * {w})" for e, w in zip(self.items, self.weights))}]'
+
 class LazyDataset(torch.utils.data.Dataset):
     def __init__(
             self, 
@@ -173,11 +245,11 @@ class LazyDataset(torch.utils.data.Dataset):
         self._disk_cache_is_single_array = len(first_item_processed) == 1
         
         store = LocalStore(self.cache_path, read_only=False)
-        root = zarr.open(store, zarr_format=3)
+        root = zarr.open(store, mode="w", zarr_format=3)
         
         # Create a Zarr array for each component of the data
-        zarr_arrays = []
-        shard_size = 2048
+        zarr_arrays : list[zarr.Array] = []
+        shard_size = 1024
         for i, component in enumerate(first_item_processed):
             if isinstance(component, torch.Tensor):
                 component = component.detach().cpu().numpy()
@@ -192,6 +264,8 @@ class LazyDataset(torch.utils.data.Dataset):
                 dtype=component.dtype,
                 compressors=zarr.codecs.BloscCodec(cname="zstd", clevel=3, shuffle=zarr.codecs.BloscShuffle.bitshuffle)
             )
+            if not isinstance(arr, zarr.Array):
+                raise RuntimeError(f"Created `zarr.Array` is {arr}?")
             zarr_arrays.append(arr)
 
         # We need two pools: one for CPU-bound producers, one for I/O-bound writers
@@ -213,7 +287,8 @@ class LazyDataset(torch.utils.data.Dataset):
             try:
                 shard_start, shard_end = indices[0], indices[-1] + 1
                 for i, chunk in enumerate(components):
-                    np.stack(chunk, out=zarr_arrays[i][shard_start : shard_end, ...])
+                    zarr_arrays[i][shard_start : shard_end, ...] = np.stack(chunk)
+                    # np.stack(chunk, out=)
             finally:
                 writer_semaphore.release()
 
@@ -236,15 +311,15 @@ class LazyDataset(torch.utils.data.Dataset):
                     # Check if the buffer is ready 
                     if (len(buffer) >= shard_size or (total_items - 1) in buffer) and all(i in buffer for i in range(shard_start, shard_end)):
                         indices = range(shard_start, shard_end)
-                        components = [[buffer[i][c] for i in indices] for c in range(len(zarr_arrays))]
+                        shard_buf = [buffer.pop(i) for i in indices]
+                        components = [[e[c] for e in shard_buf] for c in range(len(zarr_arrays))]
+                        del shard_buf
                         
                         # Delegate the slow write operation to the writer pool
                         writer_semaphore.acquire()
                         writer_pool.submit(writer_task, indices, components)
                         
                         num_in_shard = len(indices)
-                        for i in indices:
-                            del buffer[i]
                         pbar.update(num_in_shard)
                         items_assembled += num_in_shard
 
@@ -257,7 +332,7 @@ class LazyDataset(torch.utils.data.Dataset):
         assembler.join()
         print("All shards prepared successfully. Writing the final shards in queue...")
         writer_pool.shutdown()
-        
+
         store.close()
         print("Zarr disk cache built successfully.")
 
@@ -265,7 +340,7 @@ class LazyDataset(torch.utils.data.Dataset):
     def _load_from_zarr(self, i: int):
         if self._zarr_root is None:
             store = LocalStore(self.cache_path, read_only=True)
-            self._zarr_root = zarr.open(store, mode='r')
+            self._zarr_root = zarr.open(store, mode='r', zarr_format=3)
 
         data_parts = []
         j = 0

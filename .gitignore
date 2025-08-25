@@ -13,3 +13,5 @@
 **events.out.tfevents*
 
 **/__pycache__/**
+/tmp/**
+examples/test.ipynb

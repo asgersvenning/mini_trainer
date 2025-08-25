@@ -195,12 +195,12 @@ def _generate_heatmap_rgb_array(
         dummy_rgb = np.zeros((h, w, 3), dtype=np.uint8)
         return dummy_rgb, None, 0., 1.
 
-    min_positive_val = positive_values.min()
+    min_positive_val = min(0.1, positive_values.min())
     norm_vmin = 10**math.floor(math.log10(min_positive_val))
     norm_vmax = float(masked_data.max()) # Max of the *original* masked_data, not just positive
 
     if percent: # Adjust norm for percentages
-        norm_vmax = max(1.0, norm_vmax)
+        norm_vmax = 1.0 # max(1.0, norm_vmax)
     
     # Handle edge case where vmin might equal or exceed vmax after adjustments
     if norm_vmin >= norm_vmax:

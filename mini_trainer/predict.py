@@ -145,8 +145,7 @@ def main(
     # Prepare image loader
     image_loader = ImageLoader(
         getattr(model_preprocess, "resize_size", 256),
-        dtype,
-        torch.device("cpu")
+        dtype=dtype
     )
 
     if data_index:

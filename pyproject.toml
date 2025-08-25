@@ -31,7 +31,8 @@ classifiers = [
 [project.optional-dependencies]
 notebook = [
     "ipykernel",
-    "ipywidgets"
+    "ipywidgets",
+    "pyremotedata"
 ]
 
 [project.urls]
