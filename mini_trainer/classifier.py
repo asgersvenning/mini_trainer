@@ -62,7 +62,14 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
     return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype))
 
 class Classifier(nn.Module):
-    def __init__(self, in_features : int, out_features : int, hidden : bool=True, droprate : float=0.1):
+    def __init__(
+            self, 
+            in_features : int, 
+            out_features : int, 
+            hidden : bool=True, 
+            droprate : float=0.1,
+            normalized : bool=True
+        ):
         super().__init__()
         # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(in_features)
@@ -73,16 +80,19 @@ class Classifier(nn.Module):
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
+        if normalized:
         # Create a standard linear layer with unit vector per class
-        self.linear = nn.utils.parametrizations.weight_norm(nn.Linear(in_features, out_features, bias=True), name="weight", dim=0)
-        with torch.no_grad():
-            self.linear.parametrizations.weight.original0.fill_(1)    
-        self.linear.parametrizations.weight.original0.requires_grad_(False)
-        
-        # Set the bias to -1 and freeze it.
-        with torch.no_grad():
-            self.linear.bias.fill_(-1)
-        self.linear.bias.requires_grad_(False)
+            self.linear = nn.utils.parametrizations.weight_norm(nn.Linear(in_features, out_features, bias=True), name="weight", dim=0)
+            with torch.no_grad():
+                self.linear.parametrizations.weight.original0.fill_(1)    
+            self.linear.parametrizations.weight.original0.requires_grad_(False)
+            
+            # Set the bias to -1 and freeze it.
+            with torch.no_grad():
+                self.linear.bias.fill_(-1)
+            self.linear.bias.requires_grad_(False)
+        else:
+            self.linear = nn.Linear(in_features, out_features, bias=True)
 
     def forward(self, x):
         if self.hidden:
