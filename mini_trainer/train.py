@@ -1,5 +1,6 @@
 import os
 import random
+import sys
 from argparse import ArgumentParser
 from typing import Any
 
@@ -9,6 +10,9 @@ import torchvision
 
 from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder
+from mini_trainer.config import (defaults_from_function, dump_resolved_config,
+                                 load_yaml_config, merge_dicts,
+                                 restructure_cli_args)
 from mini_trainer.trainer import train
 from mini_trainer.utils import (average_checkpoints, increment_name_dir,
                                 save_on_master)
@@ -28,7 +32,7 @@ def main(
         builder : type[BaseBuilder]=BaseBuilder,
         spec_model_dataloader_kwargs : dict[str, Any]={},
         model_builder_kwargs : dict[str, Any]={
-            "model_name" : "efficientnet_v2_s",
+            "model_type" : "efficientnet_v2_s",
             "weights" : None,
             "fine_tune" : False
         },
@@ -110,6 +114,7 @@ def main(
             Additional arguments are passed to the various builder methods.
             See `mini_trainer.builders.BaseBuilder` for details.
     """
+    print("TEST")
     # Prepare state    
     if seed is not None:
         random.seed(seed)
@@ -122,7 +127,21 @@ def main(
     name = increment_name_dir(name, output_dir)
 
     device : torch.device = torch.device(device)
-    dtype : torch.dtype = getattr(torch, dtype)
+    dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+
+    # Dump resolved configuration using locals and normalized values
+    dump_resolved_config(
+        output_dir=output_dir,
+        fn=main,
+        local_vars=locals(),
+        overrides={
+            "input": input_dir,
+            "output": output_dir,
+            "device": device,
+            "dtype": dtype,
+            "name": name,
+        },
+    )
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
@@ -269,6 +288,9 @@ def main(
         weight_store_rate=5
     )
 
+    del train_loader
+    del val_loader
+    
     # Store final logs (logs are stored continously, but this flushes the logs to disk)
     logger.save()
 
@@ -285,6 +307,13 @@ def cli(description="Train a classifier", **extra_kwargs):
         formatter_class=Formatter
     )
 
+    # Optional YAML config support
+    cfg_args = parser.add_argument_group("Config [optional]")
+    cfg_args.add_argument(
+        "--config", type=str, default=None, required=False,
+        help="Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags."
+    )
+
     if extra_kwargs:
         for argname, kwargs in extra_kwargs.items():
             args = []
@@ -299,20 +328,20 @@ def cli(description="Train a classifier", **extra_kwargs):
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
-        "-i", "--input", type=str, required=True,
+        "-i", "--input", type=str, default=None, required=False,
         help=
         "Path to a directory containing a subdirectory for each class,\n" 
         "where the name of each subdirectory should correspond to the name of the class."
     )
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
-        "-o", "--output", type=str, default=".", required=False,
+        "-o", "--output", type=str, default=None, required=False,
         help=
         "Root directory for all created files and directories.\n"
         "Default is current working directory ('.')."
     )
     out_args.add_argument(
-        "-n", "--name", type=str, required=False,
+        "-n", "--name", type=str, default=None, required=False,
         help=
         "Name of the output model.\n"
         "If not provided, a helpful name will be inferred from the other arguments."
@@ -323,30 +352,30 @@ def cli(description="Train a classifier", **extra_kwargs):
     )
     mod_args = parser.add_argument_group("Model [optional]")
     mod_args.add_argument(
-        "-m", "--model", type=str, default="efficientnet_v2_s", required=False,
+        "-m", "--model", type=str, default=None, required=False,
         help=
         "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
         "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
     )
     mod_args.add_argument(
-        "-c", "--checkpoint", type=str, nargs="+", required=False,
+        "-c", "--checkpoint", type=str, nargs="+", default=None, required=False,
         help= 
         "Path to [a] checkpoint file(s) for restarting training.\n"
         "If multiple files are supplied training is restarted from an 'average' of checkpoint states."
     )
     mod_args.add_argument(
-        "-w", "--weights", type=str, required=False,
+        "-w", "--weights", type=str, default=None, required=False,
         help="Model weights used to initialize model before training."
     )
     mod_args.add_argument(
-        "-C", "--class_index", type=str, required=False,
+        "-C", "--class_index", type=str, default=None, required=False,
         help=
         "path to a JSON file containing the class name to index mapping.\n"
         "If it doesn't exist, one will be created based on the directories found under `output` if it is set."
     )
     train_args = parser.add_argument_group("Training [optional]")
     train_args.add_argument(
-        "-D", "--data_index", type=str, required=False,
+        "-D", "--data_index", type=str, default=None, required=False,
         help=
         "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
         "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
@@ -354,34 +383,34 @@ def cli(description="Train a classifier", **extra_kwargs):
         "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
     )
     train_args.add_argument(
-        "-e", "--epochs", type=int, default=15, required=False,
+        "-e", "--epochs", type=int, default=None, required=False,
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", type=float, default=0.001, required=False,
+        "--lr", "--learning_rate", type=float, default=None, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
     train_args.add_argument(
-        "--batch_size", type=int, default=16, required=False,
+        "--batch_size", type=int, default=None, required=False,
         help="Number of images used in each mini-batch for training/validation (default=16)."
     )
     train_args.add_argument(
-        "--warmup_epochs", type=float, default=2.0, required=False,
+        "--warmup_epochs", type=float, default=None, required=False,
         help="Number of warmup epochs (default=2.0)."
     )
     train_args.add_argument(
-        "--label_smoothing", type=float, default=0.1, required=False,
+        "--label_smoothing", type=float, default=None, required=False,
         help="Label smoothing applied to training (default=0.1)."
     )
     train_args.add_argument(
-        "--class_weighted", action="store_true", required=False,
+        "--class_weighted", action="store_true", default=None, required=False,
         help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
     )
     train_args.add_argument(
-        "--fine-tune", action="store_true", required=False,
+        "--fine-tune", action="store_true", default=None, required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
-    cfg_args = parser.add_argument_group("Config [optional]")
+    cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
         "--subsample", type=int, default=None, required=False,
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
@@ -391,11 +420,11 @@ def cli(description="Train a classifier", **extra_kwargs):
         help='Cache/Preload datasets for faster dataloading. Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet). Mainly relevant for inefficiently stored training data or slow filesystems.'
     )
     cfg_args.add_argument(
-        "--device", type=str, default="cuda:0", required=False,
+        "--device", type=str, default=None, required=False,
         help='Device used for training (default="cuda:0").'
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default="bfloat16", required=False,
+        "--dtype", type=str, default=None, required=False,
         help=
         "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
         "The model is always stored in float32, and training is done with autocasting."
@@ -405,58 +434,39 @@ def cli(description="Train a classifier", **extra_kwargs):
         help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
     )
     cfg_args.add_argument(
-        "--seed", type=int, required=False,
+        "--seed", type=int, default=None, required=False,
         help=
         "Set the initial seed for the RNG in the core Python library `random`.\n"
         "This is particularly important for reproducible train/validation splits."
     )
     cfg_args.add_argument(
-        "-v", "--verbose", action="store_true", required=False,
+        "-v", "--verbose", action="store_true", default=None, required=False,
         help="Print training statistics in the terminal."
     )
+    cli_args = vars(parser.parse_args())
 
-    args = vars(parser.parse_args())
-    
-    # Distribute builder arguments to the relevant functions
-    args["model_builder_kwargs"] = {
-        "model_type" : args.pop("model"),
-        "weights" : args.pop("weights"),
-        "fine_tune" : args.pop("fine_tune")
-    }
-    args["dataloader_builder_kwargs"] = {
-        "data_index" : args.pop("data_index"),
-        "batch_size" : args.pop("batch_size"),
-        "resize_size" : 256, 
-        "train_proportion" : 0.9,
-        "subsample" : args.pop("subsample"),
-        "num_workers" : args.pop("num_workers"),
-        "cache" : args.pop("cache")
-    }
-    args["optimizer_builder_kwargs"] = {
-        "lr" : args.pop("lr"),
-        "weight_decay" : 1e-4
-    }
-    args["criterion_builder_kwargs"] = {
-        "label_smoothing" : args.pop("label_smoothing"),
-        "weighted" : args.pop("class_weighted")
-    }
-    args["lr_schedule_builder_kwargs"] = {
-        "warmup_epochs" : args.pop("warmup_epochs"),
-        "min_factor" : 1 / 10**6, 
-        "start_factor" : 1 / 10**2
-    }
-    args["logger_builder_kwargs"] = {
-        "verbose" : args.pop("verbose")
-    }
+    use_tensorboard = cli_args.pop("tensorboard")
+
+    # Build the three layers
+    defaults_full = defaults_from_function(main) # Defaults defined in the function signature
+    config_full = load_yaml_config(cli_args.pop("config")) # Arguments passed from config (empty if no config)
+    cli_full = restructure_cli_args(cli_args, fn=main) # Manual CLI arguments
+
+    args = merge_dicts(defaults_full, config_full, cli_full)
+
+    # Validate required arguments
+    if args.get("input") is None:
+        raise SystemExit("error: the following arguments are required: --input (via CLI or config)")
 
     # Set reasonable default name for unspecified CLI training runs
-    if args["name"] is None:
-        args["name"] = \
-        f'{args["model_builder_kwargs"]["model_type"]}_' \
-        f'{"fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full"}_' \
-        f'e{args["epochs"]}'
+    if args.get("name") is None:
+        args["name"] = "{}_{}_e{}".format(
+            args["model_builder_kwargs"]["model_type"],
+            "fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full",
+            args["epochs"]
+        )
     
-    if args.pop("tensorboard"):
+    if use_tensorboard:
         from torch.utils.tensorboard.writer import SummaryWriter
 
         from mini_trainer.utils.logging import MetricLogger
@@ -471,6 +481,8 @@ def cli(description="Train a classifier", **extra_kwargs):
     # Call the Python training API
     return args
 
-if __name__ == "__main__":  
-    main(**cli())
+def run() -> None:
+    sys.exit(main(**cli()))
 
+if __name__ == "__main__":  
+    run()

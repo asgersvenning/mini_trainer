@@ -138,7 +138,7 @@ class BaseBuilder:
             **kwargs : Any
         ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
         """
-        The mandatory keyword arguments depend on the class of `cls`, but are likely to be ["model_name", "weights", "device", "dtype" and "num_classes"] or a superset containing these.
+        The mandatory keyword arguments depend on the class of `cls`, but are likely to be ["model_type", "weights", "device", "dtype" and "num_classes"] or a superset containing these.
 
         Returns:
             (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`): The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).

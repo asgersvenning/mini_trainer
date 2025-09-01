@@ -7,6 +7,7 @@ from tempfile import gettempdir
 from threading import Semaphore, Thread
 from typing import Any
 from collections.abc import Callable, Iterable
+import warnings
 
 import numpy as np
 import torch
@@ -223,6 +224,11 @@ class LazyDataset(torch.utils.data.Dataset):
                 self._cache_disk_zarr()
             case CACHE_MODE.CPU:
                 self._cache_ram()
+            case CACHE_MODE.CUDA:
+                self._cache_ram()
+                guess_device = torch.device(torch.cuda.current_device())
+                warnings.warn(f'CUDA Caching is currently in development and may not work properly. Using device: `{guess_device}` for cache.')
+                self._ram_cache.tensors = [t.to(guess_device) for t in self._ram_cache.tensors]
             case _:
                 raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'cpu'].")
 
@@ -467,11 +473,11 @@ class LazyDataset(torch.utils.data.Dataset):
                 return [torch.stack(values) for values in zip(*elements)]
             case CACHE_MODE.DISK:
                 return self._load_from_zarr(i)
-            case CACHE_MODE.CPU:
+            case CACHE_MODE.CPU | CACHE_MODE.CUDA:
                 data = self._ram_cache[i]
                 return data[0] if self._ram_was_single_tensor else data
             case _:
-                raise RuntimeError(f'Invalid caching mode found {self._cache}, expected one of None, "disk" or "cpu".')
+                raise RuntimeError(f'Invalid caching mode found {self._cache}, expected one of None, "disk", "cpu" or "cuda".')
 
 class ImageLoader:
     def __init__(

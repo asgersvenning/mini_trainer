@@ -40,8 +40,8 @@ Repository = "https://github.com/asgersvenning/mini_trainer"
 "Bug Tracker" = "https://github.com/asgersvenning/mini_trainer/issues"
 
 [project.scripts]
-mt_train = "mini_trainer:train.cli"
-mt_predict = "mini_trainer:predict.cli"
+mt_train = "mini_trainer.train:run"
+mt_predict = "mini_trainer.predict:run"
 
 [tool.ruff]
 target-version = "py312"

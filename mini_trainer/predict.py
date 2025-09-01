@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 import warnings
 from argparse import ArgumentParser
 from math import ceil
@@ -206,8 +207,8 @@ def main(
             json.dump(results.data, f)
 
     results.evaluate(outdir=output_dir, prefix=f'{name}_')
-    if verbose:
-        print(f'Outputs written to {os.path.abspath(output_dir)}')
+    if verbose and output_dir is not None:
+            print(f'Outputs written to {os.path.abspath(output_dir)}')
 
 def cli(description="Predict with a classifier", **kwargs):
     parser = ArgumentParser(
@@ -311,5 +312,8 @@ def cli(description="Predict with a classifier", **kwargs):
         args["result_collector_kwargs"]["additional_attributes"] = ["embeddings"]
     return args
 
+def run():
+    sys.exit(main(**cli()))
+
 if __name__ == "__main__":  
-    main(**cli())
+    run()

@@ -104,15 +104,15 @@ class Classifier(nn.Module):
 
     @classmethod
     def load(
-        cls,
-        architecture_class : str,
-        architecture_output_name : str,
-        architecture : nn.Module,
-        state : OrderedDict[str, torch.Tensor | Any] | None,
-        device : torch.types.Device,
-        dtype : torch.dtype,
-        **kwargs
-    ):
+            cls,
+            architecture_class : str,
+            architecture_output_name : str,
+            architecture : nn.Module,
+            state : OrderedDict[str, torch.Tensor | Any] | None,
+            device : torch.types.Device,
+            dtype : torch.dtype,
+            **kwargs
+        ):
         """
         Load weights into model architecture.
         """
@@ -127,14 +127,16 @@ class Classifier(nn.Module):
 
     @classmethod    
     def build(
-        cls,
-        model_type : str, 
-        weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
-        num_classes : list[int] | int | None=None,
-        device=torch.device("cpu"), 
-        dtype=torch.float32,
-        **kwargs
-    ):
+            cls,
+            model_type : str, 
+            weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
+            num_classes : list[int] | int | None=None,
+            device : torch.types.Device=torch.device("cpu"), 
+            dtype : torch.dtype=torch.float32,
+            **kwargs
+        ):
+        if not isinstance(device, torch.device):
+            device = torch.device(device)
         architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=dtype)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
