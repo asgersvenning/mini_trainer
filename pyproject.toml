@@ -11,7 +11,7 @@ dependencies = [
   "matplotlib",
   "tqdm",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
   {name = "Asger Svenning", email = "asgersvenning@gmail.com"}
 ]
@@ -42,3 +42,24 @@ Repository = "https://github.com/asgersvenning/mini_trainer"
 [project.scripts]
 mt_train = "mini_trainer:train.cli"
 mt_predict = "mini_trainer:predict.cli"
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable core checks, imports, pyupgrade, and pydocstyle
+select = ["E", "F", "I", "UP", "D"]
+# Prefer multi-line docstring summaries (D213); ignore D200 (summary must be on first line)
+ignore = ["D200"]
+preview = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.docformatter]
+# Place opening quotes on their own line and summary on the next line
+make-summary-multi-line = true
+pre-summary-newline = true
+# Leave lines unwrapped; let editors/linters handle wrapping
+wrap-summaries = 0
+wrap-descriptions = 0

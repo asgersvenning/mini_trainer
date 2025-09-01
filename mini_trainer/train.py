@@ -1,7 +1,7 @@
 import os
 import random
 from argparse import ArgumentParser
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -16,39 +16,39 @@ from mini_trainer.utils.augmentation import debug_augmentation
 
 
 def main(
-    input : str,
-    output : str = ".",
-    checkpoint : Optional[list[str]]=None,
-    class_index : Optional[str]=None,
-    epochs : int=15,
-    name: Optional[str]=None,
-    device : str="cuda:0",
-    dtype : str="bfloat16",
-    seed : Optional[int]=None,
-    builder : type[BaseBuilder]=BaseBuilder,
-    spec_model_dataloader_kwargs : dict[str, Any]={},
-    model_builder_kwargs : dict[str, Any]={
-        "model_name" : "efficientnet_v2_s",
-        "weights" : None,
-        "fine_tune" : False
-    },
-    dataloader_builder_kwargs : dict[str, Any]={
-        "bacth_size" : 16,
-        "resize_size" : 256, 
-        "train_proportion" : 0.9
-    },
-    augmentation_builder_kwargs : dict[str, Any]={},
-    optimizer_builder_kwargs : dict[str, Any]={
-        "lr" : 0.0001,
-        "weight_decay" : 1e-4
-    },
-    criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
-    regularizer_builder_kwargs : dict[str, Any]={},
-    lr_schedule_builder_kwargs : dict[str, Any]={
-        "warmup_epochs" : 2.0
-    },
-    logger_builder_kwargs : dict[str, Any]={"verbose" : False}
-) -> None:
+        input : str,
+        output : str = ".",
+        checkpoint : list[str] | None=None,
+        class_index : str | None=None,
+        epochs : int=15,
+        name: str | None=None,
+        device : str="cuda:0",
+        dtype : str="bfloat16",
+        seed : int | None=None,
+        builder : type[BaseBuilder]=BaseBuilder,
+        spec_model_dataloader_kwargs : dict[str, Any]={},
+        model_builder_kwargs : dict[str, Any]={
+            "model_name" : "efficientnet_v2_s",
+            "weights" : None,
+            "fine_tune" : False
+        },
+        dataloader_builder_kwargs : dict[str, Any]={
+            "batch_size" : 16,
+            "resize_size" : 256, 
+            "train_proportion" : 0.9
+        },
+        augmentation_builder_kwargs : dict[str, Any]={},
+        optimizer_builder_kwargs : dict[str, Any]={
+            "lr" : 0.0001,
+            "weight_decay" : 1e-4
+        },
+        criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
+        regularizer_builder_kwargs : dict[str, Any]={},
+        lr_schedule_builder_kwargs : dict[str, Any]={
+            "warmup_epochs" : 2.0
+        },
+        logger_builder_kwargs : dict[str, Any]={"verbose" : False}
+    ):
     """
     Train a classifier.
 
@@ -66,17 +66,17 @@ def main(
             Root directory for all created files and directories.
             Default is current working directory '.'.
 
-        checkpoint (Optional[list[str]], optional):
+        checkpoint (list[str] | None, optional):
             Path to one or more checkpoint files for restarting training.
             If multiple files are supplied, training is restarted from an 'average'
             of checkpoint states. Default is None.
 
-        data_index (Optional[str], optional):
+        data_index (str |None, optional):
             Path to a JSON file containing three arrays with keys 'path', 'split',
             and 'class', representing a structured dataset.
             Default is None.
 
-        class_index (str, optional):
+        class_index (str | None, optional):
             Path to a JSON file containing the mapping from class names to indices.
             If the file does not exist, it will be created based on subdirectories
             found under `output` if it is set. Default is 'class_index.json'.
@@ -84,7 +84,7 @@ def main(
         epochs (int, optional):
             Number of training epochs. Default is 15.
 
-        name (Optional[str], optional):
+        name (str | None, optional):
             Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is None.
 
@@ -97,21 +97,18 @@ def main(
             (e.g., 'bfloat16'). The model parameters are always stored in float32,
             and training is done with autocasting. Default is 'bfloat16'.
 
-        seed (Optional[int], optional):
+        seed (int | None, optional):
             Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is None.
 
         builder (Type[BaseBuilder], optional):
-            An object inheriting from `mini_trainer.builders.BaseBuilder`. This object 
-            is responsible for instantiating the model, dataloader, augmentation, optimizer, 
+            An object inheriting from `mini_trainer.builders.BaseBuilder`. This object
+            is responsible for instantiating the model, dataloader, augmentation, optimizer,
             criterion (loss function) and learning rate scheduler.
-        
-        **kwargs: 
-            Additional arguments are passed to the various builder methods. 
+
+        **kwargs:
+            Additional arguments are passed to the various builder methods.
             See `mini_trainer.builders.BaseBuilder` for details.
-    
-    Returns:
-        None
     """
     # Prepare state    
     if seed is not None:

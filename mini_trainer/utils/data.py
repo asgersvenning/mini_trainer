@@ -2,7 +2,6 @@ import json
 import os
 import random
 from glob import glob
-from typing import Optional
 
 import numpy as np
 import torch
@@ -58,7 +57,7 @@ def find_images(root: str) -> list[str]:
     flags = thread_map(is_image, paths, tqdm_class=TQDM, desc="Filtering non-standardized images...", total=len(paths))
     return [p for p, f in zip(paths, flags) if f]
 
-def parse_class_index(path : Optional[str]=None, dir : Optional[str]=None):
+def parse_class_index(path : str | None=None, dir : str | None=None):
     if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):
             raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')

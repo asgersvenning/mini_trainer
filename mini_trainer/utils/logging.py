@@ -7,7 +7,8 @@ from itertools import chain, repeat
 from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
-from typing import Any, Callable, Optional, TextIO, TypeVar
+from typing import Any, TextIO, TypeVar
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -41,9 +42,9 @@ class ETA:
         ):
         """
         Args:
-            total_steps (int): total number of steps expected
-            smoothing (float): EMA smoothing factor (between 0 and 1)
-            fmt (str): strftime-format string for duration display, e.g. "%H:%M:%S"
+            total_steps: total number of steps expected
+            smoothing: EMA smoothing factor (between 0 and 1)
+            fmt: strftime-format string for duration display, e.g. "%H:%M:%S"
         """
         self.total_steps = total_steps
         self.smoothing = smoothing
@@ -72,10 +73,10 @@ class ETA:
     def step(self, steps : int=1):
         """
         Args:
-            steps (int): Number of steps to progress (default=1).
+            steps: Number of steps to progress (default=1).
 
         Returns:
-            ETA (float): Estimated number of (fractional) seconds left.
+            Estimated number of (fractional) seconds left.
         """
         now = time.time()
         elapsed = now - self._last_time
@@ -94,7 +95,9 @@ class ETA:
 
 
 def accuracy(output : torch.Tensor, target : torch.Tensor, topk=(1,)):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
+    """
+    Computes the accuracy over the k top predictions for the specified values of k.
+    """
     with torch.inference_mode():
         maxk = max(topk)
         batch_size = target.size(0)
@@ -138,7 +141,7 @@ class BaseResultCollector(_ResultsCollector):
             idx2cls : dict[int, str], 
             verbose : bool=False, 
             training_format : bool=False,
-            additional_attributes : Optional[list[str]]=None, 
+            additional_attributes : list[str] | None=None, 
             *args, 
             **kwargs
         ):
@@ -191,7 +194,7 @@ class BaseResultCollector(_ResultsCollector):
                 raise TypeError(f'Unexpected value type `{type(value)}` supplied for {key}.')
             getattr(self, key).extend(value)
 
-    def eval_label_fn(self, data : dict, outdir : Optional[str], save : bool, prefix : str="", **kwargs):
+    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", **kwargs):
         if kwargs:
             raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
         if save and not isinstance(outdir, str):
@@ -203,10 +206,10 @@ class BaseResultCollector(_ResultsCollector):
             plot_conf_mat=save and os.path.join(outdir, f"{prefix}confusion_matrix.png")
         )
 
-    def evaluate(self, outdir : Optional[str]=None, prefix : str="", **kwargs):
+    def evaluate(self, outdir : str | None=None, prefix : str="", **kwargs):
         do_save = isinstance(outdir, str)
         if do_save and not os.path.isdir(outdir):
-            raise IOError(f'Specified output directory (`{outdir}`) does not exist.')
+            raise OSError(f'Specified output directory (`{outdir}`) does not exist.')
         if "labels" in self._extra_attr:
             results = self.eval_label_fn(data=self.data, outdir=outdir, save=do_save, prefix=prefix, **kwargs)
             if do_save:
@@ -224,10 +227,10 @@ class BaseResultCollector(_ResultsCollector):
         }
 
 class _Statistic:
-    min : Optional[float] = None
-    max : Optional[float] = None
-    mean : Optional[float] = None
-    sum : Optional[float] = None
+    min : float | None = None
+    max : float | None = None
+    mean : float | None = None
+    sum : float | None = None
 
     def __len__(self):
         raise NotImplementedError()
@@ -261,7 +264,7 @@ class _Logger:
         **`add_stat`**: Add a new statistic container.
         **`get`**: Get a statistic container.
         **`update`**: Add new values to a statistic.
-        **`step`**: Function to indicate that the current iteration has completed. 
+        **`step`**: Function to indicate that the current iteration has completed.
     """
     def __str__(self):
         raise NotImplementedError()
@@ -414,7 +417,9 @@ class MetricLogger(_Logger):
         return self.meters
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
-    """Maintains moving averages of model parameters using an exponential decay.
+    """
+    Maintains moving averages of model parameters using an exponential decay.
+
     ``ema_avg = decay * avg_model_param + (1 - decay) * model_param``
     `torch.optim.swa_utils.AveragedModel <https://pytorch.org/docs/stable/optim.html#custom-averaging-strategies>`_
     is used to compute the EMA.
@@ -427,19 +432,19 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
         super().__init__(model, device, ema_avg, use_buffers=True)
 
 class BaseStatistic(_Statistic):
-    def __init__(self, values : Optional[list[float | int]]=None):
+    def __init__(self, values : list[float | int] | None=None):
         """
         A basic thread-safeish statistic container.
 
         Args:
-            values (`Optional[list[Union[float, int]]]`): A list of values to initially populate the statistic, optional.
+            values: A list of values to initially populate the statistic, optional.
         """
         self.values : list[float] = []
         self.lock = RLock()
-        self.min : Optional[float] = None
-        self.max : Optional[float] = None
-        self.mean : Optional[float] = None
-        self.sum : Optional[float] = None
+        self.min : float | None = None
+        self.max : float | None = None
+        self.mean : float | None = None
+        self.sum : float | None = None
         self.digs : deque[int] = deque(maxlen=30)
         self._len : int = 0
         if values is not None:
@@ -455,8 +460,7 @@ class BaseStatistic(_Statistic):
         """
         Iter on the base statistic is not thread safe, if you want to ensure this, you must acquire the lock manually first.
         """
-        for el in self.values:
-            yield el
+        yield from self.values
 
     @property
     def data(self):
@@ -520,6 +524,45 @@ def compute_aligned_steps(
     return [int(round(step)) for step in np.linspace(start, end, num=origin_length)]
 
 class MultiLogger:
+    """
+    Multi-backend training/evaluation logger.
+
+    Orchestrates one or more concrete loggers (e.g., terminal metrics, TensorBoard)
+    and provides a single interface for recording statistics, figures and
+    heterogeneous artifacts per step and per epoch.
+
+    Args:
+        train_loader: Training dataloader; used to build aligned global steps.
+        val_loader: Validation dataloader; used to build aligned global steps.
+        epochs: Total number of epochs used to pre-compute global steps.
+        output: Directory to store serialized logs (JSON).
+        name: Base filename for the serialized log (auto-incremented).
+        statistics: Names of statistics to track and expose to backends.
+        private_statistics: Internal statistics not forwarded to backends.
+        logger_cls: Concrete logger classes to instantiate.
+        logger_cls_extra_kwargs: Per-logger extra keyword arguments.
+        logger_cls_stat_factory: Factories for statistic containers per logger.
+        canonical_statistic: Name of the main metric (used for returns and summaries).
+        clear_store_on_update: If True, clears transient storage at epoch/phase switch.
+        verbose: If True, prints summaries and progress information.
+    """
+    @staticmethod
+    def _reset_cuda_memory_stats():
+        """
+        Reset CUDA peak memory stats on the current device.
+
+        Notes:
+            This intentionally avoids synchronization to reduce performance
+            impact. As a result, memory statistics can be slightly biased
+            towards lower values, but remain consistent across steps.
+        """
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.reset_peak_memory_stats()
+            except Exception:
+                # Guard against environments without CUDA context, etc.
+                pass
+    
     def __init__(
             self, 
             train_loader : torch.utils.data.DataLoader,
@@ -534,7 +577,7 @@ class MultiLogger:
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
                 lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
             ],
-            canonical_statistic : Optional[str]=None,
+            canonical_statistic : str | None=None,
             clear_store_on_update : bool=True,
             verbose : bool=False
         ):
@@ -600,6 +643,17 @@ class MultiLogger:
         epoch : int,
         type : str
     ):  
+        """
+        Begin a new phase (train/eval) for a given epoch.
+
+        Initializes/rotates backend loggers, clears transient storage (if
+        configured), resets per-phase CUDA peak memory, and prepares aligned
+        global steps for the selected phase.
+
+        Args:
+            epoch: Zero-based epoch index.
+            type: Phase name (e.g., ``"train"`` or ``"eval"``).
+        """
         if self._start_time is None:
             self._start_time = time.time()
             self.eta = ETA(self.total_steps, 0.999)
@@ -610,6 +664,7 @@ class MultiLogger:
                 self.heterogeneous_storage = defaultdict(list)
         self._epoch = epoch
         self._type = type
+        self._reset_cuda_memory_stats()
         self._current_loggers : list[_Logger] = []
         self._soft_confusion_matrix : dict[str, torch.Tensor] = dict() 
         for cls, kwargs, stat_factory in zip(
@@ -625,6 +680,13 @@ class MultiLogger:
             self._current_loggers.append(this_logger)
 
     def step(self):
+        """
+        Advance one logging step.
+
+        Records bookkeeping statistics (step/time/eta/epoch/type) and then
+        resets the CUDA peak memory so that the next call to ``log_memory_use``
+        reflects the peak for the next batch only.
+        """
         self.log_statistic(step=self._step)
         self._step += 1
         self.eta.step()
@@ -634,6 +696,8 @@ class MultiLogger:
         self.log_statistic(eta=self.eta.eta)
         self.log_statistic(epoch=self._epoch)
         self.log_statistic(type=self._type)
+        # Reset peak CUDA memory so next batch's max reflects only the next step's work
+        self._reset_cuda_memory_stats()
 
     @property
     def loggers(self) -> list[_Logger]:
@@ -673,7 +737,7 @@ class MultiLogger:
             "extra" : dict() #dict(self.heterogeneous_storage)
         }
 
-    def save(self, fp: Optional[str | TextIO] = None, encoding: str = "utf-8", **kwargs):
+    def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
         if fp is None:
             fp = self.output_path
         if isinstance(fp, TextIO):
@@ -742,7 +806,7 @@ class MultiLogger:
             self,
             labels : list[int], 
             predictions : list[int],
-            level : Optional[int]=None
+            level : int | None=None
         ):
         if level is None:
             self.store("labels", labels)
@@ -768,7 +832,7 @@ class MultiLogger:
 
     def log_optim(
             self,
-            optimizer : Optional[torch.optim.Optimizer]
+            optimizer : torch.optim.Optimizer | None
         ):
         if optimizer is None:
             self.log_statistic(lr=float('nan'))
@@ -786,13 +850,24 @@ class MultiLogger:
         self.log_statistic(**{"item/s" : self._batch_size / (time.time() - start_time)})
 
     def log_memory_use(self):
+        """
+        Log per-batch peak CUDA memory usage (no sync).
+
+        Notes:
+            Uses ``torch.cuda.max_memory_allocated()`` which reports the peak
+            allocation since the last reset. The logger resets the peak at the
+            end of each step and at phase boundaries, so this value reflects a
+            best-effort per-batch peak. No device synchronization is performed
+            to avoid performance impact, so values may be slightly under the
+            true peak but are consistent across steps.
+        """
         MB = 1024.0 ** 2
         if torch.cuda.is_available():
             mem = torch.cuda.max_memory_allocated() / MB
         else:
             mem = None
         self.log_statistic(mem=mem)
-
+    
     def default_consume(
             self,
             index : int,
@@ -856,6 +931,7 @@ class MultiLogger:
             predictions : torch.Tensor, 
             level : int=0
         ):
+        predictions = predictions.softmax(dim=1)
         cf = self._soft_confusion_matrix.get(level, None)
         new_cf = False
         if cf is None:
@@ -867,7 +943,7 @@ class MultiLogger:
         grps = labels.unique()
         for gidx in grps:
             lmask = labels == gidx
-            cf[gidx] += predictions[lmask, :].exp().sum(dim=0).float().cpu()
+            cf[gidx] += predictions[lmask, :].sum(dim=0).float().cpu()
         # for lidx, plog_prob in zip(labels, predictions):
         #     lidx = int(lidx.item())
         #     pprob = plog_prob.exp().float().cpu()
@@ -944,7 +1020,7 @@ class MultiLogger:
         if isinstance(figure, Figure):
             plt.close(figure)
 
-    def figures(self, model : Optional[nn.Module]):
+    def figures(self, model : nn.Module | None):
         cm_figs = self.confusion_matrix()
         for lab, fig in cm_figs.items():
             self.add_figure(lab, fig)

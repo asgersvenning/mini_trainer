@@ -1,4 +1,4 @@
-from typing import Iterable
+from collections.abc import Iterable
 
 import torch
 
@@ -28,7 +28,7 @@ def create_hierarchy(combinations : Iterable[list[str]], class_to_idx : list[dic
         TODO
 
     Returns:
-        list: A list for each level of the hierarchy. Each list contains a list for each node containing the indices of the children of that node. 
+        A list for each level of the hierarchy. Each list contains a list for each node containing the indices of the children of that node. 
             Level 0 is the leaf level, and is not included. 
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
@@ -62,12 +62,12 @@ def create_mask_col(indices, height, zero=-100, **kwargs):
     Arguments:
         indices (list): list of indices to include in the mask.
         height (int): Height of the mask (i.e. number of rows, also the 1+max(indices)).
-        zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0). 
+        zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
             This should be a large negative number. Default: -100.
         **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
-    
+
     Returns:
-        torch.Tensor: An approximate logarithmic binary mask for the given indices.
+        An approximate logarithmic binary mask for the given indices.
     """
     col = torch.zeros((height, 1), **kwargs, requires_grad=False)
     col += zero
@@ -90,13 +90,13 @@ def mask_hierarchy(hierarchy, zero=-100, **kwargs):
     Create approximate logarithmic binary masks for the given hierarchy.
 
     Arguments:
-        hierarchy (list): list of lists of lists of indices. 
+        hierarchy (list): list of lists of lists of indices.
             The first level of the list corresponds to the levels of the hierarchy, and each level contains a list of lists of indices for each node.
         zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
         **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
 
     Returns:
-        list: list of masks for each level of the hierarchy.
+        list of masks for each level of the hierarchy.
             Each mask has shape (n_nodes, n_child_nodes) and can be used to calculate the logits for the nodes based on the child logits:
             TODO: Add equation here (logarithmic matrix multiplication)
     """

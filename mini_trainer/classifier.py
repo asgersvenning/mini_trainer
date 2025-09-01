@@ -1,7 +1,7 @@
 import os
 from collections import OrderedDict
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -39,7 +39,7 @@ def preprocess(item, transform, func=None):
 
 def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
               classifier_name: str | list[str] = ["classifier", "fc"],
-              preprocess_dtype : Optional[torch.dtype]=None):
+              preprocess_dtype : torch.dtype | None=None):
     default_transform = None
     if isinstance(backbone_model, str):
         if backbone_model in _UNSUPPORTED_MODELS:
@@ -108,13 +108,13 @@ class Classifier(nn.Module):
         architecture_class : str,
         architecture_output_name : str,
         architecture : nn.Module,
-        state : Optional[OrderedDict[str, torch.Tensor | Any]],
+        state : OrderedDict[str, torch.Tensor | Any] | None,
         device : torch.types.Device,
         dtype : torch.dtype,
         **kwargs
     ):
         """
-        Load weights into model architecture
+        Load weights into model architecture.
         """
         architecture.add_module(architecture_output_name, cls(**kwargs))
         setattr(architecture, "_backbone_class", architecture_class)
@@ -129,8 +129,8 @@ class Classifier(nn.Module):
     def build(
         cls,
         model_type : str, 
-        weights : Optional[str | OrderedDict[str, torch.Tensor | Any]]=None, 
-        num_classes : Optional[list[int] | int]=None,
+        weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
+        num_classes : list[int] | int | None=None,
         device=torch.device("cpu"), 
         dtype=torch.float32,
         **kwargs

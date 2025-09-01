@@ -1,4 +1,3 @@
-from typing import Optional
 
 import torch
 from torch import nn
@@ -12,7 +11,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
             weights : list[float | int] | torch.Tensor,
             device : DeviceLikeType, 
             dtype : _dtype, 
-            class_weights : Optional[list[torch.Tensor]]=None,
+            class_weights : list[torch.Tensor] | None=None,
             label_smoothing : float = 0.0
         ):
         self.device = device

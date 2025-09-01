@@ -4,7 +4,7 @@ import re
 import warnings
 from argparse import ArgumentParser
 from math import ceil
-from typing import Any, Optional
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader
@@ -17,16 +17,16 @@ from mini_trainer.utils.logging import BaseResultCollector
 
 
 def main(
-    input : Optional[str],
-    output : Optional[str]=None,
-    name : Optional[str]=None,
+    input : str | None,
+    output : str | None=None,
+    name : str | None=None,
     class_index : str="class_index.json",
-    data_index : Optional[str]=None,
-    split : Optional[str]="test",
+    data_index : str | None=None,
+    split : str | None="test",
     embeddings : bool=False,
     batch_size : int=32,
-    num_workers : Optional[int]=None,
-    n_max : Optional[int]=None,
+    num_workers : int | None=None,
+    n_max : int | None=None,
     device : str="cuda:0",
     dtype : str="bfloat16",
     verbose : bool=False,
@@ -45,9 +45,9 @@ def main(
             with subdirectories named after class labels. (required unless `data_index` is passsed)
 
         output (str, optional):
-            Path to the directory where the results should be stored, 
+            Path to the directory where the results should be stored,
             if passed and the directory does not already exist it is created.
-        
+
         name (str, optional):
             Name of the prediction run, used as a prefix for the result files.
             The name should only contain alphanumeric ASCII characters and underscores.
@@ -66,7 +66,7 @@ def main(
             Name of the split to predict on (default="test"). Only applies when `data_index` is passed.
 
         embeddings (bool):
-            Compute and store the embeddings (the embedding layer is automatically guessed from the architecture). 
+            Compute and store the embeddings (the embedding layer is automatically guessed from the architecture).
             Default is False.
 
         batch_size (int, optional):
@@ -87,12 +87,12 @@ def main(
         dtype (str, optional):
             PyTorch data type used for inference (e.g., 'bfloat16').
             Default is 'bfloat16'.
-        
+
         verbose (bool, optional):
             Print additional logging messages to the terminal.
-        
-        **kwargs: Additional arguments to be documented. 
-            All additional arguments are not available from the commandline, but exist to enable usage of 
+
+        **kwargs: Additional arguments to be documented.
+            All additional arguments are not available from the commandline, but exist to enable usage of
             the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
 
     Returns:
@@ -151,7 +151,7 @@ def main(
     if data_index:
         assert split is not None, ValueError('Prediction `split` must be passed when `data_index` is used.')
         split = split.strip().lower()
-        with open(data_index, "r") as f:
+        with open(data_index) as f:
             data_index_data = json.load(f)
             images = [im for im, spl in zip(data_index_data["path"], data_index_data["split"]) if spl.strip().lower() == split]
     else:

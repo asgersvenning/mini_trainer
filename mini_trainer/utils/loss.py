@@ -25,8 +25,8 @@ def class_weight_distribution_regularization(
         classification_weights: Tensor of shape [num_classes, num_embeddings],
                                 typically the weights of the final linear layer.
         epsilon: Small value for numerical stability.
-        sparse: Use a sparse set of classes to compute the regularization over. 
-            The size of the set will be equal to the square root of the number of classes. 
+        sparse: Use a sparse set of classes to compute the regularization over.
+            The size of the set will be equal to the square root of the number of classes.
             Will use a random subset of classes each time.
 
     Returns:

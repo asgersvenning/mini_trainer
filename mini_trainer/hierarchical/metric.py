@@ -33,7 +33,7 @@ def confusion_matrices(
         levels : int=len(DEFAULT_HIERARCHY_LEVELS),
         progress : bool=False
     ):
-    cf_mats = []
+    # cf_mats = []
     pred_long, lab_long = [[[] for _ in range(levels)] for _ in range(2)]
     elements = zip(predictions, labels)
     if progress:

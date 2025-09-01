@@ -1,5 +1,4 @@
 import math
-from typing import Optional
 
 import matplotlib as mpl
 import numpy as np
@@ -94,7 +93,7 @@ def named_confusion_matrix(
 def raw_confusion_matrix(
         labels : list[int] | torch.Tensor | np.ndarray, 
         predictions : list[int] | torch.Tensor | np.ndarray, 
-        n_classes : Optional[int]=None
+        n_classes : int | None=None
     ):
     labels = np.asarray(labels).ravel().astype(np.int64)
     predictions = np.asarray(predictions).ravel().astype(np.int64)
@@ -121,7 +120,11 @@ COLORBAR_TARGET_WIDTH_PIXELS = 200 # Approximate width for the colorbar image
 
 # --- Helper: Matrix Aggregation ---
 def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> np.ndarray:
-    """Aggregates matrix by summing values in blocks. Handles non-divisible shapes by padding."""
+    """
+    Aggregates matrix by summing values in blocks.
+
+    Handles non-divisible shapes by padding.
+    """
     orig_rows, orig_cols = matrix.shape
     block_rows, block_cols = block_shape
     
@@ -177,11 +180,13 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
 # --- Helper: Heatmap Array Generation ---
 def _generate_heatmap_rgb_array(
     display_mat: np.ndarray, 
-    min_val_display: Optional[float],
+    min_val_display: float | None,
     cmap_name: str,
     percent: bool
-) -> tuple[Optional[np.ndarray], Optional[LogNorm], float, float]:
-    """Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info."""
+) -> tuple[np.ndarray | None, LogNorm | None, float, float]:
+    """
+    Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info.
+    """
     
     masked_data = np.ma.masked_invalid(display_mat.astype(float)) # Handle NaNs
     if min_val_display is not None:
@@ -309,7 +314,9 @@ def _generate_colorbar_rgb_array(
     target_height_pixels: int, 
     font_size_pt: int
 ) -> np.ndarray:
-    """Renders a colorbar using Matplotlib to an RGB NumPy array of target_height_pixels."""
+    """
+    Renders a colorbar using Matplotlib to an RGB NumPy array of target_height_pixels.
+    """
     fig_width_inches = COLORBAR_TARGET_WIDTH_PIXELS / COLORBAR_RENDER_DPI
     fig_height_inches = target_height_pixels / COLORBAR_RENDER_DPI
 
@@ -347,11 +354,12 @@ def plot_heatmap(
     font_size : int=10, # For colorbar labels
     max_colorbar_ticks : int=8,
     percent : bool=True,
-    min_val_display : Optional[float]=None,
+    min_val_display : float | None=None,
     colorbar : bool=True
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
     """
     Plots a high-resolution confusion matrix using NumPy and Matplotlib.
+
     Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
     """
     if isinstance(mat, torch.Tensor):
@@ -400,7 +408,7 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
     class_dmat = torch.cdist(classification_weights, classification_weights).float()
     if not probability:
         return class_dmat
-    class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[1]).cdf((class_dmat ** 2 / 2))
+    class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[1]).cdf(class_dmat ** 2 / 2)
     if not isinstance(class_dmat_cdf, torch.Tensor):
         raise RuntimeError(f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix.")
     return class_dmat_cdf

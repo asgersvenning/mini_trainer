@@ -5,7 +5,8 @@ from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
-from typing import Any, Callable, Iterable, Optional
+from typing import Any
+from collections.abc import Callable, Iterable
 
 import numpy as np
 import torch
@@ -48,7 +49,7 @@ DEFAULT_THRESHOLDS = {
 def guess_cache_mode(
         shape : list[int], 
         dtype : torch.dtype,
-        thresholds : Optional[dict[CACHE_MODE, float | int]]=None
+        thresholds : dict[CACHE_MODE, float | int] | None=None
     ):
     if thresholds is None:
         thresholds = dict()
@@ -118,30 +119,30 @@ def reweight(
     ) -> list[float]:
     """
     Reweights the provided list of weights so that their sum equals the target sum.
-    
+
     Args:
-        weights (`list[float]`): List of weights to reweight.
-        target_sum (`Union[float, int]`): Desired sum of the weights.
-    
+        weights: List of weights to reweight.
+        target_sum: Desired sum of the weights.
+
     Returns:
-        out (`list[float]`): Reweighted weights.
+        Reweighted weights.
     """
     sum_weights = sum(weights)
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
 
 def generate_indices(
         weights : list[float | int], 
-        target_size : Optional[int]=None
+        target_size : int | None=None
     ) -> list[int]:
     """
     Deterministically generates a list of indices based on the provided weights to oversample the items.
-    
+
     Args:
-        weights (`list[float]`): List of weights for each item, the weights should correspond to the desired oversampling rate for each item.
-        target_size (`Optional[int]`, optional): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+        weights: List of weights for each item, the weights should correspond to the desired oversampling rate for each item.
+        target_size: Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
 
     Returns:
-        out (`tuple[list[int], list[int]]`): tuple of list of indices to oversample the items and list of final weights.
+        tuple of list of indices to oversample the items and list of final weights.
     """
     weights = [max(round(w), 1) for w in weights]
     indices = []
@@ -187,7 +188,7 @@ class LazyDataset(torch.utils.data.Dataset):
             self, 
             func : Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]], 
             items : list[str],
-            cache : Optional[str | int | CACHE_MODE]=None
+            cache : str | int | CACHE_MODE | None=None
         ):
         self.func = func
         self.items = items
@@ -396,8 +397,8 @@ class LazyDataset(torch.utils.data.Dataset):
             ) -> None:
             """
             Args:
-                idx (`list[int]`): A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
-                data (`list[torch.Tensor]`): A list of torch.Tensor with the same length as `idx`.
+                idx: A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
+                data: A list of torch.Tensor with the same length as `idx`.
             """
             if len(indexes) == 0:
                 return
@@ -476,7 +477,7 @@ class ImageLoader:
     def __init__(
             self, 
             size : int | tuple[int, int], 
-            cache : Optional[str]=None, 
+            cache : str | None=None, 
             dtype : torch.dtype=torch.uint8
         ):
         self.dtype, self.device = dtype, torch.device("cpu")
@@ -500,7 +501,7 @@ class ImageClassLoader:
             class_decoder, 
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
             resize_size : int=256, 
-            cache : Optional[str]=None,
+            cache : str | None=None,
             dtype : torch.dtype=torch.uint8
         ):
         self.dtype, self.device = dtype, torch.device("cpu")

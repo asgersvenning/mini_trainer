@@ -1,5 +1,4 @@
 from collections import defaultdict
-from typing import Optional
 
 import numpy as np
 import torch
@@ -19,7 +18,7 @@ class TensorboardLogger(_Logger):
             self, 
             writer : SummaryWriter, 
             steps : list[int], 
-            tag : Optional[str | list[str]]=None,
+            tag : str | list[str] | None=None,
             flush_rate : int=5
         ):
         self.writer = writer

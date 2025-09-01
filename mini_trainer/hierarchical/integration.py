@@ -4,7 +4,8 @@ import math
 import os
 import random
 from collections import defaultdict
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -28,20 +29,20 @@ from mini_trainer.utils.logging import BaseResultCollector
 DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
 
 def hierarchical_class_index_to_standard(path : str):
-    with open(path, "r") as f:
+    with open(path) as f:
         data = json.load(f)
     return data["cls2idx"]["0"]
 
 def hierarchy_to_combinations(path : str, levels : list[str]=DEFAULT_HIERARCHY_LEVELS):
     """
     Args:
-        path (`str`): Path to a JSON file containing a key for each leaf class (most likely species), which should have a corresponding folder of images with the same name. 
+        path: Path to a JSON file containing a key for each leaf class (most likely species), which should have a corresponding folder of images with the same name. 
             Each value should be a dictionary with, at least, the keys given by `levels`, with values being being a list of class labels for each level. 
             I will assume that the first class label in the list is to be used as the primary class label. This can be used for example to save both the GBIF ID, scientific name and vernacular name. 
-        levels (`list[str]`): A list of names for the class hierarchy levels. The names should be ordered from highest (root) to lowest (leaf).
+        levels: A list of names for the class hierarchy levels. The names should be ordered from highest (root) to lowest (leaf).
 
     Returns:
-        combinations (`list[tuple[str, ...]]`): A topologically sorted list of all unique combinations of classes (root-to-leaf) as a tuple of strings.
+        A topologically sorted list of all unique combinations of classes (root-to-leaf) as a tuple of strings.
     """
     with open(path, "rb") as f:
         return list(sorted(set([tuple([leaf[level][0] for level in levels]) for leaf in json.load(f).values()])))
@@ -53,7 +54,7 @@ class HierarchicalPathParser:
             levels : list[str]=DEFAULT_HIERARCHY_LEVELS, 
             as_tensor : bool=False, 
             reversed : bool=False, 
-            name2cls : Optional[dict[str, int]]=None,
+            name2cls : dict[str, int] | None=None,
             *args, 
             **kwargs
         ):
@@ -81,9 +82,9 @@ class HierarchicalPathParser:
 def path_to_hierarchy(
         path : str, 
         hierarchy : dict[str, dict[str, tuple[str, ...]]],
-        cls2idx : Optional[dict[str, dict[str, int]]]=None, 
+        cls2idx : dict[str, dict[str, int]] | None=None, 
         levels : list[str]=DEFAULT_HIERARCHY_LEVELS,
-        name2cls : Optional[dict[str, int]]=None
+        name2cls : dict[str, int] | None=None
     ):
     if os.path.sep in path:
         parts = path.split(os.path.sep)
@@ -103,7 +104,7 @@ def parse_quality_control(
         path : str, 
         correct_class : str="1",
         confidence_threshold : float=0.8,
-        max_per_cls : Optional[int]=None,
+        max_per_cls : int | None=None,
         path2cls_builder : Callable[[Any], Callable[[str], Any]]=HierarchicalPathParser, 
         **kwargs
     ):
@@ -128,7 +129,7 @@ def parse_quality_control(
 
 def hierarchical_create_data_index(
         path : str,
-        outpath : Optional[str],
+        outpath : str | None,
         parse_fn : Callable[[str], tuple[list[str], list[Any]]]=parse_quality_control,
         split : tuple[float, ...]=(0.8, 0.1, 0.1),
         split_labels : tuple[str, ...]=("train", "validation", "test"),
@@ -149,8 +150,8 @@ def hierarchical_create_data_index(
 class HierarchicalBuilder(BaseBuilder):
     @staticmethod
     def spec_model_dataloader(
-            path : Optional[str]=None, 
-            dir : Optional[str]=None, 
+            path : str | None=None, 
+            dir : str | None=None, 
             dir2comb_fn : Callable[[str], list[tuple[str, ...]]]=\
                 lambda dir : names_or_ids_to_combinations(list(filter(lambda subdir : len(os.listdir(os.path.join(dir, subdir))) > 25, os.listdir(dir))))
         ):
@@ -190,7 +191,7 @@ class HierarchicalBuilder(BaseBuilder):
 
     @staticmethod
     def build_dataloader(
-            data_index : Optional[str],
+            data_index : str | None,
             input_dir : str,
             classes : list[str],
             cls2idx : dict[str, int],
@@ -198,13 +199,13 @@ class HierarchicalBuilder(BaseBuilder):
             batch_size : int,
             device : torch.device,
             dtype = torch.dtype,
-            num_workers : Optional[int]=None,
-            resize_size : Optional[int]=None,
-            subsample : Optional[int]=None,
-            cache : Optional[int | str]=None,
+            num_workers : int | None=None,
+            resize_size : int | None=None,
+            subsample : int | None=None,
+            cache : int | str | None=None,
             train_proportion : float=0.9,
-            idx2cls : Optional[dict[int, str]]=None,
-            combinations : Optional[list[tuple[str, str, str]]]=None
+            idx2cls : dict[int, str] | None=None,
+            combinations : list[tuple[str, str, str]] | None=None
         ):
         # Prepare datasets/dataloaders
         if data_index is None:
@@ -297,10 +298,10 @@ class HierarchicalBuilder(BaseBuilder):
     def build_criterion(
             *args, 
             weighted : bool=False,
-            labels : Optional[np.ndarray]=None, 
-            num_classes : Optional[list[int]]=None, 
-            device : Optional[torch.types.Device]=None,
-            dtype : Optional[torch.dtype]=None,
+            labels : np.ndarray | None=None, 
+            num_classes : list[int] | None=None, 
+            device : torch.types.Device | None=None,
+            dtype : torch.dtype | None=None,
             **kwargs
         ):
         if not weighted or labels is None or num_classes is None:
@@ -323,7 +324,7 @@ class HierarchicalBuilder(BaseBuilder):
         )
 
 class MultiLevelResultCollector(BaseResultCollector):
-    def __init__(self, lvl : int, cls2cls : Optional[dict[str, str]]=None, *args, **kwargs):
+    def __init__(self, lvl : int, cls2cls : dict[str, str] | None=None, *args, **kwargs):
         self.level = lvl
         self.cls2cls = cls2cls
         super().__init__(*args, **kwargs)
@@ -365,7 +366,7 @@ class HierarchicalResultCollector:
             for lvl in range(self.levels)
         ])
 
-    def evaluate(self, outdir : Optional[str]=None, prefix : str="", level : Optional[int | list[int]]=None):
+    def evaluate(self, outdir : str | None=None, prefix : str="", level : int | list[int] | None=None):
         if level is None:
             level = list(range(self.levels))
         if isinstance(level, int):
@@ -379,14 +380,14 @@ class HierarchicalResultCollector:
         
         do_save = isinstance(outdir, str)
         if do_save and not os.path.isdir(outdir):
-            raise IOError(f'Specified output directory (`{outdir}`) does not exist.')
+            raise OSError(f'Specified output directory (`{outdir}`) does not exist.')
         if results:
             if do_save:
                 with open(os.path.join(outdir, f'{prefix}eval_results.json'), "w") as f:
                     json.dump(results, f)
             return results
 
-    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : Optional[int | list[int]]=None, **kwargs):
+    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : int | list[int] | None=None, **kwargs):
         if level is None:
             level = list(range(self.levels))
         if isinstance(level, int):

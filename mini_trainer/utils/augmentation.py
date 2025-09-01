@@ -1,6 +1,6 @@
 import os
 from random import sample
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import torch
 from matplotlib import pyplot as plt
@@ -11,7 +11,7 @@ from mini_trainer.utils import make_convert_dtype
 def debug_augmentation(
         augmentation : Callable[[torch.Tensor], torch.Tensor],
         dataset : torch.utils.data.Dataset,
-        output_dir : Optional[str]=None,
+        output_dir : str | None=None,
         strict : bool=True
     ):
     convert2fp32 = make_convert_dtype(torch.float32)

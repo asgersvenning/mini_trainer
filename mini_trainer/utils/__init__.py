@@ -6,7 +6,8 @@ import shutil
 import tempfile
 from collections import OrderedDict
 from glob import glob
-from typing import Any, Callable, Iterable, Optional
+from typing import Any
+from collections.abc import Callable, Iterable
 
 import psutil
 import torch
@@ -65,7 +66,7 @@ def memory_proportion(
 
     return required / free
 
-def increment_name_dir(name : str, dir : Optional[str]=None, max_iter : int=1000):
+def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000):
     if name is None:
         raise ValueError('A model name must be specified.')
     if not isinstance(name, str):
@@ -124,7 +125,7 @@ def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : 
 
 def setup_for_distributed(is_master):
     """
-    This function disables printing when not in master process
+    This function disables printing when not in master process.
     """
     import builtins as __builtin__
 
@@ -208,7 +209,7 @@ def average_checkpoints(inputs):
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
 
     Args:
-      inputs (list[str]): An iterable of string paths of checkpoints to load from.
+      inputs: An iterable of string paths of checkpoints to load from.
     Returns:
       A dict of string keys mapping to various values. The 'model' key
       from the returned dict should correspond to an OrderedDict mapping
@@ -283,16 +284,16 @@ def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=T
         print(store_model_weights(model, './segm.pth', strict=False))
 
     Args:
-        model (pytorch.nn.Module): The model on which the weights will be loaded for validation purposes.
-        checkpoint_path (str): The path of the checkpoint we will load.
-        checkpoint_key (str, optional): The key of the checkpoint where the model weights are stored.
+        model: The model on which the weights will be loaded for validation purposes.
+        checkpoint_path: The path of the checkpoint we will load.
+        checkpoint_key: The key of the checkpoint where the model weights are stored.
             Default: "model".
-        strict (bool): whether to strictly enforce that the keys
+        strict: whether to strictly enforce that the keys
             in :attr:`state_dict` match the keys returned by this module's
             :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
 
     Returns:
-        output_path (str): The location where the weights are saved.
+        The location where the weights are saved.
     """
     # Store the new model next to the checkpoint_path
     checkpoint_path = os.path.abspath(checkpoint_path)
@@ -327,9 +328,9 @@ def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=T
 def set_weight_decay(
     model: torch.nn.Module,
     weight_decay: float,
-    norm_weight_decay: Optional[float] = None,
-    norm_classes: Optional[list[type]] = None,
-    custom_keys_weight_decay: Optional[list[tuple[str, float]]] = None,
+    norm_weight_decay: float | None = None,
+    norm_classes: list[type] | None = None,
+    custom_keys_weight_decay: list[tuple[str, float]] | None = None,
 ):
     if not norm_classes:
         norm_classes = [

@@ -1,6 +1,7 @@
 import os
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -25,11 +26,11 @@ def get_dataset_dataloader(
         val_image_data : dict, 
         resize_size : int | tuple[int, int],
         batch_size : int=16, 
-        num_workers : Optional[int]=None,
-        subsample : Optional[int]=None,
+        num_workers : int | None=None,
+        subsample : int | None=None,
         device : torch.device | str=torch.device("cpu"), 
         dtype : torch.dtype=torch.float32,
-        cache : Optional[CACHE_MODE | str | int]=None
+        cache : CACHE_MODE | str | int | None=None
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
@@ -121,7 +122,7 @@ class BaseBuilder:
         pass
 
     @staticmethod
-    def spec_model_dataloader(path : Optional[str]=None, dir : Optional[str]=None, *args, **kwargs):
+    def spec_model_dataloader(path : str | None=None, dir : str | None=None, *args, **kwargs):
         """
         Returns:
             (extra_model_kwargs, extra_dataloader_kwargs) (`tuple[dict[str, Any], dict[str, Any]]`): Extra keyword arguments for the model and dataloader building functions.
@@ -159,6 +160,7 @@ class BaseBuilder:
     ) -> list[dict[str, Any]]:
         """
         Groups all model parameters into 'head' and 'backbone'.
+
         The 'head' is identified by the attribute name stored in `model._backbone_output_name`.
         All other parameters are considered 'backbone'.
         This method does not filter by requires_grad; it groups all parameters.
@@ -219,14 +221,14 @@ class BaseBuilder:
             batch_size : int,
             device : torch.device,
             dtype = torch.dtype,
-            data_index : Optional[str]=None,
-            num_workers : Optional[int]=None,
-            resize_size : Optional[int]=None,
-            subsample : Optional[int]=None,
-            cache : Optional[int | str]=None,
+            data_index : str | None=None,
+            num_workers : int | None=None,
+            resize_size : int | None=None,
+            subsample : int | None=None,
+            cache : int | str | None=None,
             train_proportion : float=0.9,
-            idx2cls : Optional[dict[int, str]]=None,
-            combinations : Optional[list[tuple[str, str, str]]]=None
+            idx2cls : dict[int, str] | None=None,
+            combinations : list[tuple[str, str, str]] | None=None
         ):
         """
         Returns:
@@ -261,7 +263,7 @@ class BaseBuilder:
         Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
 
         Returns:
-            transforms (`transforms.Compose`): A composition of augmentations.
+            A composition of augmentations.
         """
         return tt.Compose([
             # tt.AugMix(severity=3),
@@ -283,12 +285,13 @@ class BaseBuilder:
         optimizer_cls: type[torch.optim.Optimizer] = torch.optim.AdamW,
         lr: float=1e-3,
         weight_decay: float=0.0001,
-        backbone_lr: Optional[float]=None,
-        backbone_weight_decay: Optional[float]=None,
+        backbone_lr: float | None=None,
+        backbone_weight_decay: float | None=None,
         **optimizer_kwargs # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
         """
         Builds an optimizer with separate parameter groups for head and backbone.
+
         All parameters of the model are assigned to groups.
         Requires `model` to have `_backbone_output_name` attribute.
         """
@@ -326,16 +329,16 @@ class BaseBuilder:
     def build_criterion(
             *args, 
             weighted : bool=False,
-            labels : Optional[np.ndarray]=None, 
-            num_classes : Optional[int]=None, 
+            labels : np.ndarray | None=None, 
+            num_classes : int | None=None, 
             criterion_cls : type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, 
-            device : Optional[torch.types.Device]=None,
-            dtype : Optional[torch.dtype]=None,
+            device : torch.types.Device | None=None,
+            dtype : torch.dtype | None=None,
             **kwargs
         ):
         """
         Returns:
-            loss_fn (`nn.modules.loss._Loss`): The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
+            The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
         if not weighted or labels is None or num_classes is None:
             return criterion_cls(*args, **kwargs)
@@ -366,7 +369,7 @@ class BaseBuilder:
         Only the *shape* of the LR curve is defined here; the *magnitude* should be set in the optimizer. I suggest using `torch.optim.lr_scheduler.LambdaLR`.
 
         Returns:
-            lr_scheduler (`torch.optim.lr_scheduler.LRScheduler`): The learning rate scheduler (shape only).
+            The learning rate scheduler (shape only).
         """
         warmup_steps = round(warmup_epochs * steps_per_epoch)
         warmup_proportion = warmup_epochs / epochs
