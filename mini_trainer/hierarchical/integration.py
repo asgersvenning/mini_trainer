@@ -191,7 +191,6 @@ class HierarchicalBuilder(BaseBuilder):
 
     @staticmethod
     def build_dataloader(
-            data_index : str | None,
             input_dir : str,
             classes : list[str],
             cls2idx : dict[str, int],
@@ -199,6 +198,7 @@ class HierarchicalBuilder(BaseBuilder):
             batch_size : int,
             device : torch.device,
             dtype = torch.dtype,
+            data_index : str | None=None,
             num_workers : int | None=None,
             resize_size : int | None=None,
             subsample : int | None=None,

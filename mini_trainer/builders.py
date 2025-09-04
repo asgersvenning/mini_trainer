@@ -1,12 +1,15 @@
 import os
+import warnings
+from collections.abc import Callable
 from tempfile import NamedTemporaryFile
 from typing import Any
-from collections.abc import Callable
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.transforms as tt
+from torch.amp import GradScaler
+from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
                               SequentialSampler)
 
@@ -18,8 +21,12 @@ from mini_trainer.utils.data import (get_image_data, parse_class_index,
 from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
                                    make_read_and_resize_fn)
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import class_weight_distribution_regularization
+from mini_trainer.utils.loss import class_weight_distribution_regularization, kl_distill_ema
 
+
+def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float:
+    lam_step = (torch.tensor(1/2).log() / half_life_steps).exp().item()
+    return lam_step ** update_interval
 
 def get_dataset_dataloader(
         train_image_data : dict, 
@@ -101,6 +108,58 @@ def get_dataset_dataloader(
     )
 
     return train_dataset, val_dataset, train_loader, val_loader
+
+class EMATeacher(AveragedModel):
+    def __init__(
+            self, 
+            enable : bool,
+            total_steps : int,
+            distill_start : int=0,
+            update_rate : int=1,
+            temperature : float=1.0, 
+            *args, 
+            **kwargs
+        ):
+        self._enabled, self.total_steps, self.distill_start, self.update_rate, self.temperature = \
+            enable, total_steps, distill_start, update_rate, temperature
+        if self._enabled:
+            super().__init__(*args, **kwargs)
+    
+    def __bool__(self):
+        return self._enabled
+    
+    def update_parameters(self, step, model):
+        if not self._enabled or (step + 1) % self.update_rate != 0:
+            return
+        return super().update_parameters(model)
+
+    def distill_rate(self, step: int) -> float:
+        return float(min(1.0, max(0.0, (step - self.distill_start) / max(1.0, self.total_steps - self.distill_start))))
+        
+    def teach(
+            self,
+            step : int,
+            input : torch.Tensor,
+            student : torch.Tensor | list[torch.Tensor]
+        ):
+        """
+        Returns:
+          KL-divergence between the model EMA and the ``student`` logits.
+            If the ``enabled=False``, ``0.0``.
+        """
+        dr = self.distill_rate(step)
+        if isinstance(student, (list, tuple)):
+            st_device, st_dtype = student[0].device, student[0].dtype
+        else:
+            st_device, st_dtype = student.device, student.dtype
+        if not self._enabled or dr == 0.0:
+            return torch.tensor(0.0, dtype=st_dtype, device=st_device)
+        with torch.no_grad():
+            is_train = self.training
+            self.eval()
+            ema_logits = self(input)
+            self.train(is_train)
+        return kl_distill_ema(student, ema_logits, T=self.temperature) * dr
 
 class BaseBuilder:
     """
@@ -242,10 +301,17 @@ class BaseBuilder:
         else:
             train_image_data, val_image_data = get_image_data(data_index)
 
+        if resize_size is None:
+            try:
+                resize_size = getattr(preprocess, "resize_size")
+            except KeyError as e:
+                e.add_note("Unable to guess input size from model, specify `resize_size` manually.")
+                raise e
+
         train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
             train_image_data=train_image_data, 
             val_image_data=val_image_data,
-            resize_size=getattr(preprocess, "resize_size", resize_size),  
+            resize_size=resize_size,  
             batch_size=batch_size,
             num_workers=num_workers,
             subsample=subsample,
@@ -325,6 +391,69 @@ class BaseBuilder:
 
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
     
+    def build_scaler(
+            device : torch.types.Device,
+            **kwargs    
+        ):
+        return GradScaler(device=device, **kwargs)
+    
+    def build_ema(
+            enable : bool,
+            model : torch.nn.Module,
+            epochs : int,
+            steps_per_epoch : int,
+            device : torch.types.Device,
+            epoch_halflife : float | int=None,
+            update_rate : int=1,
+            decay_rate : float | None=None,
+            distill_start : int | None=None,
+            use_buffers : bool=True,
+            **kwargs           
+        ):
+        """
+        Produces a Exponential Moving Average (EMA) copy
+        of the provided model, with a decay rate derived
+        from the given half-life in fractional epochs.
+
+        Args:
+            model: The model to track.
+            epochs: Total number of epochs that ``model`` is trained for.
+            steps_per_epoch: Number of steps per epoch (training phase only).
+            epoch_halflife: Number of fraction epochs after which the EMA is only 50% of what it was:
+                EMA(t + epoch_halflife) = EMA(t) * 0.5 + X
+            update_rate: How often the EMA is updated with a snapshot of the ``model`` weights.
+            decay_rate: If specified, manually overrides the decay rate calculated from the `update_rate` and half-life.
+            distill_start: When EMA distillation/self-supervision starts in fractional epochs, defaults to two epochs or a maximum of 5000 steps (batches).
+            use_buffers: Passed to ``torch.optim.swa_utils.AveragedModel`` (default=True).
+            **kwargs: Additional arguments passed to ``mini_trainer.builders.EMATeacher``/``torch.optim.swa_utils.AveragedModel``.
+                
+        Returns:
+            The EMA copy tracking the original model.
+        """
+        default_step_halflife = min(epochs * steps_per_epoch, 5000)
+        if decay_rate is None:
+            if epoch_halflife is None:
+                step_halflife = (epochs * steps_per_epoch)**(1/2) / 2
+                epoch_halflife = step_halflife / steps_per_epoch
+                default_ratio = step_halflife / default_step_halflife
+                if not (1/5 < default_ratio < 5):
+                    warnings.warn(f'EMA decay rate half-life is very low/high: {epoch_halflife:.2f} epochs, which is {default_ratio:.1f}X the default ({default_step_halflife/steps_per_epoch:.2f} epochs).')
+            decay_rate = ema_lambda_per_update(epoch_halflife * steps_per_epoch, update_rate)
+        if distill_start is None:
+            distill_start = min(default_step_halflife, 2 * steps_per_epoch)
+        else:
+            distill_start = round(distill_start * steps_per_epoch)
+        return EMATeacher(
+            enable=enable,
+            total_steps=epochs*steps_per_epoch,
+            distill_start=distill_start,
+            update_rate=update_rate,
+            model=model,
+            device=device,
+            multi_avg_fn=get_ema_multi_avg_fn(decay_rate), 
+            use_buffers=use_buffers
+        )
+    
     @staticmethod
     def build_criterion(
             *args, 
@@ -350,7 +479,7 @@ class BaseBuilder:
         return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
 
     @staticmethod
-    def build_regularizer(strength : float=1e-3, *args, **kwargs):
+    def build_regularizer(strength : float=0, *args, **kwargs):
         strength = float(strength)
         if strength == 0:
             return lambda _: 0.
@@ -362,7 +491,7 @@ class BaseBuilder:
             epochs : int,
             warmup_epochs : float,
             steps_per_epoch : int,
-            min_factor : float = 1e-6,
+            min_factor : float = 1e-3,
             start_factor : float = 1e-4
         ) -> torch.optim.lr_scheduler.LRScheduler:
         """

@@ -23,14 +23,14 @@ def _nullify(d: dict[str, Any]):
     return d
 
 
-def _prune_nones(d: dict[str, Any]) -> dict[str, Any]:
+def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively drop keys with value ``None`` and empty dicts.
     """
     out: dict[str, Any] = {}
     for k, v in d.items():
         if isinstance(v, dict):
-            v = _prune_nones(v)
+            v = _drop_none(v)
         if not (v is None or isinstance(v, dict) and len(v) == 0):
             out[k] = v
     return out
@@ -63,7 +63,7 @@ def _stringify_types(obj: Any) -> Any:
 
 
 def dump_resolved_config(
-    output_dir: str,
+    output_dir: str | None,
     fn: Any,
     local_vars: dict[str, Any],
     overrides: dict[str, Any] | None = None,
@@ -92,19 +92,24 @@ def dump_resolved_config(
     cfg = _stringify_types(cfg)
 
     # Remove empty arguments
-    cfg = _prune_nones(cfg)
+    cfg = _drop_none(cfg)
+
+    print(cfg)
+
+    if output_dir is None:
+        return
 
     # Write YAML preferred, JSON fallback (then exit)
     os.makedirs(output_dir, exist_ok=True)
     try:
         import yaml
-        path_yaml = os.path.join(output_dir, f"{cfg["name"]}_config.yaml")
+        path_yaml = os.path.join(output_dir, "config.yaml")
         with open(path_yaml, "w", encoding="utf-8") as f:
             yaml.safe_dump(cfg, f, sort_keys=False)
         return
     except Exception as e:
         import json
-        path_json = os.path.join(output_dir, f"{cfg["name"]}_config.json")
+        path_json = os.path.join(output_dir, "config.json")
         with open(path_json, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
         raise SystemExit(
@@ -215,57 +220,25 @@ def merge_dicts(*dicts: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def restructure_cli_args(args: dict[str, Any], fn: Any) -> dict[str, Any]:
+def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
     """
-    Map flat CLI args into the nested structure expected by ``main``.
+    Map flat CLI args into the nested dict based on the keys.
 
     Rules:
     - Skip keys with value ``None`` (treated as not provided).
-    - For boolean flags, include only if ``True``.
-    - Restructure known flat keys into nested ``*_builder_kwargs`` blocks.
+    - (A) dot(s) (".") in the key specify nested values (e.g. ``{"A.B.C" : 1}`` -> ``{"A" : {"B" : {"C" : 1}}}``)
     """
-    # Start from the function defaults to inherit the target shape, then null them
-    base = defaults_from_function(fn)
-    _nullify(base)
-
-    # Top-level keys that map directly
-    top_keys = {
-        "input", "output", "checkpoint", "class_index", "epochs", "name",
-        "device", "dtype", "seed", "builder",
-        "spec_model_dataloader_kwargs", "augmentation_builder_kwargs",
-        "regularizer_builder_kwargs", "logger_builder_kwargs",
-    }
-    base.update({k : v for k in top_keys if (v := args.get(k, None)) is not None})
-
+    out = {}
     # Helpers for setting nested values
     def _inset(d : dict, loc : list[str], value : Any):
-        sub_d = d
         for k in loc[:-1]:
-            sub_d.setdefault(k, {})
-            sub_d = sub_d[k]
-        sub_d[loc[-1]] = value
+            d.setdefault(k, {})
+            d = d[k]
+        d[loc[-1]] = value
 
-    def set_nested(path: list[str] | str, *keys: dict[str, str] | list[str]):
-        if isinstance(path, str):
-            path = [path]
-        keys = reduce(
-            lambda d1, d2 : {**d1, **d2}, 
-            [{k : k for k in ks} if isinstance(ks, (list, set, tuple)) else ks for ks in keys]
-        )
-        
-        for k, v in [(k, args.get(_k, None)) for _k, k in keys.items()]:
-            if v is None:
-                continue
-            _inset(base, path + [k], v)
-
-    # Mappings for nested kwargs
-    nested_keys = [
-        ("model_builder_kwargs", {"model" : "model_type"}, ["weights", "fine_tune"]),
-        ("dataloader_builder_kwargs", ["data_index", "batch_size", "subsample", "num_workers", "cache"]),
-        ("optimizer_builder_kwargs", ["lr"]),
-        ("criterion_builder_kwargs", ["label_smoothing"], {"class_weighted" : "weighted"}),
-        ("logger_builder_kwargs", ["verbose"])
-    ]
-    [set_nested(*nk) for nk in nested_keys]
+    for k, v in args.items():
+        if v is None:
+            continue
+        _inset(out, k.split("."), v)
     
-    return _prune_nones(base)
+    return out

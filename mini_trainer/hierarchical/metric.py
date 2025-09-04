@@ -1,7 +1,6 @@
 from itertools import chain
 
-from tqdm import tqdm as TQDM
-
+from mini_trainer import TQDM
 from mini_trainer.hierarchical.gbif import resolve_id
 from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
 

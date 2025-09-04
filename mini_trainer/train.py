@@ -9,7 +9,7 @@ import torch
 import torchvision
 
 from mini_trainer import Formatter
-from mini_trainer.builders import BaseBuilder
+from mini_trainer.builders import BaseBuilder, EMATeacher
 from mini_trainer.config import (defaults_from_function, dump_resolved_config,
                                  load_yaml_config, merge_dicts,
                                  restructure_cli_args)
@@ -21,13 +21,14 @@ from mini_trainer.utils.augmentation import debug_augmentation
 
 def main(
         input : str,
-        output : str = ".",
+        output : str | None=None,
         checkpoint : list[str] | None=None,
         class_index : str | None=None,
         epochs : int=15,
         name: str | None=None,
         device : str="cuda:0",
         dtype : str="bfloat16",
+        ema : bool=True,
         seed : int | None=None,
         builder : type[BaseBuilder]=BaseBuilder,
         spec_model_dataloader_kwargs : dict[str, Any]={},
@@ -46,85 +47,81 @@ def main(
             "lr" : 0.0001,
             "weight_decay" : 1e-4
         },
-        criterion_builder_kwargs : dict[str, Any]={"label_smoothing" : 0.1},
+        scaler_builder_kwargs : dict[str, Any]={},
+        ema_builder_kwargs : dict[str, Any]={
+            "epoch_halflife" : 1.5,
+            "update_rate" : 4,
+            "temperature" : 1.0,
+            "distill_start" : 2.0
+        },
+        criterion_builder_kwargs : dict[str, Any]={
+            "label_smoothing" : 0.1
+        },
         regularizer_builder_kwargs : dict[str, Any]={},
         lr_schedule_builder_kwargs : dict[str, Any]={
             "warmup_epochs" : 2.0
         },
-        logger_builder_kwargs : dict[str, Any]={"verbose" : False}
+        logger_builder_kwargs : dict[str, Any]={
+            "verbose" : False
+        }
     ):
     """
     Train a classifier.
 
     Args:
-        model (str, optional):
-            Name of the model type from the torchvision model zoo.
+        input: Path to a directory containing a subdirectory for each class, where
+            each subdirectory's name corresponds to the class name.
+        model: Name of the model type from the torchvision model zoo.
             See: https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights.
-            Default is 'efficientnet_v2_s'. Not case-sensitive.
-
-        input (str):
-            Path to a directory containing a subdirectory for each class, where
-            each subdirectory's name corresponds to the class name. (required)
-
-        output (str, optional):
-            Root directory for all created files and directories.
-            Default is current working directory '.'.
-
-        checkpoint (list[str] | None, optional):
-            Path to one or more checkpoint files for restarting training.
+            Default is ``'efficientnet_v2_s'``. Not case-sensitive.
+        output: Root directory for all created files and directories.
+            Default is current working directory ``'.'``.
+        checkpoint: Path to one or more checkpoint files for restarting training.
             If multiple files are supplied, training is restarted from an 'average'
-            of checkpoint states. Default is None.
-
-        data_index (str |None, optional):
-            Path to a JSON file containing three arrays with keys 'path', 'split',
-            and 'class', representing a structured dataset.
-            Default is None.
-
-        class_index (str | None, optional):
-            Path to a JSON file containing the mapping from class names to indices.
+            of checkpoint states. Default is ``None``.
+        class_index: Path to a JSON file containing the mapping from class names to indices.
             If the file does not exist, it will be created based on subdirectories
             found under `output` if it is set. Default is 'class_index.json'.
-
-        epochs (int, optional):
-            Number of training epochs. Default is 15.
-
-        name (str | None, optional):
-            Name of the output model. If not provided, a descriptive name
-            will be inferred from other arguments. Default is None.
-
-        device (str, optional):
-            Device used for training (e.g., 'cuda:0', 'cpu').
-            Default is 'cuda:0'.
-
-        dtype (str, optional):
-            PyTorch data type for images during training and validation
-            (e.g., 'bfloat16'). The model parameters are always stored in float32,
-            and training is done with autocasting. Default is 'bfloat16'.
-
-        seed (int | None, optional):
-            Initial seed for Python's random number generator to ensure reproducibility,
-            especially for train/validation splits. Default is None.
-
-        builder (Type[BaseBuilder], optional):
-            An object inheriting from `mini_trainer.builders.BaseBuilder`. This object
-            is responsible for instantiating the model, dataloader, augmentation, optimizer,
-            criterion (loss function) and learning rate scheduler.
-
+        epochs: Number of training epochs. Default is 15.
+        name: Name of the output model. If not provided, a descriptive name
+            will be inferred from other arguments. Default is ``None``.
+        device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
+        dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
+            The model parameters are always stored in float32 with training AMP. 
+            Default is ``'bfloat16'``.
+        seed: Initial seed for Python's random number generator to ensure reproducibility,
+            especially for train/validation splits. Default is ``None``.
+        builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``. 
+            This object is responsible for instantiating the model, dataloader, augmentation, 
+            optimizer, scaler, EMA, criterion (loss function) and learning rate scheduler.
         **kwargs:
             Additional arguments are passed to the various builder methods.
-            See `mini_trainer.builders.BaseBuilder` for details.
+            See ``mini_trainer.builders.BaseBuilder`` for details.
     """
-    print("TEST")
+    orig_args = locals()
     # Prepare state    
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-    
-    input_dir = os.path.abspath(input)
-    output_dir = os.path.abspath(output)
+    if name is None:
+        name = "train"
+    name = increment_name_dir(name, output)
 
-    name = increment_name_dir(name, output_dir)
+    input_dir = os.path.abspath(input)
+    output_dir = None if output is None else os.path.abspath(os.path.join(output, name))
+    if output_dir is not None:
+        try:
+            os.makedirs(output_dir, exist_ok=False)
+        except OSError as e:
+            e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{name=}` already exists?")
+    
+    weight_output_dir = None if output_dir is None else os.path.abspath(os.path.join(output_dir, "weights"))
+    if weight_output_dir is not None:
+        try:
+            os.makedirs(weight_output_dir, exist_ok=False)
+        except OSError as e:
+            e.add_note(f"Training weight directory already exists: {weight_output_dir}. Perhaps a run of with the `{name=}` already exists?")
 
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
@@ -133,7 +130,7 @@ def main(
     dump_resolved_config(
         output_dir=output_dir,
         fn=main,
-        local_vars=locals(),
+        local_vars=orig_args,
         overrides={
             "input": input_dir,
             "output": output_dir,
@@ -142,6 +139,8 @@ def main(
             "name": name,
         },
     )
+
+    start_epoch : int = 0 
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
@@ -189,6 +188,7 @@ def main(
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
         )
 
+    # Prepare augmentation
     augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     if not isinstance(augmentation, torchvision.transforms.Compose):
         raise TypeError(
@@ -201,9 +201,6 @@ def main(
         output_dir=output_dir,
         strict=True
     )
-
-    # Setup optimizer, criterion (loss function) and learning rate scheduler
-    start_epoch = 0
 
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     if not isinstance(optimizer, torch.optim.Optimizer):
@@ -235,18 +232,48 @@ def main(
             'Expected `lr_schedule_builder` to return an object'
             f'inheriting from `torch.optim.lr_scheduler.LRScheduler`, but got `{type(lr_scheduler)}.'
         )
+    
+    scaler = builder.build_scaler(
+        device=device,
+        **scaler_builder_kwargs
+    )
+    if not isinstance(scaler, torch.amp.GradScaler):
+        raise TypeError(
+            'Expected `scaler` to return an object'
+            f'inheriting from `torch.amp.GradScaler`, but got `{type(lr_scheduler)}.'
+        )
+    
+    nn_model_ema = builder.build_ema(
+        enable=ema,
+        model=nn_model,
+        epochs=epochs,
+        steps_per_epoch=len(train_loader),
+        device=device,
+        **ema_builder_kwargs
+    )
+    if not isinstance(nn_model_ema, EMATeacher):
+        raise TypeError(
+            'Expected `nn_model_ema` to return None or an object'
+            f'inheriting from `mini_trainer.builders.EMATeacher`, but got `{type(nn_model_ema)}.'
+        )
 
     if checkpoint is not None:
         checkpoint_files = checkpoint
         if isinstance(checkpoint_files, list) and len(checkpoint_files) == 1:
             checkpoint_files = checkpoint_files[0]
         if isinstance(checkpoint_files, str):
-            checkpoint_data = torch.load(checkpoint_files, device)
+            checkpoint_data = torch.load(checkpoint_files, map_location=device)
         else:
-            checkpoint_data = average_checkpoints(checkpoint_files)
+            checkpoint_data = average_checkpoints(checkpoint_files, map_location=device)
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])
+        if "scaler" in checkpoint_data:
+            scaler.load_state_dict(checkpoint_data["scaler"])
+        if "model_ema" in checkpoint_data:
+            if not nn_model_ema:
+                raise RuntimeError("Restarting without EMA for training previously running with EMA is not supported.")
+            nn_model_ema.load_state_dict(checkpoint_data["model_ema"])
         start_epoch = checkpoint_data["epoch"]
         if not isinstance(start_epoch, int):
             if isinstance(start_epoch, (torch.Tensor, np.ndarray)) and len(start_epoch) == 1:
@@ -263,18 +290,18 @@ def main(
         val_loader=val_loader,
         epochs=epochs,
         output=output_dir,
-        name=name+"_log",
         **logger_builder_kwargs
     )
 
     # Run training
-
     train(
         model=nn_model, 
+        model_ema=nn_model_ema,
         train_loader=train_loader,
         val_loader=val_loader,
         criterion=criterion,
         optimizer=optimizer,
+        scaler=scaler,
         lr_scheduler=lr_scheduler,
         logger=logger,
         epochs=epochs,
@@ -284,21 +311,27 @@ def main(
         regularizer=builder.build_regularizer(**regularizer_builder_kwargs),
         device=device,
         dtype=dtype,
-        output_dir=output_dir,
+        output_dir=weight_output_dir,
         weight_store_rate=5
     )
 
     del train_loader
     del val_loader
-    
+
     # Store final logs (logs are stored continously, but this flushes the logs to disk)
     logger.save()
 
     # Save result model
     nn_model.eval()
-    weight_dst = os.path.abspath(os.path.join(output_dir, f"{name}.pt"))
-    save_on_master(nn_model.state_dict(), weight_dst)
-    print(f'Weights saved at: {weight_dst}')
+    if weight_output_dir is not None:
+        last_weight_dst = os.path.abspath(os.path.join(weight_output_dir, "last.pt"))
+        # TODO: ema.module might not be robust in multi-GPU setups see: https://docs.pytorch.org/docs/stable/optim.html#custom-averaging-strategies
+        if nn_model_ema:
+            save_on_master(nn_model_ema.module.state_dict(), last_weight_dst)
+        else:
+            save_on_master(nn_model.state_dict(), last_weight_dst)
+        print(f'Final weights saved at: {last_weight_dst}')
+
 
 def cli(description="Train a classifier", **extra_kwargs):
     parser = ArgumentParser(
@@ -352,7 +385,8 @@ def cli(description="Train a classifier", **extra_kwargs):
     )
     mod_args = parser.add_argument_group("Model [optional]")
     mod_args.add_argument(
-        "-m", "--model", type=str, default=None, required=False,
+        "-m", "--model", type=str, dest="model_builder_kwargs.model_type",
+        default=None, required=False,
         help=
         "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
         "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
@@ -364,7 +398,8 @@ def cli(description="Train a classifier", **extra_kwargs):
         "If multiple files are supplied training is restarted from an 'average' of checkpoint states."
     )
     mod_args.add_argument(
-        "-w", "--weights", type=str, default=None, required=False,
+        "-w", "--weights", type=str, dest="model_builder_kwargs.weights",
+        default=None, required=False,
         help="Model weights used to initialize model before training."
     )
     mod_args.add_argument(
@@ -387,36 +422,54 @@ def cli(description="Train a classifier", **extra_kwargs):
         help="Number of training epochs (default=15)."
     )
     train_args.add_argument(
-        "--lr", "--learning_rate", type=float, default=None, required=False,
+        "--lr", "--learning_rate", type=float, dest="optimizer_builder_kwargs.lr",
+        default=None, required=False,
         help="Initial learning rate after warmup (default=0.001)."
     )
     train_args.add_argument(
-        "--batch_size", type=int, default=None, required=False,
+        "--batch_size", type=int, dest="dataloader_builder_kwargs.batch_size",
+        default=None, required=False,
         help="Number of images used in each mini-batch for training/validation (default=16)."
     )
     train_args.add_argument(
-        "--warmup_epochs", type=float, default=None, required=False,
+        "--warmup_epochs", type=float, dest="lr_schedule_builder_kwargs.warmup_epochs", 
+        default=None, required=False,
         help="Number of warmup epochs (default=2.0)."
     )
     train_args.add_argument(
-        "--label_smoothing", type=float, default=None, required=False,
+        "--size", type=int, dest="dataloader_builder_kwargs.resize_size",
+        default=None, required=False,
+        help="Size of the input images; width, height (default=256)."
+    )
+    train_args.add_argument(
+        "--label_smoothing", type=float, dest="criterion_builder_kwargs.label_smoothing", 
+        default=None, required=False,
         help="Label smoothing applied to training (default=0.1)."
     )
     train_args.add_argument(
-        "--class_weighted", action="store_true", default=None, required=False,
+        "--no_ema", action="store_false", dest="ema",
+        default=None, required=False,
+        help="Disable EMA including self-distillation and semi-supervised learning."
+    )
+    train_args.add_argument(
+        "--class_weighted", action="store_true", dest="criterion_builder_kwargs.weighted",
+        default=None, required=False,
         help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
     )
     train_args.add_argument(
-        "--fine-tune", action="store_true", default=None, required=False,
+        "--fine-tune", action="store_true", dest="model_builder_kwargs.fine_tune",
+        default=None, required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
-        "--subsample", type=int, default=None, required=False,
+        "--subsample", type=int, dest="dataloader_builder_kwargs.subsample",
+        default=None, required=False,
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
     )
     cfg_args.add_argument(
-        "--cache", type=str, default=None, required=False,
+        "--cache", type=str, dest="dataloader_builder_kwargs.cache",
+        default=None, required=False,
         help='Cache/Preload datasets for faster dataloading. Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet). Mainly relevant for inefficiently stored training data or slow filesystems.'
     )
     cfg_args.add_argument(
@@ -440,7 +493,8 @@ def cli(description="Train a classifier", **extra_kwargs):
         "This is particularly important for reproducible train/validation splits."
     )
     cfg_args.add_argument(
-        "-v", "--verbose", action="store_true", default=None, required=False,
+        "-v", "--verbose", action="store_true", dest="logger_builder_kwargs.verbose",
+        default=None, required=False,
         help="Print training statistics in the terminal."
     )
     cli_args = vars(parser.parse_args())
@@ -450,7 +504,7 @@ def cli(description="Train a classifier", **extra_kwargs):
     # Build the three layers
     defaults_full = defaults_from_function(main) # Defaults defined in the function signature
     config_full = load_yaml_config(cli_args.pop("config")) # Arguments passed from config (empty if no config)
-    cli_full = restructure_cli_args(cli_args, fn=main) # Manual CLI arguments
+    cli_full = restructure_cli_args(cli_args) # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)
 
@@ -481,8 +535,10 @@ def cli(description="Train a classifier", **extra_kwargs):
     # Call the Python training API
     return args
 
+
 def run() -> None:
     sys.exit(main(**cli()))
+
 
 if __name__ == "__main__":  
     run()

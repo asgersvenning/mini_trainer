@@ -20,6 +20,8 @@ def cli(desc="Train a hierarchical classifier", **kwargs):
         kwargs.pop(key, None)
     
     kwargs["criterion_builder_kwargs"]["weights"] = kwargs.pop("loss_weights")
+    # kwargs["dataloader_builder_kwargs"]["data_index"] = None
+    kwargs["builder"] = HierarchicalBuilder
 
     return kwargs
 
@@ -28,6 +30,5 @@ if __name__ == "__main__":
     # import torch
     # torch.autograd.set_detect_anomaly(True)
     mt_train(
-        **cli(),
-        builder=HierarchicalBuilder
+        **cli()
     )

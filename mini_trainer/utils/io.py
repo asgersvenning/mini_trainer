@@ -227,7 +227,7 @@ class LazyDataset(torch.utils.data.Dataset):
             case CACHE_MODE.CUDA:
                 self._cache_ram()
                 guess_device = torch.device(torch.cuda.current_device())
-                warnings.warn(f'CUDA Caching is currently in development and may not work properly. Using device: `{guess_device}` for cache.')
+                warnings.warn(f'CUDA caching is currently in development and may not work properly. Using device: `{guess_device}` for cache.')
                 self._ram_cache.tensors = [t.to(guess_device) for t in self._ram_cache.tensors]
             case _:
                 raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'cpu'].")

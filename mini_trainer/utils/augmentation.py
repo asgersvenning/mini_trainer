@@ -14,6 +14,8 @@ def debug_augmentation(
         output_dir : str | None=None,
         strict : bool=True
     ):
+    if output_dir is None:
+        return
     convert2fp32 = make_convert_dtype(torch.float32)
     try:
         n = min(3, len(dataset))
@@ -29,7 +31,7 @@ def debug_augmentation(
                 ax.axis("off")
 
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "example_augmentation.png") if output_dir is not None else "example_augmentation.png")
+        plt.savefig(os.path.join(output_dir, "example_augmentation.png"))
         plt.close()
     except Exception as e:
         e_msg = (

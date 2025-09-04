@@ -272,8 +272,11 @@ class _Logger:
     def add_stat(self, name : str, container : _Statistic):
         raise NotImplementedError()
     
-    def get(self, name : str) -> _Statistic:
-        raise NotImplementedError()
+    def get(self, name : str):
+        return self.statistics[name]
+    
+    def rename_stat(self, name : str, new : str):
+        self.statistics[new] = self.statistics.pop(name)
 
     def update(self, name, values : float | int | list[float | int] | torch.Tensor | np.ndarray):
         if isinstance(values, (torch.Tensor, np.ndarray)):
@@ -382,39 +385,35 @@ class SmoothedValue(_Statistic):
 
 class MetricLogger(_Logger):
     def __init__(self, delimiter=" | ", printer=print, **kwargs):
-        self.meters = defaultdict(SmoothedValue)
+        self._statistics : defaultdict[str, SmoothedValue] = defaultdict(SmoothedValue)
         self.delimiter = delimiter
         self.printer = printer
 
+    @property
+    def statistics(self):
+        return self._statistics
+
     def __getattr__(self, attr):
-        if attr in self.meters:
-            return self.meters[attr]
+        if attr in self.statistics:
+            return self.statistics[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __str__(self):
         loss_str = []
-        for name, meter in self.meters.items():
-            loss_str.append(f"{name}: {str(meter)}")
+        for name, stat in self.statistics.items():
+            loss_str.append(f"{name}: {str(stat)}")
         return self.delimiter.join(loss_str)
 
     def synchronize_between_processes(self):
-        for meter in self.meters.values():
-            meter.synchronize_between_processes()
-
-    def add_meter(self, name, meter):
-        self.meters[name] = meter
+        for stat in self.statistics.values():
+            stat.synchronize_between_processes()
 
     def add_stat(self, name, container):
-        self.add_meter(name=name, meter=container)
-
-    def get(self, name : str):
-        return self.meters[name]
-    
-    @property
-    def statistics(self):
-        return self.meters
+        if not isinstance(container, SmoothedValue):
+            raise TypeError(f'Only ``SmoothedValue`` containers for statistics in ``MetricLogger`` supported, not: {type(container)}')
+        self.statistics[name] = container
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     """
@@ -570,30 +569,28 @@ class MultiLogger:
             epochs : int,
             output : str,
             name : str="log",
-            statistics : list[str]=["loss", "lr", "acc1", "acc5", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
+            statistics : list[str]=["loss", "acc1", "acc5", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
             logger_cls : list[type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
                 lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
             ],
-            canonical_statistic : str | None=None,
             clear_store_on_update : bool=True,
             verbose : bool=False
         ):
         self.total_epochs = epochs
-        self.statistics = statistics
         self.private_statistics = private_statistics
-        self._original_statistics = sorted(list(set(self.statistics) - set(self.private_statistics)), key=lambda x : self.statistics.index(x))
+        self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x : statistics.index(x))
         self.statistics_storage = defaultdict(list)
-        if canonical_statistic is None:
-            canonical_statistic = statistics[0]
-        self.canonical_statistic = canonical_statistic
-        if self.canonical_statistic not in self.statistics:
-            raise KeyError(f'Supplied canonical statistic "{self.canonical_statistic}" should be one of the supplied statistics: {", ".join([str(stat) for stat in self.statistics])}')
         self.heterogeneous_storage = defaultdict(list)
-        self.output_path = os.path.join(output, increment_name_dir(name, output) + ".json")
-        os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        if output is None:
+            self.output_path = None
+        else:
+            self.output_path = os.path.join(output, f"{name}.json")
+            os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+            if os.path.exists(self.output_path):
+                raise FileExistsError(f'Logging file "{self.output_path}" already exists.')
         self.clear_store_on_update = clear_store_on_update
         
         self.logger_cls = logger_cls
@@ -625,6 +622,10 @@ class MultiLogger:
         return \
             [list(range(e*train_steps, (e+1)*train_steps)) for e in range(epochs)], \
             [compute_aligned_steps(train_steps, val_steps, epochs, e) for e in range(epochs)]
+    
+    @property
+    def canonical_statistic(self):
+        return self.statistics[0]
 
     @property
     def steps(self):
@@ -674,8 +675,6 @@ class MultiLogger:
         ):
             this_logger = cls(steps=self.steps, tag=type, **kwargs)
             for stat in self.statistics:
-                if stat in self.private_statistics:
-                    continue
                 this_logger.add_stat(stat, stat_factory())
             self._current_loggers.append(this_logger)
 
@@ -710,6 +709,17 @@ class MultiLogger:
             if isinstance(logger, cls):
                 return logger
         raise KeyError(f'No logger of type {cls} found.')
+    
+    def rename_stat(self, current2new : dict[str, str]):
+        if len(current2new) > 1:
+            for k, v in current2new.items():
+                self.rename_stat({k : v})
+            return
+        current = list(current2new)[0]
+        new = current2new[current]
+        self.statistics[self.statistics.index(current)] = new
+        for logger in self.loggers:
+            logger.rename_stat(current, new)
 
     def log_statistic(self, **kwargs):
         for stat, value in kwargs.items():
@@ -738,8 +748,9 @@ class MultiLogger:
         }
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
+        fp = fp or self.output_path
         if fp is None:
-            fp = self.output_path
+            return
         if isinstance(fp, TextIO):
             json.dump(self.data, fp, **kwargs)
             return
@@ -785,10 +796,6 @@ class MultiLogger:
                 acc1, acc5 = accuracy(prediction, target, topk=(1, ))[0], torch.nan
             self.log_statistic(acc1=acc1, acc5=acc5)
         else:
-            if "acc1" in self._original_statistics:
-                self._original_statistics[self._original_statistics.index("acc1")] = "acc1/lvl0"
-            if "acc5" in self._original_statistics:
-                self._original_statistics[self._original_statistics.index("acc5")] = "acc5/lvl0"
             for lvl in range(len(prediction)):
                 tp = prediction[lvl]
                 tl = target[:, lvl]
@@ -800,7 +807,10 @@ class MultiLogger:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
                 else:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, ))[0], torch.nan
-                self.log_statistic(**{f'acc1/lvl{lvl}' : acc1, f"acc5/lvl{lvl}" : acc5})
+                if lvl == 0:
+                    self.log_statistic(acc1=acc1, acc5=acc5)
+                else:
+                    self.log_statistic(**{f'acc1/lvl{lvl}' : acc1, f"acc5/lvl{lvl}" : acc5})
 
     def log_labels_predictions(
             self,
@@ -819,6 +829,8 @@ class MultiLogger:
             self,
             loss : torch.Tensor | list[torch.Tensor]
         ):
+        if isinstance(loss, (list, tuple)) and len(loss) == 1:
+            loss = loss[0]
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss : float = loss.item()
             self.log_statistic(loss=loss)
@@ -902,7 +914,7 @@ class MultiLogger:
         self.step()
 
     def status(self):
-        stats = " | ".join([f'{name}: {str(self.loggers[0].statistics[name])}' for name in self._original_statistics])
+        stats = " | ".join([f'{name}: {str(self.loggers[0].statistics[name])}' for name in self.statistics[:min(4, len(self.statistics))]])
         epoch = self._epoch
         if epoch is None:
             epoch = "?"
@@ -910,20 +922,34 @@ class MultiLogger:
             epoch += 1
         return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'
 
-    def summary(self, stats : list[str]=["acc1", "acc5", "loss"]):
+    def _last_epoch_values(self, stat : str):
+        values = []
+        for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
+            if e != self._epoch or t != self._type:
+                break
+            values.append(v)
+        return values
+
+    def summary(self, stats : list[str] | None=None):
+        if stats is None:
+            stats = self.statistics
         parts = []
         for stat in stats:
-            values = []
-            if len(self.statistics_storage[stat]) == 0 and len(self.statistics_storage[f'{stat}/lvl0']) > 0:
-                stat = f'{stat}/lvl0'
-            for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
-                if e != self._epoch or t != self._type:
-                    break
-                values.append(v)
-            value = type(v)(np.median(np.array(values)))
+            values = self._last_epoch_values(stat)
+            if len(values) == 0:
+                parts.append(f'{stat}=NA')
+                continue
+            value = type(values[0])(np.median(np.array(values)))
             part = f'{stat}={value:>5.{float_signif_decimal(value)}f}'
             parts.append(part)
         return " | ".join(parts)
+    
+    @property
+    def canonical_scalar(self):
+        values = self._last_epoch_values(self.canonical_statistic)
+        if len(values) == 0:
+            return None
+        return np.median(np.array(values))
 
     def render_soft_confusion_matrix(
             self, 
@@ -944,10 +970,6 @@ class MultiLogger:
         for gidx in grps:
             lmask = labels == gidx
             cf[gidx] += predictions[lmask, :].sum(dim=0).float().cpu()
-        # for lidx, plog_prob in zip(labels, predictions):
-        #     lidx = int(lidx.item())
-        #     pprob = plog_prob.exp().float().cpu()
-        #     cf[lidx] += pprob
         if new_cf:
             self._soft_confusion_matrix[level] = cf
 

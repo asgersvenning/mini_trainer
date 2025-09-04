@@ -19,7 +19,7 @@ TAXONOMY_KEYS = (
 def retrive_request(req):
     resp = urlopen(req)
     if resp.status != 200:
-        raise RuntimeError(f'Unable to resolve GBIF species ID {id}, received status {resp.status} from {req}.')
+        raise RuntimeError(f'Unable to resolve request, received status {resp.status} from {req}.')
     return json.load(resp)
 
 def resolve_id(id : str | int):

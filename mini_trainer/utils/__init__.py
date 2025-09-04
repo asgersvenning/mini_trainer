@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 
 import psutil
 import torch
+from torch import nn
 from torch import distributed as dist
 from torchvision.transforms.v2 import ToDtype
 
@@ -73,6 +74,9 @@ def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000):
         raise TypeError(f'Invalid type `{type(name)}` used for the model name. Only `str` is accepted.')
     if len(name) == 0:
         raise ValueError('Invalid zero-length model specified.')
+    if dir is None:
+        return name
+
     def _name(i : int):
         if i < 0:
             raise RuntimeError(f'Invalid name iteration {i} specified.')
@@ -204,12 +208,13 @@ def reduce_across_processes(val):
     dist.all_reduce(t)
     return t
 
-def average_checkpoints(inputs):
+def average_checkpoints(inputs, map_location=None):
     """Loads checkpoints from inputs and returns a model with averaged weights. Original implementation taken from:
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
 
     Args:
       inputs: An iterable of string paths of checkpoints to load from.
+      map_location: If not specified attempts a sensible default, otherwise passed directly to ``torch.load``.
     Returns:
       A dict of string keys mapping to various values. The 'model' key
       from the returned dict should correspond to an OrderedDict mapping
@@ -219,10 +224,12 @@ def average_checkpoints(inputs):
     params_keys = None
     new_state = None
     num_models = len(inputs)
+    if map_location is None:
+        map_location = (lambda s, _: torch.serialization.default_restore_location(s, "cpu"))
     for fpath in inputs:
         with open(fpath, "rb") as f:
             state = torch.load(
-                f, map_location=(lambda s, _: torch.serialization.default_restore_location(s, "cpu")), weights_only=True
+                f, map_location=map_location, weights_only=True
             )
         # Copies over the settings from the first checkpoint
         if new_state is None:
@@ -385,3 +392,11 @@ def set_weight_decay(
         if len(params[key]) > 0:
             param_groups.append({"params": params[key], "weight_decay": params_weight_decay[key]})
     return param_groups
+
+def copy_bn_buffers(src: nn.Module, dst: nn.Module) -> None:
+    for ms, md in zip(src.modules(), dst.modules()):
+        if isinstance(ms, nn.modules.batchnorm._BatchNorm):
+            md.running_mean.copy_(ms.running_mean)
+            md.running_var.copy_(ms.running_var)
+            if hasattr(ms, "num_batches_tracked") and hasattr(md, "num_batches_tracked"):
+                md.num_batches_tracked.copy_(ms.num_batches_tracked)

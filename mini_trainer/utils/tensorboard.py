@@ -38,9 +38,6 @@ class TensorboardLogger(_Logger):
         if isinstance(container, type):
             container = container()
         self._statistics[name] = container
-
-    def get(self, name : str):
-        return self._statistics[name]
     
     @property
     def statistics(self):

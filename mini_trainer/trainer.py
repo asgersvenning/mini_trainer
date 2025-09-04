@@ -14,13 +14,15 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM
+from mini_trainer.builders import EMATeacher
 from mini_trainer.utils import (TERMINAL_WIDTH, is_dist_avail_and_initialized,
-                                reduce_across_processes, save_on_master)
+                                reduce_across_processes, save_on_master, copy_bn_buffers)
 from mini_trainer.utils.logging import MultiLogger
 
 
 def train_one_epoch(
         model : nn.Module, 
+        model_ema : EMATeacher,
         criterion : _Loss, 
         optimizer : Optimizer, 
         scaler : GradScaler,
@@ -40,6 +42,7 @@ def train_one_epoch(
 
     Args:
         model: Model under training.
+        model_ema: Exponential Moving Average model (``mini_trainer.builders.EMATeacher``) linked to ``model``.
         criterion: Loss function; may return a scalar tensor or a list of tensors.
         optimizer: Optimizer used for parameter updates.
         scaler: AMP gradient scaler.
@@ -58,23 +61,33 @@ def train_one_epoch(
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
     model.train()
-    pbar = TQDM(data_loader, total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
+    n_batches = len(data_loader)
+    pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
 
     nan_errs = 0
+    distill_loss = 0
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
+        step = n_batches * epoch + i
         batch, target = batch.to(device), target.to(device)
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
         with autocast(device_type=device.type, dtype=dtype):
-            output = model(preprocess(augmentation(batch)))
-            loss : list[torch.Tensor] | torch.Tensor = criterion(output, target) 
+            logits = model(preprocess(augmentation(batch)))
+            loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
+            # If EMA is disabled ``distill_loss`` is ``0.0``
+            distill_loss = model_ema.teach(
+                step=step,
+                input=preprocess(batch),
+                student=logits
+            )
+
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss = [loss]
         optimizer.zero_grad()
-        if not all([torch.isfinite(term).all() for term in loss]):
+        if not all([torch.isfinite(term).all() for term in loss]) or not torch.isfinite(torch.as_tensor(distill_loss)):
             nan_errs += 1
             if nan_errs < 5:
                 continue
@@ -82,25 +95,32 @@ def train_one_epoch(
                 raise RuntimeError('Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
-        scaler.scale(sum(loss) + regularizer(model)).backward()
+        scaler.scale(sum(loss) + regularizer(model) + distill_loss).backward()
         scaler.unscale_(optimizer)
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         scaler.step(optimizer)
         scaler.update()
         lr_scheduler.step()
+        model_ema.update_parameters(step, model)
         
         logger.consume(
             index=i,
             batch=batch, 
             target=target, 
-            prediction=output, 
+            prediction=logits, 
             loss=loss, 
             optimizer=optimizer, 
-            start_time=start_time
+            start_time=start_time,
+            distillation_loss=float(distill_loss)
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
+
+    ## TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
+    # if model_ema:
+    #     with torch.no_grad():
+    #         copy_bn_buffers(model, model_ema.module)
 
     model.eval()
 
@@ -130,6 +150,7 @@ def evaluate(
     Returns:
         The most recent value of the canonical statistic recorded by the logger.
     """
+    training_state = model.training
     model.eval()
     pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="eval")
@@ -169,18 +190,23 @@ def evaluate(
             "Try adjusting the batch size and / or the world size. "
             "Setting the world size to 1 is always a safe bet."
         )
-
+    
     if logger.verbose:
         print(logger.summary())
     logger.figures(model)
-    return logger.statistics_storage[logger.canonical_statistic][-1]
+    
+    model.train(training_state) # Restore model state
+    
+    return float(logger.canonical_scalar)
 
 def train(
         model : nn.Module, 
+        model_ema : EMATeacher,
         train_loader : DataLoader, 
         val_loader : DataLoader,
         criterion : _Loss, 
         optimizer : Optimizer, 
+        scaler : GradScaler,
         lr_scheduler : LRScheduler,
         logger : MultiLogger,
         epochs : int, 
@@ -199,6 +225,7 @@ def train(
 
     Args:
         model: Model to train.
+        model_ema: Exponential Moving Average model (``AveragedModel``) linked to ``model``.
         train_loader: Training dataloader.
         val_loader: Validation dataloader.
         criterion: Loss function.
@@ -221,26 +248,35 @@ def train(
         print("Start training")
     start_time = time.time()
 
-    scaler = GradScaler(device=device)
+    eval_model : nn.Module = getattr(model_ema, "module", model)
+
+    best_eval_loss = float("inf")
+    best_epoch = -1
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, criterion, optimizer, scaler, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
-        evaluate(model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
-        if output_dir:
+        train_one_epoch(model, model_ema, criterion, optimizer, scaler, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
+        eval_loss = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
+        is_best_eval = eval_loss < best_eval_loss
+        if is_best_eval:
+            best_epoch = epoch
+        best_eval_loss = min(best_eval_loss, eval_loss)
+        if output_dir is not None:
             checkpoint = {
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "lr_scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,
             }
-            # if model_ema:
-            #     checkpoint["model_ema"] = model_ema.state_dict()
-            # if scaler:
-            #     checkpoint["scaler"] = scaler.state_dict()
+            if model_ema:
+                checkpoint["model_ema"] = model_ema.state_dict()
+            if scaler is not None:
+                checkpoint["scaler"] = scaler.state_dict()
             if weight_store_rate is not None and epoch % weight_store_rate == 0:
-                save_on_master(checkpoint, os.path.join(output_dir, f"model_{epoch}.pth"))
-            save_on_master(checkpoint, os.path.join(output_dir, "checkpoint.pth"))
+                save_on_master(checkpoint, os.path.join(output_dir, f"checkpoint_{epoch}.pth"))
+            save_on_master(checkpoint, os.path.join(output_dir, "checkpoint_last.pth"))
+            if is_best_eval:
+                save_on_master(eval_model.state_dict(), os.path.join(output_dir, "best.pt"))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if logger.verbose:
-        print(f"Training time {total_time_str}")
+        print(f"Training time {total_time_str} | Best model found at epoch {best_epoch + 1}")
