@@ -69,11 +69,11 @@ def memory_proportion(
 
 def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000):
     if name is None:
-        raise ValueError('A model name must be specified.')
+        raise ValueError('A name must be specified.')
     if not isinstance(name, str):
-        raise TypeError(f'Invalid type `{type(name)}` used for the model name. Only `str` is accepted.')
+        raise TypeError(f'Invalid type `{type(name)}` used for the name. Only `str` is accepted.')
     if len(name) == 0:
-        raise ValueError('Invalid zero-length model specified.')
+        raise ValueError('Invalid zero-length name specified.')
     if dir is None:
         return name
 

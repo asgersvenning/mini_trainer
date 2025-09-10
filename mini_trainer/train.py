@@ -17,6 +17,7 @@ from mini_trainer.trainer import train
 from mini_trainer.utils import (average_checkpoints, increment_name_dir,
                                 save_on_master)
 from mini_trainer.utils.augmentation import debug_augmentation
+from mini_trainer.utils.muon import MuonAuxAdamW
 
 
 def main(
@@ -35,7 +36,10 @@ def main(
         model_builder_kwargs : dict[str, Any]={
             "model_type" : "efficientnet_v2_s",
             "weights" : None,
-            "fine_tune" : False
+            "fine_tune" : False,
+            "hidden" : True,
+            "droprate" : 0.1,
+            "normalized" : True
         },
         dataloader_builder_kwargs : dict[str, Any]={
             "batch_size" : 16,
@@ -44,8 +48,9 @@ def main(
         },
         augmentation_builder_kwargs : dict[str, Any]={},
         optimizer_builder_kwargs : dict[str, Any]={
-            "lr" : 0.0001,
-            "weight_decay" : 1e-4
+            "optimizer_cls" : MuonAuxAdamW, # torch.optim.AdamW
+            "lr" : 0.001,
+            "weight_decay" : 0.01
         },
         scaler_builder_kwargs : dict[str, Any]={},
         ema_builder_kwargs : dict[str, Any]={
@@ -55,9 +60,12 @@ def main(
             "distill_start" : 2.0
         },
         criterion_builder_kwargs : dict[str, Any]={
+            "weighted" : False,
             "label_smoothing" : 0.1
         },
-        regularizer_builder_kwargs : dict[str, Any]={},
+        regularizer_builder_kwargs : dict[str, Any]={
+            "strength" : 0.1
+        },
         lr_schedule_builder_kwargs : dict[str, Any]={
             "warmup_epochs" : 2.0
         },
@@ -284,12 +292,16 @@ def main(
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
 
+    log_dir = None if output_dir is None else os.path.join(output_dir, "logs")
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+
     # Instantiate logger
     logger = builder.build_logger(
         train_loader=train_loader,
         val_loader=val_loader,
         epochs=epochs,
-        output=output_dir,
+        output_dir=log_dir,
         **logger_builder_kwargs
     )
 

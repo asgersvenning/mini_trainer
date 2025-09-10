@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
 from mini_trainer.utils import (TERMINAL_WIDTH, is_dist_avail_and_initialized,
-                                reduce_across_processes, save_on_master, copy_bn_buffers)
+                                reduce_across_processes, save_on_master)
 from mini_trainer.utils.logging import MultiLogger
 
 
@@ -83,6 +83,7 @@ def train_one_epoch(
                 input=preprocess(batch),
                 student=logits
             )
+            reg = regularizer(model)
 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss = [loss]
@@ -95,14 +96,14 @@ def train_one_epoch(
                 raise RuntimeError('Interrupted training due to persistent nan\'s detected in the loss.')
         else:
             nan_errs = 0
-        scaler.scale(sum(loss) + regularizer(model) + distill_loss).backward()
+        scaler.scale(sum(loss) + reg + distill_loss).backward()
         scaler.unscale_(optimizer)
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         scaler.step(optimizer)
         scaler.update()
-        lr_scheduler.step()
         model_ema.update_parameters(step, model)
+        lr_scheduler.step()
         
         logger.consume(
             index=i,
@@ -112,7 +113,8 @@ def train_one_epoch(
             loss=loss, 
             optimizer=optimizer, 
             start_time=start_time,
-            distillation_loss=float(distill_loss)
+            distillation_loss=float(distill_loss),
+            regularization=float(reg)
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()

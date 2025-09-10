@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends import backend_agg
 from matplotlib.colors import LogNorm
 from PIL.Image import fromarray
+from scipy.special import betainc
 from torch import nn
 from torchvision.transforms.functional import resize
 
@@ -415,6 +416,12 @@ def class_distance(classification_weights : torch.Tensor, probability : bool=Tru
 
 def plot_model_class_distance(model : nn.Module, **kwargs):
     llw = last_layer_weights(model)
-    cdm = class_distance(llw, True)
-    cdm.fill_diagonal_(torch.nan)
-    return plot_heatmap(cdm, **kwargs)
+    # cdm = class_distance(llw, True)
+    # cdm.fill_diagonal_(torch.nan)
+    D = (1 - torch.corrcoef(llw.cpu().clone().detach())) / 2
+    _, E = llw.shape
+    a = (E - 1) / 2
+    Q = betainc(a, a, D)
+    Q.fill_diagonal_(torch.nan)
+    Q.clamp_(0.0, 1.0)
+    return plot_heatmap(Q, **kwargs)

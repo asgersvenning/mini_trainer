@@ -21,7 +21,11 @@ from mini_trainer.utils.data import (get_image_data, parse_class_index,
 from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
                                    make_read_and_resize_fn)
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import class_weight_distribution_regularization, kl_distill_ema
+from mini_trainer.utils.loss import (EvenCrossEntropyLoss,
+                                     class_weight_distribution_regularization,
+                                     weight_kl_gausssian,
+                                     coherence_hinge_regularization,
+                                     kl_distill_ema)
 
 
 def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float:
@@ -226,48 +230,62 @@ class BaseBuilder:
         """
         if not hasattr(model, '_backbone_output_name'):
             raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
-        
         head_attr_name = getattr(model, '_backbone_output_name')
         if not isinstance(head_attr_name, str):
             raise TypeError(f"`model._backbone_output_name` must be a string, got {type(head_attr_name)}.")
-        
         if not hasattr(model, head_attr_name):
             raise AttributeError(f"Model does not have an attribute named '{head_attr_name}' as specified by `_backbone_output_name`.")
-
         head_module = getattr(model, head_attr_name)
         if not isinstance(head_module, nn.Module):
             raise TypeError(f"The attribute '{head_attr_name}' (value of `_backbone_output_name`) must be an nn.Module.")
-
+        
+        norm_cls = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm, nn.GroupNorm, nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d)
+        norm_param_ids = set(id(p) for m in model.modules() if isinstance(m, norm_cls) for p in m.parameters(recurse=False))
         head_module_param_ids = set(id(p) for p in head_module.parameters())
 
-        actual_head_params = []
-        actual_backbone_params = []
+        param_groups = {
+            "head" : {
+                "params" : [],
+                "lr" : head_lr,
+                "weight_decay" : head_weight_decay
+            },
+            "backbone" : {
+                "params" : [],
+                "lr" : backbone_lr,
+                "weight_decay" : backbone_weight_decay
+            }
+        }
 
-        for p in model.parameters(): # Iterate through all parameters the model exposes
-            if id(p) in head_module_param_ids:
-                actual_head_params.append(p)
-            else:
-                actual_backbone_params.append(p)
+        n_params = 0
+        for name, p in model.named_parameters(): # Iterate through all parameters the model exposes
+            grp_name = "head" if id(p) in head_module_param_ids else "backbone"
+            # Heuristic to detect last-layer-weights: 
+            #   Parameters in classification module with "linear" or "layer" in name
+            # If using the Muon optimizer it is important not to use it on the final layer(s)!
+            if grp_name == "head" and "linear" in name or "layer" in name:
+                new_grp_name = f'{grp_name}_nomuon'
+                if new_grp_name not in param_groups:
+                    param_groups[new_grp_name] = {
+                        "params" : [],
+                        "lr" : param_groups[grp_name]["lr"],
+                        "weight_decay" : param_groups[grp_name]["weight_decay"]
+                    }
+                grp_name = new_grp_name
+            if "parametrizations.weight" in name or id(p) in norm_param_ids:
+                new_grp_name = f'{grp_name}_nodecay'
+                if new_grp_name not in param_groups:
+                    param_groups[new_grp_name] = {
+                        "params" : [],
+                        "lr" : param_groups[grp_name]["lr"],
+                        "weight_decay" : 0
+                    }
+                grp_name = new_grp_name
+            n_params += 1
+            param_groups[grp_name]["params"].append(p)
         
-        param_groups = []
-        if actual_head_params:
-            param_groups.append({
-                "params": actual_head_params, "lr": head_lr, "name": "head",
-                "weight_decay": head_weight_decay
-            })
-        elif head_module_param_ids: # Head module exists and has params, but they aren't in model.parameters()? Unlikely.
-             raise RuntimeError(f"Head module '{head_attr_name}' seems to have parameters, but none were found directly in `model.parameters()` for the head group.")
-
-
-        if actual_backbone_params:
-            param_groups.append({
-                "params": actual_backbone_params, "lr": backbone_lr, "name": "backbone",
-                "weight_decay": backbone_weight_decay
-            })
-        
-        if not param_groups and list(model.parameters()):
-            raise RuntimeError("Model has parameters, but no distinct head/backbone groups formed.")
-
+        param_groups = [grp for k, grp in param_groups.items() if len(grp["params"]) > 0 and grp.update({"name" : k}) is None]
+        if len(param_groups) == 0 and n_params > 0:
+            raise RuntimeError(f'No parameter groups detected for model with {n_params} parameters!')
 
         return param_groups
 
@@ -347,12 +365,12 @@ class BaseBuilder:
     @classmethod
     def build_optimizer(
         cls,
-        model: nn.Module,
-        optimizer_cls: type[torch.optim.Optimizer] = torch.optim.AdamW,
-        lr: float=1e-3,
-        weight_decay: float=0.0001,
-        backbone_lr: float | None=None,
-        backbone_weight_decay: float | None=None,
+        model : nn.Module,
+        optimizer_cls : type[torch.optim.Optimizer],
+        lr : float,
+        weight_decay : float,
+        backbone_lr : float | None=None,
+        backbone_weight_decay : float | None=None,
         **optimizer_kwargs # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
         """
@@ -368,8 +386,10 @@ class BaseBuilder:
 
         param_groups = cls.parameter_groups(
             model, 
-            head_lr=head_lr, backbone_lr=backbone_lr,
-            head_weight_decay=head_weight_decay, backbone_weight_decay=backbone_weight_decay
+            head_lr=head_lr, 
+            backbone_lr=backbone_lr,
+            head_weight_decay=head_weight_decay, 
+            backbone_weight_decay=backbone_weight_decay
         )
 
         if not param_groups and not list(model.parameters()): # Model has no parameters
@@ -384,7 +404,7 @@ class BaseBuilder:
             optimizer_kwargs['lr'] = head_lr # A sensible default
 
         # Clip gradients during backprop (prevent gradient explosion)
-        backbone_params = [pg["params"] for pg in param_groups if pg["name"] == "backbone"][0]
+        backbone_params : list[nn.Parameter] = [p for pg in param_groups if "backbone" in pg["name"] for p in pg["params"]]
         for p in backbone_params:
             if p.requires_grad:
                 p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
@@ -403,8 +423,8 @@ class BaseBuilder:
             epochs : int,
             steps_per_epoch : int,
             device : torch.types.Device,
-            epoch_halflife : float | int=None,
             update_rate : int=1,
+            epoch_halflife : float | int=None,
             decay_rate : float | None=None,
             distill_start : int | None=None,
             use_buffers : bool=True,
@@ -419,9 +439,9 @@ class BaseBuilder:
             model: The model to track.
             epochs: Total number of epochs that ``model`` is trained for.
             steps_per_epoch: Number of steps per epoch (training phase only).
+            update_rate: How often the EMA is updated with a snapshot of the ``model`` weights.
             epoch_halflife: Number of fraction epochs after which the EMA is only 50% of what it was:
                 EMA(t + epoch_halflife) = EMA(t) * 0.5 + X
-            update_rate: How often the EMA is updated with a snapshot of the ``model`` weights.
             decay_rate: If specified, manually overrides the decay rate calculated from the `update_rate` and half-life.
             distill_start: When EMA distillation/self-supervision starts in fractional epochs, defaults to two epochs or a maximum of 5000 steps (batches).
             use_buffers: Passed to ``torch.optim.swa_utils.AveragedModel`` (default=True).
@@ -474,16 +494,20 @@ class BaseBuilder:
         counts = torch.ones((num_classes, ))
         for cls_idx in labels:
             counts[cls_idx] += 1
-        weights = 1 / (counts.mean() + counts)
+        weights = 1 / counts
         weights /= torch.mean(weights)
         return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
 
     @staticmethod
-    def build_regularizer(strength : float=0, *args, **kwargs):
+    def build_regularizer(strength : float=1e-3, *args, **kwargs):
         strength = float(strength)
-        if strength == 0:
+        if strength == 0.0:
             return lambda _: 0.
-        return lambda model: strength * class_weight_distribution_regularization(last_layer_weights(model))
+        def func(model): 
+            llw = last_layer_weights(model)
+            # return strength * class_weight_distribution_regularization(llw)
+            return strength * (weight_kl_gausssian(llw) + coherence_hinge_regularization(llw)) 
+        return func
 
     @staticmethod
     def build_lr_scheduler(
@@ -504,23 +528,16 @@ class BaseBuilder:
         warmup_proportion = warmup_epochs / epochs
         head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
         
-        backbone_warmup_steps = round(warmup_steps * (1 - warmup_proportion))
-        _backbone_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch - warmup_steps, backbone_warmup_steps, start_factor, min_factor)
-        def backbone_schedule(step : int):
-            if step < warmup_steps:
-                return 0
-            return _backbone_schedule(step - warmup_steps)
+        # backbone_warmup_steps = round(warmup_steps * (1 - warmup_proportion))
+        # _backbone_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch - warmup_steps, backbone_warmup_steps, start_factor, min_factor)
+        # def backbone_schedule(step : int):
+        #     if step < warmup_steps:
+        #         return start_factor
+        #     return _backbone_schedule(step - warmup_steps)
         
-        lr_lambdas = []
-        for grp in optimizer.param_groups:
-            name = grp["name"]
-            match name:
-                case "head":
-                    lr_lambdas.append(head_schedule)
-                case "backbone":
-                    lr_lambdas.append(backbone_schedule)
-                case _:
-                    raise KeyError(f'Unknown parameter group "{name}" expected one of "head"/"backbone".')
+        lr_lambdas = [head_schedule for _ in optimizer.param_groups]
+        # for grp in optimizer.param_groups:
+        #     lr_lambdas.append(head_schedule if "head" in grp["name"] else backbone_schedule)
 
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer=optimizer, 

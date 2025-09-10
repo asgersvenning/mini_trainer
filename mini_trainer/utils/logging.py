@@ -2,13 +2,14 @@ import json
 import os
 import shutil
 import time
+import warnings
 from collections import defaultdict, deque
+from collections.abc import Callable
 from itertools import chain, repeat
 from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
 from typing import Any, TextIO, TypeVar
-from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -567,7 +568,7 @@ class MultiLogger:
             train_loader : torch.utils.data.DataLoader,
             val_loader : torch.utils.data.DataLoader,
             epochs : int,
-            output : str,
+            output_dir : str,
             name : str="log",
             statistics : list[str]=["loss", "acc1", "acc5", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
@@ -584,13 +585,7 @@ class MultiLogger:
         self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x : statistics.index(x))
         self.statistics_storage = defaultdict(list)
         self.heterogeneous_storage = defaultdict(list)
-        if output is None:
-            self.output_path = None
-        else:
-            self.output_path = os.path.join(output, f"{name}.json")
-            os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
-            if os.path.exists(self.output_path):
-                raise FileExistsError(f'Logging file "{self.output_path}" already exists.')
+        self.output_dir = output_dir
         self.clear_store_on_update = clear_store_on_update
         
         self.logger_cls = logger_cls
@@ -748,12 +743,29 @@ class MultiLogger:
         }
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
-        fp = fp or self.output_path
-        if fp is None:
+        ext = ".json"
+        if self._start_time is None:
+            warnings.warn("Attempting to save logs before starting the loggers is a no-op!")
             return
-        if isinstance(fp, TextIO):
+        if self._epoch is None:
+            raise NotImplementedError(f'Saving logs while {self._epoch=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        if self._type is None:
+            raise NotImplementedError(f'Saving logs while {self._type=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        if fp is None:
+            if self.output_dir is None:
+                return
+            output_dir, name = self.output_dir, f'log_{self._type}_epoch{self._epoch}'
+        elif isinstance(fp, TextIO):
             json.dump(self.data, fp, **kwargs)
             return
+        elif isinstance(fp, str):
+            output_dir, name = os.path.split(os.path.abspath(fp))
+            _, ext = os.path.splitext(name)
+        
+        
+        if os.path.exists(os.path.join(output_dir, name)):
+            name = increment_name_dir(name, output_dir)
+        fp = os.path.join(output_dir, name + ext)
 
         temp_file_name = None
         try:
@@ -937,9 +949,10 @@ class MultiLogger:
         for stat in stats:
             values = self._last_epoch_values(stat)
             if len(values) == 0:
-                parts.append(f'{stat}=NA')
                 continue
             value = type(values[0])(np.median(np.array(values)))
+            if not bool(np.isfinite(value)):
+                continue
             part = f'{stat}={value:>5.{float_signif_decimal(value)}f}'
             parts.append(part)
         return " | ".join(parts)

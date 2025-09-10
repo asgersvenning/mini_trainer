@@ -25,7 +25,11 @@ def retrive_request(req):
 def resolve_id(id : str | int):
     req = f'{GBIF_SPECIES_API_ENDPOINT}{id}'
     data = retrive_request(req)
-    clean_data = OrderedDict([(key, (str(data[f'{key}Key']), str(data[key]))) for key in TAXONOMY_KEYS])
+    try:
+        clean_data = OrderedDict([(key, (str(data[f'{key}Key']), str(data[key]))) for key in TAXONOMY_KEYS])
+    except KeyError as e:
+        e.add_note(f"Missing keys in: {data}")
+        raise e
     return clean_data
 
 SPACE_PATTERN = re.compile(r'[\s_]+')

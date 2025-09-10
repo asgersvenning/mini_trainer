@@ -12,3 +12,4 @@ dependencies:
   - tensorboard
   - pandas
   - zarr
+  - scipy

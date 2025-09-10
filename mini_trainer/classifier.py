@@ -10,6 +10,11 @@ from torchvision.io import ImageReadMode, decode_image
 
 from mini_trainer.utils import make_convert_dtype, recursive_dfs_attr
 
+try:
+    from torch.nn.utils.parametrizations import weight_norm 
+except Exception:  # fallback for older installs
+    from torch.nn.utils import weight_norm
+
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
     'fcos_resnet50_fpn', 
@@ -62,6 +67,17 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
     return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype))
 
 class Classifier(nn.Module):
+    @staticmethod
+    @torch.no_grad()
+    def _normalize_layer(layer: nn.Linear):
+        if layer.bias is not None:
+            layer.bias.fill_(-1)
+            layer.bias.requires_grad_(False)
+        layer.weight.copy_(torch.nn.functional.normalize(layer.weight, dim=1))
+        layer = weight_norm(layer, name="weight", dim=1)
+        layer.parametrizations.weight.original0.requires_grad_(False)
+        return layer
+
     def __init__(
             self, 
             in_features : int, 
@@ -80,27 +96,18 @@ class Classifier(nn.Module):
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        if normalized:
-        # Create a standard linear layer with unit vector per class
-            self.linear = nn.utils.parametrizations.weight_norm(nn.Linear(in_features, out_features, bias=True), name="weight", dim=0)
-            with torch.no_grad():
-                self.linear.parametrizations.weight.original0.fill_(1)    
-            self.linear.parametrizations.weight.original0.requires_grad_(False)
-            
-            # Set the bias to -1 and freeze it.
-            with torch.no_grad():
-                self.linear.bias.fill_(-1)
-            self.linear.bias.requires_grad_(False)
-        else:
-            self.linear = nn.Linear(in_features, out_features, bias=True)
+        layer = nn.Linear(in_features, out_features, bias=True)
+        self.linear = self._normalize_layer(layer) if normalized else layer
 
-    def forward(self, x):
+    def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
             x = self.dropout(x)
             x = self.hidden(x)
             x = nn.functional.leaky_relu(x)
-        x = self.batch_norm(x)
-        return self.linear(x)
+        return self.batch_norm(x)
+
+    def forward(self, x : torch.Tensor) -> torch.Tensor:
+        return self.linear(self.preclassification(x))
 
     @classmethod
     def load(

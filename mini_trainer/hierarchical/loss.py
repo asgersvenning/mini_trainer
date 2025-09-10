@@ -4,6 +4,8 @@ from torch import nn
 from torch._prims_common import DeviceLikeType
 from torch.types import _dtype
 
+from mini_trainer.utils.loss import EvenCrossEntropyLoss
+
 
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
     def __init__(
@@ -18,6 +20,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         self.dtype = dtype
 
         self.weights = torch.tensor(weights).to(device=device, dtype=dtype)
+        # self.weights /= self.weights.sum()
         self.n_levels = len(weights)
         if class_weights is None:
             self.class_weights = None
@@ -50,9 +53,10 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         ) -> "MultiLevelLoss":
         targets = targets.transpose(0, 1)
         if self.class_weights is None:
-            item_weights = [targets[i].new_ones(targets[i].shape) for i in range(self.n_levels)]
+            item_weights = [targets[i].new_ones(targets[i].shape, dtype=torch.float32) for i in range(self.n_levels)]
         else:
             item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
+        item_weights = [iw / iw.mean(dim=-1, keepdim=True) for iw in item_weights]
         return list(MultiLevelLoss(
             [
                 (self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean()

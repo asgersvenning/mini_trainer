@@ -183,7 +183,8 @@ class HierarchicalBuilder(BaseBuilder):
         ncls = [len(clvl) for clvl in cls]
         hierarchy = create_hierarchy(combinations, cls2idx)
         masks = mask_hierarchy(hierarchy, zero=-100)
-        return {"num_classes" : ncls, "masks" : list(masks)}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls, "combinations" : combinations}
+        sparse_masks = [(m > -0.5).nonzero(as_tuple=True)[1] for m in masks]
+        return {"num_classes" : ncls, "masks" : list(masks), "sparse_masks" : sparse_masks}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls, "combinations" : combinations}
 
     @staticmethod
     def build_model(*args, cls=HierarchicalClassifier, **kwargs):
@@ -312,7 +313,7 @@ class HierarchicalBuilder(BaseBuilder):
             for cls_idx in labels:
                 counts[cls_idx[lvl]] += 1
             # weights = torch.log(counts)
-            weights = 1 / (counts + counts.mean())
+            weights = 1 / counts
             weights /= weights.mean()
             class_weights.append(weights)
         return MultiLevelWeightedCrossEntropyLoss(
