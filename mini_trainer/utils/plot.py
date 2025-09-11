@@ -421,7 +421,7 @@ def plot_model_class_distance(model : nn.Module, **kwargs):
     D = (1 - torch.corrcoef(llw.cpu().clone().detach())) / 2
     _, E = llw.shape
     a = (E - 1) / 2
-    Q = betainc(a, a, D)
+    Q = 1 - betainc(a, a, D)
     Q.fill_diagonal_(torch.nan)
     Q.clamp_(0.0, 1.0)
     return plot_heatmap(Q, **kwargs)

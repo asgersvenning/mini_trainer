@@ -64,6 +64,7 @@ def train_one_epoch(
     n_batches = len(data_loader)
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
+    logger.start_timing()
 
     nan_errs = 0
     distill_loss = 0
@@ -118,6 +119,7 @@ def train_one_epoch(
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
+    logger.stop_timing()
 
     ## TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
@@ -156,6 +158,7 @@ def evaluate(
     model.eval()
     pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="eval")
+    logger.start_timing()
 
     num_processed_samples = 0
     start_time = time.time()
@@ -177,6 +180,7 @@ def evaluate(
         pbar.set_description_str(logger.status(), i % 25 == 0)
         num_processed_samples += len(batch)
         start_time = time.time()
+    logger.stop_timing()
     
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
@@ -281,4 +285,5 @@ def train(
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if logger.verbose:
-        print(f"Training time {total_time_str} | Best model found at epoch {best_epoch + 1}")
+        print(f"Total time {total_time_str} | Best model found at epoch {best_epoch + 1}")
+        print(logger.timings(format=True, prefix="\n\t"))

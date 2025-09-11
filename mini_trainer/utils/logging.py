@@ -34,6 +34,42 @@ def format_duration(sec : int, suffix="dhms"):
     start = next((i for i, v in enumerate(tms[:-1]) if v), len(tms) - 1)
     return "".join(f"{t:02d}{s}" for t, s in zip(tms[start:], suffix[start:]))
 
+class Timer:
+    def __init__(self):
+        self._last = None
+        self._total = 0.0
+
+    @property
+    def total(self) -> float:
+        if self.running:
+            raise RuntimeError("Attempting to grab total of a running timer!")
+        return self._total
+    
+    @property
+    def running(self):
+        return self._last is not None
+
+    def start(self):
+        if self.running:
+            raise RuntimeError("Attempting to start timer which is already running.")
+        self._last = time.time()
+    
+    def stop(self):
+        if not self.running:
+            raise RuntimeError("Attempting to stop timer which is not running.")
+        self._total += time.time() - self._last
+        self._last = None
+
+    def __str__(self):
+        if self.running:
+            return f'Timer[Running]: {format_duration(self.total)} + {format_duration(time.time() - self._last)}'
+        else:
+            return f'Timer[Stopped]: {format_duration(self.total)}'
+    
+    def __repr__(self):
+        return str(self)
+
+
 class ETA:
     def __init__(
             self, 
@@ -598,6 +634,7 @@ class MultiLogger:
         self.total_steps = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
 
         # Initialize dynamic attributes
+        self._type_timing : defaultdict[str, "Timer"] = defaultdict(Timer)
         self._last_save = time.time()
         self._step = 0
         self._start_time = None
@@ -609,6 +646,22 @@ class MultiLogger:
         self._idx = None
         self._n_classes = None
         self._soft_confusion_matrix : dict[str, torch.Tensor] = dict()
+
+    def start_timing(self):
+        self._type_timing[self._type].start()
+
+    def stop_timing(self):
+        self._type_timing[self._type].stop()
+
+    def timings(self, format : bool=True, title : str="", prefix="\n", fmt : str='{name} : {time}'):
+        timings = {k : v.total for k, v in self._type_timing.items()}
+        if not format:
+            return timings
+        return f'{title}{prefix}' + prefix.join([
+            fmt.format(name=name,time=time)
+            for name, time in timings.items()
+        ])
+
 
     def is_train(self):
         return isinstance(self._type, str) and self._type.lower().strip().startswith("train")
