@@ -73,8 +73,8 @@ class Classifier(nn.Module):
         if layer.bias is not None:
             layer.bias.fill_(-1)
             layer.bias.requires_grad_(False)
-        layer.weight.copy_(torch.nn.functional.normalize(layer.weight, dim=1))
-        layer = weight_norm(layer, name="weight", dim=1)
+        weight_norm(layer, name="weight", dim=0)
+        layer.parametrizations.weight.original0.fill_(1.0)
         layer.parametrizations.weight.original0.requires_grad_(False)
         return layer
 
