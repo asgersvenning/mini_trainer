@@ -72,9 +72,9 @@ def train_one_epoch(
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
         step = n_batches * epoch + i
-        batch, target = batch.to(device), target.to(device)
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
+        batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
         with autocast(device_type=device.type, dtype=dtype):
             logits = model(preprocess(augmentation(batch)))
             loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
@@ -164,7 +164,7 @@ def evaluate(
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
         with torch.inference_mode():
-            batch, target = batch.to(device), target.to(device)
+            batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
             with autocast(device_type=device.type, dtype=dtype):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)

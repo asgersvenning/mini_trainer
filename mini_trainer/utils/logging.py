@@ -658,7 +658,7 @@ class MultiLogger:
         if not format:
             return timings
         return f'{title}{prefix}' + prefix.join([
-            fmt.format(name=name,time=time)
+            fmt.format(name=name,time=format_duration(time))
             for name, time in timings.items()
         ])
 
