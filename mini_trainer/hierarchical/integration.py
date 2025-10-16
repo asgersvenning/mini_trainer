@@ -1,305 +1,236 @@
-import glob
 import json
-import math
 import os
-import random
-from collections import defaultdict
-from typing import Any
+from collections import OrderedDict
 from collections.abc import Callable
+from typing import Iterable
 
-import numpy as np
 import torch
-from torch import nn as nn
-from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
-                              SequentialSampler)
-from tqdm.contrib.concurrent import thread_map
 
-from mini_trainer import TQDM
 from mini_trainer.builders import BaseBuilder
+from mini_trainer.hierarchical.gbif import (create_taxonomy,
+                                            labels_from_taxonomy)
 from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
 from mini_trainer.hierarchical.model import HierarchicalClassifier
-from mini_trainer.hierarchical.setup import (names_or_ids_to_combinations,
-                                             resolve_name_or_id)
-from mini_trainer.hierarchical.utils import create_hierarchy, mask_hierarchy
-from mini_trainer.utils.data import get_image_data
-from mini_trainer.utils.io import (CACHE_MODE, ImageClassLoader,
-                                   guess_cache_mode, is_image)
+from mini_trainer.utils.data import find_images
 from mini_trainer.utils.logging import BaseResultCollector
+from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
 
-DEFAULT_HIERARCHY_LEVELS = ("species", "genus", "family")
 
-def hierarchical_class_index_to_standard(path : str):
-    with open(path) as f:
-        data = json.load(f)
-    return data["cls2idx"]["0"]
+def linnean_labels_from_directory(dir : str, levels="family", **kwargs):
+    images = find_images(dir)
+    dirnames = set([os.path.split(os.path.dirname(im))[1] for im in images])
+    taxonomy = create_taxonomy(dirnames, levels=levels)
+    return labels_from_taxonomy(taxonomy)
 
-def hierarchy_to_combinations(path : str, levels : list[str]=DEFAULT_HIERARCHY_LEVELS):
+def default_labels_from_directory_structure(dir : str, **kwargs):
+    images = find_images(dir)
+    image_dirs = list(sorted(set([os.path.dirname(os.path.relpath(p, dir)) for p in images])))
+    labels = OrderedDict([(d[-1], tuple(d.split(os.sep)[::-1])) for d in image_dirs])
+    return labels
+
+def parse_class_spec(
+        path : str | None=None, 
+        dir : str | None=None,
+        levels : int | None=None,
+        label_fn : Callable[[str], OrderedDict[str, tuple[str, ...]]]=default_labels_from_directory_structure,
+        **kwargs
+    ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | int]:
     """
+    Construct class specification: 
+    * class index (label string to index mapping)
+    * hierarchical labels (tuple of label strings leaf->root)
+    * number of (leaf) classes
+    from a precalculated class specification or a directory structure.
+
+    If constructed from a directory structure, the hierarchy is constructed based on the names
+    and structure of the directories containing the training images.
+    
+    By default it assumed that labels can be parsed from the image path like:
+        ```
+        image_path = <"[dir]/[root_label]>/[...]/[leaf_label]/[image_filename]">
+        label = [<"leaf_label">, ..., <"root_label">]
+        labels = {<"[root_label]>/[...]/[leaf_label]"> : [<"leaf_label">, ..., <"root_label">] for image in images}
+        ```
+    However, this behaviour can be modified by passing a function to `label_fn` that takes the root
+    directory containing all training images (and no other images), and computes an ordered dictionary
+    of all labels for all valid images in the directory, where the key should be the parent directory of images
+    with a given label.
+    The labels should be sorted first by the root label and last by the leaf label.
+
     Args:
-        path: Path to a JSON file containing a key for each leaf class (most likely species), which should have a corresponding folder of images with the same name. 
-            Each value should be a dictionary with, at least, the keys given by `levels`, with values being being a list of class labels for each level. 
-            I will assume that the first class label in the list is to be used as the primary class label. This can be used for example to save both the GBIF ID, scientific name and vernacular name. 
-        levels: A list of names for the class hierarchy levels. The names should be ordered from highest (root) to lowest (leaf).
+        path: Path to a precomputed class specification if it exists, otherwise one will be computed.
+            If path is not None, but doesn't exist yet, the computed class specification
+            will be stored in path for later use.
+        levels: If an integer, the hierarchy is truncated to the number of levels specified.
+            Otherwise all levels computed from ``label_fn`` are used.
+        dir: Root directory containing all training images (and no other images).
+        label_fn: A function which computes an ordered dictionary of labels for all images in ``dir``, 
+            where the key should be the name of the directory containing all images which match a label.
+        **kwargs: Additional arguments passed to ``label_fn``.
+    
+    Returns:
+        (class specification): A dictionary containing information 
+            used for constructing models and dataloaders. Structure:
+            * "cls2idx": [dict[str, dict[str, int]]]
+                * [str] <"hierarchy level">:
+                    * [str] <"leaf label">: [int] <"leaf class index">
+            * "labels": [OrderedDict[str, tuple[str, ...]]]
+                * [str] (<"label 1 image directory">) : [tuple[str, ...]] (<"leaf 1 label">, ..., <"root 1 label">)
+            * "num_classes": [int] <number of leaf classes>
+    """
+    if isinstance(levels, int):
+        assert levels > 0
+    else:
+        assert levels is None
+    if path is None or not os.path.exists(path):
+        if dir is None or not os.path.isdir(dir):
+            if isinstance(dir, str) and dir.endswith(".parquet"):
+                # TODO: For now we will just assume that there are three levels 
+                # if not specified with parquet, but this should be determined 
+                # automatically as it is in the other code branch!
+                if levels is None:
+                    levels = 3
+                retval = parquet_to_class_spec_hierarchical(dir, levels=levels)
+            else:
+                raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
+        else:
+            labels = label_fn(dir, **kwargs)
+            if levels is not None:
+                for lab in labels.keys():
+                    labels[lab] = labels[lab][:levels]
+            nlvl = set([len(l) for l in labels.values()])
+            if len(nlvl) != 1:
+                raise RuntimeError('Varying hierarchy levels found in image directory structure:', list(sorted(nlvl)))
+            nlvl = list(nlvl)[0]
+            cls2idx : dict[int, dict[str, int]] = {str(lvl) : dict() for lvl in range(nlvl)}
+            classes = {str(lvl) : set() for lvl in range(nlvl)}
+            for lab in labels.values():
+                for lvl, cls in enumerate(lab):
+                    if cls in classes[str(lvl)]:
+                        continue
+                    classes[str(lvl)].add(cls)
+                    cls2idx[str(lvl)][cls] = len(classes[str(lvl)]) - 1
+            retval = {"cls2idx" : cls2idx, "labels" : labels, "num_classes" : len(labels)}
+        if path is not None:
+            with open(path, "w") as f:
+                json.dump(retval, f)
+        else:
+            return retval
+    with open(path, "rb") as f:
+        retval = json.load(f)
+        retval["labels"] = OrderedDict([(k, v) for k, v in retval["labels"].items()])
+    if levels:
+        retval["cls2idx"] = {str(lvl) : retval["cls2idx"][str(lvl)] for lvl in range(levels)}
+        for lab in retval["labels"].keys():
+            retval["labels"][lab] = retval["labels"][lab][:levels]
+    return retval
+    
+def sparse_masks_from_labels(
+        labels : OrderedDict[str, tuple[str, ...]], 
+        cls2idx : dict[str, dict[str, int]]
+    ):
+    """
+    Compute 'sparse masks' from labels (e.g. [species, genus, family]) and class indices.
+
+    A sparse mask is an integer vector (1D tensor) with length equal to the number of classes
+    at some level (e.g. number of species) that maps each class to it's parent class 
+    (e.g. a species to a genus), encoded such that the value in the mask at the index of a class
+    is the index of it's parent:
+        ```
+        mask[child_idx] = parent_idx
+        ```
+
+    Args:
+        labels: Ordered dictionary of hierarchical labels (tuple of label strings leaf->root).
+        cls2idx: Dictionary of dictionaries, keys to the outer dictionary are hierarchy levels (integer), 
+            while the nested dictionaries are class label to index mappings for each level in the hierarchy.
 
     Returns:
-        A topologically sorted list of all unique combinations of classes (root-to-leaf) as a tuple of strings.
+        List of sparse masks for levels `{0, ..., N-2}` where `N` is the 
+            number of layers in the hierarchy (e.g. 3 if [species, genus, family]).
     """
-    with open(path, "rb") as f:
-        return list(sorted(set([tuple([leaf[level][0] for level in levels]) for leaf in json.load(f).values()])))
+    ## Function logic
+    nlvl = len(cls2idx)
+    # Initialize masks with "empty" values (-1)
+    masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl-1)] 
+    for lab in labels.values():
+        idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(lab)]
+        for mask_i, (child, parent) in enumerate(zip(idx, idx[1:])):
+            if masks[mask_i][child] not in [-1, parent]:
+                raise ValueError(
+                    f'Conflicting labels detected at level {mask_i} class {child} '
+                    f'which had parent {masks[mask_i][child]}, now found {parent}!'
+                )
+            masks[mask_i][child] = parent
 
-class HierarchicalPathParser:
-    def __init__(
-            self, 
-            class_index : str, 
-            levels : list[str]=DEFAULT_HIERARCHY_LEVELS, 
-            as_tensor : bool=False, 
-            reversed : bool=False, 
-            name2cls : dict[str, int] | None=None,
-            *args, 
-            **kwargs
-        ):
-        self.levels = levels
-        self.as_tensor = as_tensor
-        self.reversed = reversed
-        self.name2cls = name2cls
-        with open(class_index, "rb") as f:
-            _class_index_data = json.load(f)
-        self.cls2idx = _class_index_data["cls2idx"]
-        if len(self.levels) > len(self.cls2idx):
-            raise ValueError(f'Unable to initialize path to hierarchical class label parser. More levels ({levels}) specified than the number of class-to-index dictionaries found in {class_index}.')
-        self.combinations : list = _class_index_data["combinations"]
-        comb_leafs = [c[0] for c in self.combinations]
-        self.hierarchy = {leaf : {level : [cls] for level, cls in zip(self.levels, self.combinations[comb_leafs.index(leaf)])} for leaf in self.cls2idx["0"]}
+    ## Output checking
+    # Check that masks contain no empty values (-1)
+    invalid = []
+    for mask_i, mask in enumerate(masks):
+        for element_i, element in enumerate(mask):
+            if element == -1:
+                invalid.append((mask_i, element_i))
+    if len(invalid) > 0:
+        err_msg = (
+            'Unable to construct sparse masks (child-parent mappings) from labels and class index.\n'
+            f'Found {len(invalid)} missing elements at:\n'
+            '| mask | element |\n'
+            '------------------\n'
+        ) + '\n'.join([f'|{mask_i:^6}|{element_i:^9}|' for mask_i, element_i in invalid])
+        raise ValueError(err_msg)
+    # Check that all classes in last layer class index are used
+    if (missing := set(cls2idx[str(nlvl-1)].values()) - set(masks[-1])):
+        err_msg = f'Found {len(missing)} unused classes in top level: [{", ".join(map(str, missing))}]'
+        raise ValueError(err_msg)
+    
+    ## Function return
+    # Return masks converted to long tensors
+    return [torch.tensor(mask, dtype=torch.long) for mask in masks]
 
-    def __call__(self, path : str):
-        cls = path_to_hierarchy(path, self.hierarchy, self.cls2idx, self.levels, self.name2cls)
-        if self.reversed:
-            cls = cls[::-1]
-        if self.as_tensor:
-            return torch.tensor(cls, dtype=torch.long)
-        return cls
-
-def path_to_hierarchy(
-        path : str, 
-        hierarchy : dict[str, dict[str, tuple[str, ...]]],
-        cls2idx : dict[str, dict[str, int]] | None=None, 
-        levels : list[str]=DEFAULT_HIERARCHY_LEVELS,
-        name2cls : dict[str, int] | None=None
-    ):
-    if os.path.sep in path:
-        parts = path.split(os.path.sep)
-    else:
-        parts = path.split("/")
-    if len(parts) < 2:
-        raise ValueError(f'Expected `path` to be an absolute path or a relative path stump containing at least one parent directory, not {path} which only contains {len(parts)} path components.')
-    leaf = parts[-2]
-    if name2cls is not None:
-        leaf = str(name2cls[leaf])
-    out = tuple([hierarchy[leaf][level][0] for level in levels])
-    if cls2idx is not None:
-        out = tuple([cls2idx[str(li)][cls] for li, cls in enumerate(out)])
-    return out   
-
-def parse_quality_control(
-        path : str, 
-        correct_class : str="1",
-        confidence_threshold : float=0.8,
-        max_per_cls : int | None=None,
-        path2cls_builder : Callable[[Any], Callable[[str], Any]]=HierarchicalPathParser, 
-        **kwargs
-    ):
-    with open(path, "rb") as f:
-        data = json.load(f)
-    if max_per_cls is not None:
-        cls_counter = defaultdict(lambda : 0)
-    path2cls = path2cls_builder(**kwargs)
-    paths, clss = [], []
-    for path, pred, conf in zip(*[data[key] for key in ["paths", "preds", "confs"]]):
-        if not (pred == correct_class and conf >= confidence_threshold):
-            continue
-        cls = path2cls(path)
-        if max_per_cls is not None:
-            if cls_counter[cls] < max_per_cls:
-                cls_counter[cls] += 1
-            else:
-                continue
-        paths.append(path)
-        clss.append(cls)
-    return paths, clss
-
-def hierarchical_create_data_index(
-        path : str,
-        outpath : str | None,
-        parse_fn : Callable[[str], tuple[list[str], list[Any]]]=parse_quality_control,
-        split : tuple[float, ...]=(0.8, 0.1, 0.1),
-        split_labels : tuple[str, ...]=("train", "validation", "test"),
-        **kwargs
-    ):
-    paths, cls = parse_fn(path, **kwargs)
-    n = len(paths)
-    spl = random.sample([lab for prop, lab in zip(split, split_labels) for _ in range(math.ceil(n * prop))], n)
-    data = {k : v for k, v in zip(["path", "class", "split"],[paths, cls, spl])}
-    if outpath:
-        if os.path.exists(outpath):
-            os.remove(outpath)
-        with open(outpath, "w") as f:
-            json.dump(data, f)
-    else:
-        return data
 
 class HierarchicalBuilder(BaseBuilder):
     @staticmethod
-    def spec_model_dataloader(
-            path : str | None=None, 
-            dir : str | None=None, 
-            dir2comb_fn : Callable[[str], list[tuple[str, ...]]]=\
-                lambda dir : names_or_ids_to_combinations(list(filter(lambda subdir : len(os.listdir(os.path.join(dir, subdir))) > 25, os.listdir(dir))))
+    def class_spec(
+            path : str | None=None,
+            dir : str | None=None,
+            levels : int | None=None,
+            species : bool=True,
+            *args, 
+            **kwargs
         ):
         """
-        Accepts a path to a class index file or a directory with named subdirectories for each class.
-
-        Alternatively `dir` can be used with a custom function. The custom function should return a topologically sorted list of all combinations of classes (root-to-leaf) as a tuple of strings.
+        Returns:
+            (extra_model_kwargs, extra_dataloader_kwargs): Extra keyword arguments for the model and dataloader building functions.
         """
-        if path is None or not os.path.exists(path):
-            combinations = dir2comb_fn(dir)
-            combinations = sorted(combinations, key=lambda x : x[::-1])
-            classes = {i : [] for i in range(len(next(iter(combinations))))}
-            for e in combinations:
-                for lvl, cls in enumerate(e):
-                    if cls not in classes[lvl]:
-                        classes[lvl].append(cls)
-            classes = {lvl : classes[lvl] for lvl in range(len(classes))}
-            cls2idx = {lvl : {cls : idx for idx, cls in enumerate(classes[lvl])} for lvl in range(len(classes))}
-            if path is not None:
-                with open(path, "w") as f:
-                    json.dump({"cls2idx" : cls2idx, "combinations" : combinations}, f)
-        else:
-            with open(path, "rb") as f:
-                c2i_comb = json.load(f)
-                cls2idx = {int(lvl) : e for lvl, e in c2i_comb["cls2idx"].items()}
-                combinations = c2i_comb["combinations"]
-        cls = [list(cls2idx[lvl]) for lvl in range(len(cls2idx))]
-        idx2cls = {lvl : {v : k for k, v in cls2idx[lvl].items()} for lvl in range(len(cls2idx))}
-        ncls = [len(clvl) for clvl in cls]
-        hierarchy = create_hierarchy(combinations, cls2idx)
-        masks = mask_hierarchy(hierarchy, zero=-100)
-        sparse_masks = [(m > -0.5).nonzero(as_tuple=True)[1] for m in masks]
-        return {"num_classes" : ncls, "masks" : list(masks), "sparse_masks" : sparse_masks}, {"classes" : cls, "cls2idx" : cls2idx, "idx2cls" : idx2cls, "combinations" : combinations}
+        if species:
+            if "label_fn" in kwargs:
+                raise ValueError(f'`label_fn` passed to `BaseBuilder.spec_model_dataloader` when `{species=})`')
+            kwargs["label_fn"] = linnean_labels_from_directory
+        return parse_class_spec(path=path, dir=dir, levels=levels, **kwargs)
+        
 
     @staticmethod
-    def build_model(*args, cls=HierarchicalClassifier, **kwargs):
-        return BaseBuilder.build_model(*args, cls=cls, **kwargs)
-
-    @staticmethod
-    def build_dataloader(
-            input_dir : str,
-            classes : list[str],
-            cls2idx : dict[str, int],
-            preprocess : Callable[[torch.Tensor], torch.Tensor],
-            batch_size : int,
-            device : torch.device,
-            dtype = torch.dtype,
-            data_index : str | None=None,
-            num_workers : int | None=None,
-            resize_size : int | None=None,
-            subsample : int | None=None,
-            cache : int | str | None=None,
-            train_proportion : float=0.9,
-            idx2cls : dict[int, str] | None=None,
-            combinations : list[tuple[str, str, str]] | None=None
+    def build_model(
+            cls2idx : dict[int, dict[str, int]], 
+            labels : list[tuple[str, ...]], 
+            *args, 
+            cls=HierarchicalClassifier, 
+            **kwargs
         ):
-        # Prepare datasets/dataloaders
-        if data_index is None:
-            cls2comb = {comb[0] : comb for comb in combinations}
-            all_files = [path for f in glob.glob("**", root_dir=input_dir, recursive=True) if not os.path.isdir(path := os.path.join(input_dir, f)) and is_image(path)]
-            random.shuffle(all_files)
-            data = {
-                "path" : [],
-                "class" : [],
-                "split" : []
-            }
-            dirnames = set([os.path.basename(os.path.dirname(path)) for path in all_files])
-            dir2spidx = dict(thread_map(lambda x : (x, resolve_name_or_id(x)["species"][0]), dirnames, tqdm_class=TQDM, desc="Resolving directory names...", total=len(dirnames)))
-            for path in all_files:
-                species_id = dir2spidx[os.path.basename(os.path.dirname(path))]
-                if species_id not in cls2comb:
-                    continue
-                data["path"].append(path)
-                data["class"].append([cls2idx[lvl][cls] for lvl, cls in enumerate(cls2comb[species_id])])
-                data["split"].append("train" if random.random() < train_proportion else "validation")
-            data = {k : np.array(v) for k, v in data.items()}
-            train_image_data = {k : v[data["split"] == np.array("train")] for k, v in data.items()}
-            val_image_data = {k : v[data["split"] == np.array("validation")] for k, v in data.items()}
-        else:
-            train_image_data, val_image_data = get_image_data(data_index)
-            
-        resize_size = preprocess.resize_size if hasattr(preprocess, "resize_size") else resize_size
-
-        if not isinstance(resize_size, int):
-            if not (isinstance(resize_size, tuple) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
-                raise TypeError(f'Invalid resize size passed, foun {resize_size}, but expected an integer or a tuple of two integers')
-        print(f"Building datasets with image size {resize_size}")
-
-        if subsample is None or subsample <= 1:
-            pass
-        else:
-            train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
-            val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
-
-        dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *((resize_size, resize_size) if isinstance(resize_size, int) else resize_size), 3)
-        cache = CACHE_MODE(cache)
-        if cache is CACHE_MODE.GUESS:
-            cache = guess_cache_mode(dataset_shape, dtype)
-
-        loader = ImageClassLoader(
-            class_decoder=torch.tensor, 
-            item_splitter=lambda x : x, 
-            resize_size=resize_size, 
-            dtype=torch.uint8,
-            cache=cache
-        )
-
-        train_dataset = loader(list(zip(train_image_data["path"], train_image_data["class"])))
-        val_dataset = loader(list(zip(val_image_data["path"], val_image_data["class"])))
-        train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size=batch_size, drop_last=True)
-        val_sampler = BatchSampler(SequentialSampler(val_dataset), batch_size=batch_size, drop_last=False)
-
-        if num_workers is None:
-            num_workers = os.cpu_count() - 4
-            # num_workers = max(int(num_workers * 3 / 4), num_workers - 4)
-            num_workers -= num_workers % 2
-            # num_workers = max(0, num_workers)
-        if cache is CACHE_MODE.CUDA:
-            # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
-            num_workers = 0
-
-        pin_memory = not ((cache is CACHE_MODE.CUDA) or (cache is CACHE_MODE.CPU))
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_sampler=train_sampler,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            pin_memory_device=str(device) if pin_memory else "",
-            persistent_workers=num_workers > 0#pin_memory
-        )
-
-        val_loader = DataLoader(
-            val_dataset,  
-            batch_sampler=val_sampler, 
-            num_workers=num_workers, # min(2, num_workers), 
-            pin_memory=False,
-            pin_memory_device="",
-            persistent_workers=num_workers > 0 # False
-        )
-
-        return train_image_data["class"], train_loader, val_loader
+        sparse_masks = sparse_masks_from_labels(labels, cls2idx)
+        return BaseBuilder.build_model(*args, cls=cls, sparse_masks=sparse_masks, **kwargs)
+    
+    @staticmethod
+    def build_dataloader(*args, **kwargs):
+        if "multilabel" in kwargs:
+            raise NotImplementedError("Do not supply `multilabel` to `build_dataloader` manually.")
+        return BaseBuilder.build_dataloader(*args, multilabel=True, **kwargs)
     
     @staticmethod
     def build_criterion(
             *args, 
             weighted : bool=False,
-            labels : np.ndarray | None=None, 
+            labels : Iterable[int] | None=None, 
             num_classes : list[int] | None=None, 
             device : torch.types.Device | None=None,
             dtype : torch.dtype | None=None,

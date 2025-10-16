@@ -1,20 +1,95 @@
 import copy
 import hashlib
+import inspect
 import math
 import os
 import shutil
 import tempfile
+import types
 from collections import OrderedDict
-from glob import glob
-from typing import Any
 from collections.abc import Callable, Iterable
+from functools import wraps
+from glob import glob
+from typing import (Annotated, Any, Callable, Concatenate, Iterable, ParamSpec,
+                    TypeVar, TypeVarTuple, Union, Unpack, cast, get_args,
+                    get_origin, get_type_hints, overload)
 
 import psutil
 import torch
-from torch import nn
 from torch import distributed as dist
+from torch import nn
 from torchvision.transforms.v2 import ToDtype
+from tqdm.contrib.concurrent import thread_map as _thread_map
 
+
+def first_arg_base_types(fn):
+    params = tuple(inspect.signature(fn).parameters.values())
+    if not params:
+        return [Any]
+    first = params[0].name
+    hints = get_type_hints(fn)
+    ann = hints.get(first, Any)
+
+    def strip_annotated(t):
+        while get_origin(t) is Annotated:
+            t = get_args(t)[0]
+        return t
+
+    def base(t):
+        t = strip_annotated(t)
+        o = get_origin(t)
+        return o or t
+
+    def flatten_union(t):
+        t = strip_annotated(t)
+        o = get_origin(t)
+        if o in (types.UnionType, getattr(types, "NoneType", type(None)), None):
+            pass
+        if o is types.UnionType or o is getattr(__import__("typing"), "Union"):
+            return [base(x) for x in get_args(t)]
+        return [base(t)]
+
+    out = flatten_union(ann)
+    return list(dict.fromkeys(out))
+
+S = TypeVar("S")
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def thread_map(func : Callable[[S], R], it : Iterable[S], **kwargs : Any) -> list[R]:
+    return cast(list[R], _thread_map(func, it, **kwargs))
+
+def multithread_vectorize(leave : bool=False, **tqdm_kwargs: Any):
+    def decorator(f: Callable[Concatenate[S, P], R]):
+        _basetypes = first_arg_base_types(f)
+        basetypes : list[type] = []
+        for t in _basetypes:
+            if not isinstance(t, type):
+                raise TypeError(f'`multithread_vectorize` decorator only supports simple argument type annotation for the vectorized arguments, not: `{t}`')
+            if t in (list, tuple):
+                print('WARNING: Using `list` or `tuple` as the base-type with `multithread_vectorize` is dangerous and might not work as you expect.')
+            basetypes.append(t)
+        basetypes = tuple(basetypes)
+        
+        @overload
+        def wrapped(x : S, /, *args : P.args, **kwargs : P.kwargs) -> R: ...
+        @overload
+        def wrapped(x : Iterable[S], /, *args : P.args, **kwargs : P.kwargs) -> list[R]: ...
+        @wraps(f)
+        def wrapped(x, /, *args : P.args, **kwargs : P.kwargs):
+            if isinstance(x, basetypes):
+                return f(x, *args, **kwargs)
+            return cast(list[R], _thread_map(lambda y : f(y, *args, **kwargs), x, leave=leave, **tqdm_kwargs))
+
+        return wrapped
+    return decorator
+
+K = TypeVar("K")
+V = TypeVar("V")
+Ks = TypeVarTuple("Ks")
+
+def filter_ordered_dict(od : OrderedDict[K, V], keys : tuple[Unpack[Ks]]):
+    return OrderedDict([(k, od[k]) for k in keys])
 
 def make_convert_dtype(dtype : torch.dtype, scale : bool=True):
     """

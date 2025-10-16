@@ -1,9 +1,14 @@
 import json
+import os
 import re
 from collections import OrderedDict
-from functools import lru_cache
+from typing import cast
 from urllib.parse import quote
 from urllib.request import urlopen
+
+from diskcache import Cache
+
+from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
 GBIF_SPECIES_API_ENDPOINT = 'https://api.gbif.org/v1/species/'
 TAXONOMY_KEYS = (
@@ -11,18 +16,36 @@ TAXONOMY_KEYS = (
     "genus",
     "family",
     "order",
+    "class",
     "phylum",
     "kingdom"
 )
 
-@lru_cache(maxsize=2**15)
-def retrive_request(req):
-    resp = urlopen(req)
-    if resp.status != 200:
-        raise RuntimeError(f'Unable to resolve request, received status {resp.status} from {req}.')
-    return json.load(resp)
+cache = Cache(os.path.expanduser('~/.cache/nrs'))
+
+@cache.memoize(expire=7*86400)
+def retrive_request(req : str):
+    if not req.startswith("https://"):
+        raise NotImplementedError("Only HTTPS APIs are currently supported.")
+    with urlopen(req) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f'Unable to resolve request, received status {resp.status} from {req}.')
+        return json.load(resp)
 
 def resolve_id(id : str | int):
+    """
+    Resolves a GBIF id to the accepted GBIF id and scientific name
+    for all taxonomic levels:
+    * ``[species, genus, family, order, class, phylum, kingdom]`` 
+    
+    Args:
+        id: GBIF species ID.
+    
+    Returns:
+        (species taxonomy): 
+        The taxonomy of the species given by ``id`` as a dictionary: 
+        [str] <"taxa_level">: [tuple[int, str]] (<"Accepted GBIF id">, <"Accepted scientific name">)
+    """
     req = f'{GBIF_SPECIES_API_ENDPOINT}{id}'
     data = retrive_request(req)
     try:
@@ -47,10 +70,15 @@ def parse_name(name : str | None, user_author : str | None=None):
     author = " ".join(parts[2:])
     return name, author
 
-def name_to_id(name : str, author : str | None=None, rank_contains : str | None=None, threshold : int=0):
+def name_to_id(
+        name : str, 
+        author : str | None=None, 
+        rank_contains : str | None=None, 
+        threshold : int=0
+    ) -> tuple[int, str, int]:
     """
     Returns:
-        (key, rank, confidence) (tuple[int, str, int]): Returns the matched GBIF `usageKey` and `rank`, and the matching confidence.
+        (key, rank, confidence): Returns the matched GBIF `usageKey` and `rank`, and the matching confidence.
     """
     name, _ = parse_name(name, author)
     try:
@@ -71,5 +99,40 @@ def name_to_id(name : str, author : str | None=None, rank_contains : str | None=
             e.add_note(f'Request: {req}')
             raise e
         if name == new_name and (id := data[0]["speciesKey"]) and (rank_contains is not None and rank_contains in (rank := data[0].get("rank", "UNKNOWN"))):
+            if isinstance(id, str):
+                id = id.strip()
+                if id.isdigit():
+                    id = int(id)
+            assert isinstance(id, int)
+            assert isinstance(rank, str)
             return id, rank, threshold
         return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold)
+    
+@multithread_vectorize(desc="Resolving taxa...")
+def resolve_name_or_id(name_or_id : str | int):
+    name_or_id = name_or_id.strip()
+    if isinstance(name_or_id, int) or name_or_id.isdigit():
+        return resolve_id(name_or_id)
+    id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
+    return resolve_id(id)
+
+def create_taxonomy(names_or_ids : list[str], levels : str | int | tuple[str | int, ...] | list[str | int]="family"):
+    # _levels = len(TAXONOMY_KEYS) - 1
+    if isinstance(levels, str):
+        _levels = TAXONOMY_KEYS.index(levels.strip().lower())
+    elif isinstance(levels, (tuple, list)):
+        _levels = [
+            level if isinstance(level, int) else TAXONOMY_KEYS.index(level.strip().lower())
+            for level in levels
+        ]
+    elif isinstance(levels, int):
+        _levels = levels - 1
+    else:
+        raise TypeError(f'Unexpected type for {levels=} ({type(levels)}).')
+    _levels = list(range(_levels + 1)) if isinstance(_levels, int) else _levels
+    level_strs = [TAXONOMY_KEYS[lvl] for lvl in sorted(_levels)]
+    taxs = resolve_name_or_id(names_or_ids)
+    return OrderedDict([(orig, filter_ordered_dict(tax, level_strs)) for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x : [v[1] for v in x[1].values()])])
+
+def labels_from_taxonomy(tax : OrderedDict[str, OrderedDict[str, tuple[str, ...]]]):
+    return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])

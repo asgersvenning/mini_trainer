@@ -606,7 +606,7 @@ class MultiLogger:
             epochs : int,
             output_dir : str,
             name : str="log",
-            statistics : list[str]=["loss", "acc1", "acc5", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
+            statistics : list[str]=["acc1", "acc5", "loss", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
             logger_cls : list[type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],

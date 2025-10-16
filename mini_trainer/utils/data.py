@@ -1,92 +1,100 @@
 import json
 import os
 import random
+from collections import OrderedDict
 from glob import glob
+from typing import cast
 
 import numpy as np
-import torch
-from tqdm.contrib.concurrent import thread_map
 
-from mini_trainer import TQDM
-from mini_trainer.utils.io import is_image, make_read_and_resize_fn
+from mini_trainer.utils.io import is_image
+from mini_trainer.utils.parquet import (parquet_to_class_spec,
+                                        write_metadata_from_parquet)
 
 
-def write_metadata(directory : str, classes : list[str], cls2idx : dict[str, int], dst : str, train_proportion : float=0.9):
+def find_images(root : str):
+    paths = glob(os.path.join(root, "**"), recursive=True)
+    check = is_image(paths)
+    return [p for p, f in zip(paths, check) if f]
+
+# TODO: Unfortunately, this function has some functionality for the hierarchical submodule
+# even though the core mini_trainer module and the hierarchical submodule are
+# supposed to be entirely compartmentalized. Difficulty to fix: very high.
+def write_metadata(
+        directory : str,
+        cls2idx : dict[str, int] | dict[str, dict[str, int]], 
+        labels : OrderedDict[str, str | tuple[str, ...]] | list[str] | None,
+        dst : str, 
+        train_proportion : float=0.9
+    ):
+    if directory.endswith(".parquet"):
+        write_metadata_from_parquet(directory, cls2idx=cls2idx, dst=dst)
+        return
     data = {
         "path" : [],
         "class" : [],
         "split" : []
     }
-    for cls in classes:
-        this_dir = os.path.join(directory, cls)
-        for file in map(os.path.basename, os.listdir(this_dir)):
-            data["path"].append(os.path.join(this_dir, file))
-            data["class"].append(cls2idx[cls])
+    if labels is None:
+        # If no labels are supplied we just assume that the images are put into
+        # folders named after the class
+        if isinstance(cls2idx.get(0, None), dict):
+            raise RuntimeError('Hierarchical class index seems to have been passed without labels!')
+        cls2idx = cast(dict[str, int], cls2idx)
+        labels : OrderedDict[str, str] = OrderedDict([(cls, cls) for cls in cls2idx])
+    elif isinstance(labels, list):
+        # Same if it is a list, in this case we just assume the folders
+        # are named after the (leaf) class
+        labels = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
+    for dir, cls in labels.items():
+        if isinstance(cls, str):
+            cls2idx = cast(dict[str, int], cls2idx)
+            idx = cls2idx[cls]
+        else:
+            cls2idx = cast(dict[str, dict[str, int]], cls2idx)
+            idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(cls)]
+        this_dir = os.path.join(directory, str(dir))
+        for image_path in find_images(this_dir):
+            data["path"].append(image_path)
+            data["class"].append(idx)
             data["split"].append("train" if random.random() < train_proportion else "validation")
     with open(dst, "w") as f:
         json.dump(data, f)
 
-def get_image_data(path : str, check_integrity : bool=False):
+def get_image_data(
+        path : str, 
+        check_integrity : bool=False
+    ) -> tuple[dict[str, list[str | int | list[int]]], dict[str, list[str | int | list[int]]]]:
         if not os.path.exists(path):
             raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
         with open(path, "rb") as f:
-            _image_data = {k : np.array(v) for k, v in json.load(f).items()}
+            image_data = {k : np.array(v) for k, v in json.load(f).items()}
         if check_integrity:
-            image_data = {
-                k : v[
-                    np.array(
-                        thread_map(
-                            is_image, 
-                            _image_data["path"], 
-                            tqdm_class=TQDM, 
-                            desc="Filtering non-standardized images...", 
-                            total=len(_image_data["path"])
-                        )
-                    )
-                ]
-                for k, v in _image_data.items()
-            }
-        else:
-            image_data = _image_data
-        train_image_data = {k : v[image_data["split"] == np.array("train")] for k, v in image_data.items()}
-        val_image_data = {k : v[image_data["split"] == np.array("validation")] for k, v in image_data.items()}
+            integrity_mask = np.array(is_image(image_data["path"]))
+            image_data = {k : v[integrity_mask] for k, v in image_data.items()}
+        train_image_data = {k : v[image_data["split"] == np.array("train")].tolist() for k, v in image_data.items()}
+        val_image_data = {k : v[image_data["split"] == np.array("validation")].tolist() for k, v in image_data.items()}
         return train_image_data, val_image_data
 
-def find_images(root: str) -> list[str]:
-    paths = glob(os.path.join(root, "**"), recursive=True)
-    flags = thread_map(is_image, paths, tqdm_class=TQDM, desc="Filtering non-standardized images...", total=len(paths))
-    return [p for p, f in zip(paths, flags) if f]
-
-def parse_class_index(path : str | None=None, dir : str | None=None):
+def parse_class_spec(
+        path : str | None=None, 
+        dir : str | None=None
+    ) -> dict[str, dict[str, int]]:
     if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):
-            raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
-        cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
+            # Special: If `dir` is a parquet, in this case we assume
+            # it is a parquet generated by `gbifxdl`
+            if isinstance(dir, str) and dir.endswith(".parquet"):
+                retval = parquet_to_class_spec(dir)
+            else:
+                raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
+        else:
+            cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
+            retval = {"cls2idx" : cls2idx, "num_classes" : len(cls2idx)}
         if path is not None:
             with open(path, "w") as f:
-                json.dump(cls2idx, f)
-    else:
-        with open(path, "rb") as f:
-            cls2idx = json.load(f)
-    idx2cls = {v : k for k, v in cls2idx.items()}
-    ncls = len(idx2cls)
-    return {"num_classes" : ncls}, {"classes" : list(cls2idx.keys()), "cls2idx" : cls2idx, "idx2cls" : idx2cls}
-
-def prepare_split(
-        paths : list[str], desc="Preprocessing images for split...", 
-        resize_size : int | tuple[int, int]=256, 
-        device=torch.device("cpu"), 
-        dtype=torch.bfloat16
-    ):
-    shape = resize_size if not isinstance(resize_size, int) and len(resize_size) == 2 else (resize_size, resize_size)
-    tensor = torch.zeros((len(paths), 3, *shape), device=device, dtype=dtype)
-    reader = make_read_and_resize_fn(shape, device, dtype)
-    def _read_and_resize_one_image(args):
-        idx, path = args
-        try:
-            tensor[idx] = reader(path)
-        except Exception as e:
-            e.add_note(f'Path: {path}')
-            raise e
-    [_read_and_resize_one_image(v) for v in TQDM(enumerate(paths), total=len(paths), desc=desc)]
-    return tensor
+                json.dump(retval, f)
+        else:
+            return retval
+    with open(path, "rb") as f:
+        return json.load(f)

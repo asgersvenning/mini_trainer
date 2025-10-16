@@ -6,6 +6,8 @@
 **.JPG
 **.JPEG
 **.webp
+**.gif
+**.GIF
 **.json
 **.pt
 **.pth
@@ -13,6 +15,7 @@
 **.txt
 **.yaml
 **.yml
+**.parquet
 
 # Unwanted temporary files
 **events.out.tfevents*

@@ -29,7 +29,7 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
         dim: Dimension to aggregate over (default=1).
 
     Returns:
-         Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
+        output: Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
     """
     z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max() + 1)) # Scaffold tensor - same size as output
     index = index.expand_as(input)

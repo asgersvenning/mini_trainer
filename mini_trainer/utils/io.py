@@ -1,13 +1,13 @@
 import hashlib
 import os
+import warnings
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
 from typing import Any
-from collections.abc import Callable, Iterable
-import warnings
 
 import numpy as np
 import torch
@@ -17,7 +17,8 @@ from torchvision.transforms.functional import pil_to_tensor
 from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
-from mini_trainer.utils import make_convert_dtype, memory_proportion
+from mini_trainer.utils import (make_convert_dtype, memory_proportion,
+                                multithread_vectorize)
 
 
 class CACHE_MODE(int, Enum):
@@ -67,7 +68,8 @@ def guess_cache_mode(
         raise RuntimeError(f'Unable to determine a valid caching location using thresholds:\n{thresholds}')
     return sorted(accepted)[-1]
 
-def is_image(path: str) -> bool:
+@multithread_vectorize(desc="Checking images...", disable=True)
+def is_image(path : str):
     if not os.path.exists(path):
         return False
     
@@ -188,7 +190,7 @@ class LazyDataset(torch.utils.data.Dataset):
     def __init__(
             self, 
             func : Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]], 
-            items : list[str],
+            items : list,
             cache : str | int | CACHE_MODE | None=None
         ):
         self.func = func

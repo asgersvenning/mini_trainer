@@ -10,6 +10,7 @@ dependencies = [
   "torchvision",
   "matplotlib",
   "tqdm",
+  "diskcache"
 ]
 requires-python = ">=3.12"
 authors = [
