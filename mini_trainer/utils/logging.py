@@ -269,7 +269,7 @@ class BaseResultCollector(_ResultsCollector):
             **{attr : getattr(self, attr) for attr in self._extra_attr}
         }
     
-    def save_mini_metric_csv(self, dst : str, threshold : float=0):
+    def save_mini_metric_csv(self, dst : str, threshold : float=0.0):
         SCHEMA = dict((
             ("instance_id", int),
             ("filename", str),
@@ -294,7 +294,7 @@ class BaseResultCollector(_ResultsCollector):
                 "label" : label,
                 "prediction" : pred,
                 "confidence" : conf,
-                "threshold" : 0,
+                "threshold" : float(threshold),
                 "prediction_made" : do_predict,
                 "correct" : do_predict if do_predict == 0 else 1 if pred == label else -1
             }
