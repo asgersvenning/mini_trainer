@@ -285,7 +285,7 @@ class BaseResultCollector(_ResultsCollector):
             k : list() for k in SCHEMA
         }
         for i, (path, pred, conf) in enumerate(zip(self.paths, self.preds, self.confs)):
-            label = getattr(self, "label")[i] if hasattr(self, "label") else -1
+            label = getattr(self, "labels")[i] if hasattr(self, "labels") else -1
             do_predict = int(conf >= threshold)
             row = {
                 "instance_id" : i,
@@ -299,7 +299,7 @@ class BaseResultCollector(_ResultsCollector):
                 "correct" : pred == label if do_predict == 1 else -1
             }
             for k, v in row.items():
-                # assert isinstance(v, SCHEMA[k])
+                assert isinstance(v, SCHEMA[k])
                 data[k].append(v)
         write_csv_from_dict(data, dst)
 

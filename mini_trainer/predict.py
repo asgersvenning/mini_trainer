@@ -189,6 +189,7 @@ def main(
             f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
         )
     
+    collector_cls_kwargs["additional_attributes"] = ["labels", "loss"] if labels is not None else None
     collector = collector_cls(**collector_cls_kwargs, **class_spec)
     
     idx = 0
@@ -211,7 +212,7 @@ def main(
     del loader, nn_model, criterion
 
     collector.evaluate(output)
-    collector.save_mini_metric_csv(os.path.join(output, f"{name}_mini_metric.csv"), threshold=threshold)
+    collector.save_mini_metric_csv(os.path.join(output, name, "mini_metric.csv"), threshold=threshold)
             
 
 def cli(description="Classify images with a trained model", **extra_kwargs):
