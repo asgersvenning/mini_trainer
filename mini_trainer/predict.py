@@ -189,7 +189,7 @@ def main(
             f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
         )
     
-    collector = collector_cls(**collector_cls_kwargs)
+    collector = collector_cls(**collector_cls_kwargs, **class_spec)
     
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
