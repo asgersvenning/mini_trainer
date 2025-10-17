@@ -194,7 +194,7 @@ def main(
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
         for batch in loader:
-            pred = nn_model(batch.to(device))
+            pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
             labs = labels[idxs] if labels is not None else None
             if labs is not None:
