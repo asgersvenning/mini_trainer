@@ -198,7 +198,7 @@ def main(
             idxs = slice(idx, idx+len(batch))
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
             if labs is not None:
-                loss = criterion(pred, labs)
+                loss = criterion(pred, labs.to(device))
             else:
                 loss = None
             collector.collect(
