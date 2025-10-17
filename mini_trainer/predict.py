@@ -162,19 +162,19 @@ def main(
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}.'
         )
 
-    # Prepare augmentation
-    augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
-    if not isinstance(augmentation, torchvision.transforms.Compose):
-        raise TypeError(
-            'Expected `augmentation_builder` to return an objects'
-            f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
-        )
-    debug_augmentation(
-        augmentation=augmentation,
-        dataset=loader.dataset,
-        output_dir=output_dir,
-        strict=True
-    )
+    # # Prepare augmentation
+    # augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
+    # if not isinstance(augmentation, torchvision.transforms.Compose):
+    #     raise TypeError(
+    #         'Expected `augmentation_builder` to return an objects'
+    #         f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
+    #     )
+    # debug_augmentation(
+    #     augmentation=augmentation,
+    #     dataset=loader.dataset,
+    #     output_dir=output_dir,
+    #     strict=True
+    # )
 
     criterion = builder.build_criterion(
         labels=labels,
