@@ -13,3 +13,4 @@ dependencies:
   - pandas
   - zarr
   - scipy
+  - pyarrow
