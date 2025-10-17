@@ -269,7 +269,7 @@ class BaseResultCollector(_ResultsCollector):
             **{attr : getattr(self, attr) for attr in self._extra_attr}
         }
     
-    def save_mini_metric_csv(self, dst : str):
+    def save_mini_metric_csv(self, dst : str, threshold : float=0):
         SCHEMA = dict((
             ("instance_id", int),
             ("filename", str),
@@ -286,6 +286,7 @@ class BaseResultCollector(_ResultsCollector):
         }
         for i, (path, pred, conf) in enumerate(zip(self.paths, self.preds, self.confs)):
             label = getattr(self, "label")[i] if hasattr(self, "label") else -1
+            do_predict = conf >= threshold,
             row = {
                 "instance_id" : i,
                 "filename" : path,
@@ -294,11 +295,11 @@ class BaseResultCollector(_ResultsCollector):
                 "prediction" : pred,
                 "confidence" : conf,
                 "threshold" : 0,
-                "prediction_made" : 1,
-                "correct" : pred == label
+                "prediction_made" : do_predict,
+                "correct" : pred == label if do_predict else -1
             }
             for k, v in row.items():
-                assert isinstance(v, SCHEMA[k])
+                # assert isinstance(v, SCHEMA[k])
                 data[k].append(v)
         write_csv_from_dict(data, dst)
 

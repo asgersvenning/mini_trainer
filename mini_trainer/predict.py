@@ -21,6 +21,7 @@ from mini_trainer.utils.logging import BaseResultCollector
 def main(
         input : str,
         output : str | None=None,
+        threshold : float=0,
         class_spec : str | None=None,
         name: str | None=None,
         device : str="cuda:0",
@@ -210,7 +211,7 @@ def main(
     del loader, nn_model, criterion
 
     collector.evaluate(output)
-    collector.save_mini_metric_csv(os.path.join(output, f"{name}_mini_metric.csv"))
+    collector.save_mini_metric_csv(os.path.join(output, f"{name}_mini_metric.csv"), threshold=threshold)
             
 
 def cli(description="Classify images with a trained model", **extra_kwargs):
