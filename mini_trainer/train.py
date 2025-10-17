@@ -494,7 +494,8 @@ def cli(description="Train a classifier", **extra_kwargs):
         "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(
-        "--num_workers", type=int, default=None, required=False,
+        "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
+        default=None, required=False,
         help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
     )
     cfg_args.add_argument(
