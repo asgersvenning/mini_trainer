@@ -147,7 +147,7 @@ def main(
         metadata = get_metadata(dataloader_builder_kwargs["data_index"])
         images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
         labels = [p for p, s in zip(metadata["class"], metadata["split"]) if s == "test"]
-    if metadata is None:
+    else:
         labels, images = auto_find_images(input, **class_spec)
     loader = builder.build_inference_dataloader(
         images=images,
@@ -196,7 +196,7 @@ def main(
         for batch in loader:
             pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
-            labs = labels[idxs] if labels is not None else None
+            labs = torch.tensor(labels[idxs]).long() if labels is not None else None
             if labs is not None:
                 loss = criterion(pred, labs)
             else:
