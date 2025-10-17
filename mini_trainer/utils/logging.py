@@ -185,7 +185,7 @@ class BaseResultCollector(_ResultsCollector):
         if idx2cls is None and cls2idx is None:
             raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
         if idx2cls is None:
-            idx2cls = {v : k for k, v in cls2idx}
+            idx2cls = {v : k for k, v in cls2idx.items()}
         self.paths = []
         self.preds = []
         self.confs = []
