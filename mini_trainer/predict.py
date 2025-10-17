@@ -281,7 +281,8 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
     )
     inf_args = parser.add_argument_group("Inference [optional]")
     inf_args.add_argument(
-        "-D", "--data_index", type=str, default=None, required=False,
+        "-D", "--data_index", type=str, dest="dataloader_builder_kwargs.data_index",
+        default=None, required=False,
         help=
         "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
         "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
