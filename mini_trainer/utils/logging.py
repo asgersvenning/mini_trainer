@@ -296,7 +296,7 @@ class BaseResultCollector(_ResultsCollector):
                 "confidence" : conf,
                 "threshold" : 0,
                 "prediction_made" : do_predict,
-                "correct" : pred == label if do_predict == 1 else -1
+                "correct" : do_predict if do_predict == 0 else 1 if pred == label else -1
             }
             for k, v in row.items():
                 assert isinstance(v, SCHEMA[k])
