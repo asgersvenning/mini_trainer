@@ -174,13 +174,18 @@ class _ResultsCollector:
 class BaseResultCollector(_ResultsCollector):
     def __init__(
             self, 
-            idx2cls : dict[int, str], 
+            idx2cls : dict[int, str] | None, 
+            cls2idx : dict[str, int] | None=None,
             verbose : bool=False, 
             training_format : bool=False,
             additional_attributes : list[str] | None=None, 
             *args, 
             **kwargs
         ):
+        if idx2cls is None and cls2idx is None:
+            raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
+        if idx2cls is None:
+            idx2cls = {v : k for k, v in cls2idx}
         self.paths = []
         self.preds = []
         self.confs = []
