@@ -211,7 +211,7 @@ def main(
             )
     del loader, nn_model, criterion
 
-    collector.evaluate(output)
+    # collector.evaluate(output)
     collector.save_mini_metric_csv(os.path.join(output, name, "mini_metric.csv"), threshold=threshold)
             
 
