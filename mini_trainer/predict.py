@@ -282,6 +282,14 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
     )
     inf_args = parser.add_argument_group("Inference [optional]")
     inf_args.add_argument(
+        "-t", "--threshold", type=float,
+        default=None, required=False,
+        help=
+        "Confidence threshold for predictions.\n"
+        "Used for mini_metrics csv.\n"
+        "Default is 0 (always predict)."
+    )
+    inf_args.add_argument(
         "-D", "--data_index", type=str, dest="dataloader_builder_kwargs.data_index",
         default=None, required=False,
         help=
