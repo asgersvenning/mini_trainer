@@ -144,10 +144,10 @@ def main(
     
     # Prepare dataloader
     if "data_index" in dataloader_builder_kwargs:
-        image_data = get_metadata(dataloader_builder_kwargs["data_index"])
-        images = [p for p, s in zip(image_data["path"], image_data["split"]) if s == "test"]
-        labels = [c for c, s in zip(image_data["class"], image_data["split"]) if s == "test"]
-    if image_data is None:
+        (metadata, ) = get_metadata(dataloader_builder_kwargs["data_index"])
+        images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
+        labels = [p for p, s in zip(metadata["class"], metadata["split"]) if s == "test"]
+    if metadata is None:
         labels, images = auto_find_images(input, **class_spec)
     loader = builder.build_inference_dataloader(
         images=images,

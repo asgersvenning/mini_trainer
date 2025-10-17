@@ -375,10 +375,13 @@ class BaseBuilder:
                 with open(data_index, "w") as f:
                     json.dumps(metadata, f)
         else:
-            metadata = get_metadata(data_index, splits=splits)
+            metadata = get_metadata(data_index)
 
         datasets, loaders = get_dataset_dataloader(
-            metadata,
+            *(
+                {k : v[metadata["split"] == np.array(split)].tolist() for k, v in metadata.items()} 
+                for split in splits
+            ),
             resize_size=resize_size or getattr(preprocess, "resize_size"),
             modes=splits,
             batch_size=batch_size,

@@ -96,7 +96,7 @@ def get_metadata(
         if check_integrity:
             integrity_mask = np.array(is_image(metadata["path"]))
             metadata = {k : v[integrity_mask] for k, v in metadata.items()}
-        return tuple({k : v[metadata["split"] == np.array(split)].tolist() for k, v in metadata.items()} for split in splits)
+        return metadata
 
 def parse_class_spec(
         path : str | None=None, 
