@@ -200,7 +200,7 @@ def main(
             idx += len(batch)
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
             if labs is not None:
-                loss = criterion(pred, labs.to(device))
+                loss = torch.cat([criterion(pred, l) for l in labs.to(device)])
             else:
                 loss = None
             collector.collect(
