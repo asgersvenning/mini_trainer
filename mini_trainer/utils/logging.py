@@ -174,7 +174,7 @@ class _ResultsCollector:
 class BaseResultCollector(_ResultsCollector):
     def __init__(
             self, 
-            idx2cls : dict[int, str] | None, 
+            idx2cls : dict[int, str] | None=None, 
             cls2idx : dict[str, int] | None=None,
             verbose : bool=False, 
             training_format : bool=False,
