@@ -1,316 +1,355 @@
-import json
 import os
-import re
+import random
 import sys
-import warnings
 from argparse import ArgumentParser
-from math import ceil
 from typing import Any
 
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
+import torchvision
 
-from mini_trainer import TQDM, Formatter
+from mini_trainer import Formatter
 from mini_trainer.builders import AutoEmbedder, BaseBuilder
-from mini_trainer.utils.data import find_images
-from mini_trainer.utils.io import ImageLoader
+from mini_trainer.config import (defaults_from_function, dump_resolved_config,
+                                 load_yaml_config, merge_dicts,
+                                 restructure_cli_args)
+from mini_trainer.utils import increment_name_dir
+from mini_trainer.utils.augmentation import debug_augmentation
+from mini_trainer.utils.data import auto_find_images, get_metadata
 from mini_trainer.utils.logging import BaseResultCollector
 
 
 def main(
-    input : str | None,
-    output : str | None=None,
-    name : str | None=None,
-    class_index : str="class_index.json",
-    data_index : str | None=None,
-    split : str | None="test",
-    embeddings : bool=False,
-    batch_size : int=32,
-    num_workers : int | None=None,
-    n_max : int | None=None,
-    device : str="cuda:0",
-    dtype : str="bfloat16",
-    verbose : bool=False,
-    builder : type[BaseBuilder]=BaseBuilder,
-    spec_model_dataloader_kwargs : dict[str, Any]={},
-    model_builder_kwargs : dict[str, Any]={},
-    result_collector=BaseResultCollector,
-    result_collector_kwargs : dict[str, Any]={"training_format" : False, "verbose" : False}
-) -> None:
+        input : str,
+        output : str | None=None,
+        class_spec : str | None=None,
+        name: str | None=None,
+        device : str="cuda:0",
+        dtype : str="bfloat16",
+        seed : int | None=None,
+        builder : type[BaseBuilder]=BaseBuilder,
+        collector_cls : type[BaseResultCollector]=BaseResultCollector,
+        spec_model_dataloader_kwargs : dict[str, Any]={},
+        model_builder_kwargs : dict[str, Any]={
+            "model_type" : "efficientnet_v2_s",
+            "weights" : None,
+            "fine_tune" : False,
+            "hidden" : True,
+            "droprate" : 0.1,
+            "normalized" : True
+        },
+        dataloader_builder_kwargs : dict[str, Any]={
+            "batch_size" : 16,
+            "resize_size" : 256, 
+            "train_proportion" : 0.9
+        },
+        augmentation_builder_kwargs : dict[str, Any]={},
+        criterion_builder_kwargs : dict[str, Any]={
+            "weighted" : False,
+            "label_smoothing" : 0.1
+        },
+        collector_cls_kwargs : dict[str, Any]={}
+    ):
     """
     Predict with a classifier.
 
     Args:
-        input (str):
-            Path to a directory containing images for prediction, optionally structured
-            with subdirectories named after class labels. (required unless `data_index` is passsed)
-
-        output (str, optional):
-            Path to the directory where the results should be stored,
-            if passed and the directory does not already exist it is created.
-
-        name (str, optional):
-            Name of the prediction run, used as a prefix for the result files.
-            The name should only contain alphanumeric ASCII characters and underscores.
-            If not supplied the basename of the input directory is used (all non-ASCII alphanumeric/underscore characters are removed).
-
-        class_index (str):
-            Path to a JSON file containing the mapping from class names to indices.
-            If it does not exist, one will be created based on subdirectories under `input`. (required)
-
-        data_index (str, optional):
-            Path to a JSON file containing three arrays with keys 'path', 'split',
-            and 'class', representing a structured dataset.
-            Default is None.
-
-        split (str, optional):
-            Name of the split to predict on (default="test"). Only applies when `data_index` is passed.
-
-        embeddings (bool):
-            Compute and store the embeddings (the embedding layer is automatically guessed from the architecture).
-            Default is False.
-
-        batch_size (int, optional):
-            Batch size used during inference. Larger values require more VRAM.
-            Default is 32.
-
-        num_workers (Optional[int], optional):
-            Number of worker threads/processes used for loading images.
-            Defaults to the number of physical CPU cores if None.
-
-        n_max (Optional[int], optional):
-            Maximum number of images to run inference on.
-
-        device (str, optional):
-            Device to perform inference on (e.g., 'cuda:0', 'cpu').
-            Default is 'cuda:0'.
-
-        dtype (str, optional):
-            PyTorch data type used for inference (e.g., 'bfloat16').
-            Default is 'bfloat16'.
-
-        verbose (bool, optional):
-            Print additional logging messages to the terminal.
-
-        **kwargs: Additional arguments to be documented.
-            All additional arguments are not available from the commandline, but exist to enable usage of
-            the `train.py` and `predict.py` functionality with custom models, loss functions, data loaders etc.
-
-    Returns:
-        None
+        input: Path to a directory containing a subdirectory for each class, where
+            each subdirectory's name corresponds to the class name.
+            It is also possible to pass the path to a parquet as generated by `gbifxdl` instead of a directory.
+        output: Root directory for all created files and directories.
+            Default is current working directory ``'.'``.
+        class_spec: Path to a JSON file containing the mapping from class names to indices
+            and other important information necessary to construct compatible models and dataloaders.
+            If the file does not exist, it will be created based on subdirectories
+            found under `output` if it is set. Default is 'class_index.json'.
+        epochs: Number of training epochs. Default is 15.
+        name: Name of the output model. If not provided, a descriptive name
+            will be inferred from other arguments. Default is ``None``.
+        device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
+        dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
+            The model parameters are always stored in float32 with training AMP. 
+            Default is ``'bfloat16'``.
+        seed: Initial seed for Python's random number generator to ensure reproducibility,
+            especially for train/validation splits. Default is ``None``.
+        builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``. 
+            This object is responsible for instantiating the model, dataloader, augmentation, 
+            optimizer, scaler, EMA, criterion (loss function) and learning rate scheduler.
+        **kwargs:
+            Additional arguments are passed to the various builder methods.
+            See ``mini_trainer.builders.BaseBuilder`` for details.
     """
-    # Prepare state
-    device : torch.device = torch.device(device)
-    dtype : torch.dtype = getattr(torch, dtype)
-
+    orig_args = locals()
+    # Prepare state    
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
     if name is None:
-        name = re.sub("[^a-zA-Z0-9_]", "", "pred" if input is None else os.path.basename(input))
-    else:
-        if re.search("[^a-zA-Z0-9_]", name) and verbose:
-            warnings.warn(f'Found non-standard characters (non-ASCII alphanumeric and underscore) in the supplied name; "{name}".')
+        name = "train"
+    name = increment_name_dir(name, output)
 
-    if input is not None:
-        input_dir = os.path.abspath(input)
-        if not os.path.isdir(input_dir):
-            raise OSError(f'Supplied input directory ("{input_dir}") is not a valid directory.')
-    else:
-        input_dir = None
-    output_dir = os.path.abspath(output) if isinstance(output, str) else None
-    if isinstance(output_dir, str) and not os.path.isdir(output_dir):
-        raise OSError(f'Supplied output directory ("{output_dir}") is not a valid directory.')
+    input = os.path.abspath(input)
+    output_dir = None if output is None else os.path.abspath(os.path.join(output, name))
+    if output_dir is not None:
+        try:
+            os.makedirs(output_dir, exist_ok=False)
+        except OSError as e:
+            e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{name=}` already exists?")
+    
+    weight_output_dir = None if output_dir is None else os.path.abspath(os.path.join(output_dir, "weights"))
+    if weight_output_dir is not None:
+        try:
+            os.makedirs(weight_output_dir, exist_ok=False)
+        except OSError as e:
+            e.add_note(f"Training weight directory already exists: {weight_output_dir}. Perhaps a run of with the `{name=}` already exists?")
 
-    workers = num_workers
-    if workers is None:
-        workers = os.cpu_count() - 1
-        workers -= workers % 2
-    batch_size = batch_size
+    device : torch.device = torch.device(device)
+    dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+
+    # Dump resolved configuration using locals and normalized values
+    dump_resolved_config(
+        output_dir=output_dir,
+        fn=main,
+        local_vars=orig_args,
+        overrides={
+            "input": input,
+            "output": output_dir,
+            "device": device,
+            "dtype": dtype,
+            "name": name,
+        },
+    )
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
-    extra_model_kwargs, extra_dataloader_kwargs = builder.spec_model_dataloader(
-        path=class_index, 
-        dir=None,
+    class_spec = builder.class_spec(
+        path=class_spec if class_spec is not None else os.path.join(output_dir, "class_spec.json"), 
+        dir=input,
         **spec_model_dataloader_kwargs
     )
 
     # Prepare model
-    nn_model, model_preprocess = builder.build_model( 
+    nn_model, model_preprocess = builder.build_model(
         device=device, 
-        dtype=dtype, 
-        **{**extra_model_kwargs, **model_builder_kwargs}
-    )
-    nn_model.eval()
-    if embeddings:
-        nn_model = AutoEmbedder(nn_model)
-        
-    # Prepare image loader
-    image_loader = ImageLoader(
-        getattr(model_preprocess, "resize_size", 256),
-        dtype=dtype
-    )
-
-    if data_index:
-        assert split is not None, ValueError('Prediction `split` must be passed when `data_index` is used.')
-        split = split.strip().lower()
-        with open(data_index) as f:
-            data_index_data = json.load(f)
-            images = [im for im, spl in zip(data_index_data["path"], data_index_data["split"]) if spl.strip().lower() == split]
-    else:
-        assert input_dir is not None, ValueError(f'Input directory ({input_dir}) must be a valid path.')
-        images = find_images(input_dir)
-    if n_max is not None and len(images) > n_max:
-        images = images[:n_max]
-    ds = image_loader(images)
-    dl = DataLoader(
-        ds,
-        batch_size=batch_size,
-        num_workers=workers,
-        pin_memory=True,
-        pin_memory_device=device.type,
-        shuffle=False,
-        drop_last=False
-    )
-
-    # Inference
-    results = result_collector(**{**extra_dataloader_kwargs, **result_collector_kwargs})
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
+        dtype=torch.float32, # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
+        **class_spec,
+        **model_builder_kwargs
+    ) 
+    if not isinstance(nn_model, torch.nn.Module):
+        raise TypeError(
+            'Expected `model_builder` to return a tuple, where the first element'
+            f'is an object inheriting from `torch.nn.Module`, but got `{type(nn_model)}`.'
+        )
     
-    start.record()
-    with torch.no_grad():
-        for batch_i, batch in TQDM(enumerate(dl), desc="Running inference...", total=ceil(len(images) / batch_size), leave=True):
-            i = batch_i * batch_size
-            if len(batch.shape) == 3:
-                batch = batch.unsqueeze(0)
-            with torch.autocast(device_type=device.type, dtype=dtype):
-                if embeddings:
-                    prediction, embedding = nn_model(model_preprocess(batch.to(device)))
-                    kwargs = {"embeddings" : embedding}
-                else:
-                    prediction = nn_model(model_preprocess(batch.to(device)))
-                    kwargs = {}
-            results.collect(
-                paths = images[i:(i+len(batch))],
-                predictions = prediction,
-                **kwargs
+    # Prepare dataloader
+    if "data_index" in dataloader_builder_kwargs:
+        image_data = get_metadata(dataloader_builder_kwargs["data_index"])
+        images = [p for p, s in zip(image_data["path"], image_data["split"]) if s == "test"]
+        labels = [c for c, s in zip(image_data["class"], image_data["split"]) if s == "test"]
+    if image_data is None:
+        labels, images = auto_find_images(input, **class_spec)
+    loader = builder.build_inference_dataloader(
+        images=images,
+        preprocess=model_preprocess,
+        device=device,
+        dtype=dtype,
+        **dataloader_builder_kwargs
+    )
+    if not isinstance(loader, torch.utils.data.DataLoader):
+        raise TypeError(
+            'Expected `dataloader_builder` to return an objects'
+            f'inheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}.'
+        )
+
+    # Prepare augmentation
+    augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
+    if not isinstance(augmentation, torchvision.transforms.Compose):
+        raise TypeError(
+            'Expected `augmentation_builder` to return an objects'
+            f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
+        )
+    debug_augmentation(
+        augmentation=augmentation,
+        dataset=loader.dataset,
+        output_dir=output_dir,
+        strict=True
+    )
+
+    criterion = builder.build_criterion(
+        labels=labels,
+        num_classes=class_spec["num_classes"], 
+        device=device,
+        dtype=dtype,
+        **criterion_builder_kwargs
+    )
+    if not isinstance(criterion, torch.nn.modules.loss._Loss):
+        raise TypeError(
+            'Expected `criterion_builder` to return an object'
+            f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
+        )
+    
+    collector = collector_cls(**collector_cls_kwargs)
+    
+    idx = 0
+    with torch.inference_mode(), torch.autocast(device_type=str(device)):
+        for batch in loader:
+            pred = nn_model(batch.to(device))
+            idxs = slice(idx, idx+len(batch))
+            labs = labels[idxs] if labels is not None else None
+            if labs is not None:
+                loss = criterion(pred, labs)
+            else:
+                loss = None
+            collector.collect(
+                paths=images[idxs], 
+                predictions=pred,
+                labels=labs,
+                loss=loss
             )
-    
-    end.record()
-    torch.cuda.synchronize(device)
-    inf_time = start.elapsed_time(end) / 1000
-    if verbose:
-        print(f'Inference took {inf_time:.1f}s ({len(images)/inf_time:.1f} img/s)')
+    del loader, nn_model, criterion
 
-    # Write results
-    if output_dir is not None:
-        with open(os.path.join(output_dir, f'{name}_result.json'), "w") as f:
-            json.dump(results.data, f)
+    collector.evaluate(output)
+    collector.save_mini_metric_csv(os.path.join(output, f"{name}_mini_metric.csv"))
+            
 
-    results.evaluate(outdir=output_dir, prefix=f'{name}_')
-    if verbose and output_dir is not None:
-            print(f'Outputs written to {os.path.abspath(output_dir)}')
-
-def cli(description="Predict with a classifier", **kwargs):
+def cli(description="Classify images with a trained model", **extra_kwargs):
     parser = ArgumentParser(
-        prog="predict",
+        prog="train",
         description=description,
         formatter_class=Formatter
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", required=False,
-        help="Print the prediction results to the terminal? Disabled by default."
+
+    # Optional YAML config support
+    cfg_args = parser.add_argument_group("Config [optional]")
+    cfg_args.add_argument(
+        "--config", type=str, default=None, required=False,
+        help="Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags."
     )
 
-    if kwargs:
-        for argname, args in kwargs.items():
-            parser.add_argument(f'--{argname}', **args)
+    if extra_kwargs:
+        for argname, kwargs in extra_kwargs.items():
+            args = []
+            if None in kwargs:
+                args = kwargs.pop(None)
+                if not hasattr(args, "__iter__") or isinstance(args, str):
+                    args = [args]
+                else:
+                    args = list(args)
+            args.insert(0, f'--{argname}')
+            parser.add_argument(*args, **kwargs)
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
-        "-m", "--model", type=str, default="efficientnet_v2_s", required=True,
+        "-i", "--input", type=str, default=None, required=False,
         help=
-        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
-        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights"
-    )
-    input_args.add_argument(
-        "-C", "--class_index", type=str, default="class_index.json", required=True,
-        help="Path to a JSON file containing the class name to index mapping."
-    )
-    input_args.add_argument(
-        "-w", "--weights", type=str, required=True,
-        help="Model weights for inference."
-    )
-    input_args.add_argument(
-        "-i", "--input", type=str, required=False,
-        help=
-        "Path to a directory containing a subdirectory for each class,\n"
+        "Path to a directory containing a subdirectory for each class,\n" 
         "where the name of each subdirectory should correspond to the name of the class."
     )
-    input_args.add_argument(
-        "-D", "--data_index", type=str, required=False,
+    out_args = parser.add_argument_group("Output [optional]")
+    out_args.add_argument(
+        "-o", "--output", type=str, default=None, required=False,
+        help=
+        "Root directory for all created files and directories.\n"
+        "Default is current working directory ('.')."
+    )
+    out_args.add_argument(
+        "-n", "--name", type=str, default=None, required=False,
+        help=
+        "Name of the output model.\n"
+        "If not provided, a helpful name will be inferred from the other arguments."
+    )
+    mod_args = parser.add_argument_group("Model [optional]")
+    mod_args.add_argument(
+        "-m", "--model", type=str, dest="model_builder_kwargs.model_type",
+        default=None, required=False,
+        help=
+        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
+        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
+    )
+    mod_args.add_argument(
+        "-w", "--weights", type=str, dest="model_builder_kwargs.weights",
+        default=None, required=False,
+        help="Model weights used to initialize model before training."
+    )
+    mod_args.add_argument(
+        "-C", "--class_spec", type=str, default=None, required=False,
+        help=
+        "path to a JSON file containing the class name to index mapping and other\n"
+        "important information for constructing models and dataloaders.\n"
+        "If it doesn't exist, one will be created based on the directories found under `output` if it is set."
+    )
+    inf_args = parser.add_argument_group("Inference [optional]")
+    inf_args.add_argument(
+        "-D", "--data_index", type=str, default=None, required=False,
         help=
         "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
         "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
         "The 'split' column should contain values 'train', 'validation' or other,\n"
         "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
     )
-    input_args.add_argument(
-        "--split", type=str, default="test", required=False,
-        help="Which split to perform inference on (default='test'). Only applies if `--data_index` is passed."
+    inf_args.add_argument(
+        "--batch_size", type=int, dest="dataloader_builder_kwargs.batch_size",
+        default=None, required=False,
+        help="Number of images used in each mini-batch for training/validation (default=16)."
     )
-    out_args = parser.add_argument_group("Output [optional]")
-    out_args.add_argument(
-        "-o", "--output", type=str, required=False,
-        help='Path to the directory where the results should be stored.'
+    inf_args.add_argument(
+        "--size", type=int, dest="dataloader_builder_kwargs.resize_size",
+        default=None, required=False,
+        help="Size of the input images; width, height (default=256)."
     )
-    out_args.add_argument(
-        "-n", "--name", type=str, required=False,
+    cfg_args = parser.add_argument_group("Runtime [optional]")
+    cfg_args.add_argument(
+        "--subsample", type=int, dest="dataloader_builder_kwargs.subsample",
+        default=None, required=False,
+        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
+    )
+    cfg_args.add_argument(
+        "--device", type=str, default=None, required=False,
+        help='Device used for training (default="cuda:0").'
+    )
+    cfg_args.add_argument(
+        "--dtype", type=str, default=None, required=False,
         help=
-        "Name of the prediction run, used as a prefix for the result files.\n"
-        "The name should only contain alphanumeric ASCII characters and underscores.\n"
-        "If not supplied the basename of the input directory is used (removing non-ASCII alphanumeric/underscore characters)."
-    )
-    out_args.add_argument(
-        "--training_format", action="store_true", required=False,
-        help= \
-        "Are the images in `input` stored in subfolders named by their class? "
-        "If so, we can calculate accuracy statistics."
-    )
-    out_args.add_argument(
-        "-e", "--embeddings", action="store_true", required=False,
-        help="Compute and store embeddings as well."
-    )
-    cfg_args = parser.add_argument_group("Config [optional]")
-    cfg_args.add_argument(
-        "--batch_size", type=int, default=32, required=False,
-        help="Batch size used for inference (default=32). Higher requires more VRAM."
+        "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
+        "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(
-        "--num_workers", type=int, default=None, required=False,
-        help= \
-        "Number of workers used for reading/loading images for inference. "
-        "Default is set to number of physical CPU cores." 
+        "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
+        default=None, required=False,
+        help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
     )
     cfg_args.add_argument(
-        "--device", type=str, default="cuda:0", required=False,
-        help='Device used for inference (default="cuda:0").'
+        "--seed", type=int, default=None, required=False,
+        help=
+        "Set the initial seed for the RNG in the core Python library `random`.\n"
+        "This is particularly important for reproducible train/validation splits."
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default="bfloat16", required=False,
-        help="PyTorch data type used for inference (default=bfloat16)."
+        "-v", "--verbose", action="store_true", dest="logger_builder_kwargs.verbose",
+        default=None, required=False,
+        help="Print training statistics in the terminal."
     )
-    args = vars(parser.parse_args())
-    args["model_builder_kwargs"] = {
-        "model_type" : args.pop("model"),
-        "weights" : args.pop("weights")
-    }
-    args["result_collector_kwargs"] = {
-        "training_format" : args.pop("training_format", False), 
-        "verbose" : args.get("verbose", False)
-    }
-    if args["embeddings"]:
-        args["result_collector_kwargs"]["additional_attributes"] = ["embeddings"]
+    cli_args = vars(parser.parse_args())
+
+    # Build the three layers
+    defaults_full = defaults_from_function(main) # Defaults defined in the function signature
+    config_full = load_yaml_config(cli_args.pop("config")) # Arguments passed from config (empty if no config)
+    cli_full = restructure_cli_args(cli_args) # Manual CLI arguments
+
+    args = merge_dicts(defaults_full, config_full, cli_full)
+
+    # Validate required arguments
+    if args.get("input") is None:
+        raise SystemExit("error: the following arguments are required: --input (via CLI or config)")
+
+    # Set reasonable default name for unspecified CLI inference runs
+    if args.get("name") is None:
+        # args["name"] = 
+        pass
+    
     return args
+
 
 def run():
     sys.exit(main(**cli()))

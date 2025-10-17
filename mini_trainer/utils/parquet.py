@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import pyarrow.compute as pc
 import pyarrow.parquet as pp
@@ -54,13 +54,12 @@ def combine_dicts(dicts : Iterable[dict]):
             retval[k].append(v)
     return retval
 
-def write_metadata_from_parquet(
+def get_metadata_from_parquet(
         path : str, 
-        cls2idx : dict[str, int | dict[str, int]], 
-        dst : str
-    ):
+        cls2idx : dict[str, int | dict[str, int]]
+    ) -> dict[Literal['split', 'class', 'path'], list[str | int]]:
     """
-    This functions writes the metadata index for use with minitrainer.
+    This functions retrieves the metadata index for use with minitrainer.
     
     Args:
         path: Path to parquet created by ``gbifxdl``.
@@ -86,11 +85,7 @@ def write_metadata_from_parquet(
             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
             return {"split" : split, "class" : cls, "path" : filepath}
     
-    if os.path.exists(dst):
-        os.remove(dst)
-    
-    with open(dst, "w") as f:
-        json.dump(combine_dicts(map(parse_row, iter_parquet(path))), f)
+    return combine_dicts(map(parse_row, iter_parquet(path)))
 
 def parquet_to_class_spec(path : str):
     clss = set([row["speciesKey"].strip() for row in iter_parquet(path, ("speciesKey", ))])

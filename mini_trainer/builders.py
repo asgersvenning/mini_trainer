@@ -1,3 +1,4 @@
+import json
 import os
 import warnings
 from collections.abc import Callable
@@ -16,16 +17,15 @@ from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
 from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
 from mini_trainer.utils.augmentation import SaltAndPepper
-from mini_trainer.utils.data import (get_image_data, parse_class_spec,
-                                     write_metadata)
+from mini_trainer.utils.data import (create_metadata, find_images,
+                                     get_metadata, parse_class_spec)
 from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
                                    make_read_and_resize_fn)
 from mini_trainer.utils.logging import MultiLogger
 from mini_trainer.utils.loss import (EvenCrossEntropyLoss,
                                      class_weight_distribution_regularization,
-                                     weight_kl_gausssian,
                                      coherence_hinge_regularization,
-                                     kl_distill_ema)
+                                     kl_distill_ema, weight_kl_gausssian)
 
 
 def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float:
@@ -58,9 +58,9 @@ def get_dataloader(
     )
 
 def get_dataset_dataloader(
-        train_image_data : dict, 
-        val_image_data : dict, 
+        *metadata : dict,  
         resize_size : int | tuple[int, int],
+        modes : tuple[str, ...]=("train", "val"),
         batch_size : int=16, 
         num_workers : int | None=None,
         subsample : int | None=None,
@@ -73,15 +73,15 @@ def get_dataset_dataloader(
         resize_size = (resize_size, resize_size)
     if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
         raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
+    
+    if len(metadata) != len(modes):
+        raise ValueError(f'Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!')
         
     print(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
-        train_image_data = {k : v[::subsample] for k, v in train_image_data.items()}
-        val_image_data = {k : v[::subsample] for k, v in val_image_data.items()}
-
+        metadata = [{k : v[::subsample] for k, v in md.items()} for md in metadata]
     
-    
-    dataset_shape = (len(train_image_data["path"]) + len(val_image_data["path"]), *resize_size, 3)
+    dataset_shape = (sum(map(len, metadata)), *resize_size, 3)
     cache = CACHE_MODE(cache)
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)
@@ -101,12 +101,12 @@ def get_dataset_dataloader(
             label = label[0]
         return reader(path), (torch.tensor(label, dtype=torch.long) if not isinstance(label, torch.Tensor) else label.detach().cpu().clone().long())
     
-    train_dataset, val_dataset = [
+    datasets = [
         LazyDataset(
             func=proc_path_label, 
             items=list(zip(data["path"], data["class"])),
             cache=cache
-        ) for data in [train_image_data, val_image_data]
+        ) for data in metadata
     ]
 
     if num_workers is None:
@@ -118,10 +118,44 @@ def get_dataset_dataloader(
         num_workers = 0
 
     pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
-    train_loader = get_dataloader(train_dataset, "train", batch_size, num_workers, pin_memory, device)
-    val_loader = get_dataloader(val_dataset, "val", batch_size, num_workers, False, device)
+    loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
 
-    return train_dataset, val_dataset, train_loader, val_loader
+    return datasets, loaders
+
+def get_inference_dataloader(
+        images : list[str],
+        resize_size : int | tuple[int, int],
+        batch_size : int=16, 
+        num_workers : int | None=None,
+        subsample : int | None=None,
+        device : torch.device | str=torch.device("cpu"), 
+        dtype : torch.dtype=torch.float32,
+        **kwargs
+    ):
+    if isinstance(resize_size, int):
+        resize_size = (resize_size, resize_size)
+    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
+        raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
+        
+    if subsample is not None and subsample > 1:
+        images = images[::subsample]
+    
+    reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+    
+    dataset = LazyDataset(
+        func=reader, 
+        items=images,
+        cache=CACHE_MODE.NONE
+    )
+
+    if num_workers is None:
+        num_workers = os.cpu_count() - 4
+        num_workers -= num_workers % 2
+        num_workers = max(0, num_workers)
+
+    loader = get_dataloader(dataset, "val", batch_size, num_workers, False, device)
+
+    return dataset, loader
 
 class EMATeacher(AveragedModel):
     def __init__(
@@ -311,6 +345,7 @@ class BaseBuilder:
             device : torch.device,
             dtype = torch.dtype,
             data_index : str | None=None,
+            splits : tuple[str, ...]=("train", "val"),
             num_workers : int | None=None,
             resize_size : int | None=None,
             subsample : int | None=None,
@@ -326,24 +361,26 @@ class BaseBuilder:
         """
         # Prepare datasets/dataloaders
         if data_index is None:
+            metadata = create_metadata(
+                directory=input_dir, 
+                cls2idx=cls2idx, 
+                labels=labels, 
+                train_proportion=train_proportion
+            )
             if output_dir is not None:
                 data_index = os.path.join(output_dir, "data_index.json")
             else:
-                data_index = NamedTemporaryFile(suffix="data_index.json", delete=False)
+                data_index = NamedTemporaryFile(suffix="data_index.json", delete=False).name
             if not os.path.exists(data_index):
-                write_metadata(
-                    directory=input_dir, 
-                    cls2idx=cls2idx, 
-                    labels=labels, 
-                    dst=data_index, 
-                    train_proportion=train_proportion
-                )
-        train_image_data, val_image_data = get_image_data(data_index)
+                with open(data_index, "w") as f:
+                    json.dumps(metadata, f)
+        else:
+            metadata = get_metadata(data_index, splits=splits)
 
-        train_dataset, val_dataset, train_loader, val_loader = get_dataset_dataloader(
-            train_image_data=train_image_data, 
-            val_image_data=val_image_data,
-            resize_size=resize_size or getattr(preprocess, "resize_size"),  
+        datasets, loaders = get_dataset_dataloader(
+            metadata,
+            resize_size=resize_size or getattr(preprocess, "resize_size"),
+            modes=splits,
             batch_size=batch_size,
             num_workers=num_workers,
             subsample=subsample,
@@ -353,7 +390,36 @@ class BaseBuilder:
             **kwargs
         )
 
-        return train_image_data["class"], train_loader, val_loader
+        return metadata[0]["class"], *loaders
+    
+    @staticmethod
+    def build_inference_dataloader(
+            images : list[str],
+            preprocess : Callable[[torch.Tensor], torch.Tensor],
+            batch_size : int,
+            device : torch.device,
+            dtype = torch.dtype,
+            data_index : str | None=None,
+            splits : tuple[str, ...]=("train", "val"),
+            num_workers : int | None=None,
+            resize_size : int | None=None,
+            subsample : int | None=None,
+            cache : int | str | None=None,
+            train_proportion : float=0.9,
+            labels : Any | None=None,
+            num_classes : int | None=None,
+            **kwargs
+        ):
+        return get_inference_dataloader(
+            images=images, 
+            resize_size=resize_size or getattr(preprocess, "resize_size"),
+            batch_size=batch_size,
+            num_workers=num_workers,
+            subsample=subsample,
+            device=device, 
+            dtype=dtype,
+            **kwargs
+        )[1]
 
     @staticmethod
     def build_augmentation(dtype : torch.dtype):

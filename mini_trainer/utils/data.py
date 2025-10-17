@@ -9,7 +9,7 @@ import numpy as np
 
 from mini_trainer.utils.io import is_image
 from mini_trainer.utils.parquet import (parquet_to_class_spec,
-                                        write_metadata_from_parquet)
+                                        get_metadata_from_parquet)
 
 
 def find_images(root : str):
@@ -17,20 +17,40 @@ def find_images(root : str):
     check = is_image(paths)
     return [p for p, f in zip(paths, check) if f]
 
+def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
+    metadata = labels = images = None
+    if os.path.isfile(src):
+        if src.endswith(".parquet"):
+            metadata = get_metadata_from_parquet(src)
+        else:
+            images = [src]
+    elif os.path.isdir(src):
+        contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
+        if contains_only_dirs:
+            metadata = create_metadata(src, **{**kwargs, **{"train_proportion" : 0, "val_proportion" : 0}})
+        else:
+            images = find_images(src)
+    else:
+        raise ValueError(f'Image source must be a file (image or gbifxdl parquet) or directory with images, not {src}.')
+    if metadata is not None:
+        images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
+        labels = [c for c, s in zip(metadata["class"], metadata["split"]) if s == "test"]
+    assert images is not None
+    return labels, images
+
 # TODO: Unfortunately, this function has some functionality for the hierarchical submodule
 # even though the core mini_trainer module and the hierarchical submodule are
 # supposed to be entirely compartmentalized. Difficulty to fix: very high.
-def write_metadata(
+def create_metadata(
         directory : str,
         cls2idx : dict[str, int] | dict[str, dict[str, int]], 
         labels : OrderedDict[str, str | tuple[str, ...]] | list[str] | None,
-        dst : str, 
-        train_proportion : float=0.9
+        train_proportion : float=0.9,
+        val_proportion : float=0.5
     ):
     if directory.endswith(".parquet"):
-        write_metadata_from_parquet(directory, cls2idx=cls2idx, dst=dst)
-        return
-    data = {
+        return get_metadata_from_parquet(directory, cls2idx=cls2idx)
+    metadata = {
         "path" : [],
         "class" : [],
         "split" : []
@@ -55,26 +75,28 @@ def write_metadata(
             idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(cls)]
         this_dir = os.path.join(directory, str(dir))
         for image_path in find_images(this_dir):
-            data["path"].append(image_path)
-            data["class"].append(idx)
-            data["split"].append("train" if random.random() < train_proportion else "validation")
-    with open(dst, "w") as f:
-        json.dump(data, f)
+            metadata["path"].append(image_path)
+            metadata["class"].append(idx)
+            metadata["split"].append(
+                "train" if random.random() < train_proportion 
+                else "validation" if random.random() < val_proportion 
+                else "test"
+            )
+    return metadata
 
-def get_image_data(
+def get_metadata(
         path : str, 
+        splits : tuple[str, ...]=("train", "validation"),
         check_integrity : bool=False
     ) -> tuple[dict[str, list[str | int | list[int]]], dict[str, list[str | int | list[int]]]]:
         if not os.path.exists(path):
             raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
         with open(path, "rb") as f:
-            image_data = {k : np.array(v) for k, v in json.load(f).items()}
+            metadata = {k : np.array(v) for k, v in json.load(f).items()}
         if check_integrity:
-            integrity_mask = np.array(is_image(image_data["path"]))
-            image_data = {k : v[integrity_mask] for k, v in image_data.items()}
-        train_image_data = {k : v[image_data["split"] == np.array("train")].tolist() for k, v in image_data.items()}
-        val_image_data = {k : v[image_data["split"] == np.array("validation")].tolist() for k, v in image_data.items()}
-        return train_image_data, val_image_data
+            integrity_mask = np.array(is_image(metadata["path"]))
+            metadata = {k : v[integrity_mask] for k, v in metadata.items()}
+        return tuple({k : v[metadata["split"] == np.array(split)].tolist() for k, v in metadata.items()} for split in splits)
 
 def parse_class_spec(
         path : str | None=None, 

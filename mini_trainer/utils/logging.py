@@ -23,7 +23,6 @@ from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
 
-
 def format_duration(sec : int, suffix="dhms"):
     sec = int(sec)
     days, rem = divmod(sec, 86400)
@@ -214,7 +213,9 @@ class BaseResultCollector(_ResultsCollector):
         if not all([attr in kwargs for attr in self._extra_attr]):
             raise ValueError(f'To ensure proper ordering and avoid data loss it is required to always pass all extra attributes ([{", ".join(self._extra_attr)}])')
         for key, value in kwargs.items():
-            if isinstance(value, list):
+            if value is None:
+                continue
+            elif isinstance(value, list):
                 pass
             elif isinstance(value, (torch.Tensor, np.ndarray)):
                 value = value.tolist()
@@ -262,6 +263,40 @@ class BaseResultCollector(_ResultsCollector):
             "confs" : self.confs,
             **{attr : getattr(self, attr) for attr in self._extra_attr}
         }
+    
+    def save_mini_metric_csv(self, dst : str):
+        SCHEMA = dict((
+            ("instance_id", int),
+            ("filename", str),
+            ("level", int),
+            ("label", int),
+            ("prediction", int),
+            ("confidence", float),
+            ("threshold", float),
+            ("prediction_made", int),
+            ("correct", int)
+        ))
+        data = {
+            k : list() for k in SCHEMA
+        }
+        for i, (path, pred, conf) in enumerate(zip(self.paths, self.preds, self.confs)):
+            label = getattr(self, "label")[i] if hasattr(self, "label") else -1
+            row = {
+                "instance_id" : i,
+                "filename" : path,
+                "level" : 0,
+                "label" : label,
+                "prediction" : pred,
+                "confidence" : conf,
+                "threshold" : 0,
+                "prediction_made" : 1,
+                "correct" : pred == label
+            }
+            for k, v in row.items():
+                assert isinstance(v, SCHEMA[k])
+                data[k].append(v)
+        write_csv_from_dict(data, dst)
+
 
 class _Statistic:
     min : float | None = None
