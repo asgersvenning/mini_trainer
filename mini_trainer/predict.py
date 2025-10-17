@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 import torch
-import torchvision
+from tqdm.auto import trange
 
 from mini_trainer import Formatter
 from mini_trainer.builders import AutoEmbedder, BaseBuilder
@@ -193,7 +193,7 @@ def main(
     
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
-        for batch in loader:
+        for batch in trange(loader):
             pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
