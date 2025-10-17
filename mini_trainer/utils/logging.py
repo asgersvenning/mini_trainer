@@ -237,7 +237,7 @@ class BaseResultCollector(_ResultsCollector):
                 raise TypeError(f'Unexpected value type `{type(value)}` supplied for {key}.')
             getattr(self, key).extend(value)
 
-    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", **kwargs):
+    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", plot_conf_mat : bool=False, **kwargs):
         if kwargs:
             raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
         if save and not isinstance(outdir, str):
@@ -246,7 +246,7 @@ class BaseResultCollector(_ResultsCollector):
             results=data, 
             idx2cls=self.idx2cls, 
             verbose=self.verbose, 
-            plot_conf_mat=save and os.path.join(outdir, f"{prefix}confusion_matrix.png")
+            plot_conf_mat=plot_conf_mat and save and os.path.join(outdir, f"{prefix}confusion_matrix.png")
         )
 
     def evaluate(self, outdir : str | None=None, prefix : str="", **kwargs):
