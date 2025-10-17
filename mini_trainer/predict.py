@@ -162,8 +162,8 @@ def main(
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}.'
         )
 
-    # # Prepare augmentation
-    # augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
+    # Prepare augmentation
+    augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     # if not isinstance(augmentation, torchvision.transforms.Compose):
     #     raise TypeError(
     #         'Expected `augmentation_builder` to return an objects'
@@ -195,7 +195,7 @@ def main(
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
-            pred = nn_model(model_preprocess(batch.to(device)))
+            pred = nn_model(model_preprocess(augmentation(batch.to(device))))
             idxs = slice(idx, idx+len(batch))
             idx += len(batch)
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
