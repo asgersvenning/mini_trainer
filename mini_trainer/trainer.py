@@ -198,7 +198,7 @@ def evaluate(
         )
     
     if logger.verbose:
-        print(logger.summary())
+        print(logger.summary_string())
     logger.figures(model)
     
     model.train(training_state) # Restore model state

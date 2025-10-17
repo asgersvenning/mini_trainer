@@ -1,4 +1,5 @@
 import copy
+import csv
 import hashlib
 import inspect
 import math
@@ -10,6 +11,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from functools import wraps
 from glob import glob
+from itertools import repeat
 from typing import (Annotated, Any, Callable, Concatenate, Iterable, ParamSpec,
                     TypeVar, TypeVarTuple, Union, Unpack, cast, get_args,
                     get_origin, get_type_hints, overload)
@@ -21,6 +23,45 @@ from torch import nn
 from torchvision.transforms.v2 import ToDtype
 from tqdm.contrib.concurrent import thread_map as _thread_map
 
+MISSING_VALUE = "NA"
+
+def write_csv_from_dict(d : dict[str, Any], path : str):
+    headers = tuple(d.keys())
+    nrow = -1
+    for h in headers:
+        v = d[h]
+        if not hasattr(v, "__len__"):
+            raise TypeError(f'All values must be sequences, but {h} is {type(v)}')
+        if nrow == -1:
+            nrow = len(v)
+        if nrow != len(v):
+            raise ValueError(
+                f'All values must have the same length, '
+                f'but {h} has length {len(v)}, and expected {nrow}'
+            )
+    mode = "a" if os.path.exists(path) else "w"
+    if mode == "a":
+        with open(path, "r", newline="", encoding="utf-8") as f:
+            try:
+                existing_headers = tuple(next(csv.reader(f)))
+            except StopIteration:
+                existing_headers = ()
+        if not all([h in existing_headers for h in headers]):
+            raise RuntimeError(
+                f'Mismatching columns in {path}, found:\n'
+                f'\t{existing_headers}\n'
+                f'but expected:\n\t{headers}'
+            )
+        if len(headers) != len(existing_headers):
+            for h in existing_headers:
+                if h not in headers:
+                    d[h] = repeat(MISSING_VALUE)
+        headers = existing_headers
+    with open(path, mode, newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if mode == "w":
+            writer.writerow(headers)
+        writer.writerows(zip(*(d[h] for h in headers)))
 
 def first_arg_base_types(fn):
     params = tuple(inspect.signature(fn).parameters.values())

@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer.utils import (float_signif_decimal, increment_name_dir,
-                                reduce_across_processes)
+                                reduce_across_processes, write_csv_from_dict)
 from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
                                      plot_model_class_distance,
                                      raw_confusion_matrix)
@@ -708,6 +708,14 @@ class MultiLogger:
             self.eta = ETA(self.total_steps, 0.999)
         else:
             self.save()
+            if self.output_dir is not None:
+                sum = self.summary()
+                sum["epoch"] = self._epoch
+                sum["type"] = self._type
+                write_csv_from_dict(
+                    {k : [v] for k,v in sum.items()}, 
+                    os.path.join(self.output_dir, "summary.csv")
+                )
             if self.clear_store_on_update:
                 self.statistics_storage = defaultdict(list)
                 self.heterogeneous_storage = defaultdict(list)
@@ -998,12 +1006,22 @@ class MultiLogger:
     def summary(self, stats : list[str] | None=None):
         if stats is None:
             stats = self.statistics
-        parts = []
+        retval = dict()
         for stat in stats:
             values = self._last_epoch_values(stat)
             if len(values) == 0:
                 continue
-            value = type(values[0])(np.median(np.array(values)))
+            value = type(values[0])(np.mean(np.array(values)))
+            retval[stat] = value
+        return retval
+
+    def summary_string(self, stats : list[str] | None=None):
+        if stats is None:
+            stats = self.statistics
+        values = self.summary(stats)
+        parts = []
+        for stat in stats:
+            value = values[stat]
             if not bool(np.isfinite(value)):
                 continue
             part = f'{stat}={value:>5.{float_signif_decimal(value)}f}'
