@@ -286,7 +286,7 @@ class BaseResultCollector(_ResultsCollector):
         }
         for i, (path, pred, conf) in enumerate(zip(self.paths, self.preds, self.confs)):
             label = getattr(self, "label")[i] if hasattr(self, "label") else -1
-            do_predict = conf >= threshold,
+            do_predict = int(conf >= threshold)
             row = {
                 "instance_id" : i,
                 "filename" : path,
@@ -296,7 +296,7 @@ class BaseResultCollector(_ResultsCollector):
                 "confidence" : conf,
                 "threshold" : 0,
                 "prediction_made" : do_predict,
-                "correct" : pred == label if do_predict else -1
+                "correct" : pred == label if do_predict == 1 else -1
             }
             for k, v in row.items():
                 # assert isinstance(v, SCHEMA[k])
