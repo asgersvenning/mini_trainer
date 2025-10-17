@@ -6,9 +6,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from tqdm.auto import trange
 
-from mini_trainer import Formatter
+from mini_trainer import Formatter, TQDM
 from mini_trainer.builders import AutoEmbedder, BaseBuilder
 from mini_trainer.config import (defaults_from_function, dump_resolved_config,
                                  load_yaml_config, merge_dicts,
@@ -193,7 +192,7 @@ def main(
     
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
-        for batch in trange(loader):
+        for batch in TQDM(loader, desc="Running inference", unit="batch"):
             pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
