@@ -195,6 +195,7 @@ def main(
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
             pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
+            idx += len(batch)
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
             if labs is not None:
                 loss = criterion(pred, labs.to(device))
