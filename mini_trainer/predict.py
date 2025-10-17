@@ -337,7 +337,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         "This is particularly important for reproducible train/validation splits."
     )
     cfg_args.add_argument(
-        "-v", "--verbose", action="store_true", dest="logger_builder_kwargs.verbose",
+        "-v", "--verbose", action="store_true", dest="collector_cls_kwargs.verbose",
         default=None, required=False,
         help="Print training statistics in the terminal."
     )
