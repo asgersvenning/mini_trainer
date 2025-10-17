@@ -156,8 +156,6 @@ def main(
         dtype=dtype,
         **dataloader_builder_kwargs
     )
-    print("LABELS")
-    print(sorted(set(labels)))
     if not isinstance(loader, torch.utils.data.DataLoader):
         raise TypeError(
             'Expected `dataloader_builder` to return an objects'

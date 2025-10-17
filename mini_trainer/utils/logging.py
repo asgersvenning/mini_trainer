@@ -209,7 +209,7 @@ class BaseResultCollector(_ResultsCollector):
         Override in subclasses!
         """
         self.paths.extend(paths)
-        self.preds.extend([self.idx2cls[idx] for idx in predictions.argmax(1).tolist()])
+        self.preds.extend(predictions.argmax(1).tolist())
         self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
     def _collect_extra_attributes(self, **kwargs : list | tuple | GeneratorType | np.ndarray | torch.Tensor):

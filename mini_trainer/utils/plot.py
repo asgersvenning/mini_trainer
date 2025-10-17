@@ -33,6 +33,7 @@ def named_confusion_matrix(
 
     # Populate confusion matrix and count correct predictions
     for prediction, label in zip(results[keys[0]], results[keys[1]]):
+        label, prediction = idx2cls[label], idx2cls[prediction]
         conf_mat[label][prediction] += 1
         total_samples += 1
         per_class_total[label] += 1
