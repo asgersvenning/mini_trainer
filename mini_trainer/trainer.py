@@ -256,15 +256,14 @@ def train(
 
     eval_model : nn.Module = getattr(model_ema, "module", model)
 
-    best_eval_loss = float("inf")
+    best_eval_metric = -float("inf")
     best_epoch = -1
     for epoch in range(start_epoch, epochs):
         train_one_epoch(model, model_ema, criterion, optimizer, scaler, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
-        eval_loss = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
-        is_best_eval = eval_loss < best_eval_loss
+        eval_metric = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
+        is_best_eval = (best_eval_metric := max(best_eval_metric, eval_metric)) == eval_metric
         if is_best_eval:
             best_epoch = epoch
-        best_eval_loss = min(best_eval_loss, eval_loss)
         if output_dir is not None:
             checkpoint = {
                 "model": model.state_dict(),

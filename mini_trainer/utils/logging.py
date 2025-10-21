@@ -1073,7 +1073,7 @@ class MultiLogger:
     def canonical_scalar(self):
         values = self._last_epoch_values(self.canonical_statistic)
         if len(values) == 0:
-            return None
+            return np.nan
         return np.median(np.array(values))
 
     def render_soft_confusion_matrix(
