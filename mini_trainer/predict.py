@@ -17,12 +17,41 @@ from mini_trainer.utils.augmentation import debug_augmentation
 from mini_trainer.utils.data import auto_find_images, get_metadata
 from mini_trainer.utils.logging import BaseResultCollector
 
+def assign_model_from_folder(folder : str, args : dict[str, Any]):
+    # Traverse and parse folder
+    train_config = os.path.join(folder, "config.yaml")
+    if not os.path.exists(train_config):
+        raise FileNotFoundError(f'Model folder ({folder}) does not contain a config file (config.yaml).')
+    
+    class_spec = os.path.join(folder, "class_spec.json")
+    if not os.path.exists(class_spec):
+        raise FileNotFoundError(f'Model folder ({folder}) does not contain a class specification file (class_spec.json).')
+    
+    weight_folder = os.path.join(folder, "weights")
+    if not os.path.exists(weight_folder):
+        raise FileNotFoundError(f'Model folder ({folder}) does not contain a weight directory (weights).')
+    model_weights = os.path.join(weight_folder, "best.pt")
+    if not os.path.exists(model_weights):
+        raise FileNotFoundError(f'Model weight folder ({model_weights}) does not contain a best weight file (best.pt).')
+    
+    train_args = load_yaml_config(train_config)
+    model_args = train_args.get("model_builder_kwargs", None)
+    if model_args is None:
+        raise KeyError(f'Model config file ({train_config}) does not contain model building arguments (model_builder_kwargs).')
+    
+    # Assign arguments
+    args["class_spec"] = args.get("class_spec", None) or class_spec
+    args["model_builder_kwargs"].update(model_args)
+    args["model_builder_kwargs"]["weights"] = args["model_builder_kwargs"].get("weights", None) or model_weights
+
+    return args
 
 def main(
         input : str,
         output : str | None=None,
         threshold : float=0,
         class_spec : str | None=None,
+        data_index : str | None=None,
         name: str | None=None,
         device : str="cuda:0",
         dtype : str="bfloat16",
@@ -96,13 +125,6 @@ def main(
             os.makedirs(output_dir, exist_ok=False)
         except OSError as e:
             e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{name=}` already exists?")
-    
-    weight_output_dir = None if output_dir is None else os.path.abspath(os.path.join(output_dir, "weights"))
-    if weight_output_dir is not None:
-        try:
-            os.makedirs(weight_output_dir, exist_ok=False)
-        except OSError as e:
-            e.add_note(f"Training weight directory already exists: {weight_output_dir}. Perhaps a run of with the `{name=}` already exists?")
 
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
@@ -135,7 +157,8 @@ def main(
         dtype=torch.float32, # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
         **class_spec,
         **model_builder_kwargs
-    ) 
+    )
+    nn_model.eval()
     if not isinstance(nn_model, torch.nn.Module):
         raise TypeError(
             'Expected `model_builder` to return a tuple, where the first element'
@@ -143,8 +166,8 @@ def main(
         )
     
     # Prepare dataloader
-    if "data_index" in dataloader_builder_kwargs:
-        metadata = get_metadata(dataloader_builder_kwargs["data_index"])
+    if data_index is not None:
+        metadata = get_metadata(data_index)
         images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
         labels = [p for p, s in zip(metadata["class"], metadata["split"]) if s == "test"]
     else:
@@ -163,7 +186,7 @@ def main(
         )
 
     # Prepare augmentation
-    augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
+    # augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     # if not isinstance(augmentation, torchvision.transforms.Compose):
     #     raise TypeError(
     #         'Expected `augmentation_builder` to return an objects'
@@ -195,7 +218,7 @@ def main(
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
-            pred = nn_model(model_preprocess(augmentation(batch.to(device))))
+            pred = nn_model(model_preprocess(batch.to(device)))
             idxs = slice(idx, idx+len(batch))
             idx += len(batch)
             labs = torch.tensor(labels[idxs]).long() if labels is not None else None
@@ -243,25 +266,36 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
-        "-i", "--input", type=str, default=None, required=False,
+        "-i", "--input", type=str, 
+        default=None, required=False,
         help=
         "Path to a directory containing a subdirectory for each class,\n" 
         "where the name of each subdirectory should correspond to the name of the class."
     )
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
-        "-o", "--output", type=str, default=None, required=False,
+        "-o", "--output", type=str, 
+        default=None, required=False,
         help=
         "Root directory for all created files and directories.\n"
         "Default is current working directory ('.')."
     )
     out_args.add_argument(
-        "-n", "--name", type=str, default=None, required=False,
+        "-n", "--name", type=str, 
+        default="predict", required=False,
         help=
-        "Name of the output model.\n"
-        "If not provided, a helpful name will be inferred from the other arguments."
+        "Name of the output predictions.\n"
+        "Default is 'predict'."
     )
     mod_args = parser.add_argument_group("Model [optional]")
+    mod_args.add_argument(
+        "-f", "--model_folder", type=str,
+        default=None, required=False,
+        help=
+        "Path to folder created when training a model.\n"
+        "This argument chooses defaults for 'model', 'weights' and 'class_spec',\n"
+        "but will be superseded by these if they are manually specified as well."
+    )
     mod_args.add_argument(
         "-m", "--model", type=str, dest="model_builder_kwargs.model_type",
         default=None, required=False,
@@ -275,7 +309,8 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         help="Model weights used to initialize model before training."
     )
     mod_args.add_argument(
-        "-C", "--class_spec", type=str, default=None, required=False,
+        "-C", "--class_spec", type=str, 
+        default=None, required=False,
         help=
         "path to a JSON file containing the class name to index mapping and other\n"
         "important information for constructing models and dataloaders.\n"
@@ -291,7 +326,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         "Default is 0 (always predict)."
     )
     inf_args.add_argument(
-        "-D", "--data_index", type=str, dest="dataloader_builder_kwargs.data_index",
+        "-D", "--data_index", type=str,
         default=None, required=False,
         help=
         "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
@@ -316,11 +351,13 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
     )
     cfg_args.add_argument(
-        "--device", type=str, default=None, required=False,
+        "--device", type=str, 
+        default=None, required=False,
         help='Device used for training (default="cuda:0").'
     )
     cfg_args.add_argument(
-        "--dtype", type=str, default=None, required=False,
+        "--dtype", type=str, 
+        default=None, required=False,
         help=
         "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
         "The model is always stored in float32, and training is done with autocasting."
@@ -331,7 +368,8 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
     )
     cfg_args.add_argument(
-        "--seed", type=int, default=None, required=False,
+        "--seed", type=int, 
+        default=None, required=False,
         help=
         "Set the initial seed for the RNG in the core Python library `random`.\n"
         "This is particularly important for reproducible train/validation splits."
@@ -353,11 +391,10 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
     # Validate required arguments
     if args.get("input") is None:
         raise SystemExit("error: the following arguments are required: --input (via CLI or config)")
-
-    # Set reasonable default name for unspecified CLI inference runs
-    if args.get("name") is None:
-        # args["name"] = 
-        pass
+    
+    model_folder = args.pop("model_folder", None)
+    if model_folder is not None:
+        args = assign_model_from_folder(model_folder, args)
     
     return args
 

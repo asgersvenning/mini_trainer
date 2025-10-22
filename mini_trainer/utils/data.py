@@ -21,13 +21,13 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
     metadata = labels = images = None
     if os.path.isfile(src):
         if src.endswith(".parquet"):
-            metadata = get_metadata_from_parquet(src)
+            metadata = get_metadata_from_parquet(src, **kwargs)
         else:
             images = [src]
     elif os.path.isdir(src):
         contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
         if contains_only_dirs:
-            metadata = create_metadata(src, **{**kwargs, **{"train_proportion" : 0, "val_proportion" : 0}})
+            metadata = create_metadata(src, **{**kwargs, **{"train_proportion" : 0, "val_proportion" : 0, "labels" : None}})
         else:
             images = find_images(src)
     else:
@@ -46,7 +46,8 @@ def create_metadata(
         cls2idx : dict[str, int] | dict[str, dict[str, int]], 
         labels : OrderedDict[str, str | tuple[str, ...]] | list[str] | None,
         train_proportion : float=0.9,
-        val_proportion : float=0.5
+        val_proportion : float=0.5,
+        **kwargs
     ):
     if directory.endswith(".parquet"):
         return get_metadata_from_parquet(directory, cls2idx=cls2idx)

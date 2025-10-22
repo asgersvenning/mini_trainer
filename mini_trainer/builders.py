@@ -373,15 +373,19 @@ class BaseBuilder:
                 data_index = NamedTemporaryFile(suffix="data_index.json", delete=False).name
             if not os.path.exists(data_index):
                 with open(data_index, "w") as f:
-                    json.dumps(metadata, f)
+                    json.dump(metadata, f)
         else:
             metadata = get_metadata(data_index)
-
+        metasplits = metadata["split"].copy()
+        metadata = [
+            {
+                k : [vi for vi, s in zip(v, metasplits) if s.startswith(split.strip().lower())] 
+                for k, v in metadata.items()
+            } 
+            for split in splits
+        ]
         datasets, loaders = get_dataset_dataloader(
-            *(
-                {k : v[metadata["split"] == np.array(split)].tolist() for k, v in metadata.items()} 
-                for split in splits
-            ),
+            *metadata,
             resize_size=resize_size or getattr(preprocess, "resize_size"),
             modes=splits,
             batch_size=batch_size,

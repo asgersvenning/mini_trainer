@@ -56,7 +56,8 @@ def combine_dicts(dicts : Iterable[dict]):
 
 def get_metadata_from_parquet(
         path : str, 
-        cls2idx : dict[str, int | dict[str, int]]
+        cls2idx : dict[str, int | dict[str, int]],
+        **kwargs
     ) -> dict[Literal['split', 'class', 'path'], list[str | int]]:
     """
     This functions retrieves the metadata index for use with minitrainer.
@@ -66,7 +67,6 @@ def get_metadata_from_parquet(
         cls2idx: A dictionary with mappings from GBIF taxon (probably species) IDs to indexes used for DL training.
             Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above, 
             where the key denotes the taxonomic level, such that ``"0"`` is species, ``"1"`` is genus and so forth.
-        dst: Path to write the results. Should probably be a file with .json extension.
     """
     if isinstance(cls2idx[next(iter(cls2idx))], dict):
         def parse_row(row : dict[str, Any]):
