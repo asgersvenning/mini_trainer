@@ -11,7 +11,9 @@ HEAD_OPTIONS = {
     "independent" : IndependentClassifier
 }
 
-def head_name_to_cls(name : str):
+def head_name_to_cls(name : str | type):
+    if isinstance(name, type):
+        return name
     name = name.strip().lower()
     try:
         return HEAD_OPTIONS[name]

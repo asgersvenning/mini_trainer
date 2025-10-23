@@ -7,13 +7,16 @@ from typing import Iterable
 import torch
 
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.hierarchical.gbif import (create_taxonomy,
+from mini_trainer.hierarchical.gbif import (cls2idx_from_labels,
+                                            create_taxonomy,
                                             labels_from_taxonomy)
 from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
 from mini_trainer.hierarchical.model import HierarchicalClassifier
+from mini_trainer.utils import write_csv_from_dict
 from mini_trainer.utils.data import find_images
 from mini_trainer.utils.logging import BaseResultCollector
 from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
+from mini_trainer.utils.plot import named_confusion_matrix
 
 
 def linnean_labels_from_directory(dir : str, levels="family", **kwargs):
@@ -98,18 +101,7 @@ def parse_class_spec(
             if levels is not None:
                 for lab in labels.keys():
                     labels[lab] = labels[lab][:levels]
-            nlvl = set([len(l) for l in labels.values()])
-            if len(nlvl) != 1:
-                raise RuntimeError('Varying hierarchy levels found in image directory structure:', list(sorted(nlvl)))
-            nlvl = list(nlvl)[0]
-            cls2idx : dict[int, dict[str, int]] = {str(lvl) : dict() for lvl in range(nlvl)}
-            classes = {str(lvl) : set() for lvl in range(nlvl)}
-            for lab in labels.values():
-                for lvl, cls in enumerate(lab):
-                    if cls in classes[str(lvl)]:
-                        continue
-                    classes[str(lvl)].add(cls)
-                    cls2idx[str(lvl)][cls] = len(classes[str(lvl)]) - 1
+            cls2idx = cls2idx_from_labels(labels)
             retval = {"cls2idx" : cls2idx, "labels" : labels, "num_classes" : len(labels)}
         if path is not None:
             with open(path, "w") as f:
@@ -255,78 +247,85 @@ class HierarchicalBuilder(BaseBuilder):
             **kwargs
         )
 
-class MultiLevelResultCollector(BaseResultCollector):
-    def __init__(self, lvl : int, cls2cls : dict[str, str] | None=None, *args, **kwargs):
-        self.level = lvl
-        self.cls2cls = cls2cls
-        super().__init__(*args, **kwargs)
-
-    def collect(self, paths, *args, labels=None, **kwargs):
-        if labels is not None:
-            return super().collect(paths, *args, **kwargs, labels=labels)
-        if self._training_format:
-            leaf_labels = [os.pathname(os.path.dirname(path)) for path in paths]
-            labels = [self.cls2cls[ll] for ll in leaf_labels]
-            return super().collect(paths, *args, **kwargs, labels=labels)
-        return super().collect(paths, *args, **kwargs)
-
-    def eval_label_fn(self, data : dict, prefix : str="", *args, **kwargs):
-        if len(prefix) > 0 and not prefix.endswith("_"):
-            prefix = prefix + "_"
-        prefix = f'{prefix}level{self.level}_'
-        return super().eval_label_fn(data=data, prefix=prefix, *args, **kwargs)
-
-class HierarchicalResultCollector:
+class HierarchicalResultCollector(BaseResultCollector):
     def __init__(
             self, 
-            levels : int, 
-            idx2cls : dict[int, dict[int, str]], 
-            combinations : list[tuple[int, int, int]], 
+            idx2cls : dict[str, dict[int, str]] | None=None,
+            cls2idx : dict[str, dict[str, int]] | None=None,
             *args, 
             **kwargs
         ):
-        self.levels = levels
+        if idx2cls is None and cls2idx is None:
+            raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
+        if idx2cls is None:
+            idx2cls = {lvl : {v : k for k, v in _cls2idx.items()} for lvl, _cls2idx in cls2idx.items()}
+        if cls2idx is None:
+            cls2idx = {lvl : {v : k for k, v in _idx2cls.items()} for lvl, _idx2cls in idx2cls.items()}
+        super().__init__(idx2cls=idx2cls, cls2idx=cls2idx, *args, **kwargs)
         self.idx2cls = idx2cls
-        self.cls2cls = dict()
-        for comb in combinations:
-            for lvl, e in enumerate(comb):
-                if lvl not in self.cls2cls:
-                    self.cls2cls[lvl] = dict()
-                self.cls2cls[lvl][comb[0]] = e
-        self.collectors = tuple([
-            MultiLevelResultCollector(lvl, idx2cls=self.idx2cls[lvl], cls2cls=self.cls2cls[lvl], *args, **kwargs) 
-            for lvl in range(self.levels)
-        ])
+        self.cls2idx = cls2idx
+        self._levels = None
 
-    def evaluate(self, outdir : str | None=None, prefix : str="", level : int | list[int] | None=None):
-        if level is None:
-            level = list(range(self.levels))
-        if isinstance(level, int):
-            level = [level]
-        # results = {lvl : result for lvl in level if (result := self.collectors[lvl].evaluate()) is not None}
-        results = dict()
-        for lvl in level:
-            result = self.collectors[lvl].evaluate(outdir=outdir, prefix=prefix)
-            if result is not None:
-                results[lvl] = result
-        
-        do_save = isinstance(outdir, str)
-        if do_save and not os.path.isdir(outdir):
-            raise OSError(f'Specified output directory (`{outdir}`) does not exist.')
-        if results:
-            if do_save:
-                with open(os.path.join(outdir, f'{prefix}eval_results.json'), "w") as f:
-                    json.dump(results, f)
-            return results
+    def _collect_base_attributes(self, paths : list[str], predictions : list[torch.Tensor]):
+        """
+        Override in subclasses!
+        """
+        if self._levels is None:
+            self._levels = len(predictions)
+        self.paths.extend(paths)
+        self.preds.extend(list(zip(*[map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist()) for lvl, p in enumerate(predictions)])))
+        self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
 
-    def collect(self, paths : list[str], predictions : list[torch.Tensor], level : int | list[int] | None=None, **kwargs):
-        if level is None:
-            level = list(range(self.levels))
-        if isinstance(level, int):
-            level = [level]
-        for lvl in level:
-            self.collectors[lvl].collect(paths, predictions[lvl], **kwargs)
-
-    @property
-    def data(self):
-        return {lvl : self.collectors[lvl].data for lvl in range(self.levels)}
+    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", plot_conf_mat : bool=False, **kwargs):
+        if kwargs:
+            raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
+        if save and not isinstance(outdir, str):
+            raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
+        if self._levels is None:
+            raise RuntimeError(f'Hierarchical result collector was unable to detect number of levels in the class hierarchy!')
+        return {
+            level : named_confusion_matrix(
+                results={k : v[level] if k in ["preds", "confs", "labels"] else v for k, v in data.items()}, 
+                cls2idx=self.cls2idx[str(level)],
+                verbose=self.verbose, 
+                plot_conf_mat=plot_conf_mat and save and os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
+            ) for level in range(self._levels)
+        }
+    
+    def save_mini_metric_csv(self, dst : str, threshold : float=0.0):
+        SCHEMA = dict((
+            ("instance_id", int),
+            ("filename", str),
+            ("level", int),
+            ("label", str),
+            ("prediction", str),
+            ("confidence", float),
+            ("threshold", float),
+            ("known_label", int),
+            ("prediction_made", int),
+            ("correct", int)
+        ))
+        data = {
+            k : list() for k in SCHEMA
+        }
+        for i, (path, preds, confs) in enumerate(zip(self.paths, self.preds, self.confs)):
+            labels = getattr(self, "labels")[i] if hasattr(self, "labels") else [-1] * self._levels
+            for level in range(self._levels):
+                label, pred, conf = labels[level], preds[level], confs[level]
+                do_predict = int(conf >= threshold)
+                row = {
+                    "instance_id" : i,
+                    "filename" : path,
+                    "level" : level,
+                    "label" : label,
+                    "prediction" : pred,
+                    "confidence" : conf,
+                    "threshold" : float(threshold),
+                    "known_label" : int(label in self.cls2idx[str(level)]),
+                    "prediction_made" : do_predict,
+                    "correct" : do_predict if do_predict == 0 else 1 if pred == label else -1
+                }
+                for k, v in row.items():
+                    assert isinstance(v, SCHEMA[k]), f'Invalid data type in {k}, found {v}, but expected a {SCHEMA[k]}'
+                    data[k].append(v)
+        write_csv_from_dict(data, dst)

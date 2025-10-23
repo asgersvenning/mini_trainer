@@ -1,0 +1,32 @@
+from mini_trainer.predict import main as mt_predict
+from mini_trainer.predict import cli as mt_predict_cli
+from mini_trainer.hierarchical.integration import HierarchicalBuilder, HierarchicalResultCollector
+from mini_trainer.hierarchical.train import head_name_to_cls
+
+def cli(description : str="Predict with a trained hierarchical model", **extra_kwargs):
+    kwargs = mt_predict_cli(
+        description=description,
+        loss_weights={
+            "type" : float, 
+            "nargs" : "+", 
+            "dest" : "criterion_builder_kwargs.weights",
+            "default" : (1., 1., 1.), 
+            "required" : False, 
+            "help" : "Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied"
+        },
+        head={
+            "type" : str,
+            "dest" : "model_builder_kwargs.cls",
+            "default" : "hierarchical",
+            "required" : False,
+            "help" : "Which type of classification head architecture to use. Options are 'hierarchical' (default), 'conditional' and 'independent'."
+        }, 
+        **extra_kwargs
+    )
+    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
+    kwargs["builder"] = HierarchicalBuilder
+    kwargs["collector_cls"] = HierarchicalResultCollector
+    return kwargs
+
+if __name__ == "__main__":
+    mt_predict(**cli())

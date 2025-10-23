@@ -74,7 +74,7 @@ def is_image(path : str):
         return False
     
     try:
-        with open(path, "rb") as f:
+        with open(path, "r+b", buffering=16) as f:
             header = f.read(16)  # read enough bytes for JPEG and PNG signatures
     except Exception:
         return False

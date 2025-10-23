@@ -73,9 +73,9 @@ def get_metadata_from_parquet(
             nonlocal path
             split = set2split(int(row["set"].strip()))
             keys = get_keys(row)
-            cls : list[int] = [cls2idx[level][keys[level]] for level in range(len(cls2idx))]
+            cls : list[int] = [cls2idx[str(level)][keys[level]] for level in range(len(cls2idx))]
             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-            return {"split" : split, "class" : cls, "path" : filepath}
+            return {"split" : split, "class" : cls, "path" : filepath, "label" : keys}
     else:
         def parse_row(row : dict[str, Any]):
             nonlocal path
@@ -83,7 +83,7 @@ def get_metadata_from_parquet(
             keys = get_keys(row)
             cls : int = cls2idx[keys[0]]
             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-            return {"split" : split, "class" : cls, "path" : filepath}
+            return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
     
     return combine_dicts(map(parse_row, iter_parquet(path)))
 
@@ -95,12 +95,15 @@ def parquet_to_class_spec(path : str):
     }
 
 def parquet_to_class_spec_hierarchical(path : str, levels : int=3):
-    combs = list(sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x : x[::-1]))
+    combs = {
+        v[0] : v 
+        for v in sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x : x[::-1])
+    }
     cls2idx = dict()
     for level in range(levels):
         clss = set()
         this_cls2idx = dict()
-        for comb in combs:
+        for _, comb in combs.items():
             cls = comb[level]
             if cls in clss:
                 continue

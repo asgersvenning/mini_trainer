@@ -21,6 +21,7 @@ import torch
 from torch import distributed as dist
 from torch import nn
 from torchvision.transforms.v2 import ToDtype
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import thread_map as _thread_map
 
 MISSING_VALUE = "NA"
@@ -100,7 +101,7 @@ R = TypeVar("R")
 def thread_map(func : Callable[[S], R], it : Iterable[S], **kwargs : Any) -> list[R]:
     return cast(list[R], _thread_map(func, it, **kwargs))
 
-def multithread_vectorize(leave : bool=False, **tqdm_kwargs: Any):
+def multithread_vectorize(leave : bool=False, min_items_to_multithread : int=32, **tqdm_kwargs: Any):
     def decorator(f: Callable[Concatenate[S, P], R]):
         _basetypes = first_arg_base_types(f)
         basetypes : list[type] = []
@@ -120,6 +121,8 @@ def multithread_vectorize(leave : bool=False, **tqdm_kwargs: Any):
         def wrapped(x, /, *args : P.args, **kwargs : P.kwargs):
             if isinstance(x, basetypes):
                 return f(x, *args, **kwargs)
+            if callable(hasattr(x, "__len__")) and len(x) < min_items_to_multithread:
+                return [f(y, *args, **kwargs) for y in tqdm(x, leave=leave, **tqdm_kwargs)]
             return cast(list[R], _thread_map(lambda y : f(y, *args, **kwargs), x, leave=leave, **tqdm_kwargs))
 
         return wrapped

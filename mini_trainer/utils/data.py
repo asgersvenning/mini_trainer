@@ -34,7 +34,7 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
         raise ValueError(f'Image source must be a file (image or gbifxdl parquet) or directory with images, not {src}.')
     if metadata is not None:
         images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
-        labels = [c for c, s in zip(metadata["class"], metadata["split"]) if s == "test"]
+        labels = [c for c, s in zip(metadata["label"], metadata["split"]) if s == "test"]
     assert images is not None
     return labels, images
 
@@ -54,15 +54,30 @@ def create_metadata(
     metadata = {
         "path" : [],
         "class" : [],
-        "split" : []
+        "split" : [],
+        "label" : []
     }
     if labels is None:
         # If no labels are supplied we just assume that the images are put into
         # folders named after the class
-        if isinstance(cls2idx.get(0, None), dict):
-            raise RuntimeError('Hierarchical class index seems to have been passed without labels!')
-        cls2idx = cast(dict[str, int], cls2idx)
-        labels : OrderedDict[str, str] = OrderedDict([(cls, cls) for cls in cls2idx])
+        if isinstance(cls2idx.get("0", None), dict):
+            from mini_trainer.hierarchical.gbif import create_taxonomy, labels_from_taxonomy, is_taxonomical_cls2idx
+            if not is_taxonomical_cls2idx(cls2idx):
+                raise ValueError(f'Hierarchical class index passed without labels and is not taxonomical.')
+            dirs = [
+                name for name in os.listdir(directory) 
+                if os.path.isdir(subdir := os.path.join(directory, name))
+                and len(os.listdir(subdir)) > 0
+            ]
+            tax = create_taxonomy(dirs, len(cls2idx))
+            labels = labels_from_taxonomy(tax)
+            del dirs, tax
+        else:
+            labels = {
+                name : name for name in os.listdir(directory) 
+                if os.path.isdir(subdir := os.path.join(directory, name))
+                and len(os.listdir(subdir)) > 0
+            }
     elif isinstance(labels, list):
         # Same if it is a list, in this case we just assume the folders
         # are named after the (leaf) class
@@ -70,10 +85,10 @@ def create_metadata(
     for dir, cls in labels.items():
         if isinstance(cls, str):
             cls2idx = cast(dict[str, int], cls2idx)
-            idx = cls2idx[cls]
+            idx = cls2idx.get(cls, None)
         else:
             cls2idx = cast(dict[str, dict[str, int]], cls2idx)
-            idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(cls)]
+            idx = [cls2idx[str(lvl)].get(c, None) for lvl, c in enumerate(cls)]
         this_dir = os.path.join(directory, str(dir))
         for image_path in find_images(this_dir):
             metadata["path"].append(image_path)
@@ -83,6 +98,7 @@ def create_metadata(
                 else "validation" if random.random() < val_proportion 
                 else "test"
             )
+            metadata["label"].append(cls)
     return metadata
 
 def get_metadata(

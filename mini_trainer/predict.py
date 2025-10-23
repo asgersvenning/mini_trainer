@@ -53,6 +53,7 @@ def main(
         class_spec : str | None=None,
         data_index : str | None=None,
         name: str | None=None,
+        subsample : int | None=None,
         device : str="cuda:0",
         dtype : str="bfloat16",
         seed : int | None=None,
@@ -69,14 +70,10 @@ def main(
         },
         dataloader_builder_kwargs : dict[str, Any]={
             "batch_size" : 16,
-            "resize_size" : 256, 
-            "train_proportion" : 0.9
+            "resize_size" : 256
         },
         augmentation_builder_kwargs : dict[str, Any]={},
-        criterion_builder_kwargs : dict[str, Any]={
-            "weighted" : False,
-            "label_smoothing" : 0.1
-        },
+        criterion_builder_kwargs : dict[str, Any]={},
         collector_cls_kwargs : dict[str, Any]={}
     ):
     """
@@ -166,12 +163,16 @@ def main(
         )
     
     # Prepare dataloader
+    labels = None
     if data_index is not None:
         metadata = get_metadata(data_index)
         images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
-        labels = [p for p, s in zip(metadata["class"], metadata["split"]) if s == "test"]
+        labels = [p for p, s in zip(metadata["label"], metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **class_spec)
+    if subsample is not None and subsample > 1:
+        labels, images = labels[::subsample], images[::subsample]
+    
     loader = builder.build_inference_dataloader(
         images=images,
         preprocess=model_preprocess,
@@ -199,43 +200,52 @@ def main(
     #     strict=True
     # )
 
-    criterion = builder.build_criterion(
-        labels=labels,
-        num_classes=class_spec["num_classes"], 
-        device=device,
-        dtype=dtype,
-        **criterion_builder_kwargs
-    )
-    if not isinstance(criterion, torch.nn.modules.loss._Loss):
-        raise TypeError(
-            'Expected `criterion_builder` to return an object'
-            f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
-        )
+    # criterion = builder.build_criterion(
+    #     labels=labels,
+    #     num_classes=class_spec["num_classes"], 
+    #     device=device,
+    #     dtype=dtype,
+    #     **criterion_builder_kwargs
+    # )
+    # if not isinstance(criterion, torch.nn.modules.loss._Loss):
+    #     raise TypeError(
+    #         'Expected `criterion_builder` to return an object'
+    #         f'inheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}.'
+    #     )
     
-    collector_cls_kwargs["additional_attributes"] = ["labels", "loss"] if labels is not None else None
+    collector_cls_kwargs["additional_attributes"] = ["labels"] if labels is not None else None
     collector = collector_cls(**collector_cls_kwargs, **class_spec)
     
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device)):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
-            pred = nn_model(model_preprocess(batch.to(device)))
-            idxs = slice(idx, idx+len(batch))
+            pred : torch.Tensor | list[torch.Tensor] = nn_model(model_preprocess(batch.to(device)))
+            # pred_is_list = False
+            # if isinstance(pred, (list, tuple)):
+            #     pred_is_list = True
+            idxs = slice(idx, idx + len(batch))
             idx += len(batch)
-            labs = torch.tensor(labels[idxs]).long() if labels is not None else None
-            if labs is not None:
-                loss = torch.cat([criterion(p.unsqueeze(0), l.unsqueeze(0)).unsqueeze(0) for p, l in zip(pred, labs.to(device))])
-            else:
-                loss = None
+            # labs = torch.tensor(labels[idxs]).long() if labels is not None else None
+            # if labs is not None:
+            #     if not pred_is_list:
+            #         loss = [criterion(p.unsqueeze(0), l.unsqueeze(0).unsqueeze(0)) for p, l in zip(pred, labs.to(device))]
+            #     else:
+            #        loss = [criterion([pi.unsqueeze(0) for pi in p], l.unsqueeze(0)) for p, l in zip(zip(*pred), labs.to(device))]
+            #     loss = [
+            #         l.item() if isinstance(l, torch.Tensor) else [li.item() for li in l] for l in loss
+            #     ]
+            # else:
+            #     loss = None
             collector.collect(
                 paths=images[idxs], 
                 predictions=pred,
-                labels=labs,
-                loss=loss
+                labels=None if labels is None else labels[idxs],
+                # loss=loss
             )
-    del loader, nn_model, criterion
+    del loader, nn_model
 
-    collector.evaluate(os.path.join(output, name))
     collector.save_mini_metric_csv(os.path.join(output, name, "mini_metric.csv"), threshold=threshold)
+    collector.evaluate(os.path.join(output, name))
             
 
 def cli(description="Classify images with a trained model", **extra_kwargs):
@@ -346,7 +356,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
-        "--subsample", type=int, dest="dataloader_builder_kwargs.subsample",
+        "--subsample", type=int,
         default=None, required=False,
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
     )

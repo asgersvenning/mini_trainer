@@ -16,13 +16,13 @@ from mini_trainer.classifier import last_layer_weights
 
 def named_confusion_matrix(
         results : dict[str, list[str]], 
-        idx2cls : dict[int, str], 
+        cls2idx : dict[str, int], 
         keys : tuple[str, str]=("preds", "labels"),
         verbose : bool=False, 
         plot_conf_mat : bool | str=False
     ):
     # Build confusion matrix and compute accuracies
-    classes = [idx2cls[i] for i in sorted(list(idx2cls))]
+    classes = [k for k, v in sorted(cls2idx.items(), key=lambda x : x[1])]
 
     # Initialize confusion matrix and counters
     conf_mat = {lab: {pred: 0 for pred in classes} for lab in classes}
@@ -33,7 +33,8 @@ def named_confusion_matrix(
 
     # Populate confusion matrix and count correct predictions
     for prediction, label in zip(results[keys[0]], results[keys[1]]):
-        label, prediction = idx2cls[label], idx2cls[prediction]
+        if label not in classes:
+            continue
         conf_mat[label][prediction] += 1
         total_samples += 1
         per_class_total[label] += 1

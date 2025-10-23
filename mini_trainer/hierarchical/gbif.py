@@ -136,3 +136,33 @@ def create_taxonomy(names_or_ids : list[str], levels : str | int | tuple[str | i
 
 def labels_from_taxonomy(tax : OrderedDict[str, OrderedDict[str, tuple[str, ...]]]):
     return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])
+
+def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]):
+    nlvl = set([len(l) for l in labels.values()])
+    if len(nlvl) != 1:
+        raise RuntimeError('Varying hierarchy levels found in image directory structure:', list(sorted(nlvl)))
+    nlvl = list(nlvl)[0]
+    cls2idx : dict[str, dict[str, int]] = {str(lvl) : dict() for lvl in range(nlvl)}
+    classes = {str(lvl) : set() for lvl in range(nlvl)}
+    for lab in labels.values():
+        for lvl, cls in enumerate(lab):
+            if cls in classes[str(lvl)]:
+                continue
+            classes[str(lvl)].add(cls)
+            cls2idx[str(lvl)][cls] = len(classes[str(lvl)]) - 1
+    return cls2idx
+
+def _keys_str_int(d : dict):
+    return all([isinstance(k, str) and k.isdigit() for k in d.keys()])
+def _values_int(d : dict):
+    return all([isinstance(v, int) for v in d.values()])
+
+def is_taxonomical_cls2idx(cls2idx):
+    if not isinstance(cls2idx, dict):
+        return False
+    if len(cls2idx) == 0:
+        return False
+    if not _keys_str_int(cls2idx):
+        return False
+    return all([isinstance(v, dict) and _keys_str_int(v) and _values_int(v) for v in cls2idx.values()])
+    

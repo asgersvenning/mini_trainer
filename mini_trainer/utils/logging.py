@@ -177,31 +177,27 @@ class BaseResultCollector(_ResultsCollector):
             idx2cls : dict[int, str] | None=None, 
             cls2idx : dict[str, int] | None=None,
             verbose : bool=False, 
-            training_format : bool=False,
             additional_attributes : list[str] | None=None, 
             *args, 
             **kwargs
         ):
         if idx2cls is None and cls2idx is None:
             raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
+        if cls2idx is None:
+            cls2idx = {v : k for k, v in idx2cls.items()}
         if idx2cls is None:
             idx2cls = {v : k for k, v in cls2idx.items()}
         self.paths = []
         self.preds = []
         self.confs = []
-        self.idx2cls = idx2cls
-        self._training_format = training_format
+        self.cls2idx, self.idx2cls = cls2idx, idx2cls
         self.verbose = verbose
         self._extra_attr = set(additional_attributes or [])
-        if self._training_format:
-            self._extra_attr.add("labels")
         for attr in self._extra_attr:
             setattr(self, attr, [])
 
     def collect(self, paths : list[str], predictions : torch.Tensor, **kwargs):
         self._collect_base_attributes(paths, predictions)
-        if self._training_format and "labels" not in kwargs:
-            kwargs["labels"] = [os.path.basename(os.path.dirname(path)) for path in paths]
         self._collect_extra_attributes(**kwargs)
 
     def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor):
@@ -209,7 +205,7 @@ class BaseResultCollector(_ResultsCollector):
         Override in subclasses!
         """
         self.paths.extend(paths)
-        self.preds.extend(predictions.argmax(1).tolist())
+        self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
         self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
     def _collect_extra_attributes(self, **kwargs : list | tuple | GeneratorType | np.ndarray | torch.Tensor):
@@ -244,7 +240,7 @@ class BaseResultCollector(_ResultsCollector):
             raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
         return named_confusion_matrix(
             results=data, 
-            idx2cls=self.idx2cls, 
+            cls2idx=self.cls2idx, 
             verbose=self.verbose, 
             plot_conf_mat=plot_conf_mat and save and os.path.join(outdir, f"{prefix}confusion_matrix.png")
         )
@@ -274,10 +270,11 @@ class BaseResultCollector(_ResultsCollector):
             ("instance_id", int),
             ("filename", str),
             ("level", int),
-            ("label", int),
-            ("prediction", int),
+            ("label", str),
+            ("prediction", str),
             ("confidence", float),
             ("threshold", float),
+            ("known_label", int),
             ("prediction_made", int),
             ("correct", int)
         ))
@@ -295,11 +292,12 @@ class BaseResultCollector(_ResultsCollector):
                 "prediction" : pred,
                 "confidence" : conf,
                 "threshold" : float(threshold),
+                "known_label" : int(label in self.cls2idx),
                 "prediction_made" : do_predict,
                 "correct" : do_predict if do_predict == 0 else 1 if pred == label else -1
             }
             for k, v in row.items():
-                assert isinstance(v, SCHEMA[k])
+                assert isinstance(v, SCHEMA.get(k, "None")), f'Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, "None")}'
                 data[k].append(v)
         write_csv_from_dict(data, dst)
 
