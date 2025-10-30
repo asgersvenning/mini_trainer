@@ -43,6 +43,7 @@ def assign_model_from_folder(folder : str, args : dict[str, Any]):
     args["class_spec"] = args.get("class_spec", None) or class_spec
     args["model_builder_kwargs"].update(model_args)
     args["model_builder_kwargs"]["weights"] = args["model_builder_kwargs"].get("weights", None) or model_weights
+    args["name"] = args.get("name", None) or os.path.split(folder)[1]
 
     return args
 
