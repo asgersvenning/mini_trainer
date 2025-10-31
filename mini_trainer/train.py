@@ -456,9 +456,9 @@ def cli(description="Train a classifier", **extra_kwargs):
         help="Label smoothing applied to training (default=0.1)."
     )
     train_args.add_argument(
-        "--no_ema", action="store_false", dest="ema",
+        "--ema", action="store_true", dest="ema",
         default=None, required=False,
-        help="Disable EMA including self-distillation and semi-supervised learning."
+        help="Enable EMA (opt-in) including self-distillation and semi-supervised learning."
     )
     train_args.add_argument(
         "--class_weighted", action="store_true", dest="criterion_builder_kwargs.weighted",
