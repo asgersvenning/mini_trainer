@@ -29,7 +29,7 @@ def main(
         name: str | None=None,
         device : str="cuda:0",
         dtype : str="bfloat16",
-        ema : bool=True,
+        ema : bool=False,
         seed : int | None=None,
         builder : type[BaseBuilder]=BaseBuilder,
         spec_model_dataloader_kwargs : dict[str, Any]={},
@@ -457,7 +457,7 @@ def cli(description="Train a classifier", **extra_kwargs):
     )
     train_args.add_argument(
         "--ema", action="store_true", dest="ema",
-        default=None, required=False,
+        required=False,
         help="Enable EMA (opt-in) including self-distillation and semi-supervised learning."
     )
     train_args.add_argument(
