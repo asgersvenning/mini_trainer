@@ -13,7 +13,9 @@ import numpy as np
 import torch
 import zarr
 from PIL import Image
-from torchvision.transforms.functional import pil_to_tensor
+from torchvision.io import ImageReadMode, read_image
+from torchvision.transforms import InterpolationMode
+from torchvision.transforms import functional as TF
 from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
@@ -89,6 +91,17 @@ def is_image(path : str):
 
     return False
 
+def _pil_to_torch_interp(interp: int) -> InterpolationMode:
+    m = {
+        Image.Resampling.NEAREST:  InterpolationMode.NEAREST,
+        Image.Resampling.BILINEAR: InterpolationMode.BILINEAR,
+        Image.Resampling.BICUBIC:  InterpolationMode.BICUBIC,
+        Image.Resampling.LANCZOS:  InterpolationMode.LANCZOS,
+        Image.Resampling.BOX:      InterpolationMode.BOX,
+        Image.Resampling.HAMMING:  InterpolationMode.NEAREST,
+    }
+    return m.get(interp, InterpolationMode.BILINEAR)
+
 def make_read_and_resize_fn(
     size: tuple[int, int],
     device: torch.device,
@@ -100,17 +113,42 @@ def make_read_and_resize_fn(
         dtype = getattr(torch, dtype, None)
         if not isinstance(dtype, torch.dtype):
             raise ValueError(f'Unknown dtype "{dtype}"')
-
     converter = make_convert_dtype(dtype)
+    interp = _pil_to_torch_interp(interpolation)
+    antialias = kwargs.get("antialias", True)
+    w, h = size
 
     def read_and_resize(path: str) -> torch.Tensor:
-        img = Image.open(path).convert("RGB").resize(size, interpolation)
-        tensor = pil_to_tensor(img)  # returns torch.uint8 [C,H,W]
-        if tensor.dtype != dtype:
-            tensor = converter(tensor)
-        return tensor.to(device)
+        img = read_image(path, mode=ImageReadMode.RGB)               # uint8 [C,H,W]
+        img = TF.resize(img, size=(h, w), interpolation=interp, antialias=antialias)
+        if img.dtype != dtype:
+            img = converter(img)
+        return img.to(device)
 
     return read_and_resize
+
+# def make_read_and_resize_fn(
+#     size: tuple[int, int],
+#     device: torch.device,
+#     dtype: torch.dtype | str,
+#     interpolation=Image.Resampling.NEAREST,
+#     **kwargs
+# ):
+#     if isinstance(dtype, str):
+#         dtype = getattr(torch, dtype, None)
+#         if not isinstance(dtype, torch.dtype):
+#             raise ValueError(f'Unknown dtype "{dtype}"')
+
+#     converter = make_convert_dtype(dtype)
+
+#     def read_and_resize(path: str) -> torch.Tensor:
+#         img = Image.open(path).convert("RGB").resize(size, interpolation)
+#         tensor = TF.pil_to_tensor(img)  # returns torch.uint8 [C,H,W]
+#         if tensor.dtype != dtype:
+#             tensor = converter(tensor)
+#         return tensor.to(device)
+
+#     return read_and_resize
 
 def _normalize_to_tuple(data):
     return data if isinstance(data, (tuple, list)) else (data,)
@@ -227,7 +265,7 @@ class LazyDataset(torch.utils.data.Dataset):
             case CACHE_MODE.CPU:
                 self._cache_ram()
             case CACHE_MODE.CUDA:
-                self._cache_ram()
+                self._cache_ram(desc="Writing to CUDA RAM cache...")
                 guess_device = torch.device(torch.cuda.current_device())
                 warnings.warn(f'CUDA caching is currently in development and may not work properly. Using device: `{guess_device}` for cache.')
                 self._ram_cache.tensors = [t.to(guess_device) for t in self._ram_cache.tensors]
@@ -365,7 +403,7 @@ class LazyDataset(torch.utils.data.Dataset):
             return data_parts[0]
         return tuple(data_parts)
 
-    def _cache_ram(self):
+    def _cache_ram(self, desc : str="Writing to CPU RAM cache..."):
         if not self.items:
             self._ram_cache = torch.utils.data.TensorDataset() # Handle empty case
             self._ram_was_single_tensor = False
@@ -383,12 +421,12 @@ class LazyDataset(torch.utils.data.Dataset):
             raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
 
         stacked_tensors = [
-            torch.empty((len(self), *template.shape), dtype=template.dtype, device=template.device) 
+            torch.empty((len(self), *template.shape), dtype=template.dtype, device=template.device, pin_memory=template.device == torch.device("cpu")) 
             for template in templates
         ]
 
         max_workers = min(128, ((os.cpu_count() - 2) // 2)*2 or 1)
-        batch_size = 256
+        batch_size = min(256, 4 * max_workers)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
         fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 4))
         insert_buffer : dict[int, torch.Tensor] = dict()
@@ -420,7 +458,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
         def _write():
             end_idx = len(self) - 1
-            pbar = TQDM(range(len(self)), desc="Writing to CPU RAM cache...")
+            pbar = TQDM(range(len(self)), desc=desc)
             batch = ([], [])
             while True:
                 idx, data = insert_queue.get()
@@ -486,21 +524,29 @@ class ImageLoader:
             self, 
             size : int | tuple[int, int], 
             cache : str | None=None, 
-            dtype : torch.dtype=torch.uint8
+            dtype : torch.dtype=torch.uint8,
+            **kwargs
         ):
         self.dtype, self.device = dtype, torch.device("cpu")
         self.cache = cache
-        self.converter = make_convert_dtype(self.dtype)
-        self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
+        self.shape = size if not isinstance(size, int) else (size, size)
+        assert len(self.shape) == 2, self.shape
+        self.reader = make_read_and_resize_fn(
+            size=self.shape,
+            device=self.device,
+            dtype=self.dtype,
+            **kwargs
+        )
     
     def __call__(self, x : str | Iterable):
         if isinstance(x, str):
-            img = Image.open(x).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
-            proc_img = pil_to_tensor(img).to(self.device)
-            proc_img = self.converter(proc_img)
-            if len(proc_img.shape) == 4:
-                proc_img = proc_img[0]
-            return proc_img
+            return self.reader(x)
+            # img = Image.open(x).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
+            # proc_img = TF.pil_to_tensor(img).to(self.device)
+            # proc_img = self.converter(proc_img)
+            # if len(proc_img.shape) == 4:
+            #     proc_img = proc_img[0]
+            # return proc_img
         return LazyDataset(self, x, self.cache)
     
 class ImageClassLoader:
@@ -510,24 +556,26 @@ class ImageClassLoader:
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),
             resize_size : int=256, 
             cache : str | None=None,
-            dtype : torch.dtype=torch.uint8
+            dtype : torch.dtype=torch.uint8,
+            **kwargs
         ):
         self.dtype, self.device = dtype, torch.device("cpu")
         self.cache = cache
-        self.converter = make_convert_dtype(self.dtype)
         self.splitter = item_splitter
         self.class_decoder = class_decoder
-        size = resize_size
-        self.shape = size if not isinstance(size, int) and len(size) == 2 else (size, size)
+        self.shape = resize_size if not isinstance(resize_size, int) else (resize_size, resize_size)
+        assert len(self.shape) == 2, self.shape
+        self.reader = make_read_and_resize_fn(
+            size=self.shape,
+            device=self.device,
+            dtype=self.dtype,
+            **kwargs
+        )
     
     def __call__(self, x : str | Iterable):
         if isinstance(x, str) or isinstance(x, tuple) and len(x) == 2:
             p, c = self.splitter(x)
-            img = Image.open(p).convert("RGB").resize(self.shape, Image.Resampling.NEAREST)
-            proc_img = pil_to_tensor(img).to(self.device)
-            proc_img = self.converter(proc_img)
-            if len(proc_img.shape) == 4:
-                proc_img = proc_img[0]
+            img = self.reader(p)
             cls = self.class_decoder(c)
-            return proc_img, cls
+            return img, cls
         return LazyDataset(self, x, self.cache)

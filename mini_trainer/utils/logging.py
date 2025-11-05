@@ -1060,6 +1060,8 @@ class MultiLogger:
         values = self.summary(stats)
         parts = []
         for stat in stats:
+            if stat not in values:
+                continue
             value = values[stat]
             if not bool(np.isfinite(value)):
                 continue

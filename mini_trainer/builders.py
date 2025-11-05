@@ -67,7 +67,8 @@ def get_dataset_dataloader(
         device : torch.device | str=torch.device("cpu"), 
         dtype : torch.dtype=torch.float32,
         cache : CACHE_MODE | str | int | None=None,
-        multilabel : bool=False
+        multilabel : bool=False,
+        hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
@@ -94,12 +95,21 @@ def get_dataset_dataloader(
             return torch.from_numpy(label).clone().long()
         return label.long()
     
-    def proc_path_label(path_label : tuple[str, int | list[int] | np.ndarray | torch.Tensor]):
+    def proc_path_label(
+            path_label : tuple[str, int | list[int] | np.ndarray | torch.Tensor]
+        ):
         path, label = path_label
         label = label_to_tensor(label)
         if not multilabel and label.numel() > 1:
             label = label[0]
-        return reader(path), (torch.tensor(label, dtype=torch.long) if not isinstance(label, torch.Tensor) else label.detach().cpu().clone().long())
+        if not isinstance(label, torch.Tensor):
+            label = torch.tensor(label, dtype=torch.long)
+        else:
+            label = label.detach().cpu().clone().long()
+        image = reader(path)
+        if hook is not None:
+            image = hook(image)
+        return image, label
     
     datasets = [
         LazyDataset(
@@ -130,6 +140,7 @@ def get_inference_dataloader(
         subsample : int | None=None,
         device : torch.device | str=torch.device("cpu"), 
         dtype : torch.dtype=torch.float32,
+        hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
         **kwargs
     ):
     if isinstance(resize_size, int):
@@ -141,6 +152,8 @@ def get_inference_dataloader(
         images = images[::subsample]
     
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+    if hook is not None:
+        reader = lambda x : hook(reader(x))
     
     dataset = LazyDataset(
         func=reader, 
@@ -353,6 +366,7 @@ class BaseBuilder:
             train_proportion : float=0.9,
             labels : Any | None=None,
             num_classes : int | None=None,
+            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
             **kwargs
         ):
         """
@@ -394,6 +408,7 @@ class BaseBuilder:
             device=device, 
             dtype=dtype,
             cache=cache,
+            hook=hook,
             **kwargs
         )
 
@@ -415,6 +430,7 @@ class BaseBuilder:
             train_proportion : float=0.9,
             labels : Any | None=None,
             num_classes : int | None=None,
+            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
             **kwargs
         ):
         return get_inference_dataloader(
@@ -425,6 +441,7 @@ class BaseBuilder:
             subsample=subsample,
             device=device, 
             dtype=dtype,
+            hook=hook,
             **kwargs
         )[1]
 
@@ -501,9 +518,11 @@ class BaseBuilder:
     
     def build_scaler(
             device : torch.types.Device,
+            init_scale : float=2 ** 14,
+            growth_interval : int=100,
             **kwargs    
         ):
-        return GradScaler(device=device, **kwargs)
+        return GradScaler(device=device, init_scale=init_scale, growth_interval=growth_interval, **kwargs)
     
     def build_ema(
             enable : bool,

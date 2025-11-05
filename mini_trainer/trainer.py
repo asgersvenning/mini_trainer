@@ -74,7 +74,7 @@ def train_one_epoch(
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
-        batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
+        batch, target = batch.to(device), target.to(device)
         with autocast(device_type=device.type, dtype=dtype):
             logits = model(preprocess(augmentation(batch)))
             loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
@@ -102,9 +102,17 @@ def train_one_epoch(
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
         scaler.step(optimizer)
+        # We need to check if the GradScaler has detected NaN gradients, which will
+        # result in optimizer.step() being skipped, and the warning:
+        # "UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`"
+        # being thrown - even though these two calls are in the right order here.
+        # See: https://discuss.pytorch.org/t/optimizer-step-before-lr-scheduler-step-error-using-gradscaler/92930/7
+        _scale = scaler.get_scale()
         scaler.update()
-        model_ema.update_parameters(step, model)
-        lr_scheduler.step()
+        _any_opt_stepped = (_scale <= scaler.get_scale())
+        if _any_opt_stepped:
+            model_ema.update_parameters(step, model)
+            lr_scheduler.step()
         
         logger.consume(
             index=i,

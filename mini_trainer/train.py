@@ -545,8 +545,8 @@ def cli(description="Train a classifier", **extra_kwargs):
     return args
 
 
-def run() -> None:
-    sys.exit(main(**cli()))
+def run():
+    main(**cli())
 
 
 if __name__ == "__main__":  

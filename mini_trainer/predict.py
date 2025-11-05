@@ -411,7 +411,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
 
 
 def run():
-    sys.exit(main(**cli()))
+    main(**cli())
 
 if __name__ == "__main__":  
     run()
