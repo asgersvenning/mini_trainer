@@ -138,7 +138,7 @@ def save_yaml_template(path: str) -> str:
     return path
 
 
-def load_yaml_config(path: str | None) -> dict[str, Any]:
+def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
     """
     Load a YAML config file into a dict of keyword arguments.
 
@@ -184,6 +184,12 @@ def load_yaml_config(path: str | None) -> dict[str, Any]:
     if not isinstance(out, dict):
         warnings.warn(f'! OBS: CONFIG SKIPPED !\nConfig not properly deserialized: {out}')
         return {}
+    if resume:
+        dir = os.path.dirname(os.path.abspath(path))
+        weight_dir = os.path.join(dir, "weights")
+        last_checkpoint = os.path.join(weight_dir, "checkpoint_last.pth")
+        if os.path.exists(weight_dir) and os.path.exists(last_checkpoint):
+            out["checkpoint"] = str(last_checkpoint)
     return out
 
 

@@ -111,9 +111,16 @@ def main(
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-    if name is None:
-        name = "train"
-    name = increment_name_dir(name, output)
+    if checkpoint is None:
+        if name is None:
+            name = "train"
+        name = increment_name_dir(name, output)
+    else:
+        if name is None:
+            raise NotImplementedError(
+                f'Restarting from a checkpoint ({checkpoint}) without supplying a name is not supported!\n'
+                'The name should probably be the same as the name used in the run which created the checkpoint.'
+            )
 
     input = os.path.abspath(input)
     output_dir = None if output is None else os.path.abspath(os.path.join(output, name))
@@ -140,7 +147,7 @@ def main(
         local_vars=orig_args,
         overrides={
             "input": input,
-            "output": output_dir,
+            "output": None if output is None else os.path.abspath(output),
             "device": device,
             "dtype": dtype,
             "name": name,
@@ -353,6 +360,12 @@ def cli(description="Train a classifier", **extra_kwargs):
         "--config", type=str, default=None, required=False,
         help="Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags."
     )
+    cfg_args.add_argument(
+        "--resume", action="store_true", required=False,
+        help=
+        "Only valid if '--config' is also passed, in this case the most relevant\n"
+        "checkpoint is automatically detected to be used for restarting a stopped training run."
+    )
 
     if extra_kwargs:
         for argname, kwargs in extra_kwargs.items():
@@ -513,7 +526,7 @@ def cli(description="Train a classifier", **extra_kwargs):
 
     # Build the three layers
     defaults_full = defaults_from_function(main) # Defaults defined in the function signature
-    config_full = load_yaml_config(cli_args.pop("config")) # Arguments passed from config (empty if no config)
+    config_full = load_yaml_config(cli_args.pop("config"), cli_args.pop("resume")) # Arguments passed from config (empty if no config)
     cli_full = restructure_cli_args(cli_args) # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)
