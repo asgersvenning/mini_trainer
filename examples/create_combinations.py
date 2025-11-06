@@ -53,7 +53,6 @@ def labels_from_json(file : str):
         else:
             levels = 1
             classes = list(cls2idx.keys())
-        levels = list(range(levels))
         levels_name = TAXONOMY_KEYS[levels - 1]
         labels = labels_from_taxonomy(
             create_taxonomy(
