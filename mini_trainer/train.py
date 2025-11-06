@@ -48,7 +48,7 @@ def main(
         },
         augmentation_builder_kwargs : dict[str, Any]={},
         optimizer_builder_kwargs : dict[str, Any]={
-            "optimizer_cls" : MuonAuxAdamW, # torch.optim.AdamW
+            "optimizer_cls" : torch.optim.AdamW, # MuonAuxAdamW 
             "lr" : 0.001,
             "weight_decay" : 0.01
         },
@@ -521,7 +521,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         default=None, required=False,
         help="Print training statistics in the terminal."
     )
-    
+
     cli_args = vars(parser.parse_args())
 
     use_tensorboard = cli_args.pop("tensorboard")
