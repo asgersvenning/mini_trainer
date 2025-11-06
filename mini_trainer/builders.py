@@ -166,7 +166,7 @@ def get_inference_dataloader(
         num_workers -= num_workers % 2
         num_workers = max(0, num_workers)
 
-    loader = get_dataloader(dataset, "val", batch_size, num_workers, False, device)
+    loader = get_dataloader(dataset, "test", batch_size, num_workers, False, device)
 
     return dataset, loader
 
