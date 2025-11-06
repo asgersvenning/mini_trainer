@@ -22,12 +22,12 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         self.weights = torch.tensor(weights).to(device=device, dtype=dtype)
         # self.weights /= self.weights.sum()
         self.n_levels = len(weights)
-        if class_weights is None:
-            self.class_weights = None
-        else:
-            self.class_weights = [w.to(device=device, dtype=dtype) for w in class_weights]
-            for i in self.class_weights:
-                i.requires_grad = False
+        # if class_weights is None:
+        #     self.class_weights = None
+        # else:
+        #     self.class_weights = [w.to(device=device, dtype=dtype) for w in class_weights]
+        #     for i in self.class_weights:
+        #         i.requires_grad = False
 
         # The adjustment: ls(L)=1-(1-ls(0))^(1/(L+1)), ls(0)=k
         # is to avoid a situation where the model gives the target probability for the correct leaf class,
@@ -40,8 +40,8 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
         
         self._loss_fns = [
             nn.CrossEntropyLoss(
-                weight=None, #self.class_weights[i], 
-                reduction="none", 
+                # weight=None, #self.class_weights[i], 
+                # reduction="none", 
                 label_smoothing=label_smoothing
             ) for _ in range(self.n_levels)
         ]
@@ -52,14 +52,15 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):
             targets : torch.Tensor
         ) -> "MultiLevelLoss":
         targets = targets.transpose(0, 1)
-        if self.class_weights is None:
-            item_weights = [targets[i].new_ones(targets[i].shape, dtype=torch.float32) for i in range(self.n_levels)]
-        else:
-            item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
-        item_weights = [iw / iw.mean(dim=-1, keepdim=True) for iw in item_weights]
+        # if self.class_weights is None:
+        #     item_weights = [targets[i].new_ones(targets[i].shape, dtype=torch.float32) for i in range(self.n_levels)]
+        # else:
+        #     item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
+        # item_weights = [iw / iw.mean(dim=-1, keepdim=True) for iw in item_weights]
         return list(MultiLevelLoss(
             [
-                (self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean()
+                # (self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean()
+                self._loss_fns[i](preds[i], targets[i])
                 for i in range(self.n_levels)
             ], 
              self.weights
