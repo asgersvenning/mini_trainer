@@ -190,6 +190,8 @@ def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
         last_checkpoint = os.path.join(weight_dir, "checkpoint_last.pth")
         if os.path.exists(weight_dir) and os.path.exists(last_checkpoint):
             out["checkpoint"] = str(last_checkpoint)
+        else:
+            raise FileNotFoundError(f'Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.')
     return out
 
 

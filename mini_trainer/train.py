@@ -294,16 +294,13 @@ def main(
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
 
-    log_dir = None if output_dir is None else os.path.join(output_dir, "logs")
-    if log_dir is not None:
-        os.makedirs(log_dir, exist_ok=True)
-
     # Instantiate logger
     logger = builder.build_logger(
         train_loader=train_loader,
         val_loader=val_loader,
         epochs=epochs,
-        output_dir=log_dir,
+        output=output,
+        name=name,
         **logger_builder_kwargs
     )
 
@@ -386,6 +383,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         "Path to a directory containing a subdirectory for each class,\n" 
         "where the name of each subdirectory should correspond to the name of the class."
     )
+
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
         "-o", "--output", type=str, default=None, required=False,
@@ -403,6 +401,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         "-t", "--tensorboard", action="store_true", required=False,
         help="Enable tensorboard logging."
     )
+
     mod_args = parser.add_argument_group("Model [optional]")
     mod_args.add_argument(
         "-m", "--model", type=str, dest="model_builder_kwargs.model_type",
@@ -429,6 +428,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         "important information for constructing models and dataloaders.\n"
         "If it doesn't exist, one will be created based on the directories found under `output` if it is set."
     )
+
     train_args = parser.add_argument_group("Training [optional]")
     train_args.add_argument(
         "-D", "--data_index", type=str, dest="dataloader_builder_kwargs.data_index",
@@ -483,6 +483,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         default=None, required=False,
         help="OBS: This should probably not be used. Update only the classifier weights."
     )
+
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
         "--subsample", type=int, dest="dataloader_builder_kwargs.subsample",
@@ -520,6 +521,7 @@ def cli(description="Train a classifier", **extra_kwargs):
         default=None, required=False,
         help="Print training statistics in the terminal."
     )
+    
     cli_args = vars(parser.parse_args())
 
     use_tensorboard = cli_args.pop("tensorboard")
@@ -544,16 +546,10 @@ def cli(description="Train a classifier", **extra_kwargs):
         )
     
     if use_tensorboard:
-        from torch.utils.tensorboard.writer import SummaryWriter
-
         from mini_trainer.utils.logging import MetricLogger
         from mini_trainer.utils.tensorboard import TensorboardLogger
         
-        args["name"] = increment_name_dir(args["name"], tensorboard_dir := os.path.join(args["output"], "tensorboard"))
-        tensorboard_writer = SummaryWriter(os.path.join(tensorboard_dir, args["name"]), flush_secs=30)
-        
         args["logger_builder_kwargs"]["logger_cls"] = [MetricLogger, TensorboardLogger]
-        args["logger_builder_kwargs"]["logger_cls_extra_kwargs"] = [{}, {"writer" : tensorboard_writer}]
     
     return args
 

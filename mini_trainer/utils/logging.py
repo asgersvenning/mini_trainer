@@ -643,8 +643,8 @@ class MultiLogger:
             train_loader : torch.utils.data.DataLoader,
             val_loader : torch.utils.data.DataLoader,
             epochs : int,
-            output_dir : str,
-            name : str="log",
+            output : str | None,
+            name : str,
             statistics : list[str]=["acc1", "acc5", "loss", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
             logger_cls : list[type[_Logger]]=[MetricLogger],
@@ -660,7 +660,11 @@ class MultiLogger:
         self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x : statistics.index(x))
         self.statistics_storage = defaultdict(list)
         self.heterogeneous_storage = defaultdict(list)
-        self.output_dir = output_dir
+        self.output = output
+        self.name = name
+        self.output_dir = None if self.output is None else os.path.join(self.output, self.name, "logs")
+        if self.output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
         self.clear_store_on_update = clear_store_on_update
         
         self.logger_cls = logger_cls
@@ -768,7 +772,13 @@ class MultiLogger:
             chain(self.logger_cls_extra_kwargs, repeat(dict())),
             chain(self.logger_cls_stat_factory, repeat(BaseStatistic))
         ):
-            this_logger = cls(steps=self.steps, tag=type, **kwargs)
+            this_logger = cls(
+                steps=self.steps, 
+                tag=type,
+                name=self.name,
+                output=self.output,
+                **kwargs
+            )
             for stat in self.statistics:
                 this_logger.add_stat(stat, stat_factory())
             self._current_loggers.append(this_logger)

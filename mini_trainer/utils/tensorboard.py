@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 
 import numpy as np
@@ -6,6 +7,7 @@ from matplotlib import pyplot as plt
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
+from mini_trainer.utils import increment_name_dir
 
 
 def make_empty_array(s : int) -> np.typing.NDArray[np.float64]:
@@ -16,21 +18,31 @@ def make_empty_array(s : int) -> np.typing.NDArray[np.float64]:
 class TensorboardLogger(_Logger):
     def __init__(
             self, 
-            writer : SummaryWriter, 
             steps : list[int], 
+            output : str | None,
+            name : str | None=None,
             tag : str | list[str] | None=None,
             flush_rate : int=5
         ):
-        self.writer = writer
-        self._statistics : dict[str, _Statistic] = dict()
         if steps is None:
             raise TypeError(f'Initializing {TensorboardLogger} with `steps=None` is invalid.')
-        self.global_steps = steps
-        self._idx = 0
-        self.tag = tag or "main"
+        if output is None:
+            raise TypeError('Cannot initialize tensorboard logger without an output directory!')
+        if name is None:
+            name = increment_name_dir("run", os.path.join(output, "tensorboard"))
         if not isinstance(flush_rate, int) or flush_rate <= 1:
             raise ValueError(f'Invalid `flush_rate`, flush rate must be an integer greater than 1, but {flush_rate} was supplied.')
+        
+        self.global_steps = steps
+        self.output = output
+        self.name = name
+        self.writer = SummaryWriter(os.path.join(output, "tensorboard", name), flush_secs=30)
+        
+        self.tag = tag or "main"
         self.flush_rate = flush_rate
+
+        self._idx = 0
+        self._statistics : dict[str, _Statistic] = dict()
         self.clear_buffer()
 
 
