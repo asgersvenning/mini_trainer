@@ -317,11 +317,13 @@ class BaseBuilder:
 
         n_params = 0
         for name, p in model.named_parameters(): # Iterate through all parameters the model exposes
+            if not p.requires_grad:
+                continue 
             grp_name = "head" if id(p) in head_module_param_ids else "backbone"
             # Heuristic to detect last-layer-weights: 
             #   Parameters in classification module with "linear" or "layer" in name
             # If using the Muon optimizer it is important not to use it on the final layer(s)!
-            if grp_name == "head" and "linear" in name or "layer" in name:
+            if grp_name == "head" and ("linear" in name or "layer" in name):
                 new_grp_name = f'{grp_name}_nomuon'
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {
@@ -330,7 +332,7 @@ class BaseBuilder:
                         "weight_decay" : param_groups[grp_name]["weight_decay"]
                     }
                 grp_name = new_grp_name
-            if "parametrizations.weight" in name or id(p) in norm_param_ids:
+            if "parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias"):
                 new_grp_name = f'{grp_name}_nodecay'
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {
@@ -344,7 +346,7 @@ class BaseBuilder:
         
         param_groups = [grp for k, grp in param_groups.items() if len(grp["params"]) > 0 and grp.update({"name" : k}) is None]
         if len(param_groups) == 0 and n_params > 0:
-            raise RuntimeError(f'No parameter groups detected for model with {n_params} parameters!')
+            raise RuntimeError(f'No parameter groups detected for model with {n_params} trainable parameters!')
 
         return param_groups
 

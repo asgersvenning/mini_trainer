@@ -7,6 +7,7 @@
 
 import math
 from collections.abc import MutableMapping
+from itertools import chain
 from typing import Optional
 
 import torch
@@ -378,7 +379,8 @@ def muon(
         has_complex=has_complex,
     )
 
-from typing import Callable, Sequence, Any
+from typing import Any, Callable, Sequence
+
 
 # Mixed Muon-AdamW optimizer:
 # - 2D parameters (i.e. matrices, such as dense layers) -> Muon
@@ -409,24 +411,23 @@ class MuonAuxAdamW(Optimizer):
             self.add_param_group(g)
 
     @property
-    def optimizers(self) -> list[Optimizer]:
-        if self.muon is None:
-            raise RuntimeError("Muon not initialized, model probably contains no 2D parameters.")
-        if self.adamw is None:
-            raise RuntimeError("AdamW not initialized, model probably lacks parameters.")
-        return [self.muon, self.adamw]
+    def optimizers(self):
+        if self.muon is not None:
+            yield "muon"
+        if self.adamw is not None:
+            yield "adamw"
 
     def _refresh_param_groups(self):
-        self.param_groups = self.muon.param_groups + self.adamw.param_groups
+        self.param_groups = list(chain.from_iterable(getattr(self, opt).param_groups for opt in self.optimizers))
 
     def zero_grad(self, set_to_none : bool=True):
         for opt in self.optimizers:
-            opt.zero_grad(set_to_none=set_to_none)
+            getattr(self, opt).zero_grad(set_to_none=set_to_none)
 
     def step(self, closure : Callable[[], float | Tensor] | None=None):
         loss = closure() if closure is not None else None
-        for optim in self.optimizers:
-            optim.step()
+        for opt in self.optimizers:
+            getattr(self, opt).step()
         return loss
 
     def add_param_group(self, param_group : dict[str, Any]) -> None:
@@ -460,10 +461,10 @@ class MuonAuxAdamW(Optimizer):
         self._refresh_param_groups()
 
     def state_dict(self) -> dict[str, Any]:
-        return {"muon": self.muon.state_dict(), "adamw": self.adamw.state_dict()}
+        return {opt : getattr(self, opt) for opt in self.optimizers}
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self.muon.load_state_dict(state_dict["muon"])
-        self.adamw.load_state_dict(state_dict["adamw"])
+        for k, v in state_dict.items():
+            getattr(self, k).load_state_dict(v)
         self._refresh_param_groups()
 
