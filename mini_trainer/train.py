@@ -48,7 +48,7 @@ def main(
         },
         augmentation_builder_kwargs : dict[str, Any]={},
         optimizer_builder_kwargs : dict[str, Any]={
-            "optimizer_cls" : torch.optim.AdamW, # MuonAuxAdamW 
+            "optimizer_cls" : MuonAuxAdamW, # torch.optim.AdamW  
             "lr" : 0.001,
             "weight_decay" : 0.01
         },
@@ -165,9 +165,10 @@ def main(
     )
 
     # Prepare model
+    model_dtype = dtype # RE: Trying to disable again - perhaps this is why fastai is faster?: Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
     nn_model, model_preprocess = builder.build_model(
         device=device, 
-        dtype=torch.float32, # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
+        dtype=model_dtype,
         **class_spec,
         **model_builder_kwargs
     ) 
@@ -245,6 +246,7 @@ def main(
     
     scaler = builder.build_scaler(
         device=device,
+        enabled=model_dtype == torch.float32 and dtype != torch.float32,
         **scaler_builder_kwargs
     )
     if not isinstance(scaler, torch.amp.GradScaler):
@@ -467,6 +469,15 @@ def cli(description="Train a classifier", **extra_kwargs):
         "--label_smoothing", type=float, dest="criterion_builder_kwargs.label_smoothing", 
         default=None, required=False,
         help="Label smoothing applied to training (default=0.1)."
+    )
+    train_args.add_argument(
+        "--regularization_strength", type=float, dest="regularizer_builder_kwargs.strength",
+        default=None, required=False,
+        help=
+        "Regularization term multiplier (default=0.1).\n"
+        "Regularization terms are computed on the last layer weights (class prototypes) and "
+        "include a hinge loss and a distributional term which pushes "
+        "the prototypes toward a orthogonal and equally spaced set."
     )
     train_args.add_argument(
         "--ema", action="store_true", dest="ema",

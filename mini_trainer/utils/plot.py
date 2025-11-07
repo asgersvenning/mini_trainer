@@ -366,7 +366,7 @@ def plot_heatmap(
     Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
     """
     if isinstance(mat, torch.Tensor):
-        mat = mat.cpu().detach().numpy()
+        mat = mat.cpu().detach().float().numpy()
     
     if mat.size == 0:
         img = np.full((MIN_DISPLAY_DIM_HEATMAP, MIN_DISPLAY_DIM_HEATMAP + COLORBAR_TARGET_WIDTH_PIXELS, 3), (200, 200, 200), dtype=np.uint8)
@@ -420,7 +420,7 @@ def plot_model_class_distance(model : nn.Module, **kwargs):
     llw = last_layer_weights(model)
     # cdm = class_distance(llw, True)
     # cdm.fill_diagonal_(torch.nan)
-    D = (1 - torch.corrcoef(llw.cpu().clone().detach())) / 2
+    D = (1 - torch.corrcoef(llw.cpu().clone().detach().float())) / 2
     _, E = llw.shape
     a = (E - 1) / 2
     Q = 1 - betainc(a, a, D)

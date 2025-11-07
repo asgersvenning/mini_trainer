@@ -33,7 +33,7 @@ def train_one_epoch(
         preprocess : Callable=lambda x : x,
         augmentation : Callable=lambda x : x,
         regularizer : Callable[[nn.Module], torch.Tensor]=lambda _: 0.,
-        clip_grad_norm : float | None=1,
+        clip_grad_norm : float | None=5,
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
     ):

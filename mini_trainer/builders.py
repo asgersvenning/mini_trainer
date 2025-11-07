@@ -25,7 +25,7 @@ from mini_trainer.utils.logging import MultiLogger
 from mini_trainer.utils.loss import (EvenCrossEntropyLoss,
                                      class_weight_distribution_regularization,
                                      coherence_hinge_regularization,
-                                     kl_distill_ema, weight_kl_gausssian)
+                                     kl_distill_ema, weight_kl_gaussian)
 
 
 def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float:
@@ -510,11 +510,11 @@ class BaseBuilder:
         if 'lr' not in optimizer_kwargs:
             optimizer_kwargs['lr'] = head_lr # A sensible default
 
-        # Clip gradients during backprop (prevent gradient explosion)
-        backbone_params : list[nn.Parameter] = [p for pg in param_groups if "backbone" in pg["name"] for p in pg["params"]]
-        for p in backbone_params:
-            if p.requires_grad:
-                p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
+        ## (DISABLED) Clip gradients during backprop (prevent gradient explosion)
+        # backbone_params : list[nn.Parameter] = [p for pg in param_groups if "backbone" in pg["name"] for p in pg["params"]]
+        # for p in backbone_params:
+        #     if p.requires_grad:
+        #         p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
 
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
     
@@ -615,7 +615,7 @@ class BaseBuilder:
         def func(model): 
             llw = last_layer_weights(model)
             # return strength * class_weight_distribution_regularization(llw)
-            return strength * (weight_kl_gausssian(llw) + coherence_hinge_regularization(llw)) 
+            return strength * (weight_kl_gaussian(llw) + coherence_hinge_regularization(llw)) 
         return func
 
     @staticmethod

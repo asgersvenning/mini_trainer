@@ -99,32 +99,53 @@ def class_weight_distribution_regularization(
     return -log_prob.sum() / torch.tensor((N * (N - 1) / 2), device=W.device, dtype=W.dtype)
 
 
-def weight_kl_gausssian(
-        W: torch.Tensor,
-        eps: float = 1e-6,
-        sparse : bool=True,
-        normalize_rows : bool=True
-    ) -> torch.Tensor:
-    """
-    Penalize KL-divergence between covariance of weights and identity.
-    """
-    if len(W) <= 1 or W.shape[1] == 0:
-        return torch.zeros((1,), dtype=W.dtype, device=W.device)
-    if normalize_rows:
-        W = F.normalize(W, dim=1)
-    _n = min(len(W), max(32, 2 * round(len(W) ** 0.5)))
-    if sparse and _n < len(W):
-        _sparse_idx = torch.randperm(len(W))[:_n]
-        W = W[_sparse_idx]
-    N = len(W)
-    t_eps = torch.tensor(eps, dtype=W.dtype, device=W.device)
-    
-    s2 : torch.Tensor = torch.linalg.svdvals(W) ** 2
-    R = s2.numel()
-    logdet = (s2 + t_eps).log().sum() + (N - R) * t_eps.log()
-    tr = s2.sum() 
+def weight_kl_gaussian(
+    W: torch.Tensor,
+    eps: float = 1e-6,
+    sparse: bool = True,
+    normalize_rows: bool = True,
+) -> torch.Tensor:
+    if W.numel() == 0 or W.ndim != 2 or W.size(0) <= 1 or W.size(1) == 0:
+        # return scalar tensor on same device; fp32 is fine
+        return torch.zeros((), device=W.device, dtype=torch.float32)
 
-    return 0.5 * (tr - logdet - N)
+    with torch.amp.autocast(W.device.type, enabled=False):
+        comp_dtype = torch.float32 if W.dtype in (torch.float16, torch.bfloat16) else W.dtype
+        Wc = W.to(comp_dtype)
+
+        if normalize_rows:
+            Wc = F.normalize(Wc, dim=1)
+        if sparse:
+            _n = min(Wc.size(0), max(32, 2 * int(Wc.size(0) ** 0.5)))
+            if _n < Wc.size(0):
+                idx = torch.randperm(Wc.size(0), device=Wc.device)[:_n]
+                Wc = Wc[idx]
+
+        N = Wc.size(0)
+        if N <= 1:
+            return torch.zeros((), device=W.device, dtype=torch.float32)
+
+        eps_t = torch.as_tensor(eps, dtype=comp_dtype, device=Wc.device)
+
+        # SVD in fp32 + jitter for stability
+        fro = Wc.norm(p="fro")
+        scale = (fro / (Wc.numel() ** 0.5)).clamp(min=1.0)
+        jitter = eps * scale
+        if jitter > 0:
+            Wc = Wc + jitter * torch.randn_like(Wc)
+        try:
+            s2 = torch.linalg.svdvals(Wc) ** 2
+        except torch._C._LinAlgError:
+            # if SVD still fails, do not destabilize training
+            return torch.zeros((), device=W.device, dtype=torch.float32)
+        R = s2.numel()
+
+        logdet = (s2 + eps_t).log().sum()
+        if N > R:
+            logdet = logdet + (N - R) * eps_t.log()
+
+        tr = s2.sum()
+        return 0.5 * (tr - logdet - N)
 
 def coherence_hinge_regularization(
     W: torch.Tensor,
