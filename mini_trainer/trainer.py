@@ -122,8 +122,8 @@ def train_one_epoch(
             loss=loss, 
             optimizer=optimizer, 
             start_time=start_time,
-            distillation_loss=float(distill_loss),
-            regularization=float(reg)
+            distillation_loss=distill_loss if isinstance(distill_loss, float) else float(distill_loss.detach().item()),
+            regularization=reg if isinstance(reg, float) else float(reg.detach().item())
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()

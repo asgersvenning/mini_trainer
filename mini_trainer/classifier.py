@@ -38,9 +38,11 @@ def preprocess(item, transform, func=None):
         image = item
     else:
         raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
+    image = transform(image)
     if func:
         image = func(image)
-    return transform(image)
+    return image
+    
 
 def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
               classifier_name: str | list[str] = ["classifier", "fc"],
@@ -63,7 +65,6 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
             break
     if backbone_classifier_name is None:
         raise AttributeError(f"No classifier found with names {classifier_name}")
-
     return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype))
 
 class Classifier(nn.Module):
@@ -169,8 +170,8 @@ class Classifier(nn.Module):
                 num_classes = num_classes[0]
             if not isinstance(num_classes, int):
                 raise RuntimeError('Unable to build classifier with unknown number of output classes. If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.')
-        
-        return cls.load(model_type, head_name, architecture, state, device, dtype, in_features=num_embeddings, out_features=num_classes, **kwargs), model_preprocess
+        model = cls.load(model_type, head_name, architecture, state, device, dtype, in_features=num_embeddings, out_features=num_classes, **kwargs)
+        return model, model_preprocess
 
 
 def last_layer_weights(model : nn.Module):

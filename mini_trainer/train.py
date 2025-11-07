@@ -165,7 +165,12 @@ def main(
     )
 
     # Prepare model
-    model_dtype = dtype # RE: Trying to disable again - perhaps this is why fastai is faster?: Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
+    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
+    # RE: Trying to disable again - perhaps this is why fastai is faster?
+    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some performance by following the
+    # pattern given in https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244, but
+    # it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
+    model_dtype = torch.float32 
     nn_model, model_preprocess = builder.build_model(
         device=device, 
         dtype=model_dtype,
@@ -244,9 +249,10 @@ def main(
             f'inheriting from `torch.optim.lr_scheduler.LRScheduler`, but got `{type(lr_scheduler)}.'
         )
     
+    scaler_enabled = model_dtype == torch.float32 and dtype != torch.float32
     scaler = builder.build_scaler(
         device=device,
-        enabled=model_dtype == torch.float32 and dtype != torch.float32,
+        enabled=scaler_enabled,
         **scaler_builder_kwargs
     )
     if not isinstance(scaler, torch.amp.GradScaler):
