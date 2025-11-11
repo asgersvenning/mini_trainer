@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import warnings
+import math
 from collections import defaultdict, deque
 from collections.abc import Callable
 from itertools import chain, repeat
@@ -427,6 +428,8 @@ class SmoothedValue(_Statistic):
 
     @property
     def global_avg(self):
+        if self.count == 0:
+          return float('nan')
         return self.total / self.count
     
     @property
@@ -529,6 +532,7 @@ class BaseStatistic(_Statistic):
         return self._len
     
     def __getitem__(self, i):
+        print("WARNING: The behaviour of this is currently ill defined") # TODO!
         return self.values[i]
     
     def __iter__(self):
@@ -557,7 +561,8 @@ class BaseStatistic(_Statistic):
             else:
                 tmin, tmax, tsum = [fn(value) for fn in [min, max, sum]]
                 n = len(value)
-                self.values.extend([float(v) for v in value])
+                # Disable for now to avoid OOM
+                # self.values.extend([float(v) for v in value])
             if self.min is None or tmin < self.min:
                 self.min = float(tmin)
             if self.max is None or tmax > self.max:
@@ -567,7 +572,12 @@ class BaseStatistic(_Statistic):
             else:
                 self.sum += tsum 
             self._len += n
-            self.mean = self.sum / len(self)
+
+    @property
+    def mean(self):
+      if self.sum is None or len(self) == 0:
+        return float('nan')
+      return self.sum / len(self)
 
     def __str__(self):
         with self.lock:
@@ -838,12 +848,13 @@ class MultiLogger:
                         logger.add_stat(stat, stat_factory())
                 for logger in self.loggers:
                     logger.update(stat, value)
-            if isinstance(value, (torch.Tensor, np.ndarray)):
-                value = value.tolist()
-            if isinstance(value, (tuple, list)):
-                self.statistics_storage[stat].extend(value)
-            else:
-                self.statistics_storage[stat].append(value)
+            # Disable for now to avoid OOM
+            # if isinstance(value, (torch.Tensor, np.ndarray)):
+            #     value = value.tolist()
+            # if isinstance(value, (tuple, list)):
+            #     self.statistics_storage[stat].extend(value)
+            # else:
+            #     self.statistics_storage[stat].append(value)
 
     @property
     def data(self):
@@ -853,47 +864,48 @@ class MultiLogger:
         }
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
-        ext = ".json"
-        if self._start_time is None:
-            warnings.warn("Attempting to save logs before starting the loggers is a no-op!")
-            return
-        if self._epoch is None:
-            raise NotImplementedError(f'Saving logs while {self._epoch=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
-        if self._type is None:
-            raise NotImplementedError(f'Saving logs while {self._type=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
-        if fp is None:
-            if self.output_dir is None:
-                return
-            output_dir, name = self.output_dir, f'log_{self._type}_epoch{self._epoch}'
-        elif isinstance(fp, TextIO):
-            json.dump(self.data, fp, **kwargs)
-            return
-        elif isinstance(fp, str):
-            output_dir, name = os.path.split(os.path.abspath(fp))
-            _, ext = os.path.splitext(name)
+        pass # Disable saving for now to avoid OOM
+        # ext = ".json"
+        # if self._start_time is None:
+        #     warnings.warn("Attempting to save logs before starting the loggers is a no-op!")
+        #     return
+        # if self._epoch is None:
+        #     raise NotImplementedError(f'Saving logs while {self._epoch=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        # if self._type is None:
+        #     raise NotImplementedError(f'Saving logs while {self._type=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        # if fp is None:
+        #     if self.output_dir is None:
+        #         return
+        #     output_dir, name = self.output_dir, f'log_{self._type}_epoch{self._epoch}'
+        # elif isinstance(fp, TextIO):
+        #     json.dump(self.data, fp, **kwargs)
+        #     return
+        # elif isinstance(fp, str):
+        #     output_dir, name = os.path.split(os.path.abspath(fp))
+        #     _, ext = os.path.splitext(name)
         
         
-        if os.path.exists(os.path.join(output_dir, name)):
-            name = increment_name_dir(name, output_dir)
-        fp = os.path.join(output_dir, name + ext)
+        # if os.path.exists(os.path.join(output_dir, name)):
+        #     name = increment_name_dir(name, output_dir)
+        # fp = os.path.join(output_dir, name + ext)
 
-        temp_file_name = None
-        try:
-            with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
-                json.dump(self.data, tmpfile, **kwargs)
-                tmpfile.flush()
-                os.fsync(tmpfile.fileno())
-                temp_file_name = tmpfile.name
+        # temp_file_name = None
+        # try:
+        #     with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
+        #         json.dump(self.data, tmpfile, **kwargs)
+        #         tmpfile.flush()
+        #         os.fsync(tmpfile.fileno())
+        #         temp_file_name = tmpfile.name
             
-            shutil.move(temp_file_name, fp)
-            self._last_save = time.time() # Assuming self._last_save is defined
-        except Exception as e:
-            if temp_file_name and os.path.exists(temp_file_name):
-                try:
-                    os.remove(temp_file_name)
-                except OSError:
-                    pass # Suppress error during cleanup
-            raise e
+        #     shutil.move(temp_file_name, fp)
+        #     self._last_save = time.time() # Assuming self._last_save is defined
+        # except Exception as e:
+        #     if temp_file_name and os.path.exists(temp_file_name):
+        #         try:
+        #             os.remove(temp_file_name)
+        #         except OSError:
+        #             pass # Suppress error during cleanup
+        #     raise e
 
     def log_batch(self, batch):
         pass
@@ -1044,25 +1056,21 @@ class MultiLogger:
             epoch += 1
         return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'
 
-    def _last_epoch_values(self, stat : str):
-        values = []
-        for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
-            if e != self._epoch or t != self._type:
-                break
-            values.append(v)
-        return values
+    # def _last_epoch_values(self, stat : str):
+    #     values = []
+    #     for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
+    #         if e != self._epoch or t != self._type:
+    #             break
+    #         values.append(v)
+    #     return values
+    def _last_epoch_value(self, stat : str):
+        # Assume that the first logger is "canonical"
+        return self.loggers[0].statistics[stat].mean
 
     def summary(self, stats : list[str] | None=None):
         if stats is None:
             stats = self.statistics
-        retval = dict()
-        for stat in stats:
-            values = self._last_epoch_values(stat)
-            if len(values) == 0:
-                continue
-            value = type(values[0])(np.mean(np.array(values)))
-            retval[stat] = value
-        return retval
+        return {stat : self._last_epoch_value(stat) for stat in stats}
 
     def summary_string(self, stats : list[str] | None=None):
         if stats is None:
@@ -1081,10 +1089,11 @@ class MultiLogger:
     
     @property
     def canonical_scalar(self):
-        values = self._last_epoch_values(self.canonical_statistic)
-        if len(values) == 0:
-            return np.nan
-        return np.median(np.array(values))
+        return self._last_epoch_value(self.canonical_statistic)
+        # values = self._last_epoch_values(self.canonical_statistic)
+        # if len(values) == 0:
+        #     return np.nan
+        # return np.median(np.array(values))
 
     def render_soft_confusion_matrix(
             self, 
