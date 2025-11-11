@@ -276,6 +276,8 @@ def main(
         )
 
     if checkpoint is not None:
+        import mini_trainer.utils.muon
+        torch.serialization.add_safe_globals([mini_trainer.utils.muon.Muon])
         checkpoint_files = checkpoint
         if isinstance(checkpoint_files, list) and len(checkpoint_files) == 1:
             checkpoint_files = checkpoint_files[0]
