@@ -519,10 +519,9 @@ class BaseStatistic(_Statistic):
         """
         self.values : list[float] = []
         self.lock = RLock()
-        self.min : float | None = None
-        self.max : float | None = None
-        self.mean : float | None = None
-        self.sum : float | None = None
+        self.min : float = float('inf')
+        self.max : float = float('-inf')
+        self.sum : float = 0
         self.digs : deque[int] = deque(maxlen=30)
         self._len : int = 0
         if values is not None:
@@ -586,7 +585,7 @@ class BaseStatistic(_Statistic):
             m  = self.mean
             mn = self.min
             mx = self.max
-        digs = float_signif_decimal(min(filter(lambda x : x is not None and x != 0, map(abs, [m, mn, mx])), default=1))
+        digs = float_signif_decimal(min(filter(lambda x : math.isfinite(x) and x != 0, map(abs, [m, mn, mx])), default=1))
         self.digs.append(digs)
         digs = max(self.digs)
         return f'{m:>{digs+2}.{digs}f} [{mn:>{digs+3}.{digs}f}; {mx:>{digs+3}.{digs}f}]'
