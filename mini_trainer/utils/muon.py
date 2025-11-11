@@ -461,10 +461,9 @@ class MuonAuxAdamW(Optimizer):
         self._refresh_param_groups()
 
     def state_dict(self) -> dict[str, Any]:
-        return {opt : getattr(self, opt) for opt in self.optimizers}
+        return {opt : getattr(self, opt).state_dict() for opt in self.optimizers}
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         for k, v in state_dict.items():
             getattr(self, k).load_state_dict(v)
         self._refresh_param_groups()
-
