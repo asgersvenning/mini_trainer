@@ -1110,7 +1110,7 @@ class MultiLogger:
             new_cf = True
             n_cls = predictions.shape[1]
             cf = torch.zeros((n_cls, n_cls), dtype=torch.float32)
-        if not isinstance(cf, torch.Tensor) and cf.dtype == torch.float32 and cf.device.type == "cpu":
+        if not (isinstance(cf, torch.Tensor) and cf.dtype == torch.float32 and cf.device.type == "cpu"):
             raise RuntimeError(f'Unexpected soft confusion matrix found {cf}, expected a torch.Tensor of torch.float32 with device="cpu".')
         grps = labels.unique()
         for gidx in grps:
