@@ -80,13 +80,13 @@ class HierarchicalClassifier(Classifier):
 
 
 class ConditionalClassifier(HierarchicalClassifier):
-    def __init__(self, in_features : int, normalized : bool=True, **kwargs):
-        super().__init__(in_features=in_features, normalized=normalized, **kwargs)
+    def __init__(self, normalized : bool=True, **kwargs):
+        super().__init__(normalized=normalized, **kwargs)
         # Conditional layers
         layers : list[nn.Linear] = []
         for m in self.masks:
             out = int(m.max().item() + 1)
-            layer = nn.Linear(in_features, out, bias=True)
+            layer = nn.Linear(self.preclassification_size, out, bias=True)
             layers.append(self._normalize_layer(layer) if normalized else layer)
         self.layers = nn.ModuleList(layers)
 

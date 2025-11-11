@@ -37,7 +37,7 @@ def main(
             "model_type" : "efficientnet_v2_s",
             "weights" : None,
             "fine_tune" : False,
-            "hidden" : True,
+            "hidden" : 512,
             "droprate" : 0.1,
             "normalized" : True
         },

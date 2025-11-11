@@ -83,21 +83,26 @@ class Classifier(nn.Module):
             self, 
             in_features : int, 
             out_features : int, 
-            hidden : bool=True, 
+            hidden : bool | int=True, 
             droprate : float=0.1,
             normalized : bool=True
         ):
         super().__init__()
-        # Create a BatchNormalization layer
-        self.batch_norm = nn.BatchNorm1d(in_features)
-
         # Create one hidden layer
-        self.hidden = hidden and nn.Linear(in_features, in_features)
+        if isinstance(hidden, int):
+            assert hidden > 0
+            self.preclassification_size = hidden
+        else:
+            self.preclassification_size = in_features
+        self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        layer = nn.Linear(in_features, out_features, bias=True)
+        # Create a BatchNormalization layer
+        self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
+
+        layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.linear = self._normalize_layer(layer) if normalized else layer
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
