@@ -556,7 +556,8 @@ class BaseStatistic(_Statistic):
             if isinstance(value, (float, int)):
                 tmin = tmax = tsum = value
                 n = 1
-                self.values.append(float(value))
+                # Disable for now to avoid OOM
+                # self.values.append(float(value))
             else:
                 tmin, tmax, tsum = [fn(value) for fn in [min, max, sum]]
                 n = len(value)
@@ -951,6 +952,8 @@ class MultiLogger:
             predictions : list[int],
             level : int | None=None
         ):
+        if self.is_train():
+            return
         if level is None:
             self.store("labels", labels)
             self.store("predictions", predictions)
