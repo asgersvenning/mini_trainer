@@ -276,16 +276,14 @@ def main(
         )
 
     if checkpoint is not None:
-        import mini_trainer.utils.muon
-        import collections
-        torch.serialization.add_safe_globals([mini_trainer.utils.muon.Muon, collections.defaultdict])
         checkpoint_files = checkpoint
         if isinstance(checkpoint_files, list) and len(checkpoint_files) == 1:
             checkpoint_files = checkpoint_files[0]
         if isinstance(checkpoint_files, str):
-            checkpoint_data = torch.load(checkpoint_files, map_location=device)
+            # OBS: `weights_only=False` is potentially unsafe
+            checkpoint_data = torch.load(checkpoint_files, map_location=device, weights_only=False)
         else:
-            checkpoint_data = average_checkpoints(checkpoint_files, map_location=device)
+            checkpoint_data = average_checkpoints(checkpoint_files, map_location=device, weights_only=False)
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])

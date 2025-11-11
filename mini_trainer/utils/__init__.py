@@ -327,7 +327,7 @@ def reduce_across_processes(val):
     dist.all_reduce(t)
     return t
 
-def average_checkpoints(inputs, map_location=None):
+def average_checkpoints(inputs, map_location=None, weights_only=True):
     """Loads checkpoints from inputs and returns a model with averaged weights. Original implementation taken from:
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
 
@@ -348,7 +348,7 @@ def average_checkpoints(inputs, map_location=None):
     for fpath in inputs:
         with open(fpath, "rb") as f:
             state = torch.load(
-                f, map_location=map_location, weights_only=True
+                f, map_location=map_location, weights_only=weights_only
             )
         # Copies over the settings from the first checkpoint
         if new_state is None:

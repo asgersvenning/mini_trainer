@@ -21,6 +21,7 @@
 **events.out.tfevents*
 **/__pycache__/**
 /tmp/**
+**.pyspy
 
 # Specific cases
 examples/test.ipynb
