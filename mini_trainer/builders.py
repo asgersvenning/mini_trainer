@@ -164,7 +164,7 @@ def get_inference_dataloader(
     if num_workers is None:
         num_workers = os.cpu_count() - 4
         num_workers -= num_workers % 2
-        num_workers = max(0, num_workers)
+        num_workers = min(32, max(0, num_workers))
 
     loader = get_dataloader(dataset, "test", batch_size, num_workers, False, device)
 

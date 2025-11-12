@@ -56,7 +56,7 @@ def main(
         name: str | None=None,
         subsample : int | None=None,
         device : str="cuda:0",
-        dtype : str="bfloat16",
+        dtype : str="float16",
         seed : int | None=None,
         builder : type[BaseBuilder]=BaseBuilder,
         collector_cls : type[BaseResultCollector]=BaseResultCollector,
@@ -96,7 +96,7 @@ def main(
         device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
         dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
             The model parameters are always stored in float32 with training AMP. 
-            Default is ``'bfloat16'``.
+            Default is ``'float16'``.
         seed: Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is ``None``.
         builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``. 
@@ -370,13 +370,13 @@ def cli(description="Classify images with a trained model", **extra_kwargs):
         "--dtype", type=str, 
         default=None, required=False,
         help=
-        "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
+        "PyTorch data type used for storing images for training/validation (default=float16).\n" 
         "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(
         "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
         default=None, required=False,
-        help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
+        help="Number of workers used for the dataloaders. Default is between 0 and 32 based on the number of CPU cores on your machine."
     )
     cfg_args.add_argument(
         "--seed", type=int, 
