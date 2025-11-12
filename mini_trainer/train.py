@@ -28,7 +28,7 @@ def main(
         epochs : int=15,
         name: str | None=None,
         device : str="cuda:0",
-        dtype : str="bfloat16",
+        dtype : str="float16",
         ema : bool=False,
         seed : int | None=None,
         builder : type[BaseBuilder]=BaseBuilder,
@@ -338,9 +338,6 @@ def main(
     del train_loader
     del val_loader
 
-    # Store final logs (logs are stored continously, but this flushes the logs to disk)
-    logger.save()
-
     # Save result model
     nn_model.eval()
     if weight_output_dir is not None:
@@ -520,13 +517,13 @@ def cli(description="Train a classifier", **extra_kwargs):
     cfg_args.add_argument(
         "--dtype", type=str, default=None, required=False,
         help=
-        "PyTorch data type used for storing images for training/validation (default=bfloat16).\n" 
+        "PyTorch data type used for storing images for training/validation (default=float16).\n" 
         "The model is always stored in float32, and training is done with autocasting."
     )
     cfg_args.add_argument(
         "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
         default=None, required=False,
-        help="Number of workers used for the dataloaders. Default is number of CPU cores on your machine."
+        help="Number of workers used for the dataloaders. Default is between 0 and 16 based on the number of CPU cores on your machine."
     )
     cfg_args.add_argument(
         "--seed", type=int, default=None, required=False,

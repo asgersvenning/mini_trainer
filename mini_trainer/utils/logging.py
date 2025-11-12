@@ -660,7 +660,7 @@ class MultiLogger:
             logger_cls : list[type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
             logger_cls_stat_factory : list[Callable[[], _Statistic]]=[
-                lambda : SmoothedValue(window_size=10, fmt_vars=["value"])
+                lambda : SmoothedValue(window_size=10, fmt_vars=["avg"])
             ],
             clear_store_on_update : bool=True,
             verbose : bool=False
@@ -699,6 +699,7 @@ class MultiLogger:
         self._idx = None
         self._n_classes = None
         self._soft_confusion_matrix : dict[str, torch.Tensor] = dict()
+        self._finished = False
 
     def start_timing(self):
         self._type_timing[self._type].start()
@@ -756,19 +757,14 @@ class MultiLogger:
             epoch: Zero-based epoch index.
             type: Phase name (e.g., ``"train"`` or ``"eval"``).
         """
+        if self._finished:
+            raise RuntimeError("Attempted to update finished logger!")
         if self._start_time is None:
             self._start_time = time.time()
             self.eta = ETA(self.total_steps, 0.999)
         else:
             self.save()
-            if self.output_dir is not None:
-                sum = self.summary()
-                sum["epoch"] = self._epoch
-                sum["type"] = self._type
-                write_csv_from_dict(
-                    {k : [v] for k,v in sum.items()}, 
-                    os.path.join(self.output_dir, "summary.csv")
-                )
+            self._store_summary()
             if self.clear_store_on_update:
                 self.statistics_storage = defaultdict(list)
                 self.heterogeneous_storage = defaultdict(list)
@@ -801,6 +797,8 @@ class MultiLogger:
         resets the CUDA peak memory so that the next call to ``log_memory_use``
         reflects the peak for the next batch only.
         """
+        if self._finished:
+            raise RuntimeError("Attempted to step finished logger.")
         self.log_statistic(step=self._step)
         self._step += 1
         self.eta.step()
@@ -862,6 +860,17 @@ class MultiLogger:
             "statistics" : dict(self.statistics_storage),
             "extra" : dict() #dict(self.heterogeneous_storage)
         }
+    
+    def _store_summary(self):
+        if self.output_dir is not None:
+            sum = self.summary()
+            sum["epoch"] = self._epoch
+            sum["type"] = self._type
+            write_csv_from_dict(
+                {k : [v] for k,v in sum.items()}, 
+                os.path.join(self.output_dir, "summary.csv")
+            )
+        return
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
         pass # Disable saving for now to avoid OOM
@@ -906,6 +915,20 @@ class MultiLogger:
         #         except OSError:
         #             pass # Suppress error during cleanup
         #     raise e
+
+    def finish(self):
+        self._store_summary()
+        self.save()
+        self._start_time = None
+        self.eta = None
+        self.statistics_storage = defaultdict(list)
+        self.heterogeneous_storage = defaultdict(list)
+        self._epoch = None
+        self._type = None
+        self._reset_cuda_memory_stats()
+        self._current_loggers : list[_Logger] = []
+        self._soft_confusion_matrix : dict[str, torch.Tensor] = dict()
+        self._finished = True
 
     def log_batch(self, batch):
         pass

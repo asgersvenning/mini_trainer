@@ -122,7 +122,7 @@ def get_dataset_dataloader(
     if num_workers is None:
         num_workers = os.cpu_count() - 4
         num_workers -= num_workers % 2
-        num_workers = max(0, num_workers)
+        num_workers = min(16, max(0, num_workers))
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0

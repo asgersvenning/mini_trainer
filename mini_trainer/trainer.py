@@ -294,3 +294,4 @@ def train(
     if logger.verbose:
         print(f"Total time {total_time_str} | Best model found at epoch {best_epoch + 1}")
         print(logger.timings(format=True, prefix="\n\t"))
+    logger.finish()
