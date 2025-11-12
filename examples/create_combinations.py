@@ -3,6 +3,7 @@ import json
 import os
 import re
 from argparse import ArgumentParser
+from itertools import chain
 from typing import cast
 
 from mini_trainer.hierarchical.gbif import (TAXONOMY_KEYS, create_taxonomy,
@@ -71,13 +72,15 @@ def labels_from_csv(file : str):
         for row in reader:
             for c, v in zip(headers, row):
                 data[c].append(v)
-    if "label" not in data:
+    if "level" in data:
+        data = {k : [vi for lvl, vi in zip(data["level"], v) if lvl in (0, "0", "species", "Species")] for k, v in data.items()}
+    if "label" not in data and "prediction" not in data:
         raise RuntimeError(
             f'File {file} contains unknown CSV schema:\n' +
             " | ".join(f"{k} : {type(v[0] if v else None)}" for k, v in data.items()) +
             "\nExpected a 'label' column of type str/int"
         )
-    return labels_from_taxalist(list(map(str, data["label"])))
+    return labels_from_taxalist(list(set(map(str, chain.from_iterable(data.get(col, []) for col in ["label", "prediction"])))))
 
 def labels_from_txt(file : str):
     with open(file, "r") as f:
