@@ -6,16 +6,19 @@ import torch
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
 from mini_trainer.utils import increment_name_dir
+from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
 
 
 def make_empty_array(s : int) -> np.typing.NDArray[np.float64]:
+    """Create a 1-dimensional array filled with ``np.nan``."""
     arr = np.empty((s,))
     arr[:] = np.nan
     return arr
 
+
 class TensorboardLogger(_Logger):
+    """Tensorboard logger."""
     def __init__(
             self, 
             steps : list[int], 
@@ -24,6 +27,7 @@ class TensorboardLogger(_Logger):
             tag : str | list[str] | None=None,
             flush_rate : int=5
         ):
+        """Tensorboard logger."""
         if steps is None:
             raise TypeError(f'Initializing {TensorboardLogger} with `steps=None` is invalid.')
         if output is None:
@@ -31,12 +35,18 @@ class TensorboardLogger(_Logger):
         if name is None:
             name = increment_name_dir("run", os.path.join(output, "tensorboard"))
         if not isinstance(flush_rate, int) or flush_rate <= 1:
-            raise ValueError(f'Invalid `flush_rate`, flush rate must be an integer greater than 1, but {flush_rate} was supplied.')
+            raise ValueError(
+                'Invalid `flush_rate`, flush rate must be an integer '
+                f'greater than 1, but {flush_rate} was supplied.'
+            )
         
         self.global_steps = steps
         self.output = output
         self.name = name
-        self.writer = SummaryWriter(os.path.join(output, "tensorboard", name), flush_secs=30)
+        self.writer = SummaryWriter(
+            log_dir=os.path.join(output, "tensorboard", name), 
+            flush_secs=30
+        )
         
         self.tag = tag or "main"
         self.flush_rate = flush_rate
@@ -45,8 +55,12 @@ class TensorboardLogger(_Logger):
         self._statistics : dict[str, _Statistic] = dict()
         self.clear_buffer()
 
-
-    def add_stat(self, name : str, container : _Statistic | type[_Statistic]=BaseStatistic):
+    def add_stat(
+            self,
+            name : str,
+            container : _Statistic | type[_Statistic]=BaseStatistic
+        ):
+        """Add new statistic to tensorboard."""
         if isinstance(container, type):
             container = container()
         self._statistics[name] = container
@@ -61,14 +75,21 @@ class TensorboardLogger(_Logger):
         return "/".join([name, *self.tag])
 
     def clear_buffer(self):
-        self._buffer = defaultdict(lambda : (make_empty_array(self.flush_rate), make_empty_array(self.flush_rate)))
+        self._buffer = defaultdict(
+            lambda : (
+                make_empty_array(self.flush_rate), 
+                make_empty_array(self.flush_rate)
+            )
+        )
 
     def buffer_scalar(self, tag : str, value : int | float, step : int):
+        """Buffer incoming values before writing to tensorboard file(s)."""
         buf = self._buffer[tag]
         buf[0][step % self.flush_rate] = step
         buf[1][step % self.flush_rate] = value
 
     def flush(self):
+        """Flush logger buffer to tensorboard file(s)."""
         for tag, (steps, values) in self._buffer.items():
             if np.all(np.isnan(steps)) or np.all(np.isnan(values)) or len(steps) == 0:
                 continue
@@ -77,6 +98,7 @@ class TensorboardLogger(_Logger):
         self.clear_buffer()
 
     def update(self, name : str, values):
+        """Add values to tensorboard."""
         if isinstance(values, (torch.Tensor, np.ndarray)):
             values = values.tolist()
         tag = self._make_scalar_hierarchical_tag(name)
@@ -88,6 +110,7 @@ class TensorboardLogger(_Logger):
         super().update(name, values)
 
     def add_figure(self, name : str, figure : plt.Figure | str, epoch : int):
+        """Add figure to tensorboard."""
         tag = self._make_scalar_hierarchical_tag(name)
         if isinstance(figure, plt.Figure):
             self.writer.add_figure(tag, figure, epoch, close=False)
@@ -97,6 +120,10 @@ class TensorboardLogger(_Logger):
             self.writer.add_image(tag, figure, epoch)
 
     def step(self):
+        """Step tensorboard logger."""
         self._idx += 1
-        if self._idx > 0 and self._idx % self.flush_rate == 0 or (self._idx + 1) >= len(self.global_steps):
+        if (
+            (self._idx > 0 and self._idx % self.flush_rate == 0) or 
+            (self._idx + 1) >= len(self.global_steps)
+        ):
             self.flush()

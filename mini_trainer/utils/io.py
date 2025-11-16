@@ -17,16 +17,16 @@ from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
 from mini_trainer import TQDM
-from mini_trainer.utils import (make_convert_dtype, memory_proportion,
-                                multithread_vectorize)
+from mini_trainer.utils import make_convert_dtype, memory_proportion, multithread_vectorize
 
 
-class CACHE_MODE(int, Enum):
-    NONE  = 0
-    GUESS = 1
-    DISK  = 2
-    CPU   = 3
-    CUDA  = 4
+class CACHE_MODE(int, Enum): # noqa: D101
+    NONE  = 0 # noqa: E221
+    GUESS = 1 # noqa: E221
+    DISK  = 2 # noqa: E221
+    CPU   = 3 # noqa: E221
+    CUDA  = 4 # noqa: E221
+    
     @classmethod
     def _missing_(cls, value):
         if value is None:
@@ -36,9 +36,13 @@ class CACHE_MODE(int, Enum):
             try:
                 return cls[name]
             except KeyError:
-                raise ValueError(f'Only cache modes "NONE", "GUESS", "DISK", "CPU" or "CUDA" are defined, not {value!r}.')
+                raise ValueError(
+                    'Only cache modes "NONE", "GUESS", "DISK", "CPU" or "CUDA" '
+                    f'are defined, not {value!r}.'
+                )
         # let IntEnum's default handling raise for bad ints:
         return super()._missing_(value)
+
 
 DEFAULT_THRESHOLDS = {
     CACHE_MODE.NONE : -1,
@@ -48,11 +52,14 @@ DEFAULT_THRESHOLDS = {
     CACHE_MODE.CUDA : None
 }
 
+
 def guess_cache_mode(
         shape : list[int], 
         dtype : torch.dtype,
         thresholds : dict[CACHE_MODE, float | int] | None=None
     ):
+    """Heuristic to guess/select a caching strategy.
+    """
     if thresholds is None:
         thresholds = dict()
     for mode, default in DEFAULT_THRESHOLDS.items():
@@ -68,8 +75,11 @@ def guess_cache_mode(
         raise RuntimeError(f'Unable to determine a valid caching location using thresholds:\n{thresholds}')
     return sorted(accepted)[-1]
 
+
 @multithread_vectorize(desc="Checking images...", disable=True)
 def is_image(path : str):
+    """Check if path(s) is/are image(s).
+    """
     if not os.path.exists(path):
         return False
     
@@ -89,6 +99,7 @@ def is_image(path : str):
 
     return False
 
+
 def _pil_to_torch_interp(interp: int) -> InterpolationMode:
     m = {
         Image.Resampling.NEAREST:  InterpolationMode.NEAREST,
@@ -100,13 +111,16 @@ def _pil_to_torch_interp(interp: int) -> InterpolationMode:
     }
     return m.get(interp, InterpolationMode.BILINEAR)
 
+
 def make_read_and_resize_fn(
-    size: tuple[int, int],
-    device: torch.device,
-    dtype: torch.dtype | str,
-    interpolation=Image.Resampling.NEAREST,
-    **kwargs
-):
+        size: tuple[int, int],
+        device: torch.device,
+        dtype: torch.dtype | str,
+        interpolation=Image.Resampling.NEAREST,
+        **kwargs
+    ):
+    """Factory to create function to read and resize image from path.
+    """
     if isinstance(dtype, str):
         dtype = getattr(torch, dtype, None)
         if not isinstance(dtype, torch.dtype):
@@ -136,28 +150,29 @@ def make_read_and_resize_fn(
 #         dtype = getattr(torch, dtype, None)
 #         if not isinstance(dtype, torch.dtype):
 #             raise ValueError(f'Unknown dtype "{dtype}"')
-
+#
 #     converter = make_convert_dtype(dtype)
-
+#
 #     def read_and_resize(path: str) -> torch.Tensor:
 #         img = Image.open(path).convert("RGB").resize(size, interpolation)
 #         tensor = TF.pil_to_tensor(img)  # returns torch.uint8 [C,H,W]
 #         if tensor.dtype != dtype:
 #             tensor = converter(tensor)
 #         return tensor.to(device)
-
+#
 #     return read_and_resize
+
 
 def _normalize_to_tuple(data):
     return data if isinstance(data, (tuple, list)) else (data,)
+
 
 # From `flatbug`: https://github.com/darsa-group/flat-bug/blob/9093de0f89756b7f59e63f3bd7161f5574eb90ac/src/flat_bug/datasets.py#L42
 def reweight(
         weights : list[float], 
         target_sum : float | int
     ) -> list[float]:
-    """
-    Reweights the provided list of weights so that their sum equals the target sum.
+    """Reweights the provided list of weights so that their sum equals the target sum.
 
     Args:
         weights: List of weights to reweight.
@@ -169,16 +184,18 @@ def reweight(
     sum_weights = sum(weights)
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
 
+
 def generate_indices(
         weights : list[float | int], 
         target_size : int | None=None
     ) -> list[int]:
-    """
-    Deterministically generates a list of indices based on the provided weights to oversample the items.
+    """Deterministically generates a list of indices based on the provided weights to oversample the items.
 
     Args:
-        weights: List of weights for each item, the weights should correspond to the desired oversampling rate for each item.
-        target_size: Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+        weights: List of weights for each item.
+            The weights should correspond to the desired oversampling rate for each item.
+        target_size: Desired size of the output list. 
+            If None, the size of the output is approximately the sum of the weights.
 
     Returns:
         tuple of list of indices to oversample the items and list of final weights.
@@ -188,7 +205,7 @@ def generate_indices(
 
     if target_size is not None:
         for _ in range(10):
-            if abs(sum(weights) - target_size)/target_size < 0.01:
+            if (abs(sum(weights) - target_size) / target_size) < 0.01:
                 break
             weights = reweight(weights, target_size)
 
@@ -197,8 +214,11 @@ def generate_indices(
 
     return indices, weights
 
+
 class Reindexed:
-    def __init__(
+    """A class to handle oversampling via index indirection.
+    """
+    def __init__( # noqa: D107
             self, 
             items : list, 
             weights : list[float | int], 
@@ -207,8 +227,11 @@ class Reindexed:
         self.items = items
         self._length = len(self.items)
         if len(weights) != len(self):
-            raise ValueError(f'Length of the supplied items ({len(items)}) to reindex does not match the length of the supplied weights ({len(weights)}).')
-        self._indices, self.weights = generate_indices(weights, round(len(self)*inflation))
+            raise ValueError(
+                f'Length of the supplied items ({len(items)}) to reindex '
+                'does not match the length of the supplied weights ({len(weights)}).'
+            )
+        self._indices, self.weights = generate_indices(weights, round(len(self) * inflation))
     
     def __len__(self):
         return self._length
@@ -222,8 +245,19 @@ class Reindexed:
     def __repr__(self):
         return f'[{", ".join(f"({repr(e)} * {w})" for e, w in zip(self.items, self.weights))}]'
 
+
 class LazyDataset(torch.utils.data.Dataset):
-    def __init__(
+    """A general lazy dataset which calls func on items to
+    obtain the image (and label) when needed.
+    
+    Includes caching options:
+        * None : No caching.
+        * "disk" : Disk cache via `zarr`.
+        * "cpu" : Cache in RAM as CPU tensor.
+        * "cuda" : Cache in VRAM as CUDA tensor.
+        * "guess" : Select a caching strategy via heuristic.
+    """
+    def __init__( # noqa: D107
             self, 
             func : Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]], 
             items : list,
@@ -233,7 +267,8 @@ class LazyDataset(torch.utils.data.Dataset):
         self.items = items
         self._zarr_root = None
         self.cache_dir = None
-        self._cache_mode = CACHE_MODE(cache) # one of None (no caching), disk (precompute .npy files), cpu (preload cpu tensor)
+        # one of None (no caching), disk (precompute .npy files), cpu (preload cpu tensor)
+        self._cache_mode = CACHE_MODE(cache)
         self._init_cache()
 
     @staticmethod
@@ -265,10 +300,16 @@ class LazyDataset(torch.utils.data.Dataset):
             case CACHE_MODE.CUDA:
                 self._cache_ram(desc="Writing to CUDA RAM cache...")
                 guess_device = torch.device(torch.cuda.current_device())
-                warnings.warn(f'CUDA caching is currently in development and may not work properly. Using device: `{guess_device}` for cache.')
+                warnings.warn(
+                    'CUDA caching is currently in development and may not work properly. '
+                    f'Using device: `{guess_device}` for cache.'
+                )
                 self._ram_cache.tensors = [t.to(guess_device) for t in self._ram_cache.tensors]
             case _:
-                raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'cpu'].")
+                raise ValueError(
+                    f'Invalid cache mode "{self._cache_mode}". '
+                    'Choose from [None, "disk", "cpu"].'
+                )
 
     def _cache_disk_zarr(self):
         try:
@@ -325,7 +366,7 @@ class LazyDataset(torch.utils.data.Dataset):
         producer_workers = min(64, (os.cpu_count() - 1) or 1) # Can be high
         writer_workers = min(8, (os.cpu_count() // 2) or 1) # Lower, I/O-limited
         
-        results_queue = Queue(maxsize=shard_size*2)
+        results_queue = Queue(maxsize=shard_size * 2)
         producer_pool = ThreadPoolExecutor(max_workers=producer_workers, thread_name_prefix="producer")
         writer_pool = ThreadPoolExecutor(max_workers=writer_workers, thread_name_prefix="writer")
         writer_semaphore = Semaphore(writer_workers + 4)
@@ -362,7 +403,10 @@ class LazyDataset(torch.utils.data.Dataset):
                     shard_end = min(shard_start + shard_size, total_items)
                     
                     # Check if the buffer is ready 
-                    if (len(buffer) >= shard_size or (total_items - 1) in buffer) and all(i in buffer for i in range(shard_start, shard_end)):
+                    if (
+                        (len(buffer) >= shard_size or (total_items - 1) in buffer) and 
+                        all(i in buffer for i in range(shard_start, shard_end))
+                    ):
                         indices = range(shard_start, shard_end)
                         shard_buf = [buffer.pop(i) for i in indices]
                         components = [[e[c] for e in shard_buf] for c in range(len(zarr_arrays))]
@@ -389,9 +433,14 @@ class LazyDataset(torch.utils.data.Dataset):
         store.close()
         print("Zarr disk cache built successfully.")
 
-
     def _load_from_zarr(self, i: int):
         if self._zarr_root is None:
+            try:
+                import zarr
+                from zarr.storage import LocalStore
+            except ImportError as e:
+                e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
+                raise e
             store = LocalStore(self.cache_path, read_only=True)
             self._zarr_root = zarr.open(store, mode='r', zarr_format=3)
 
@@ -422,14 +471,22 @@ class LazyDataset(torch.utils.data.Dataset):
             self._ram_was_single_tensor = False
             templates = [e.new_empty(e.shape) for e in first_item_processed]
         else:
-            raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
+            raise TypeError(
+                'The provided function must return a tensor or'
+                f'a tuple/list of tensors, but got {type(first_item_processed)}'
+            )
 
         stacked_tensors = [
-            torch.empty((len(self), *template.shape), dtype=template.dtype, device=template.device, pin_memory=template.device == torch.device("cpu")) 
+            torch.empty(
+                (len(self), *template.shape), 
+                dtype=template.dtype, 
+                device=template.device, 
+                pin_memory=template.device == torch.device("cpu")
+            ) 
             for template in templates
         ]
 
-        max_workers = min(128, ((os.cpu_count() - 2) // 2)*2 or 1)
+        max_workers = min(128, ((os.cpu_count() - 2) // 2) * 2 or 1)
         batch_size = min(256, 4 * max_workers)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
         fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 4))
@@ -442,17 +499,18 @@ class LazyDataset(torch.utils.data.Dataset):
             fetched_queue.put((idx, data))
 
         def _contiguous_write(
-                indexes : list[int], 
+                idx : list[int], 
                 data : list[torch.Tensor] | list[list[torch.Tensor]]
             ) -> None:
-            """
+            """Write data to indexes.
+            
             Args:
                 idx: A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
                 data: A list of torch.Tensor with the same length as `idx`.
             """
-            if len(indexes) == 0:
+            if len(idx) == 0:
                 return
-            slc = slice(indexes[0], indexes[-1]+1)
+            slc = slice(idx[0], idx[-1] + 1)
             # Insert data into slice along first dimension in dst (in-place)
             if self._ram_was_single_tensor:
                 torch.stack(data, out=stacked_tensors[0][slc])
@@ -513,7 +571,10 @@ class LazyDataset(torch.utils.data.Dataset):
                 elif isinstance(i, slice): 
                     elements = [self.func(item) for item in self.items[i]]
                 else:
-                    raise NotImplementedError(f'Indexing with {i} is not implemented. Only integer, slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.')
+                    raise NotImplementedError(
+                        f'Indexing with {i} is not implemented. Only integer, '
+                        'slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.'
+                    )
                 return [torch.stack(values) for values in zip(*elements)]
             case CACHE_MODE.DISK:
                 return self._load_from_zarr(i)
@@ -521,10 +582,13 @@ class LazyDataset(torch.utils.data.Dataset):
                 data = self._ram_cache[i]
                 return data[0] if self._ram_was_single_tensor else data
             case _:
-                raise RuntimeError(f'Invalid caching mode found {self._cache}, expected one of None, "disk", "cpu" or "cuda".')
+                raise RuntimeError(
+                    f'Invalid caching mode found {self._cache_mode}, expected one of None, "disk", "cpu" or "cuda".'
+                )
 
-class ImageLoader:
-    def __init__(
+
+class ImageLoader: # noqa: D101
+    def __init__( # noqa: D107
             self, 
             size : int | tuple[int, int], 
             cache : str | None=None, 
@@ -552,9 +616,10 @@ class ImageLoader:
             #     proc_img = proc_img[0]
             # return proc_img
         return LazyDataset(self, x, self.cache)
-    
-class ImageClassLoader:
-    def __init__(
+
+
+class ImageClassLoader: # noqa: D101
+    def __init__( # noqa: D107
             self, 
             class_decoder, 
             item_splitter : Callable[[Any], tuple[str, Any]]=lambda x : (x, x),

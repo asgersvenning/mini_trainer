@@ -1,6 +1,5 @@
 import os
 import random
-import sys
 from argparse import ArgumentParser
 from typing import Any
 
@@ -10,17 +9,20 @@ import torchvision
 
 from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder, EMATeacher
-from mini_trainer.config import (defaults_from_function, dump_resolved_config,
-                                 load_yaml_config, merge_dicts,
-                                 restructure_cli_args)
+from mini_trainer.config import (
+    defaults_from_function,
+    dump_resolved_config,
+    load_yaml_config,
+    merge_dicts,
+    restructure_cli_args,
+)
 from mini_trainer.trainer import train
-from mini_trainer.utils import (average_checkpoints, increment_name_dir,
-                                save_on_master)
+from mini_trainer.utils import average_checkpoints, increment_name_dir, save_on_master
 from mini_trainer.utils.augmentation import debug_augmentation
 from mini_trainer.utils.muon import MuonAuxAdamW
 
 
-def main(
+def main( # noqa: D417
         input : str,
         output : str | None=None,
         checkpoint : list[str] | None=None,
@@ -73,8 +75,7 @@ def main(
             "verbose" : False
         }
     ):
-    """
-    Train a classifier.
+    """Train a classifier.
 
     Args:
         input: Path to a directory containing a subdirectory for each class, where
@@ -96,6 +97,7 @@ def main(
         dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
             The model parameters are always stored in float32 with training AMP. 
             Default is ``'bfloat16'``.
+        ema: Flag to enable EMA (default=False).
         seed: Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is ``None``.
         builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``. 
@@ -128,14 +130,20 @@ def main(
         try:
             os.makedirs(output_dir, exist_ok=False)
         except OSError as e:
-            e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{name=}` already exists?")
+            e.add_note(
+                f'Training output directory already exists: {output_dir}. '
+                f'Perhaps a run of with the `{name=}` already exists?'
+            )
     
     weight_output_dir = None if output_dir is None else os.path.abspath(os.path.join(output_dir, "weights"))
     if weight_output_dir is not None:
         try:
             os.makedirs(weight_output_dir, exist_ok=False)
         except OSError as e:
-            e.add_note(f"Training weight directory already exists: {weight_output_dir}. Perhaps a run of with the `{name=}` already exists?")
+            e.add_note(
+                f'Training weight directory already exists: {weight_output_dir}. '
+                f'Perhaps a run of with the `{name=}` already exists?'
+            )
 
     device : torch.device = torch.device(device)
     dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
@@ -165,11 +173,13 @@ def main(
     )
 
     # Prepare model
-    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to facilitate mixed precision training
+    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to 
+    # facilitate mixed precision training
     # RE: Trying to disable again - perhaps this is why fastai is faster?
-    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some performance by following the
-    # pattern given in https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244, but
-    # it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
+    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some
+    # performance by following the pattern given in:
+    # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244, 
+    # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
     model_dtype = torch.float32 
     nn_model, model_preprocess = builder.build_model(
         device=device, 
@@ -300,7 +310,9 @@ def main(
             if isinstance(start_epoch, float) and np.isclose(start_epoch % 1, 0):
                 start_epoch = int(start_epoch)
             else:
-                raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
+                raise TypeError(
+                    f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`."
+                )
         start_epoch = start_epoch + 1
 
     # Instantiate logger
@@ -350,7 +362,7 @@ def main(
         print(f'Final weights saved at: {last_weight_dst}')
 
 
-def cli(description="Train a classifier", **extra_kwargs):
+def cli(description="Train a classifier", **extra_kwargs): # noqa: D103
     parser = ArgumentParser(
         prog="train",
         description=description,
@@ -361,13 +373,12 @@ def cli(description="Train a classifier", **extra_kwargs):
     cfg_args = parser.add_argument_group("Config [optional]")
     cfg_args.add_argument(
         "--config", type=str, default=None, required=False,
-        help="Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags."
+        help='Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags.'
     )
     cfg_args.add_argument(
         "--resume", action="store_true", required=False,
-        help=
-        "Only valid if '--config' is also passed, in this case the most relevant\n"
-        "checkpoint is automatically detected to be used for restarting a stopped training run."
+        help='Only valid if `--config` is also passed, in this case the most relevant\n'
+        'checkpoint is automatically detected to be used for restarting a stopped training run.'
     )
 
     if extra_kwargs:
@@ -385,103 +396,95 @@ def cli(description="Train a classifier", **extra_kwargs):
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
         "-i", "--input", type=str, default=None, required=False,
-        help=
-        "Path to a directory containing a subdirectory for each class,\n" 
-        "where the name of each subdirectory should correspond to the name of the class."
+        help='Path to a directory containing a subdirectory for each class,\n'
+        'where the name of each subdirectory should correspond to the name of the class.'
     )
 
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
         "-o", "--output", type=str, default=None, required=False,
-        help=
-        "Root directory for all created files and directories.\n"
-        "Default is current working directory ('.')."
+        help='Root directory for all created files and directories.\n'
+        'Default is current working directory (".").'
     )
     out_args.add_argument(
         "-n", "--name", type=str, default=None, required=False,
-        help=
-        "Name of the output model.\n"
-        "If not provided, a helpful name will be inferred from the other arguments."
+        help='Name of the output model.\n'
+        'If not provided, a helpful name will be inferred from the other arguments.'
     )
     out_args.add_argument(
         "-t", "--tensorboard", action="store_true", required=False,
-        help="Enable tensorboard logging."
+        help='Enable tensorboard logging.'
     )
 
     mod_args = parser.add_argument_group("Model [optional]")
     mod_args.add_argument(
         "-m", "--model", type=str, dest="model_builder_kwargs.model_type",
         default=None, required=False,
-        help=
-        "Name of the model type from the torchvision model zoo (not case-sensitive):\n"
-        "https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)"
+        help='Name of the model type from the torchvision model zoo (not case-sensitive):\n'
+        'https://pytorch.org/vision/main/models.html#table-of-all-available-classification-weights)'
     )
     mod_args.add_argument(
         "-c", "--checkpoint", type=str, nargs="+", default=None, required=False,
-        help= 
-        "Path to [a] checkpoint file(s) for restarting training.\n"
-        "If multiple files are supplied training is restarted from an 'average' of checkpoint states."
+        help='Path to [a] checkpoint file(s) for restarting training.\n'
+        'If multiple files are supplied training is restarted from an "average" of checkpoint states.'
     )
     mod_args.add_argument(
         "-w", "--weights", type=str, dest="model_builder_kwargs.weights",
         default=None, required=False,
-        help="Model weights used to initialize model before training."
+        help='Model weights used to initialize model before training.'
     )
     mod_args.add_argument(
         "-C", "--class_spec", type=str, default=None, required=False,
-        help=
-        "path to a JSON file containing the class name to index mapping and other\n"
-        "important information for constructing models and dataloaders.\n"
-        "If it doesn't exist, one will be created based on the directories found under `output` if it is set."
+        help='Path to a JSON file containing the class name to index mapping and other\n'
+        'important information for constructing models and dataloaders.\n'
+        'If it doesn\'t exist, one will be created based on the directories found under `output` if it is set.'
     )
 
     train_args = parser.add_argument_group("Training [optional]")
     train_args.add_argument(
         "-D", "--data_index", type=str, dest="dataloader_builder_kwargs.data_index",
         default=None, required=False,
-        help=
-        "JSON file containing three arrays with keys 'path', 'split' and 'class'.\n"
-        "The arrays should all have equal lengths and can be considered \"columns\" in a table.\n"
-        "The 'split' column should contain values 'train', 'validation' or other,\n"
-        "and the 'class' column' should contain the the class *names* (not indices) for each file/path."
+        help='JSON file containing three arrays with keys "path", "split" and "class".\n'
+        'The arrays should all have equal lengths and can be considered "columns" in a table.\n'
+        'The "split" column should contain values "train", "validation" or other,\n'
+        'and the "class" column should contain the the class *names* (not indices) for each file/path.'
     )
     train_args.add_argument(
         "-e", "--epochs", type=int, default=None, required=False,
-        help="Number of training epochs (default=15)."
+        help='Number of training epochs (default=15).'
     )
     train_args.add_argument(
         "--lr", "--learning_rate", type=float, dest="optimizer_builder_kwargs.lr",
         default=None, required=False,
-        help="Initial learning rate after warmup (default=0.001)."
+        help='Initial learning rate after warmup (default=0.001).'
     )
     train_args.add_argument(
         "--batch_size", type=int, dest="dataloader_builder_kwargs.batch_size",
         default=None, required=False,
-        help="Number of images used in each mini-batch for training/validation (default=16)."
+        help='Number of images used in each mini-batch for training/validation (default=16).'
     )
     train_args.add_argument(
         "--warmup_epochs", type=float, dest="lr_schedule_builder_kwargs.warmup_epochs", 
         default=None, required=False,
-        help="Number of warmup epochs (default=2.0)."
+        help='Number of warmup epochs (default=2.0).'
     )
     train_args.add_argument(
         "--size", type=int, dest="dataloader_builder_kwargs.resize_size",
         default=None, required=False,
-        help="Size of the input images; width, height (default=256)."
+        help='Size of the input images; width, height (default=256).'
     )
     train_args.add_argument(
         "--label_smoothing", type=float, dest="criterion_builder_kwargs.label_smoothing", 
         default=None, required=False,
-        help="Label smoothing applied to training (default=0.1)."
+        help='Label smoothing applied to training (default=0.1).'
     )
     train_args.add_argument(
         "--regularization_strength", type=float, dest="regularizer_builder_kwargs.strength",
         default=None, required=False,
-        help=
-        "Regularization term multiplier (default=0.1).\n"
-        "Regularization terms are computed on the last layer weights (class prototypes) and "
-        "include a hinge loss and a distributional term which pushes "
-        "the prototypes toward a orthogonal and equally spaced set."
+        help='Regularization term multiplier (default=0.1).\n'
+        'Regularization terms are computed on the last layer weights (class prototypes) and "'
+        'include a hinge loss and a distributional term which pushes '
+        'the prototypes toward a orthogonal and equally spaced set.'
     )
     train_args.add_argument(
         "--ema", action="store_true", dest="ema",
@@ -491,24 +494,26 @@ def cli(description="Train a classifier", **extra_kwargs):
     train_args.add_argument(
         "--class_weighted", action="store_true", dest="criterion_builder_kwargs.weighted",
         default=None, required=False,
-        help="Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts."
+        help='Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts.'
     )
     train_args.add_argument(
         "--fine-tune", action="store_true", dest="model_builder_kwargs.fine_tune",
         default=None, required=False,
-        help="OBS: This should probably not be used. Update only the classifier weights."
+        help='OBS: This should probably not be used. Update only the classifier weights.'
     )
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
         "--subsample", type=int, dest="dataloader_builder_kwargs.subsample",
         default=None, required=False,
-        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling)."
+        help='Subsample the data for training and eval (useful for testing). Default is None (no subsampling).'
     )
     cfg_args.add_argument(
         "--cache", type=str, dest="dataloader_builder_kwargs.cache",
         default=None, required=False,
-        help='Cache/Preload datasets for faster dataloading. Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet). Mainly relevant for inefficiently stored training data or slow filesystems.'
+        help='Cache/Preload datasets for faster dataloading. '
+        'Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet).\n'
+        'Mainly relevant for inefficiently stored training data or slow filesystems.'
     )
     cfg_args.add_argument(
         "--device", type=str, default=None, required=False,
@@ -516,25 +521,24 @@ def cli(description="Train a classifier", **extra_kwargs):
     )
     cfg_args.add_argument(
         "--dtype", type=str, default=None, required=False,
-        help=
-        "PyTorch data type used for storing images for training/validation (default=float16).\n" 
-        "The model is always stored in float32, and training is done with autocasting."
+        help='PyTorch data type used for storing images for training/validation (default=float16).\n' 
+        'The model is always stored in float32, and training is done with autocasting.'
     )
     cfg_args.add_argument(
         "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
         default=None, required=False,
-        help="Number of workers used for the dataloaders. Default is between 0 and 16 based on the number of CPU cores on your machine."
+        help='Number of workers used for the dataloaders. '
+        'Default is between 0 and 16 based on the number of CPU cores on your machine.'
     )
     cfg_args.add_argument(
         "--seed", type=int, default=None, required=False,
-        help=
-        "Set the initial seed for the RNG in the core Python library `random`.\n"
-        "This is particularly important for reproducible train/validation splits."
+        help="Set the initial seed for the RNG in the core Python library `random`.\n"
+        'This is particularly important for reproducible train/validation splits.'
     )
     cfg_args.add_argument(
         "-v", "--verbose", action="store_true", dest="logger_builder_kwargs.verbose",
         default=None, required=False,
-        help="Print training statistics in the terminal."
+        help='Print training statistics in the terminal.'
     )
 
     cli_args = vars(parser.parse_args())
@@ -543,7 +547,7 @@ def cli(description="Train a classifier", **extra_kwargs):
 
     # Build the three layers
     defaults_full = defaults_from_function(main) # Defaults defined in the function signature
-    config_full = load_yaml_config(cli_args.pop("config"), cli_args.pop("resume")) # Arguments passed from config (empty if no config)
+    config_full = load_yaml_config(cli_args.pop("config"), cli_args.pop("resume")) # Load arguments from config file
     cli_full = restructure_cli_args(cli_args) # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)
@@ -569,7 +573,7 @@ def cli(description="Train a classifier", **extra_kwargs):
     return args
 
 
-def run():
+def run(): # noqa: D103
     main(**cli())
 
 

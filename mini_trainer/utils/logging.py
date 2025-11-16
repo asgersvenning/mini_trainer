@@ -1,13 +1,10 @@
 import json
-import os
-import shutil
-import time
-import warnings
 import math
+import os
+import time
 from collections import defaultdict, deque
 from collections.abc import Callable
 from itertools import chain, repeat
-from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
 from typing import Any, TextIO, TypeVar
@@ -18,13 +15,18 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from torch import nn
 
-from mini_trainer.utils import (float_signif_decimal, increment_name_dir,
-                                reduce_across_processes, write_csv_from_dict)
-from mini_trainer.utils.plot import (named_confusion_matrix, plot_heatmap,
-                                     plot_model_class_distance,
-                                     raw_confusion_matrix)
+from mini_trainer.utils import float_signif_decimal, reduce_across_processes, write_csv_from_dict
+from mini_trainer.utils.plot import (
+    named_confusion_matrix,
+    plot_heatmap,
+    plot_model_class_distance,
+    raw_confusion_matrix,
+)
+
 
 def format_duration(sec : int, suffix="dhms"):
+    """Format duration in seconds.
+    """
     sec = int(sec)
     days, rem = divmod(sec, 86400)
     hours, rem = divmod(rem, 3600)
@@ -34,8 +36,9 @@ def format_duration(sec : int, suffix="dhms"):
     start = next((i for i, v in enumerate(tms[:-1]) if v), len(tms) - 1)
     return "".join(f"{t:02d}{s}" for t, s in zip(tms[start:], suffix[start:]))
 
-class Timer:
-    def __init__(self):
+
+class Timer: # noqa: D101
+    def __init__(self): # noqa: D107
         self._last = None
         self._total = 0.0
 
@@ -71,13 +74,15 @@ class Timer:
 
 
 class ETA:
+    """ETA tracker."""
     def __init__(
             self, 
             total_steps : int, 
             smoothing : float=0.3, 
             fmt : str="%H:%M:%S"
         ):
-        """
+        """Create ETA tracker.
+
         Args:
             total_steps: total number of steps expected
             smoothing: EMA smoothing factor (between 0 and 1)
@@ -108,7 +113,8 @@ class ETA:
         return self.remaining * self._ema
 
     def step(self, steps : int=1):
-        """
+        """Step ETA.
+
         Args:
             steps: Number of steps to progress (default=1).
 
@@ -132,8 +138,7 @@ class ETA:
 
 
 def accuracy(output : torch.Tensor, target : torch.Tensor, topk=(1,)):
-    """
-    Computes the accuracy over the k top predictions for the specified values of k.
+    """The accuracy over the k top predictions for the specified values of k.
     """
     with torch.inference_mode():
         maxk = max(topk)
@@ -151,11 +156,12 @@ def accuracy(output : torch.Tensor, target : torch.Tensor, topk=(1,)):
             res.append(correct_k * (100.0 / batch_size))
         return res
 
-class _ResultsCollector:
-    """
-    This is an abstract base class, it is likely easier to subclass `BaseResultCollector` instead.
 
-    If you are using the `mini_trainer` train and prediction scripts/APIs, it is very unlikely that this is the correct class to subclass.
+class _ResultsCollector:
+    """This is an abstract base class, it is likely easier to subclass `BaseResultCollector` instead.
+
+    If you are using the `mini_trainer` train and prediction scripts/APIs,
+      it is very unlikely that this is the correct class to subclass.
     However, if you are building entirely new train and/or predictions scripts/APIs, it may be an option.
     """
     def collect(
@@ -172,8 +178,9 @@ class _ResultsCollector:
     def data(self):
         raise NotImplementedError('Result collector must have `data` class propery suitable for JSON serialization.')
 
-class BaseResultCollector(_ResultsCollector):
-    def __init__(
+
+class BaseResultCollector(_ResultsCollector): # noqa: D101
+    def __init__( # noqa: D107
             self, 
             idx2cls : dict[int, str] | None=None, 
             cls2idx : dict[str, int] | None=None,
@@ -202,18 +209,23 @@ class BaseResultCollector(_ResultsCollector):
         self._collect_extra_attributes(**kwargs)
 
     def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor):
-        """
-        Override in subclasses!
+        """Override in subclasses!
         """
         self.paths.extend(paths)
         self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
         self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
-    def _collect_extra_attributes(self, **kwargs : list | tuple | GeneratorType | np.ndarray | torch.Tensor):
+    def _collect_extra_attributes(
+            self, 
+            **kwargs : list | tuple | GeneratorType | np.ndarray | torch.Tensor
+        ):
         if len(self._extra_attr) == 0:
             return
         if not all([attr in kwargs for attr in self._extra_attr]):
-            raise ValueError(f'To ensure proper ordering and avoid data loss it is required to always pass all extra attributes ([{", ".join(self._extra_attr)}])')
+            raise ValueError(
+                'To ensure proper ordering and avoid data loss it is required '
+                f'to always pass all extra attributes ([{", ".join(self._extra_attr)}])'
+            )
         for key, value in kwargs.items():
             if value is None:
                 continue
@@ -223,10 +235,11 @@ class BaseResultCollector(_ResultsCollector):
                 value = value.tolist()
                 if not isinstance(value, list):
                     raise ValueError(
-                        f'Value passed for {key} is likely a zero-dimensional (scalar) array/tensor containing a {type(value)}.\n' \
-                        "If you want to pass a single value, it should still be contained in a 1-dimensional array/tensor:\n" \
-                        "\tIncorrect: `torch.tensor(1)`/`np.array(1)`\n" \
-                        "\tCorrect: `torch.tensor([1])`/`np.array([1])`"
+                        f'Value passed for {key} is likely a zero-dimensional (scalar)'
+                        f'array/tensor containing a {type(value)}.\nIf you want to pass'
+                        'a single value, it should still be contained in a 1-dimensional'
+                        'array/tensor:\n\tIncorrect: `torch.tensor(1)`/`np.array(1)`\n'
+                        '\tCorrect: `torch.tensor([1])`/`np.array([1])`'
                     )
             elif isinstance(value, (tuple, GeneratorType)):
                 value = list(value)
@@ -234,11 +247,25 @@ class BaseResultCollector(_ResultsCollector):
                 raise TypeError(f'Unexpected value type `{type(value)}` supplied for {key}.')
             getattr(self, key).extend(value)
 
-    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", plot_conf_mat : bool=False, **kwargs):
+    def eval_label_fn(
+            self,
+            data : dict,
+            outdir : str | None,
+            save : bool,
+            prefix : str="",
+            plot_conf_mat : bool=False,
+            **kwargs
+        ):
         if kwargs:
-            raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
+            raise RuntimeError(
+                f'Unknown arguments ([{", ".join(kwargs)}]) passed.'
+                'Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.'
+            )
         if save and not isinstance(outdir, str):
-            raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
+            raise RuntimeError(
+                "Attempted to save evaluated results against labels "
+                "without specifying an output directory."
+            )
         return named_confusion_matrix(
             results=data, 
             cls2idx=self.cls2idx, 
@@ -298,7 +325,8 @@ class BaseResultCollector(_ResultsCollector):
                 "correct" : do_predict if do_predict == 0 else 1 if pred == lab else -1
             }
             for k, v in row.items():
-                assert isinstance(v, SCHEMA.get(k, "None")), f'Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, "None")}'
+                if not isinstance(v, SCHEMA.get(k, "None")):
+                    raise RuntimeError(f'Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, "None")}')
                 data[k].append(v)
         write_csv_from_dict(data, dst)
 
@@ -331,11 +359,12 @@ class _Statistic:
     def update(self, value, *args, **kwargs):
         raise NotImplementedError()
 
+
 S = TypeVar('S', bound=_Statistic)
 
+
 class _Logger:
-    """
-    The __init__ method of any subclass should swallow any additional keyword arguments.
+    """The __init__ method of any subclass should swallow any additional keyword arguments.
 
     Methods:
         **`add_stat`**: Add a new statistic container.
@@ -364,8 +393,7 @@ class _Logger:
         pass
 
     def step(self):
-        """
-        This function may not be necessary for your logger.
+        """This function may not be necessary for your logger.
         """
         pass
 
@@ -373,21 +401,21 @@ class _Logger:
     def statistics(self) -> dict[str, _Statistic]:
         raise NotImplementedError()
 
+
 L = TypeVar('L', bound=_Logger)
 
+
 class SmoothedValue(_Statistic):
-    """
-    Track a series of values and provide access to smoothed values over a
+    """Track a series of values and provide access to smoothed values over a
     window or the global series average.
     """
-
-    def __init__(self, window_size=20, fmt_vars : list[str]=["median"]):
+    def __init__(self, window_size=20, fmt_vars : list[str]=["median"]): # noqa: D107
         self.deque = deque(maxlen=window_size)
         self.total = 0.0
         self.count = 0
         self.min = None
         self.fmt_vars = fmt_vars
-        self.fmt_digs : dict[str, deque[int]] = {var : deque(maxlen=window_size*5) for var in self.fmt_vars}
+        self.fmt_digs : dict[str, deque[int]] = {var : deque(maxlen=window_size * 5) for var in self.fmt_vars}
 
     def __len__(self):
         return self.count
@@ -407,8 +435,7 @@ class SmoothedValue(_Statistic):
         self.total += value * n
 
     def synchronize_between_processes(self):
-        """
-        Warning: does not synchronize the deque!
+        """Warning: does not synchronize the deque!
         """
         t = reduce_across_processes([self.count, self.total, self.min])
         t = t.tolist()
@@ -429,7 +456,7 @@ class SmoothedValue(_Statistic):
     @property
     def global_avg(self):
         if self.count == 0:
-          return float('nan')
+            return float('nan')
         return self.total / self.count
     
     @property
@@ -458,12 +485,13 @@ class SmoothedValue(_Statistic):
             cur_digs = float_signif_decimal(value)
             self.fmt_digs[var].append(cur_digs)
             digs = max(self.fmt_digs[var])
-            part = f'{value:>{digs+3}.{digs}f}'
+            part = f'{value:>{digs + 3}.{digs}f}'
             parts.append(part)
         return "/".join(parts)
 
-class MetricLogger(_Logger):
-    def __init__(self, delimiter=" | ", printer=print, **kwargs):
+
+class MetricLogger(_Logger): # noqa: D101
+    def __init__(self, delimiter=" | ", printer=print, **kwargs): # noqa: D107
         self._statistics : defaultdict[str, SmoothedValue] = defaultdict(SmoothedValue)
         self.delimiter = delimiter
         self.printer = printer
@@ -491,28 +519,30 @@ class MetricLogger(_Logger):
 
     def add_stat(self, name, container):
         if not isinstance(container, SmoothedValue):
-            raise TypeError(f'Only ``SmoothedValue`` containers for statistics in ``MetricLogger`` supported, not: {type(container)}')
+            raise TypeError(
+                'Only `SmoothedValue` containers for statistics in `MetricLogger` supported, not: {type(container)}'
+            )
         self.statistics[name] = container
 
+
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
-    """
-    Maintains moving averages of model parameters using an exponential decay.
+    """Maintains moving averages of model parameters using an exponential decay.
 
     ``ema_avg = decay * avg_model_param + (1 - decay) * model_param``
     `torch.optim.swa_utils.AveragedModel <https://pytorch.org/docs/stable/optim.html#custom-averaging-strategies>`_
     is used to compute the EMA.
     """
 
-    def __init__(self, model, decay, device="cpu"):
+    def __init__(self, model, decay, device="cpu"): # noqa: D107
         def ema_avg(avg_model_param, model_param, num_averaged):
             return decay * avg_model_param + (1 - decay) * model_param
 
         super().__init__(model, device, ema_avg, use_buffers=True)
 
-class BaseStatistic(_Statistic):
+
+class BaseStatistic(_Statistic): # noqa: D101
     def __init__(self, values : list[float | int] | None=None):
-        """
-        A basic thread-safeish statistic container.
+        """A basic thread-safeish statistic container.
 
         Args:
             values: A list of values to initially populate the statistic, optional.
@@ -535,8 +565,8 @@ class BaseStatistic(_Statistic):
         return self.values[i]
     
     def __iter__(self):
-        """
-        Iter on the base statistic is not thread safe, if you want to ensure this, you must acquire the lock manually first.
+        """Iter on the base statistic is not thread safe,
+        if you want to ensure this, you must acquire the lock manually first.
         """
         yield from self.values
 
@@ -575,24 +605,28 @@ class BaseStatistic(_Statistic):
 
     @property
     def mean(self):
-      if self.sum is None or len(self) == 0:
-        return float('nan')
-      return self.sum / len(self)
+        if self.sum is None or len(self) == 0:
+            return float('nan')
+        return self.sum / len(self)
 
     def __str__(self):
         with self.lock:
             if not self:
                 return "NaN |0|"
-            m  = self.mean
+            m  = self.mean # noqa: E221
             mn = self.min
             mx = self.max
-        digs = float_signif_decimal(min(filter(lambda x : math.isfinite(x) and x != 0, map(abs, [m, mn, mx])), default=1))
+        digs = float_signif_decimal(min(
+            filter(lambda x : math.isfinite(x) and x != 0, map(abs, [m, mn, mx])), 
+            default=1)
+        )
         self.digs.append(digs)
         digs = max(self.digs)
-        return f'{m:>{digs+2}.{digs}f} [{mn:>{digs+3}.{digs}f}; {mx:>{digs+3}.{digs}f}]'
+        return f'{m:>{digs + 2}.{digs}f} [{mn:>{digs + 3}.{digs}f}; {mx:>{digs + 3}.{digs}f}]'
     
     def __repr__(self):
         return f'BaseStatistic({str(self)})|{len(self)}|'
+
 
 def compute_aligned_steps(
         target_length: int,
@@ -600,17 +634,19 @@ def compute_aligned_steps(
         total_epochs: int,
         current_epoch: int
     ) -> list[int]:
+    """Rescale steps to align origin with target.
+    """
     if not (0 <= current_epoch < total_epochs):
         raise ValueError(f"current_epoch must be in [0, {total_epochs}), got {current_epoch!r}")
 
     start = current_epoch * target_length
-    end   = (current_epoch + 1) * target_length - 1
+    end   = (current_epoch + 1) * target_length - 1 # noqa: E221
 
     return [int(round(step)) for step in np.linspace(start, end, num=origin_length)]
 
+
 class MultiLogger:
-    """
-    Multi-backend training/evaluation logger.
+    """Multi-backend training/evaluation logger.
 
     Orchestrates one or more concrete loggers (e.g., terminal metrics, TensorBoard)
     and provides a single interface for recording statistics, figures and
@@ -633,8 +669,7 @@ class MultiLogger:
     """
     @staticmethod
     def _reset_cuda_memory_stats():
-        """
-        Reset CUDA peak memory stats on the current device.
+        """Reset CUDA peak memory stats on the current device.
 
         Notes:
             This intentionally avoids synchronization to reduce performance
@@ -655,7 +690,12 @@ class MultiLogger:
             epochs : int,
             output : str | None,
             name : str,
-            statistics : list[str]=["acc1", "acc5", "loss", "lr", "item/s", "mem", "step", "time", "eta", "epoch", "type"],
+            statistics : list[str]=[
+                "acc1", "acc5", "loss", 
+                "lr", "item/s", "mem", 
+                "step", "time", "eta", 
+                "epoch", "type"
+            ],
             private_statistics : list[str]=["step", "time", "eta", "epoch", "type"], 
             logger_cls : list[type[_Logger]]=[MetricLogger],
             logger_cls_extra_kwargs : list[dict[str, Any]]=[],
@@ -665,9 +705,14 @@ class MultiLogger:
             clear_store_on_update : bool=True,
             verbose : bool=False
         ):
+        """Create multi-logger orchestrator.
+        """
         self.total_epochs = epochs
         self.private_statistics = private_statistics
-        self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x : statistics.index(x))
+        self.statistics = sorted(
+            list(set(statistics) - set(self.private_statistics)), 
+            key=lambda x : statistics.index(x)
+        )
         self.statistics_storage = defaultdict(list)
         self.heterogeneous_storage = defaultdict(list)
         self.output = output
@@ -687,7 +732,7 @@ class MultiLogger:
         self.total_steps = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
 
         # Initialize dynamic attributes
-        self._type_timing : defaultdict[str, "Timer"] = defaultdict(Timer)
+        self._type_timing : defaultdict[str, Timer] = defaultdict(Timer)
         self._last_save = time.time()
         self._step = 0
         self._start_time = None
@@ -716,13 +761,12 @@ class MultiLogger:
             for name, time in timings.items()
         ])
 
-
     def is_train(self):
         return isinstance(self._type, str) and self._type.lower().strip().startswith("train")
 
     def compute_steps(self, epochs : int, train_steps : int, val_steps : int):
         return \
-            [list(range(e*train_steps, (e+1)*train_steps)) for e in range(epochs)], \
+            [list(range(e * train_steps, (e + 1) * train_steps)) for e in range(epochs)], \
             [compute_aligned_steps(train_steps, val_steps, epochs, e) for e in range(epochs)]
     
     @property
@@ -746,8 +790,7 @@ class MultiLogger:
         epoch : int,
         type : str
     ):  
-        """
-        Begin a new phase (train/eval) for a given epoch.
+        """Begin a new phase (train/eval) for a given epoch.
 
         Initializes/rotates backend loggers, clears transient storage (if
         configured), resets per-phase CUDA peak memory, and prepares aligned
@@ -790,8 +833,7 @@ class MultiLogger:
             self._current_loggers.append(this_logger)
 
     def step(self):
-        """
-        Advance one logging step.
+        """Advance one logging step.
 
         Records bookkeeping statistics (step/time/eta/epoch/type) and then
         resets the CUDA peak memory so that the next call to ``log_memory_use``
@@ -858,7 +900,7 @@ class MultiLogger:
     def data(self):
         return {
             "statistics" : dict(self.statistics_storage),
-            "extra" : dict() #dict(self.heterogeneous_storage)
+            "extra" : dict() # dict(self.heterogeneous_storage)
         }
     
     def _store_summary(self):
@@ -879,9 +921,15 @@ class MultiLogger:
         #     warnings.warn("Attempting to save logs before starting the loggers is a no-op!")
         #     return
         # if self._epoch is None:
-        #     raise NotImplementedError(f'Saving logs while {self._epoch=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        #     raise NotImplementedError(
+        #       f'Saving logs while {self._epoch=} is not supported and probably not meaningful. 
+        #       'If this happens you are probably doing something wrong!'
+        #     )
         # if self._type is None:
-        #     raise NotImplementedError(f'Saving logs while {self._type=} is not supported and probably not meaningful. If this happens you are probably doing something wrong!')
+        #     raise NotImplementedError(
+        #       f'Saving logs while {self._type=} is not supported and probably not meaningful. '
+        #       'If this happens you are probably doing something wrong!'
+        #     )
         # if fp is None:
         #     if self.output_dir is None:
         #         return
@@ -892,12 +940,11 @@ class MultiLogger:
         # elif isinstance(fp, str):
         #     output_dir, name = os.path.split(os.path.abspath(fp))
         #     _, ext = os.path.splitext(name)
-        
-        
+        #
         # if os.path.exists(os.path.join(output_dir, name)):
         #     name = increment_name_dir(name, output_dir)
         # fp = os.path.join(output_dir, name + ext)
-
+        #
         # temp_file_name = None
         # try:
         #     with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
@@ -905,7 +952,7 @@ class MultiLogger:
         #         tmpfile.flush()
         #         os.fsync(tmpfile.fileno())
         #         temp_file_name = tmpfile.name
-            
+        #
         #     shutil.move(temp_file_name, fp)
         #     self._last_save = time.time() # Assuming self._last_save is defined
         # except Exception as e:
@@ -1021,8 +1068,7 @@ class MultiLogger:
         self.log_statistic(**{"item/s" : self._batch_size / (time.time() - start_time)})
 
     def log_memory_use(self):
-        """
-        Log per-batch peak CUDA memory usage (no sync).
+        """Log per-batch peak CUDA memory usage (no sync).
 
         Notes:
             Uses ``torch.cuda.max_memory_allocated()`` which reports the peak
@@ -1065,7 +1111,7 @@ class MultiLogger:
     @torch.no_grad()
     def consume(self, **kwargs):
         default_consume_kwargs = ["index", "batch", "target", "prediction", "loss", "optimizer", "start_time"]
-        dca = {key : kwargs.pop(key) for key in  default_consume_kwargs}
+        dca = {key : kwargs.pop(key) for key in default_consume_kwargs}
         
         self.log_statistic(**kwargs)
         if len(dca) == len(default_consume_kwargs):
@@ -1073,17 +1119,24 @@ class MultiLogger:
         self.step()
 
     def status(self):
-        stats = " | ".join([f'{name}: {str(self.loggers[0].statistics[name])}' for name in self.statistics[:min(4, len(self.statistics))]])
+        stats = " | ".join([
+            f'{name}: {str(self.loggers[0].statistics[name])}'
+            for name in self.statistics[:min(4, len(self.statistics))]]
+        )
         epoch = self._epoch
         if epoch is None:
             epoch = "?"
         else:
             epoch += 1
-        return f'E{epoch}/{self.total_epochs} ({self._step/self.total_steps:.1%} {self.eta}) | {stats}'
+        return f'E{epoch}/{self.total_epochs} ({self._step / self.total_steps:.1%} {self.eta}) | {stats}'
 
     # def _last_epoch_values(self, stat : str):
     #     values = []
-    #     for v, e, t in zip(reversed(self.statistics_storage[stat]), reversed(self.statistics_storage["epoch"]), reversed(self.statistics_storage["type"])):
+    #     for v, e, t in zip(
+    #       reversed(self.statistics_storage[stat]), 
+    #       reversed(self.statistics_storage["epoch"]), 
+    #       reversed(self.statistics_storage["type"])
+    #     ):
     #         if e != self._epoch or t != self._type:
     #             break
     #         values.append(v)
@@ -1134,7 +1187,10 @@ class MultiLogger:
             n_cls = predictions.shape[1]
             cf = torch.zeros((n_cls, n_cls), dtype=torch.float32)
         if not (isinstance(cf, torch.Tensor) and cf.dtype == torch.float32 and cf.device.type == "cpu"):
-            raise RuntimeError(f'Unexpected soft confusion matrix found {cf}, expected a torch.Tensor of torch.float32 with device="cpu".')
+            raise RuntimeError(
+                f'Unexpected soft confusion matrix found {cf}, '
+                'expected a torch.Tensor of torch.float32 with device="cpu".'
+            )
         grps = labels.unique()
         for gidx in grps:
             lmask = labels == gidx
@@ -1193,7 +1249,7 @@ class MultiLogger:
             cm = cm[~zm][:, ~zm]
             cm_rs = cm.sum(dim=1, keepdim=True)
             cm = cm / cm_rs
-            cm = cm.clamp(1/cm_rs.sum().item(), 1)
+            cm = cm.clamp(1 / cm_rs.sum().item(), 1)
             figs["Soft confusion matrix"] = plot_heatmap(cm)
         else:
             for lvl, cm in self._soft_confusion_matrix.items():
@@ -1201,7 +1257,7 @@ class MultiLogger:
                 cm = cm[~zm][:, ~zm]
                 cm_rs = cm.sum(dim=1, keepdim=True)
                 cm = cm / cm_rs
-                cm = cm.clamp(1/cm_rs.sum().item(), 1)
+                cm = cm.clamp(1 / cm_rs.sum().item(), 1)
                 figs[f"Soft confusion matrix/lvl{lvl}"] = plot_heatmap(cm)
         return figs
 

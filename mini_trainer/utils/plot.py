@@ -21,6 +21,10 @@ def named_confusion_matrix(
         verbose : bool=False, 
         plot_conf_mat : bool | str=False
     ):
+    """Compute dense label-prediction-count dictionary confusion matrix from results.
+    
+    Also computes per-class, micro and macro accuracy.
+    """
     # Build confusion matrix and compute accuracies
     classes = [k for k, v in sorted(cls2idx.items(), key=lambda x : x[1])]
 
@@ -93,11 +97,14 @@ def named_confusion_matrix(
         "conf_mat" : conf_mat
     }
 
+
 def raw_confusion_matrix(
         labels : list[int] | torch.Tensor | np.ndarray, 
         predictions : list[int] | torch.Tensor | np.ndarray, 
         n_classes : int | None=None
     ):
+    """Compute dense confusion matrix array from sparse label-prediction pairs.
+    """
     labels = np.asarray(labels).ravel().astype(np.int64)
     predictions = np.asarray(predictions).ravel().astype(np.int64)
     if n_classes is None:
@@ -121,10 +128,10 @@ MAX_DISPLAY_DIM_HEATMAP = 5000
 COLORBAR_RENDER_DPI = 150
 COLORBAR_TARGET_WIDTH_PIXELS = 200 # Approximate width for the colorbar image
 
+
 # --- Helper: Matrix Aggregation ---
 def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> np.ndarray:
-    """
-    Aggregates matrix by summing values in blocks.
+    """Aggregates matrix by summing values in blocks.
 
     Handles non-divisible shapes by padding.
     """
@@ -144,9 +151,11 @@ def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> n
     # Efficient reshape and sum for block aggregation
     return padded_matrix.reshape(target_rows, block_rows, target_cols, block_cols).max(axis=3).max(axis=1)
 
+
 # --- Helper: Matrix Scaling ---
 def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
-    """Resizes matrix: downscales then upscales to fit display dimension constraints."""
+    """Resizes matrix: downscales then upscales to fit display dimension constraints.
+    """
     processed_mat = mat 
     orig_rows, orig_cols = mat.shape
 
@@ -187,10 +196,8 @@ def _generate_heatmap_rgb_array(
     cmap_name: str,
     percent: bool
 ) -> tuple[np.ndarray | None, LogNorm | None, float, float]:
+    """Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info.
     """
-    Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info.
-    """
-    
     masked_data = np.ma.masked_invalid(display_mat.astype(float)) # Handle NaNs
     if min_val_display is not None:
         masked_data = np.ma.masked_less_equal(masked_data, min_val_display)
@@ -240,20 +247,20 @@ def _generate_heatmap_rgb_array(
     
     return rgb_image_uint8, norm, norm_vmin, norm_vmax
 
+
 # --- Helper: Colorbar Ticks ---
 def _get_colorbar_ticks_and_labels(
         norm_vmin: float, 
         norm_vmax: float, 
         max_ticks: int, percent: bool
     ) -> tuple[list[float], list[str]]:
-    """
-    Generates tick values and labels for the colorbar.
+    """Generates tick values and labels for the colorbar.
     """
     if not (norm_vmin > 0 and norm_vmax > 0 and norm_vmin < norm_vmax): 
         return [], []
 
     num_decades = math.log10(norm_vmax / norm_vmin) if norm_vmin > 0 and norm_vmax > 0 else 1
-    multipliers = [1, 2, 5] if num_decades < 2 else [1, 1.5, 2, 3, 5, 7] #Fewer for small ranges
+    multipliers = [1, 2, 5] if num_decades < 2 else [1, 1.5, 2, 3, 5, 7] # Fewer for small ranges
     
     tick_cands = {norm_vmin, norm_vmax}
     start_exp = math.floor(math.log10(norm_vmin)) if norm_vmin > 0 else 0
@@ -287,7 +294,6 @@ def _get_colorbar_ticks_and_labels(
             final_ticks.append(sorted_ticks[-1])
         final_ticks = sorted(list(set(final_ticks)))
 
-
     labels = []
     for v_tick in final_ticks:
         val_fmt = v_tick * 100 if percent else v_tick
@@ -308,6 +314,7 @@ def _get_colorbar_ticks_and_labels(
         
     return final_ticks, labels
 
+
 # --- Helper: Colorbar Array Generation ---
 def _generate_colorbar_rgb_array(
     norm_obj: mpl.colors.LogNorm, 
@@ -317,8 +324,7 @@ def _generate_colorbar_rgb_array(
     target_height_pixels: int, 
     font_size_pt: int
 ) -> np.ndarray:
-    """
-    Renders a colorbar using Matplotlib to an RGB NumPy array of target_height_pixels.
+    """Renders a colorbar using Matplotlib to an RGB NumPy array of target_height_pixels.
     """
     fig_width_inches = COLORBAR_TARGET_WIDTH_PIXELS / COLORBAR_RENDER_DPI
     fig_height_inches = target_height_pixels / COLORBAR_RENDER_DPI
@@ -344,7 +350,10 @@ def _generate_colorbar_rgb_array(
     img_rgb = np.asarray(canvas_cbar.buffer_rgba())[:, :, :3] # Get buffer and convert to ndarray
 
     if img_rgb.shape[0] != target_height_pixels:
-        img_rgb = resize(torch.tensor(img_rgb).permute(2, 0, 1), (target_height_pixels, round(target_height_pixels / img_rgb.shape[0] * img_rgb.shape[1]))).permute(1, 2, 0).numpy()
+        img_rgb = resize(
+            torch.tensor(img_rgb).permute(2, 0, 1), 
+            (target_height_pixels, round(target_height_pixels / img_rgb.shape[0] * img_rgb.shape[1]))
+        ).permute(1, 2, 0).numpy()
 
     plt.close(fig_cbar)
     return img_rgb
@@ -360,8 +369,7 @@ def plot_heatmap(
     min_val_display : float | None=None,
     colorbar : bool=True
 ) -> np.ndarray | None:
-    """
-    Plots a high-resolution confusion matrix using NumPy and Matplotlib.
+    """Plots a high-resolution confusion matrix using NumPy and Matplotlib.
 
     Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
     """
@@ -369,7 +377,11 @@ def plot_heatmap(
         mat = mat.cpu().detach().float().numpy()
     
     if mat.size == 0:
-        img = np.full((MIN_DISPLAY_DIM_HEATMAP, MIN_DISPLAY_DIM_HEATMAP + COLORBAR_TARGET_WIDTH_PIXELS, 3), (200, 200, 200), dtype=np.uint8)
+        img = np.full(
+            (MIN_DISPLAY_DIM_HEATMAP, MIN_DISPLAY_DIM_HEATMAP + COLORBAR_TARGET_WIDTH_PIXELS, 3), 
+            (200, 200, 200), 
+            dtype=np.uint8
+        )
         return img
 
     # 1. Scale matrix for display
@@ -388,7 +400,6 @@ def plot_heatmap(
                                    (220,220,220), dtype=np.uint8) # Slightly different gray
         return np.hstack((heatmap_rgb_array, empty_cbar_space))
 
-
     # 3. Get colorbar ticks and labels
     tick_values, tick_labels = _get_colorbar_ticks_and_labels(vmin, vmax, max_colorbar_ticks, percent)
 
@@ -404,19 +415,39 @@ def plot_heatmap(
     
     return final_rgb_image
 
+
 def class_distance(classification_weights : torch.Tensor, probability : bool=True):
+    """Compute the pairwise class-weight distance.
+    
+    Compute the pairwise distance between the rows
+    in the last-layer weight matrix.
+    If `probability=True` as CDF assuming that these
+    are approximately iid. draws from a MVN => distance
+    distribution is Chi-square.
+    """
     classification_weights = classification_weights.cpu().clone().detach()
     classification_weights -= classification_weights.mean(dim=0, keepdim=True)
     classification_weights /= classification_weights.std(dim=0, unbiased=True, keepdim=True)
     class_dmat = torch.cdist(classification_weights, classification_weights).float()
     if not probability:
         return class_dmat
-    class_dmat_cdf = torch.distributions.Chi2(classification_weights.shape[1]).cdf(class_dmat ** 2 / 2)
+    class_dmat_cdf = (
+        torch.distributions.Chi2(classification_weights.shape[1]).cdf(class_dmat ** 2 / 2)
+    )
     if not isinstance(class_dmat_cdf, torch.Tensor):
-        raise RuntimeError(f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix.")
+        raise RuntimeError(
+            f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix."
+       )
     return class_dmat_cdf
 
+
 def plot_model_class_distance(model : nn.Module, **kwargs):
+    """Plot the pairwise class distance.
+    
+    CDF of pairwise inner products between rows
+    in the last-layer weight matrix, assuming that these
+    have unit norm.
+    """
     llw = last_layer_weights(model)
     # cdm = class_distance(llw, True)
     # cdm.fill_diagonal_(torch.nan)

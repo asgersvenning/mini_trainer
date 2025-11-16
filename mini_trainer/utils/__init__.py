@@ -1,4 +1,5 @@
-import copy
+# noqa: D104
+import copy # noqa: I001
 import csv
 import hashlib
 import inspect
@@ -12,9 +13,9 @@ from collections.abc import Callable, Iterable
 from functools import wraps
 from glob import glob
 from itertools import repeat
-from typing import (Annotated, Any, Callable, Concatenate, Iterable, ParamSpec,
-                    TypeVar, TypeVarTuple, Union, Unpack, cast, get_args,
-                    get_origin, get_type_hints, overload)
+from typing import (Annotated, Any, Concatenate, ParamSpec, TypeVar,
+                    TypeVarTuple, cast, get_args, get_origin, get_type_hints,
+                    overload)
 
 import psutil
 import torch
@@ -25,8 +26,15 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import thread_map as _thread_map
 
 MISSING_VALUE = "NA"
+X = TypeVar("X") # input value
+R = TypeVar("R") # return value
+P = ParamSpec("P")
+Ks = TypeVarTuple("Ks")
+
 
 def write_csv_from_dict(d : dict[str, Any], path : str):
+    """Write to existing or new CSV from dict.
+    """
     headers = tuple(d.keys())
     nrow = -1
     for h in headers:
@@ -42,7 +50,7 @@ def write_csv_from_dict(d : dict[str, Any], path : str):
             )
     mode = "a" if os.path.exists(path) else "w"
     if mode == "a":
-        with open(path, "r", newline="", encoding="utf-8") as f:
+        with open(path, "r", newline="", encoding="utf-8") as f: # noqa: UP015
             try:
                 existing_headers = tuple(next(csv.reader(f)))
             except StopIteration:
@@ -64,7 +72,8 @@ def write_csv_from_dict(d : dict[str, Any], path : str):
             writer.writerow(headers)
         writer.writerows(zip(*(d[h] for h in headers)))
 
-def first_arg_base_types(fn):
+
+def first_arg_base_types(fn): # noqa: D103
     params = tuple(inspect.signature(fn).parameters.values())
     if not params:
         return [Any]
@@ -94,31 +103,39 @@ def first_arg_base_types(fn):
     out = flatten_union(ann)
     return list(dict.fromkeys(out))
 
-S = TypeVar("S")
-P = ParamSpec("P")
-R = TypeVar("R")
 
-def thread_map(func : Callable[[S], R], it : Iterable[S], **kwargs : Any) -> list[R]:
+def thread_map(func : Callable[[X], R], it : Iterable[X], **kwargs : Any) -> list[R]:
+    """Type helper that fixes return type annotation from ``tqdm.contrib.concurrent.thread_map``.
+    """
     return cast(list[R], _thread_map(func, it, **kwargs))
 
+
 def multithread_vectorize(leave : bool=False, min_items_to_multithread : int=32, **tqdm_kwargs: Any):
-    def decorator(f: Callable[Concatenate[S, P], R]):
+    """Decorator to vectorize a function on it's first argument.
+    """
+    def decorator(f: Callable[Concatenate[X, P], R]):
         _basetypes = first_arg_base_types(f)
         basetypes : list[type] = []
         for t in _basetypes:
             if not isinstance(t, type):
-                raise TypeError(f'`multithread_vectorize` decorator only supports simple argument type annotation for the vectorized arguments, not: `{t}`')
+                raise TypeError(
+                    '`multithread_vectorize` decorator only supports simple argument type annotation '
+                    f'for the vectorized arguments, not: `{t}`'
+                )
             if t in (list, tuple):
-                print('WARNING: Using `list` or `tuple` as the base-type with `multithread_vectorize` is dangerous and might not work as you expect.')
+                print(
+                    'WARNING: Using `list` or `tuple` as the base-type with `multithread_vectorize` '
+                    'is dangerous and might not work as you expect.'
+                )
             basetypes.append(t)
         basetypes = tuple(basetypes)
         
         @overload
-        def wrapped(x : S, /, *args : P.args, **kwargs : P.kwargs) -> R: ...
+        def wrapped(x : X, /, *args : P.args, **kwargs : P.kwargs) -> R: ...
         @overload
-        def wrapped(x : Iterable[S], /, *args : P.args, **kwargs : P.kwargs) -> list[R]: ...
+        def wrapped(x : Iterable[X], /, *args : P.args, **kwargs : P.kwargs) -> list[R]: ...
         @wraps(f)
-        def wrapped(x, /, *args : P.args, **kwargs : P.kwargs):
+        def wrapped(x : X | Iterable[X], /, *args : P.args, **kwargs : P.kwargs):
             if isinstance(x, basetypes):
                 return f(x, *args, **kwargs)
             if callable(hasattr(x, "__len__")) and len(x) < min_items_to_multithread:
@@ -128,22 +145,25 @@ def multithread_vectorize(leave : bool=False, min_items_to_multithread : int=32,
         return wrapped
     return decorator
 
-K = TypeVar("K")
-V = TypeVar("V")
-Ks = TypeVarTuple("Ks")
 
-def filter_ordered_dict(od : OrderedDict[K, V], keys : tuple[Unpack[Ks]]):
+def filter_ordered_dict(od : OrderedDict[X, R], keys : tuple[*Ks]): # noqa: UP047
+    """Filter an `OrderedDict` by keys and maintain order.
+    """
     return OrderedDict([(k, od[k]) for k in keys])
 
+
 def make_convert_dtype(dtype : torch.dtype, scale : bool=True):
-    """
-    See `torchvision.transforms.v2.ToDtype`.
+    """See `torchvision.transforms.v2.ToDtype`.
     """
     return ToDtype(dtype=dtype, scale=scale)
 
+
 TERMINAL_WIDTH, _ = shutil.get_terminal_size()
 
+
 def float_signif_decimal(value : float, digits : int=3):
+    """Compute the number of decimals needed for rounding to the given decimals.
+    """
     if value == 0 or not math.isfinite(value):
         return 0
     min_b10 = math.log10(abs(value))
@@ -153,22 +173,28 @@ def float_signif_decimal(value : float, digits : int=3):
         min_b10 = math.floor(min_b10)
     return -min(-1, min_b10 - digits + 1)
 
+
 def decimals(value : float, tol : int=6):
+    """Heuristic to determine the number of significant digits in a float.
+    """
     fv = f'{value}'
     if "." not in fv:
         return 0
     dec = fv.index(".") + 1
     for d, i in enumerate(range(dec, len(fv))):
         trunc_value = float(fv[:i])
-        if abs(value - trunc_value) < 10**(-(i+tol)):
+        if abs(value - trunc_value) < 10**(-(i + tol)):
             return d
     return d + 1
+
 
 def memory_proportion(
         shape : tuple[int, ...], 
         device : torch.types.Device, 
         dtype : torch.dtype
     ):
+    """Compute the proportion of available space on device that would be used by a given tensor.
+    """
     numel = math.prod(shape)
     # bytes per element
     bpe = torch.empty(0, dtype=dtype).element_size()
@@ -186,7 +212,8 @@ def memory_proportion(
 
     return required / free
 
-def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000):
+
+def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000): # noqa: D103
     if name is None:
         raise ValueError('A name must be specified.')
     if not isinstance(name, str):
@@ -208,14 +235,25 @@ def increment_name_dir(name : str, dir : str | None=None, max_iter : int=1000):
     if "_" in name and (parts := name.split("_"))[-1].isdigit():
         i0 = int(parts[-1])
         name = "_".join(parts[:-1])
-    for i in range(i0, max_iter+1):
+    for i in range(i0, max_iter + 1):
         if (this := _name(i)) not in fs:
             return this
     
-    raise RuntimeError(f'Unable to create a new model name from {name} in {dir}, the maximum number of model iterations with the same base name {max_iter} has been reached. OBS: The name check is file-extension agnostic!')
+    raise RuntimeError(
+        f'Unable to create a new model name from {name} in {dir}, '
+        f'the maximum number of model iterations with the same base name {max_iter} has been reached. '
+        'OBS: The name check is file-extension agnostic!'
+    )
 
-def recursive_dfs_attr(obj: Any, attr: str,
-                       predicate: Callable[[Any], bool] = lambda x: True) -> Any:
+
+def recursive_dfs_attr(
+        obj: Any, 
+        attr: str,
+        predicate: Callable[[Any], bool] = lambda x: True
+    ) -> Any:
+    """Helper function to search for a specific attribute in an object,
+    or any attached objects.
+    """
     seen = set()
     stack = [obj]
     while stack:
@@ -235,7 +273,10 @@ def recursive_dfs_attr(obj: Any, attr: str,
                 pass  # non-iterable despite isinstance claiming so (rare, but safe)
     raise StopIteration(f"No attribute '{attr}' found passing predicate.")
 
+
 def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : float):
+    """Factory for creating a function that parametrizes a cosine with warmup schedule shape function.
+    """
     def _shape_fn(step : int):
         if warmup > 0 and step < warmup:
             # linear warm-up from start_factor -> 1.0
@@ -247,8 +288,7 @@ def cosine_schedule_with_warmup(total : int, warmup : int, start : float, end : 
 
 
 def setup_for_distributed(is_master):
-    """
-    This function disables printing when not in master process.
+    """This function disables printing when not in master process.
     """
     import builtins as __builtin__
 
@@ -262,7 +302,7 @@ def setup_for_distributed(is_master):
     __builtin__.print = print
 
 
-def is_dist_avail_and_initialized():
+def is_dist_avail_and_initialized(): # noqa: D103
     if not dist.is_available():
         return False
     if not dist.is_initialized():
@@ -270,28 +310,28 @@ def is_dist_avail_and_initialized():
     return True
 
 
-def get_world_size():
+def get_world_size(): # noqa: D103
     if not is_dist_avail_and_initialized():
         return 1
     return dist.get_world_size()
 
 
-def get_rank():
+def get_rank(): # noqa: D103
     if not is_dist_avail_and_initialized():
         return 0
     return dist.get_rank()
 
 
-def is_main_process():
+def is_main_process(): # noqa: D103
     return get_rank() == 0
 
 
-def save_on_master(*args, **kwargs):
+def save_on_master(*args, **kwargs): # noqa: D103
     if is_main_process():
         torch.save(*args, **kwargs)
 
 
-def init_distributed_mode(args):
+def init_distributed_mode(args): # noqa: D103
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ["WORLD_SIZE"])
@@ -317,7 +357,8 @@ def init_distributed_mode(args):
     dist.barrier()
     setup_for_distributed(args.rank == 0)
 
-def reduce_across_processes(val):
+
+def reduce_across_processes(val): # noqa: D103
     if not is_dist_avail_and_initialized():
         # nothing to sync, but we still convert to tensor for consistency with the distributed case.
         return torch.tensor(val)
@@ -327,24 +368,29 @@ def reduce_across_processes(val):
     dist.all_reduce(t)
     return t
 
+
 def average_checkpoints(inputs, map_location=None, weights_only=True):
-    """Loads checkpoints from inputs and returns a model with averaged weights. Original implementation taken from:
+    """Loads checkpoints from inputs and returns a model with averaged weights.
+    
+    Original implementation taken from:
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
 
     Args:
-      inputs: An iterable of string paths of checkpoints to load from.
-      map_location: If not specified attempts a sensible default, otherwise passed directly to ``torch.load``.
+        inputs: An iterable of string paths of checkpoints to load from.
+        map_location: If not specified attempts a sensible default, otherwise passed directly to ``torch.load``.
+        weights_only: Passed to ``torch.load``.
+    
     Returns:
-      A dict of string keys mapping to various values. The 'model' key
-      from the returned dict should correspond to an OrderedDict mapping
-      string parameter names to torch Tensors.
+        A dict of string keys mapping to various values. The 'model' key
+            from the returned dict should correspond to an OrderedDict mapping
+            string parameter names to torch Tensors.
     """
     params_dict = OrderedDict()
     params_keys = None
     new_state = None
     num_models = len(inputs)
     if map_location is None:
-        map_location = (lambda s, _: torch.serialization.default_restore_location(s, "cpu"))
+        map_location = (lambda s, _: torch.serialization.default_restore_location(s, "cpu")) # noqa: E731
     for fpath in inputs:
         with open(fpath, "rb") as f:
             state = torch.load(
@@ -382,8 +428,7 @@ def average_checkpoints(inputs, map_location=None, weights_only=True):
 
 
 def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=True):
-    """
-    This method can be used to prepare weights files for new models. It receives as
+    """This method can be used to prepare weights files for new models. It receives as
     input a model architecture and a checkpoint from the training script and produces
     a file with the weights ready for release.
 
@@ -451,13 +496,16 @@ def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=T
 
     return output_path
 
+
 def set_weight_decay(
-    model: torch.nn.Module,
-    weight_decay: float,
-    norm_weight_decay: float | None = None,
-    norm_classes: list[type] | None = None,
-    custom_keys_weight_decay: list[tuple[str, float]] | None = None,
-):
+        model: torch.nn.Module,
+        weight_decay: float,
+        norm_weight_decay: float | None = None,
+        norm_classes: list[type] | None = None,
+        custom_keys_weight_decay: list[tuple[str, float]] | None = None,
+    ):
+    """Set weight decay on parameter groups.
+    """
     if not norm_classes:
         norm_classes = [
             torch.nn.modules.batchnorm._BatchNorm,
@@ -512,7 +560,8 @@ def set_weight_decay(
             param_groups.append({"params": params[key], "weight_decay": params_weight_decay[key]})
     return param_groups
 
-def copy_bn_buffers(src: nn.Module, dst: nn.Module) -> None:
+
+def copy_bn_buffers(src: nn.Module, dst: nn.Module) -> None: # noqa: D103
     for ms, md in zip(src.modules(), dst.modules()):
         if isinstance(ms, nn.modules.batchnorm._BatchNorm):
             md.running_mean.copy_(ms.running_mean)

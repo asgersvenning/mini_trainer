@@ -17,3 +17,10 @@ pip install -e .
 
 ## Acknowledgements
 This repository repository draws inspiration from https://github.com/pytorch/vision/tree/main/references/classification.
+
+## Contribution
+Feel free to contribute, but here are a few tips:
+
+* Follow the installation guide to setup a proper dev environment.
+* Setup linting via `uv ruff` with `uv add --dev ruff` and then do `uv run ruff check mini_trainer`.
+* Please avoid adding new dependencies 🙂

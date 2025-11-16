@@ -1,16 +1,13 @@
 import json
 import os
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from itertools import repeat
-from typing import Iterable
 
 import torch
 
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.hierarchical.gbif import (cls2idx_from_labels,
-                                            create_taxonomy,
-                                            labels_from_taxonomy)
+from mini_trainer.hierarchical.gbif import cls2idx_from_labels, create_taxonomy, labels_from_taxonomy
 from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
 from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.utils import write_csv_from_dict
@@ -20,17 +17,19 @@ from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
 from mini_trainer.utils.plot import named_confusion_matrix
 
 
-def linnean_labels_from_directory(dir : str, levels="family", **kwargs):
+def linnean_labels_from_directory(dir : str, levels="family", **kwargs): # noqa: D103
     images = find_images(dir)
     dirnames = set([os.path.split(os.path.dirname(im))[1] for im in images])
     taxonomy = create_taxonomy(dirnames, levels=levels)
     return labels_from_taxonomy(taxonomy)
 
-def default_labels_from_directory_structure(dir : str, **kwargs):
+
+def default_labels_from_directory_structure(dir : str, **kwargs): # noqa: D103
     images = find_images(dir)
     image_dirs = list(sorted(set([os.path.dirname(os.path.relpath(p, dir)) for p in images])))
     labels = OrderedDict([(d[-1], tuple(d.split(os.sep)[::-1])) for d in image_dirs])
     return labels
+
 
 def parse_class_spec(
         path : str | None=None, 
@@ -39,8 +38,7 @@ def parse_class_spec(
         label_fn : Callable[[str], OrderedDict[str, tuple[str, ...]]]=default_labels_from_directory_structure,
         **kwargs
     ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | int]:
-    """
-    Construct class specification: 
+    """Construct class specification:
     * class index (label string to index mapping)
     * hierarchical labels (tuple of label strings leaf->root)
     * number of (leaf) classes
@@ -96,7 +94,9 @@ def parse_class_spec(
                     levels = 3
                 retval = parquet_to_class_spec_hierarchical(dir, levels=levels)
             else:
-                raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
+                raise TypeError(
+                    f'If `path` is not the path to a valid file, `dir` must be a valid directory, not "{dir}".'
+                )
         else:
             labels = label_fn(dir, **kwargs)
             if levels is not None:
@@ -117,13 +117,13 @@ def parse_class_spec(
         for lab in retval["labels"].keys():
             retval["labels"][lab] = retval["labels"][lab][:levels]
     return retval
-    
+
+
 def sparse_masks_from_labels(
         labels : OrderedDict[str, tuple[str, ...]], 
         cls2idx : dict[str, dict[str, int]]
     ):
-    """
-    Compute 'sparse masks' from labels (e.g. [species, genus, family]) and class indices.
+    """Compute 'sparse masks' from labels (e.g. [species, genus, family]) and class indices.
 
     A sparse mask is an integer vector (1D tensor) with length equal to the number of classes
     at some level (e.g. number of species) that maps each class to it's parent class 
@@ -142,10 +142,9 @@ def sparse_masks_from_labels(
         List of sparse masks for levels `{0, ..., N-2}` where `N` is the 
             number of layers in the hierarchy (e.g. 3 if [species, genus, family]).
     """
-    ## Function logic
     nlvl = len(cls2idx)
     # Initialize masks with "empty" values (-1)
-    masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl-1)] 
+    masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl - 1)] 
     for lab in labels.values():
         idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(lab)]
         for mask_i, (child, parent) in enumerate(zip(idx, idx[1:])):
@@ -156,7 +155,6 @@ def sparse_masks_from_labels(
                 )
             masks[mask_i][child] = parent
 
-    ## Output checking
     # Check that masks contain no empty values (-1)
     invalid = []
     for mask_i, mask in enumerate(masks):
@@ -172,16 +170,15 @@ def sparse_masks_from_labels(
         ) + '\n'.join([f'|{mask_i:^6}|{element_i:^9}|' for mask_i, element_i in invalid])
         raise ValueError(err_msg)
     # Check that all classes in last layer class index are used
-    if (missing := set(cls2idx[str(nlvl-1)].values()) - set(masks[-1])):
+    if (missing := set(cls2idx[str(nlvl - 1)].values()) - set(masks[-1])):
         err_msg = f'Found {len(missing)} unused classes in top level: [{", ".join(map(str, missing))}]'
         raise ValueError(err_msg)
     
-    ## Function return
     # Return masks converted to long tensors
     return [torch.tensor(mask, dtype=torch.long) for mask in masks]
 
 
-class HierarchicalBuilder(BaseBuilder):
+class HierarchicalBuilder(BaseBuilder): # noqa: D101
     @staticmethod
     def class_spec(
             path : str | None=None,
@@ -191,9 +188,11 @@ class HierarchicalBuilder(BaseBuilder):
             *args, 
             **kwargs
         ):
-        """
+        """TODO.
+
         Returns:
-            (extra_model_kwargs, extra_dataloader_kwargs): Extra keyword arguments for the model and dataloader building functions.
+            (extra_model_kwargs, extra_dataloader_kwargs): 
+                Extra keyword arguments for the model and dataloader building functions.
         """
         if species:
             if "label_fn" in kwargs:
@@ -201,7 +200,6 @@ class HierarchicalBuilder(BaseBuilder):
             kwargs["label_fn"] = linnean_labels_from_directory
         return parse_class_spec(path=path, dir=dir, levels=levels, **kwargs)
         
-
     @staticmethod
     def build_model(
             cls2idx : dict[int, dict[str, int]], 
@@ -248,8 +246,9 @@ class HierarchicalBuilder(BaseBuilder):
             **kwargs
         )
 
-class HierarchicalResultCollector(BaseResultCollector):
-    def __init__(
+
+class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
+    def __init__( # noqa: D107
             self, 
             idx2cls : dict[str, dict[int, str]] | None=None,
             cls2idx : dict[str, dict[str, int]] | None=None,
@@ -268,28 +267,49 @@ class HierarchicalResultCollector(BaseResultCollector):
         self._levels = None
 
     def _collect_base_attributes(self, paths : list[str], predictions : list[torch.Tensor]):
-        """
-        Override in subclasses!
+        """Override in subclasses!
         """
         if self._levels is None:
             self._levels = len(predictions)
         self.paths.extend(paths)
-        self.preds.extend(list(zip(*[map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist()) for lvl, p in enumerate(predictions)])))
+        self.preds.extend(list(zip(*[
+            map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist())
+            for lvl, p in enumerate(predictions)
+        ])))
         self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
 
-    def eval_label_fn(self, data : dict, outdir : str | None, save : bool, prefix : str="", plot_conf_mat : bool=False, **kwargs):
+    def eval_label_fn(
+            self,
+            data : dict,
+            outdir : str | None,
+            save : bool,
+            prefix : str="",
+            plot_conf_mat : bool=False,
+            **kwargs
+        ):
         if kwargs:
-            raise RuntimeError(f'Unknown arguments ([{", ".join(kwargs)}]) passed. Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.')
+            raise RuntimeError(
+                f'Unknown arguments ([{", ".join(kwargs)}]) passed. '
+                'Perhaps you forgot to implement the intended `eval_label_fn` in your subclass.'
+            )
         if save and not isinstance(outdir, str):
-            raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
+            raise RuntimeError(
+                'Attempted to save evaluated results against labels without specifying an output directory.'
+            )
         if self._levels is None:
-            raise RuntimeError(f'Hierarchical result collector was unable to detect number of levels in the class hierarchy!')
+            raise RuntimeError(
+                'Hierarchical result collector was unable to detect number of levels in the class hierarchy!'
+            )
         return {
             level : named_confusion_matrix(
                 results={k : v[level] if k in ["preds", "confs", "labels"] else v for k, v in data.items()}, 
                 cls2idx=self.cls2idx[str(level)],
                 verbose=self.verbose, 
-                plot_conf_mat=plot_conf_mat and save and os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
+                plot_conf_mat=(
+                    plot_conf_mat and 
+                    save and 
+                    os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
+                )
             ) for level in range(self._levels)
         }
     

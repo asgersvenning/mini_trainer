@@ -1,7 +1,7 @@
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
+from mini_trainer.hierarchical.model import ConditionalClassifier, HierarchicalClassifier, IndependentClassifier
 from mini_trainer.train import cli as mt_train_args
 from mini_trainer.train import main as mt_train
-from mini_trainer.hierarchical.model import HierarchicalClassifier, ConditionalClassifier, IndependentClassifier
 
 overrides = []
 
@@ -11,7 +11,8 @@ HEAD_OPTIONS = {
     "independent" : IndependentClassifier
 }
 
-def head_name_to_cls(name : str | type):
+
+def head_name_to_cls(name : str | type): # noqa: D103
     if isinstance(name, type):
         return name
     name = name.strip().lower()
@@ -22,7 +23,7 @@ def head_name_to_cls(name : str | type):
         raise e
     
 
-def cli(desc="Train a hierarchical classifier", **kwargs):
+def cli(desc="Train a hierarchical classifier", **kwargs): # noqa: D103
     kwargs = mt_train_args(
         description=desc,
         loss_weights={
@@ -31,14 +32,16 @@ def cli(desc="Train a hierarchical classifier", **kwargs):
             "dest" : "criterion_builder_kwargs.weights",
             "default" : (1., 1., 1.), 
             "required" : False, 
-            "help" : "Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied"
+            "help" : 'Weights for the hierarchical loss terms (species, genus, family). '
+            'Three numbers should be supplied.'
         },
         head={
             "type" : str,
             "dest" : "model_builder_kwargs.cls",
             "default" : "hierarchical",
             "required" : False,
-            "help" : "Which type of classification head architecture to use. Options are 'hierarchical' (default), 'conditional' and 'independent'."
+            "help" : 'Which type of classification head architecture to use. '
+            'Options are "hierarchical" (default), "conditional" and "independent".'
         },
         **kwargs
     ) 
@@ -49,6 +52,7 @@ def cli(desc="Train a hierarchical classifier", **kwargs):
     kwargs["builder"] = HierarchicalBuilder
 
     return kwargs
+
 
 if __name__ == "__main__":
 

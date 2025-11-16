@@ -11,12 +11,13 @@ from torchvision.io import ImageReadMode, decode_image
 from mini_trainer.utils import make_convert_dtype, recursive_dfs_attr
 
 try:
-    from torch.nn.utils.parametrizations import weight_norm 
+    from torch.nn.utils.parametrizations import weight_norm
 except Exception:  # fallback for older installs
     from torch.nn.utils import weight_norm
 
 _UNSUPPORTED_MODELS = [
-    'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
+    'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 
+    'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
     'fcos_resnet50_fpn', 
     'keypointrcnn_resnet50_fpn', 
     'maskrcnn_resnet50_fpn', 'maskrcnn_resnet50_fpn_v2', 
@@ -28,7 +29,10 @@ _UNSUPPORTED_MODELS = [
     'vit_b_16', 'vit_b_32', 'vit_h_14', 'vit_l_16', 'vit_l_32'
 ]
 
+
 def preprocess(item, transform, func=None):
+    """Hook torchvision preprocessing function with load image from file to tensor.
+    """
     if isinstance(item, str):
         path = str(item)
         if not os.path.exists(path):
@@ -47,6 +51,8 @@ def preprocess(item, transform, func=None):
 def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
               classifier_name: str | list[str] = ["classifier", "fc"],
               preprocess_dtype : torch.dtype | None=None):
+    """Get torchvision model and preprocessing function by name.
+    """
     default_transform = None
     if isinstance(backbone_model, str):
         if backbone_model in _UNSUPPORTED_MODELS:
@@ -65,9 +71,18 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
             break
     if backbone_classifier_name is None:
         raise AttributeError(f"No classifier found with names {classifier_name}")
-    return backbone_model, backbone_classifier_name, partial(preprocess, transform=default_transform, func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype))
+    return (
+        backbone_model, 
+        backbone_classifier_name, 
+        partial(
+            preprocess, 
+            transform=default_transform, 
+            func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype)
+        )
+    )
 
-class Classifier(nn.Module):
+
+class Classifier(nn.Module): # noqa: D101 TODO
     @staticmethod
     @torch.no_grad()
     def _normalize_layer(layer: nn.Linear):
@@ -79,7 +94,7 @@ class Classifier(nn.Module):
         layer.parametrizations.weight.original0.requires_grad_(False)
         return layer
 
-    def __init__(
+    def __init__( # noqa: D107
             self, 
             in_features : int, 
             out_features : int, 
@@ -126,8 +141,7 @@ class Classifier(nn.Module):
             dtype : torch.dtype,
             **kwargs
         ):
-        """
-        Load weights into model architecture.
+        """Load weights into model architecture.
         """
         architecture.add_module(architecture_output_name, cls(**kwargs))
         setattr(architecture, "_backbone_class", architecture_class)
@@ -154,7 +168,11 @@ class Classifier(nn.Module):
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         
-        num_embeddings = recursive_dfs_attr(getattr(architecture, head_name), "in_features", lambda x : isinstance(x, int))
+        num_embeddings = recursive_dfs_attr(
+            getattr(architecture, head_name), 
+            "in_features", 
+            lambda x : isinstance(x, int)
+        )
         state = None
 
         if weights is not None:
@@ -167,19 +185,30 @@ class Classifier(nn.Module):
             for key in list(state.keys()):
                 if isinstance(state[key], torch.Tensor):
                     state[key] = state[key].to(device, dtype)
-            num_classes, _ = state.get(f"{head_name}.linear.weight", state.get(f"{head_name}.linear.parametrizations.weight.original1")).shape
+            num_classes, _ = state.get(
+                f"{head_name}.linear.weight",
+                state.get(f"{head_name}.linear.parametrizations.weight.original1")
+            ).shape
         else:
             if isinstance(num_classes, list):
                 # Here we assume that the number of classes for each level has been passed 
                 # and that the number of classes at the leaf level is contained in the first element
                 num_classes = num_classes[0]
             if not isinstance(num_classes, int):
-                raise RuntimeError('Unable to build classifier with unknown number of output classes. If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.')
-        model = cls.load(model_type, head_name, architecture, state, device, dtype, in_features=num_embeddings, out_features=num_classes, **kwargs)
+                raise RuntimeError(
+                    'Unable to build classifier with unknown number of output classes. '
+                    'If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.'
+                )
+        model = cls.load(
+            model_type, head_name, architecture, state, device, dtype, 
+            in_features=num_embeddings, out_features=num_classes, **kwargs
+        )
         return model, model_preprocess
 
 
 def last_layer_weights(model : nn.Module):
+    """Retrieve the weights of the last layer of a model created with `mini_trainer.classifier.Classifier.build()`.
+    """
     classification_head = getattr(model, getattr(model, "_backbone_output_name", None), None)
     if classification_head is None:
         return None

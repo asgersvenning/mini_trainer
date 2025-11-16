@@ -15,8 +15,7 @@ from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
-from mini_trainer.utils import (TERMINAL_WIDTH, is_dist_avail_and_initialized,
-                                reduce_across_processes, save_on_master)
+from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
 from mini_trainer.utils.logging import MultiLogger
 
 
@@ -37,8 +36,7 @@ def train_one_epoch(
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
     ):
-    """
-    Run one training epoch.
+    """Run one training epoch.
 
     Args:
         model: Model under training.
@@ -129,12 +127,13 @@ def train_one_epoch(
         start_time = time.time()
     logger.stop_timing()
 
-    ## TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
+    # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
     #     with torch.no_grad():
     #         copy_bn_buffers(model, model_ema.module)
 
     model.eval()
+
 
 def evaluate(
         model : nn.Module, 
@@ -146,8 +145,7 @@ def evaluate(
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32
     ):
-    """
-    Evaluate the model for one validation epoch.
+    """Evaluate the model for one validation epoch.
 
     Args:
         model: Model in evaluation mode.
@@ -213,6 +211,7 @@ def evaluate(
     
     return float(logger.canonical_scalar)
 
+
 def train(
         model : nn.Module, 
         model_ema : EMATeacher,
@@ -234,8 +233,7 @@ def train(
         weight_store_rate : int | None=None,
         **kwargs
     ):
-    """
-    Full training loop across epochs with periodic evaluation and checkpointing.
+    """Full training loop across epochs with periodic evaluation and checkpointing.
 
     Args:
         model: Model to train.
@@ -244,6 +242,7 @@ def train(
         val_loader: Validation dataloader.
         criterion: Loss function.
         optimizer: Optimizer instance.
+        scaler: Gradient scaler.
         lr_scheduler: LR scheduler stepped every training batch.
         logger: Logger used for metrics, summaries and figures.
         epochs: Total number of epochs to run.
@@ -267,7 +266,11 @@ def train(
     best_eval_metric = -float("inf")
     best_epoch = -1
     for epoch in range(start_epoch, epochs):
-        train_one_epoch(model, model_ema, criterion, optimizer, scaler, lr_scheduler, train_loader, epoch, logger, preprocess, augmentation, regularizer, device=device, dtype=dtype, **kwargs)
+        train_one_epoch(
+            model, model_ema, criterion, optimizer, scaler, lr_scheduler, 
+            train_loader, epoch, logger, preprocess, augmentation, regularizer, 
+            device=device, dtype=dtype, **kwargs
+        )
         eval_metric = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         is_best_eval = (best_eval_metric := max(best_eval_metric, eval_metric)) == eval_metric
         if is_best_eval:

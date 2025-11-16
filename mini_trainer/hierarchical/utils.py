@@ -4,6 +4,8 @@ import torch
 
 
 def leaf_to_parents(h):
+    """Construct the path from leaf-to-root for a specific leaf.
+    """
     l2p = []
     p2c = None
     for lvl in h:
@@ -18,17 +20,23 @@ def leaf_to_parents(h):
         l2p.append({k : v for k, v in sorted(c2p.items())})
     return l2p
 
-def create_hierarchy(combinations : Iterable[list[str]], class_to_idx : list[dict[str, int]]) -> list[list[list[int]]]:
-    """
-    Creates a hierarchy from the paths and class handles.
+
+def create_hierarchy(
+        combinations : Iterable[list[str]],
+        class_to_idx : list[dict[str, int]]
+    ) -> list[list[list[int]]]:
+    """Creates a hierarchy from the paths and class handles.
+    
     The hierarchy is constructed based on the nodes found in the dataset. 
     TODO: The hierarchy should be constructed once and saved in a structured file.
 
     Arguments:
-        TODO
+        combinations: List of all leaf-to-root labels.
+        class_to_idx: A mapping from classes to indexes.
 
     Returns:
-        A list for each level of the hierarchy. Each list contains a list for each node containing the indices of the children of that node. 
+        A list for each level of the hierarchy. 
+            Each list contains a list for each node containing the indices of the children of that node. 
             Level 0 is the leaf level, and is not included. 
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
@@ -50,14 +58,14 @@ def create_hierarchy(combinations : Iterable[list[str]], class_to_idx : list[dic
         for i in range(len(indices) - 1):
             # Get the parent and child indices
             child = indices[i]
-            parent = indices[i+1]
+            parent = indices[i + 1]
             hierarchy[i][parent].add(child)  # Append the child to the parent's list
 
     return [[list(parent) for parent in level] for level in hierarchy]
 
+
 def create_mask_col(indices, height, zero=-100, **kwargs):
-    """
-    Create an approximate logarithmic binary mask with the given indices.
+    """Create an approximate logarithmic binary mask with the given indices.
 
     Arguments:
         indices (list): list of indices to include in the mask.
@@ -74,7 +82,10 @@ def create_mask_col(indices, height, zero=-100, **kwargs):
     col[indices] = 0
     return col
 
+
 def mask_islogarithmic(masks):
+    """Check if a mask is contains "logarithmic" zeros and ones.
+    """
     if isinstance(masks, list):
         response = [mask_islogarithmic(mask) for mask in masks]
         all_true = all(response)
@@ -85,19 +96,21 @@ def mask_islogarithmic(masks):
         return all_true
     return not torch.all((masks == 0) | (masks == 1))
 
+
 def mask_hierarchy(hierarchy, zero=-100, **kwargs):
-    """
-    Create approximate logarithmic binary masks for the given hierarchy.
+    """Create approximate logarithmic binary masks for the given hierarchy.
 
     Arguments:
         hierarchy (list): list of lists of lists of indices.
-            The first level of the list corresponds to the levels of the hierarchy, and each level contains a list of lists of indices for each node.
+            The first level of the list corresponds to the levels of the hierarchy, 
+            and each level contains a list of lists of indices for each node.
         zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
         **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
 
     Returns:
         list of masks for each level of the hierarchy.
-            Each mask has shape (n_nodes, n_child_nodes) and can be used to calculate the logits for the nodes based on the child logits:
+            Each mask has shape (n_nodes, n_child_nodes) and can be used to calculate the logits
+            for the nodes based on the child logits:
             TODO: Add equation here (logarithmic matrix multiplication)
     """
     masks = []

@@ -1,20 +1,17 @@
-## Forward-compatibility with Muon optimizer (will be in PyTorch later)
-## From: https://github.com/pytorch/pytorch/blob/main/torch/optim/_muon.py
-
-# mypy: allow-untyped-defs
-# mypy: disable-error-code=arg-type
-"""Implementation of the Muon optimizer."""
+# Forward-compatibility with Muon optimizer (will be in PyTorch later)
+# From: https://github.com/pytorch/pytorch/blob/main/torch/optim/_muon.py
+"""Implementation of the Muon optimizer.
+"""
 
 import math
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping, Sequence
 from itertools import chain
-from typing import Optional
+from typing import Any
 
 import torch
 from torch import Tensor
 from torch.optim import AdamW
-from torch.optim.optimizer import (Optimizer, ParamsT,
-                                   _disable_dynamo_if_unsupported, _params_doc)
+from torch.optim.optimizer import Optimizer, ParamsT, _disable_dynamo_if_unsupported, _params_doc
 
 
 def _to_scalar(x : float | torch.Tensor):
@@ -50,8 +47,7 @@ DEFAULT_NS_STEPS = 5
 def _zeropower_via_newtonschulz(
     grad: Tensor, ns_coefficients: tuple[float, float, float], ns_steps: int, eps: float
 ) -> Tensor:
-    """
-    Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
+    """Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
     quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
     of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
     zero even beyond the point where the iteration no longer converges all the way to one everywhere
@@ -90,9 +86,10 @@ def _zeropower_via_newtonschulz(
 
 
 def _adjust_lr(
-    lr: float, adjust_lr_fn: Optional[str], param_shape: torch.Size
+    lr: float, adjust_lr_fn: str | None, param_shape: torch.Size
 ) -> float:
-    """Default learning rate adjustment used by Muon."""
+    """Default learning rate adjustment used by Muon.
+    """
     A, B = param_shape[:2]
 
     if adjust_lr_fn is None or adjust_lr_fn == "original":
@@ -104,8 +101,8 @@ def _adjust_lr(
     return lr * adjusted_ratio
 
 
-class Muon(Optimizer):
-    def __init__(
+class Muon(Optimizer): # noqa: D101
+    def __init__( # noqa: D107
         self,
         params: ParamsT,
         lr: float = 1e-3,
@@ -115,8 +112,8 @@ class Muon(Optimizer):
         ns_coefficients: tuple[float, float, float] = (DEFAULT_A, DEFAULT_B, DEFAULT_C),
         eps: float = EPS,
         ns_steps: int = DEFAULT_NS_STEPS,
-        adjust_lr_fn: Optional[str] = None,
-    ) -> None:
+        adjust_lr_fn: str | None = None,
+    ):
         if isinstance(lr, Tensor) and lr.numel() != 1:
             raise ValueError("Tensor lr must be 1-element")
         if not 0.0 <= lr:
@@ -183,7 +180,8 @@ class Muon(Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step."""
+        """Performs a single optimization step.
+        """
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -276,7 +274,7 @@ Muon.__doc__ = (
 
     For further details regarding the algorithm we refer to `Muon: An optimizer for hidden layers in neural networks`_
     and `Muon is Scalable for LLM Training`_.
-    """
+    """ # noqa: E501
     + rf"""
     Args:
         {_params_doc}. Note that Muon is an optimizer for 2D parameters of neural network hidden layers. Other
@@ -314,7 +312,7 @@ def _single_tensor_muon(
     ns_coefficients: tuple[float, float, float],
     ns_steps: int,
     eps: float,
-    adjust_lr_fn: Optional[str],
+    adjust_lr_fn: str | None,
     has_complex: bool,
 ) -> None:
     lr = _to_scalar(lr)
@@ -344,7 +342,7 @@ def muon(
     grads: list[Tensor],
     muon_momentum_bufs: list[Tensor],
     *,
-    foreach: Optional[bool] = None,
+    foreach: bool | None = None,
     lr: float,
     weight_decay: float,
     momentum: float,
@@ -352,7 +350,7 @@ def muon(
     ns_coefficients: tuple[float, float, float],
     ns_steps: int,
     eps: float,
-    adjust_lr_fn: Optional[str],
+    adjust_lr_fn: str | None,
     has_complex: bool,
 ):
     r"""Functional API that performs Muon algorithm computation.
@@ -378,8 +376,6 @@ def muon(
         adjust_lr_fn=adjust_lr_fn,
         has_complex=has_complex,
     )
-
-from typing import Any, Callable, Sequence
 
 
 # Mixed Muon-AdamW optimizer:
@@ -441,6 +437,7 @@ class MuonAuxAdamW(Optimizer):
             if not isinstance(params, Sequence) or len(params) == 0:
                 raise ValueError("param_group['params'] must be a non-empty sequence")
             base = {k: v for k, v in param_group.items() if k != "params"}
+
             def _opt_check(opt):
                 match opt:
                     case "muon":

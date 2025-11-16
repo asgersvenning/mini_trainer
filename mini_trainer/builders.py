@@ -11,28 +11,27 @@ import torch.nn as nn
 import torchvision.transforms as tt
 from torch.amp import GradScaler
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
-from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
-                              SequentialSampler)
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
 from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
 from mini_trainer.utils.augmentation import SaltAndPepper
-from mini_trainer.utils.data import (create_metadata, find_images,
-                                     get_metadata, parse_class_spec)
-from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
-                                   make_read_and_resize_fn)
+from mini_trainer.utils.data import create_metadata, get_metadata, parse_class_spec
+from mini_trainer.utils.io import CACHE_MODE, LazyDataset, guess_cache_mode, make_read_and_resize_fn
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import (EvenCrossEntropyLoss,
-                                     class_weight_distribution_regularization,
-                                     coherence_hinge_regularization,
-                                     kl_distill_ema, weight_kl_gaussian)
+from mini_trainer.utils.loss import (
+    coherence_hinge_regularization,
+    kl_distill_ema,  # noqa: F401
+    weight_kl_gaussian,
+)
 
 
-def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float:
-    lam_step = (torch.tensor(1/2).log() / half_life_steps).exp().item()
+def ema_lambda_per_update(half_life_steps : int | float, update_interval : int) -> float: # noqa: D103
+    lam_step = (torch.tensor(1 / 2).log() / half_life_steps).exp().item()
     return lam_step ** update_interval
 
-def get_dataloader(
+
+def get_dataloader( # noqa: D103
         dataset : torch.utils.data.Dataset,
         mode : str,
         batch_size : int,
@@ -57,8 +56,9 @@ def get_dataloader(
         persistent_workers=num_workers > 0
     )
 
-def get_dataset_dataloader(
-        *metadata : dict,  
+
+def get_dataset_dataloader( # noqa: D103
+        *metadata : dict,
         resize_size : int | tuple[int, int],
         modes : tuple[str, ...]=("train", "val"),
         batch_size : int=16, 
@@ -72,11 +72,20 @@ def get_dataset_dataloader(
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
-    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
-        raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
+    if not (
+        isinstance(resize_size, (tuple, list)) and
+        len(resize_size) == 2 and
+        all(map(lambda x : isinstance(x, int), resize_size))
+    ):
+        raise TypeError(
+            f'Invalid resize size passed, found {resize_size}, '
+            'but expected an integer or a tuple of two integers.'
+        )
     
     if len(metadata) != len(modes):
-        raise ValueError(f'Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!')
+        raise ValueError(
+            f'Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!'
+        )
         
     print(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
@@ -88,6 +97,7 @@ def get_dataset_dataloader(
         cache = guess_cache_mode(dataset_shape, dtype)
     
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+    
     def label_to_tensor(label : int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor):
         if isinstance(label, (int, tuple, list)):
             return torch.tensor(label, dtype=torch.long)
@@ -128,11 +138,15 @@ def get_dataset_dataloader(
         num_workers = 0
 
     pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
-    loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
+    loaders = [
+        get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device)
+        for mode, dataset in zip(modes, datasets)
+    ]
 
     return datasets, loaders
 
-def get_inference_dataloader(
+
+def get_inference_dataloader( # noqa: D103
         images : list[str],
         resize_size : int | tuple[int, int],
         batch_size : int=16, 
@@ -145,15 +159,22 @@ def get_inference_dataloader(
     ):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
-    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x : isinstance(x, int), resize_size))):
-        raise TypeError(f'Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers')
+    if not (
+        isinstance(resize_size, (tuple, list)) and 
+        len(resize_size) == 2 and 
+        all(map(lambda x : isinstance(x, int), resize_size))
+    ):
+        raise TypeError(
+            f'Invalid resize size passed, found {resize_size}, '
+            'but expected an integer or a tuple of two integers'
+        )
         
     if subsample is not None and subsample > 1:
         images = images[::subsample]
     
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
     if hook is not None:
-        reader = lambda x : hook(reader(x))
+        reader = lambda x : hook(reader(x)) # noqa: E731
     
     dataset = LazyDataset(
         func=reader, 
@@ -170,8 +191,9 @@ def get_inference_dataloader(
 
     return dataset, loader
 
-class EMATeacher(AveragedModel):
-    def __init__(
+
+class EMATeacher(AveragedModel): # noqa: D101 TODO
+    def __init__( # noqa: D107
             self, 
             enable : bool,
             total_steps : int,
@@ -203,7 +225,8 @@ class EMATeacher(AveragedModel):
             input : torch.Tensor,
             student : torch.Tensor | list[torch.Tensor]
         ):
-        """
+        """TODO.
+
         Returns:
           KL-divergence between the model EMA and the ``student`` logits.
             If the ``enabled=False``, ``0.0``.
@@ -222,9 +245,9 @@ class EMATeacher(AveragedModel):
             self.train(is_train)
         return kl_distill_ema(student, ema_logits, T=self.temperature) * dr
 
+
 class BaseBuilder:
-    """
-    The base builder used in the `mini_trainer` training pipeline.
+    """The base builder used in the `mini_trainer` training pipeline.
 
     Subclass this builder and override the relevant functions to alter the `mini_trainer` training pipeline.
 
@@ -238,17 +261,23 @@ class BaseBuilder:
         **`build_lr_scheduler`**: Builds the learning rate scheduler (shape only, magnitude defined by optimizer).
         **`build_logger`**: Builds the training diagnostics logger(s).
     """
-    def __init__(self):
+    def __init__(self): # noqa: D107
         pass
 
     @staticmethod
     def class_spec(path : str | None=None, dir : str | None=None, *args, **kwargs):
-        """
+        """TODO.
+
         Returns:
-            (extra_model_kwargs, extra_dataloader_kwargs): Extra keyword arguments for the model and dataloader building functions.
+            (extra_model_kwargs, extra_dataloader_kwargs):
+                Extra keyword arguments for the model and dataloader building functions.
         """
         if args or kwargs:
-            raise ValueError(f'`BaseBuilder.spec_model_dataloader` expects only `path` and `dir`, but got {len(args)} additional positional arguments ({args}) and {len(kwargs)} additional keyword arguments ({list(kwargs.keys())}).')
+            raise ValueError(
+                f'`BaseBuilder.spec_model_dataloader` expects only `path` and `dir`, '
+                f'but got {len(args)} additional positional arguments ({args}) '
+                f'and {len(kwargs)} additional keyword arguments ({list(kwargs.keys())}).'
+            )
         return parse_class_spec(path=path, dir=dir)
 
     @staticmethod
@@ -259,11 +288,15 @@ class BaseBuilder:
             labels : Any | None=None,
             **kwargs : Any
         ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
-        """
-        The mandatory keyword arguments depend on the class of `cls`, but are likely to be ["model_type", "weights", "device", "dtype" and "num_classes"] or a superset containing these.
+        """TODO.
+
+        The mandatory keyword arguments depend on the class of `cls`, 
+          but are likely to be ["model_type", "weights", "device", "dtype" and "num_classes"]
+          or a superset containing these.
 
         Returns:
-            (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`): The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
+            (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`):
+                The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
         """
         model, model_preprocess = cls.build(**kwargs)
         if fine_tune:
@@ -280,8 +313,7 @@ class BaseBuilder:
         head_weight_decay: float,
         backbone_weight_decay: float,
     ) -> list[dict[str, Any]]:
-        """
-        Groups all model parameters into 'head' and 'backbone'.
+        """Groups all model parameters into 'head' and 'backbone'.
 
         The 'head' is identified by the attribute name stored in `model._backbone_output_name`.
         All other parameters are considered 'backbone'.
@@ -293,13 +325,31 @@ class BaseBuilder:
         if not isinstance(head_attr_name, str):
             raise TypeError(f"`model._backbone_output_name` must be a string, got {type(head_attr_name)}.")
         if not hasattr(model, head_attr_name):
-            raise AttributeError(f"Model does not have an attribute named '{head_attr_name}' as specified by `_backbone_output_name`.")
+            raise AttributeError(
+                f'Model does not have an attribute named "{head_attr_name}" as specified by `_backbone_output_name`.'
+            )
         head_module = getattr(model, head_attr_name)
         if not isinstance(head_module, nn.Module):
-            raise TypeError(f"The attribute '{head_attr_name}' (value of `_backbone_output_name`) must be an nn.Module.")
+            raise TypeError(
+                f'The attribute "{head_attr_name}" (value of `_backbone_output_name`) must be an nn.Module.'
+            )
         
-        norm_cls = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm, nn.GroupNorm, nn.InstanceNorm1d, nn.InstanceNorm2d, nn.InstanceNorm3d)
-        norm_param_ids = set(id(p) for m in model.modules() if isinstance(m, norm_cls) for p in m.parameters(recurse=False))
+        norm_cls = (
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.InstanceNorm1d,
+            nn.InstanceNorm2d,
+            nn.InstanceNorm3d,
+            nn.SyncBatchNorm
+        )
+        norm_param_ids = set(
+            id(p) 
+            for m in model.modules()
+            if isinstance(m, norm_cls) for p in m.parameters(recurse=False)
+        )
         head_module_param_ids = set(id(p) for p in head_module.parameters())
 
         param_groups = {
@@ -344,7 +394,11 @@ class BaseBuilder:
             n_params += 1
             param_groups[grp_name]["params"].append(p)
         
-        param_groups = [grp for k, grp in param_groups.items() if len(grp["params"]) > 0 and grp.update({"name" : k}) is None]
+        param_groups = [
+            grp
+            for k, grp in param_groups.items()
+            if len(grp["params"]) > 0 and grp.update({"name" : k}) is None
+        ]
         if len(param_groups) == 0 and n_params > 0:
             raise RuntimeError(f'No parameter groups detected for model with {n_params} trainable parameters!')
 
@@ -358,7 +412,7 @@ class BaseBuilder:
             preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
-            dtype = torch.dtype,
+            dtype : torch.dtype,
             data_index : str | None=None,
             splits : tuple[str, ...]=("train", "val"),
             num_workers : int | None=None,
@@ -371,7 +425,8 @@ class BaseBuilder:
             hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
             **kwargs
         ):
-        """
+        """TODO.
+
         Returns:
             (train_label_cls, train_loader, validation_loader): The training and validation dataloaders.
         """
@@ -422,7 +477,7 @@ class BaseBuilder:
             preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
-            dtype = torch.dtype,
+            dtype : torch.dtype,
             data_index : str | None=None,
             splits : tuple[str, ...]=("train", "val"),
             num_workers : int | None=None,
@@ -449,8 +504,8 @@ class BaseBuilder:
 
     @staticmethod
     def build_augmentation(dtype : torch.dtype):
-        """
-        Returns a training augmentation pipeline for normalized tensors.
+        """Returns a training augmentation pipeline for normalized tensors.
+        
         Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
 
         Returns:
@@ -480,8 +535,7 @@ class BaseBuilder:
         backbone_weight_decay : float | None=None,
         **optimizer_kwargs # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
-        """
-        Builds an optimizer with separate parameter groups for head and backbone.
+        """Builds an optimizer with separate parameter groups for head and backbone.
 
         All parameters of the model are assigned to groups.
         Requires `model` to have `_backbone_output_name` attribute.
@@ -502,7 +556,9 @@ class BaseBuilder:
         if not param_groups and not list(model.parameters()): # Model has no parameters
             final_params_for_optimizer = [] # Optimizer on empty list
         elif not param_groups and list(model.parameters()): # Should be caught by group_parameters warning.
-             raise ValueError("Model has parameters, but group_parameters returned no groups. This indicates an issue.")
+            raise ValueError(
+                'Model has parameters, but group_parameters returned no groups. This indicates an issue.'
+            )
         else:
             final_params_for_optimizer = param_groups
         
@@ -510,8 +566,12 @@ class BaseBuilder:
         if 'lr' not in optimizer_kwargs:
             optimizer_kwargs['lr'] = head_lr # A sensible default
 
-        ## (DISABLED) Clip gradients during backprop (prevent gradient explosion)
-        # backbone_params : list[nn.Parameter] = [p for pg in param_groups if "backbone" in pg["name"] for p in pg["params"]]
+        # (DISABLED) Clip gradients during backprop (prevent gradient explosion)
+        # backbone_params : list[nn.Parameter] = [
+        #     p
+        #     for pg in param_groups
+        #     if "backbone" in pg["name"] for p in pg["params"]
+        # ]
         # for p in backbone_params:
         #     if p.requires_grad:
         #         p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
@@ -539,22 +599,26 @@ class BaseBuilder:
             use_buffers : bool=True,
             **kwargs           
         ):
-        """
-        Produces a Exponential Moving Average (EMA) copy
+        """Produces a Exponential Moving Average (EMA) copy
         of the provided model, with a decay rate derived
         from the given half-life in fractional epochs.
 
         Args:
+            enable: Flag to enable EMA.
             model: The model to track.
             epochs: Total number of epochs that ``model`` is trained for.
             steps_per_epoch: Number of steps per epoch (training phase only).
+            device: Device of the model. TODO: This should be inferred from the model.
             update_rate: How often the EMA is updated with a snapshot of the ``model`` weights.
             epoch_halflife: Number of fraction epochs after which the EMA is only 50% of what it was:
                 EMA(t + epoch_halflife) = EMA(t) * 0.5 + X
-            decay_rate: If specified, manually overrides the decay rate calculated from the `update_rate` and half-life.
-            distill_start: When EMA distillation/self-supervision starts in fractional epochs, defaults to two epochs or a maximum of 5000 steps (batches).
+            decay_rate: If specified, manually overrides the decay rate 
+                calculated from the `update_rate` and half-life.
+            distill_start: When EMA distillation/self-supervision starts in fractional epochs.
+                Defaults to two epochs or a maximum of 5000 steps (batches).
             use_buffers: Passed to ``torch.optim.swa_utils.AveragedModel`` (default=True).
-            **kwargs: Additional arguments passed to ``mini_trainer.builders.EMATeacher``/``torch.optim.swa_utils.AveragedModel``.
+            **kwargs: Additional arguments passed to ``mini_trainer.builders.EMATeacher``
+                or ``torch.optim.swa_utils.AveragedModel``.
                 
         Returns:
             The EMA copy tracking the original model.
@@ -562,11 +626,14 @@ class BaseBuilder:
         default_step_halflife = min(epochs * steps_per_epoch, 5000)
         if decay_rate is None:
             if epoch_halflife is None:
-                step_halflife = (epochs * steps_per_epoch)**(1/2) / 2
+                step_halflife = (epochs * steps_per_epoch)**(1 / 2) / 2
                 epoch_halflife = step_halflife / steps_per_epoch
                 default_ratio = step_halflife / default_step_halflife
-                if not (1/5 < default_ratio < 5):
-                    warnings.warn(f'EMA decay rate half-life is very low/high: {epoch_halflife:.2f} epochs, which is {default_ratio:.1f}X the default ({default_step_halflife/steps_per_epoch:.2f} epochs).')
+                if not ((1 / 5) < default_ratio < 5):
+                    warnings.warn(
+                        f'EMA decay rate half-life is very low/high: {epoch_halflife:.2f} epochs, which '
+                        f'is {default_ratio:.1f}X the default ({default_step_halflife / steps_per_epoch:.2f} epochs).'
+                    )
             decay_rate = ema_lambda_per_update(epoch_halflife * steps_per_epoch, update_rate)
         if distill_start is None:
             distill_start = min(default_step_halflife, 2 * steps_per_epoch)
@@ -574,7 +641,7 @@ class BaseBuilder:
             distill_start = round(distill_start * steps_per_epoch)
         return EMATeacher(
             enable=enable,
-            total_steps=epochs*steps_per_epoch,
+            total_steps=epochs * steps_per_epoch,
             distill_start=distill_start,
             update_rate=update_rate,
             model=model,
@@ -594,7 +661,8 @@ class BaseBuilder:
             dtype : torch.dtype | None=None,
             **kwargs
         ):
-        """
+        """TODO.
+
         Returns:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
@@ -612,6 +680,7 @@ class BaseBuilder:
         strength = float(strength)
         if strength == 0.0:
             return lambda _: 0.
+        
         def func(model): 
             llw = last_layer_weights(model)
             # return strength * class_weight_distribution_regularization(llw)
@@ -627,18 +696,23 @@ class BaseBuilder:
             min_factor : float = 1e-3,
             start_factor : float = 1e-4
         ) -> torch.optim.lr_scheduler.LRScheduler:
-        """
-        Only the *shape* of the LR curve is defined here; the *magnitude* should be set in the optimizer. I suggest using `torch.optim.lr_scheduler.LambdaLR`.
+        """Only the *shape* of the LR curve is defined here; the *magnitude* should be set in the optimizer.
+        I suggest using `torch.optim.lr_scheduler.LambdaLR`.
 
         Returns:
             The learning rate scheduler (shape only).
         """
         warmup_steps = round(warmup_epochs * steps_per_epoch)
-        warmup_proportion = warmup_epochs / epochs
+        warmup_proportion = warmup_epochs / epochs # noqa: F841
         head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
         
         # backbone_warmup_steps = round(warmup_steps * (1 - warmup_proportion))
-        # _backbone_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch - warmup_steps, backbone_warmup_steps, start_factor, min_factor)
+        # _backbone_schedule = cosine_schedule_with_warmup(
+        #     epochs * steps_per_epoch - warmup_steps,
+        #     backbone_warmup_steps,
+        #     start_factor,
+        #     min_factor
+        # )
         # def backbone_schedule(step : int):
         #     if step < warmup_steps:
         #         return start_factor
@@ -657,8 +731,9 @@ class BaseBuilder:
     def build_logger(**kwargs):
         return MultiLogger(**kwargs)
 
-class AutoEmbedder(nn.Module):
-    def __init__(self, original_model : Classifier):
+
+class AutoEmbedder(nn.Module): # noqa: D101 TODO
+    def __init__(self, original_model : Classifier): # noqa: D107
         super().__init__()
         self.original_model = original_model
         self.embeddings = None

@@ -7,14 +7,14 @@ from torch import nn as nn
 from mini_trainer.classifier import Classifier
 
 
-def shape_resize(shape : torch.Size | list[int], dim : int, value : int):
+def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
     shape = list(shape)
     shape[dim] = value
     return shape
 
+
 def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : int=1):
-    """
-    Aggregates the elements of the ``input`` tensor with an index along a dimension using logsumexp.
+    """Aggregates the elements of the ``input`` tensor with an index along a dimension using logsumexp.
     
     ```
     out[j][i] = input[j][index == i].logsumexp()
@@ -31,17 +31,21 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
     Returns:
         output: Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
     """
-    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max() + 1)) # Scaffold tensor - same size as output
+    # Scaffold tensor - same size as output
+    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max() + 1))
     index = index.expand_as(input)
     c = z.scatter_reduce(dim=dim, index=index, src=input, reduce="amax", include_self=False)
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
 
-class HierarchicalClassifier(Classifier):
+
+class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def __init__(self, sparse_masks : list[torch.Tensor] | None=None, masks : None=None, **kwargs):
-        """
+        """TODO.
+
         Args:
             sparse_masks: Long-Tensors with parent indices for each element in layers n-1.
             masks: DEPRECATED! Dense child-parent "log-adjacency" matrices.
+            kwargs: passed to `mini_trainer.classifier.Classifier`.
         """
         super().__init__(**kwargs)
 
@@ -79,8 +83,8 @@ class HierarchicalClassifier(Classifier):
         return self.hierarchy(super().forward(x).log_softmax(dim=1))
 
 
-class ConditionalClassifier(HierarchicalClassifier):
-    def __init__(self, normalized : bool=True, **kwargs):
+class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
+    def __init__(self, normalized : bool=True, **kwargs): # noqa: D107
         super().__init__(normalized=normalized, **kwargs)
         # Conditional layers
         layers : list[nn.Linear] = []
@@ -110,6 +114,6 @@ class ConditionalClassifier(HierarchicalClassifier):
         return C
 
 
-class IndependentClassifier(ConditionalClassifier):
+class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
     def forward(self, x):
         return super().marginals(super().preclassification(x))

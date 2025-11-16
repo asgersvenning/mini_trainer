@@ -8,16 +8,20 @@ from typing import cast
 import numpy as np
 
 from mini_trainer.utils.io import is_image
-from mini_trainer.utils.parquet import (parquet_to_class_spec,
-                                        get_metadata_from_parquet)
+from mini_trainer.utils.parquet import get_metadata_from_parquet, parquet_to_class_spec
 
 
 def find_images(root : str):
+    """Find all images within root.
+    """
     paths = glob(os.path.join(root, "**"), recursive=True)
     check = is_image(paths)
     return [p for p, f in zip(paths, check) if f]
 
+
 def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
+    """Find images in source and possibly create training metadata.
+    """
     metadata = labels = images = None
     if os.path.isfile(src):
         if src.endswith(".parquet"):
@@ -27,7 +31,10 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
     elif os.path.isdir(src):
         contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
         if contains_only_dirs:
-            metadata = create_metadata(src, **{**kwargs, **{"train_proportion" : 0, "val_proportion" : 0, "labels" : None}})
+            metadata = create_metadata(
+                src, 
+                **{**kwargs, **{"train_proportion" : 0, "val_proportion" : 0, "labels" : None}}
+            )
         else:
             images = find_images(src)
     else:
@@ -37,6 +44,7 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
         labels = [c for c, s in zip(metadata["label"], metadata["split"]) if s == "test"]
     assert images is not None
     return labels, images
+
 
 # TODO: Unfortunately, this function has some functionality for the hierarchical submodule
 # even though the core mini_trainer module and the hierarchical submodule are
@@ -49,6 +57,10 @@ def create_metadata(
         val_proportion : float=0.5,
         **kwargs
     ):
+    """Create training metadata.
+    
+    TODO: This function has too many responsibilities, and crosses semantic boundaries.
+    """
     if directory.endswith(".parquet"):
         return get_metadata_from_parquet(directory, cls2idx=cls2idx)
     metadata = {
@@ -61,7 +73,7 @@ def create_metadata(
         # If no labels are supplied we just assume that the images are put into
         # folders named after the class
         if isinstance(cls2idx.get("0", None), dict):
-            from mini_trainer.hierarchical.gbif import create_taxonomy, labels_from_taxonomy, is_taxonomical_cls2idx
+            from mini_trainer.hierarchical.gbif import create_taxonomy, is_taxonomical_cls2idx, labels_from_taxonomy
             if not is_taxonomical_cls2idx(cls2idx):
                 raise ValueError('Hierarchical class index passed without labels and is not taxonomical.')
             dirs = [
@@ -101,24 +113,33 @@ def create_metadata(
             metadata["label"].append(cls)
     return metadata
 
+
 def get_metadata(
         path : str, 
         splits : tuple[str, ...]=("train", "validation"),
         check_integrity : bool=False
     ) -> tuple[dict[str, list[str | int | list[int]]], dict[str, list[str | int | list[int]]]]:
-        if not os.path.exists(path):
-            raise FileNotFoundError(f'Meta data file ({path}) for training split not found. Please provide a JSON with the following keys: "path", "class", "split".')
-        with open(path, "rb") as f:
-            metadata = {k : np.array(v) for k, v in json.load(f).items()}
-        if check_integrity:
-            integrity_mask = np.array(is_image(metadata["path"]))
-            metadata = {k : v[integrity_mask] for k, v in metadata.items()}
-        return metadata
+    """Load training metadata.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f'Meta data file ({path}) for training split not found. '
+            'Please provide a JSON with the following keys: "path", "class", "split".'
+        )
+    with open(path, "rb") as f:
+        metadata = {k : np.array(v) for k, v in json.load(f).items()}
+    if check_integrity:
+        integrity_mask = np.array(is_image(metadata["path"]))
+        metadata = {k : v[integrity_mask] for k, v in metadata.items()}
+    return metadata
+
 
 def parse_class_spec(
         path : str | None=None, 
         dir : str | None=None
     ) -> dict[str, dict[str, int]]:
+    """Create or load (flat) class specification.
+    """
     if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):
             # Special: If `dir` is a parquet, in this case we assume
@@ -126,9 +147,20 @@ def parse_class_spec(
             if isinstance(dir, str) and dir.endswith(".parquet"):
                 retval = parquet_to_class_spec(dir)
             else:
-                raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not \'{dir}\'.')
+                raise TypeError(
+                    'If `path` is not the path to a valid file, '
+                    f'`dir` must be a valid directory, not "{dir}".'
+                )
         else:
-            cls2idx = {cls : i for i, cls in enumerate(sorted([f for f in map(os.path.basename, os.listdir(dir)) if os.path.isdir(os.path.join(dir, f))]))}
+            cls2idx = {
+                cls : i
+                for i, cls in enumerate(sorted(
+                    filter(
+                        lambda f : os.path.isdir(os.path.join(dir, f)), 
+                        map(os.path.basename, os.listdir(dir))
+                    )
+                ))
+            }
             retval = {"cls2idx" : cls2idx, "num_classes" : len(cls2idx)}
         if path is not None:
             with open(path, "w") as f:

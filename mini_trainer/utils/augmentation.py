@@ -1,6 +1,6 @@
 import os
-from random import sample
 from collections.abc import Callable
+from random import sample
 
 import torch
 from matplotlib import pyplot as plt
@@ -14,6 +14,8 @@ def debug_augmentation(
         output_dir : str | None=None,
         strict : bool=True
     ):
+    """Helper to debug augmentation pipeline.
+    """
     if output_dir is None:
         return
     convert2fp32 = make_convert_dtype(torch.float32)
@@ -45,14 +47,9 @@ def debug_augmentation(
         return False
     return True
 
-# SUPPORTED_IDTYPES = [
-#     torch.uint8, torch.uint16, torch.uint32, 
-#     torch.int8, torch.int16, torch.int32
-# ]
-# IDTYPE_MAX_VAL = {dtype : torch.iinfo(dtype).max for dtype in SUPPORTED_IDTYPES}
 
 @torch.jit.script
-def iinfo_maxval_static(dtype : torch.dtype):
+def iinfo_maxval_static(dtype : torch.dtype): # noqa: D103
     if dtype == torch.uint8:
         return 255
     elif dtype == torch.uint16:
@@ -67,8 +64,11 @@ def iinfo_maxval_static(dtype : torch.dtype):
         return 2147483647
     raise ValueError(f'Unsupported integer max-value for {dtype}.')
 
+
 @torch.jit.script
 def salt_and_pepper(img : torch.Tensor, proportion : tuple[float, float]=(0, 0.5), probability : float=1):
+    """Functional salt and pepper augmentation implementation.
+    """
     if torch.rand((1, )).item() > probability:
         return img
     p = torch.rand((1, )).item() * (proportion[1] - proportion[0]) + proportion[0]
@@ -81,14 +81,17 @@ def salt_and_pepper(img : torch.Tensor, proportion : tuple[float, float]=(0, 0.5
     m = r < p
     if m.sum().item() == 0:
         return img
-    s = r < (p/2)
+    s = r < (p / 2)
     img = img.clone()
     img.masked_fill_(m & s, 0)
     img.masked_fill_(m & ~s, 1 if img.is_floating_point() else iinfo_maxval_static(img.dtype))
     return img
 
+
 class SaltAndPepper(torch.nn.Module):
-    def __init__(self, proportion : tuple[float, float]=(0.05, 0.33), probability : float=0.5):
+    """Salt and pepper augmentation module.
+    """
+    def __init__(self, proportion : tuple[float, float]=(0.05, 0.33), probability : float=0.5): # noqa: D107
         super().__init__()
         self.proportion = proportion
         self.probability = probability

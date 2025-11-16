@@ -2,7 +2,6 @@ import json
 import os
 import re
 from collections import OrderedDict
-from typing import cast
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -20,11 +19,13 @@ TAXONOMY_KEYS = (
     "phylum",
     "kingdom"
 )
-
 cache = Cache(os.path.expanduser('~/.cache/nrs'))
 
-@cache.memoize(expire=7*86400)
+
+@cache.memoize(expire=7 * 86400) # One week
 def retrive_request(req : str):
+    """Retrieve a composed HTTPS request.
+    """
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
     with urlopen(req) as resp:
@@ -32,11 +33,11 @@ def retrive_request(req : str):
             raise RuntimeError(f'Unable to resolve request, received status {resp.status} from {req}.')
         return json.load(resp)
 
+
 def resolve_id(id : str | int):
-    """
-    Resolves a GBIF id to the accepted GBIF id and scientific name
-    for all taxonomic levels:
-    * ``[species, genus, family, order, class, phylum, kingdom]`` 
+    """Resolves a GBIF id to the accepted GBIF id and scientific name for all taxonomic levels.
+    
+    * `[species, genus, family, order, class, phylum, kingdom]` 
     
     Args:
         id: GBIF species ID.
@@ -55,9 +56,13 @@ def resolve_id(id : str | int):
         raise e
     return clean_data
 
+
 SPACE_PATTERN = re.compile(r'[\s_]+')
 
+
 def parse_name(name : str | None, user_author : str | None=None):
+    """Parse taxa name and author from scientific name-string.
+    """
     if name is None:
         return name, user_author
     name = re.sub(SPACE_PATTERN, " ", name)
@@ -70,13 +75,15 @@ def parse_name(name : str | None, user_author : str | None=None):
     author = " ".join(parts[2:])
     return name, author
 
+
 def name_to_id(
         name : str, 
         author : str | None=None, 
         rank_contains : str | None=None, 
         threshold : int=0
     ) -> tuple[int, str, int]:
-    """
+    """Convert taxa name to GBIF ID.
+    
     Returns:
         (key, rank, confidence): Returns the matched GBIF `usageKey` and `rank`, and the matching confidence.
     """
@@ -88,8 +95,16 @@ def name_to_id(
         data = retrive_request(req)
         id, rank, conf = (data.get(k, None) for k in ["usageKey", "rank", "confidence"])
         if rank == "GENUS" and conf >= threshold:
-            return name_to_id(" ".join([data["genus"], name.split(" ")[1]]), rank_contains=rank_contains, threshold=threshold)
-        if not (isinstance(id, int) and isinstance(rank, str) and isinstance(conf, int)) or (rank_contains is not None and rank_contains not in rank) or conf < threshold:
+            return name_to_id(
+                " ".join([data["genus"], name.split(" ")[1]]),
+                rank_contains=rank_contains,
+                threshold=threshold
+            )
+        if (
+            not (isinstance(id, int) and isinstance(rank, str) and isinstance(conf, int)) or 
+            (rank_contains is not None and rank_contains not in rank) or 
+            conf < threshold
+        ):
             raise RuntimeError(f'Unable to properly resolve {name} using "{req}" got {id=} {rank=} {conf=}:\n{data}') 
         return id, rank, conf
     except Exception as e:
@@ -98,7 +113,11 @@ def name_to_id(
         if len(data) == 0 or (new_name := parse_name(data[0].get("scientificName", None))[0]) is None:
             e.add_note(f'Request: {req}')
             raise e
-        if name == new_name and (id := data[0]["speciesKey"]) and (rank_contains is not None and rank_contains in (rank := data[0].get("rank", "UNKNOWN"))):
+        if (
+            name == new_name and 
+            (id := data[0]["speciesKey"]) and 
+            (rank_contains is not None and rank_contains in (rank := data[0].get("rank", "UNKNOWN")))
+        ):
             if isinstance(id, str):
                 id = id.strip()
                 if id.isdigit():
@@ -107,16 +126,21 @@ def name_to_id(
             assert isinstance(rank, str)
             return id, rank, threshold
         return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold)
+
     
 @multithread_vectorize(desc="Resolving taxa...")
-def resolve_name_or_id(name_or_id : str | int):
+def resolve_name_or_id(name_or_id : str | int): # noqa: D103
     name_or_id = name_or_id.strip()
     if isinstance(name_or_id, int) or name_or_id.isdigit():
         return resolve_id(name_or_id)
     id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
     return resolve_id(id)
 
-def create_taxonomy(names_or_ids : list[str], levels : str | int | tuple[str | int, ...] | list[str | int]="family"):
+
+def create_taxonomy( # noqa: D103
+        names_or_ids : list[str],
+        levels : str | int | tuple[str | int, ...] | list[str | int]="family"
+    ):
     # _levels = len(TAXONOMY_KEYS) - 1
     if isinstance(levels, str):
         _levels = TAXONOMY_KEYS.index(levels.strip().lower())
@@ -132,13 +156,18 @@ def create_taxonomy(names_or_ids : list[str], levels : str | int | tuple[str | i
     _levels = list(range(_levels + 1)) if isinstance(_levels, int) else _levels
     level_strs = [TAXONOMY_KEYS[lvl] for lvl in sorted(_levels)]
     taxs = resolve_name_or_id(names_or_ids)
-    return OrderedDict([(orig, filter_ordered_dict(tax, level_strs)) for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x : [v[1] for v in x[1].values()])])
+    return OrderedDict([
+        (orig, filter_ordered_dict(tax, level_strs))
+        for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x : [v[1] for v in x[1].values()])
+    ])
 
-def labels_from_taxonomy(tax : OrderedDict[str, OrderedDict[str, tuple[str, ...]]]):
+
+def labels_from_taxonomy(tax : OrderedDict[str, OrderedDict[str, tuple[str, ...]]]): # noqa: D103
     return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])
 
-def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]):
-    nlvl = set([len(l) for l in labels.values()])
+
+def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]): # noqa: D103
+    nlvl = set([len(lab) for lab in labels.values()])
     if len(nlvl) != 1:
         raise RuntimeError('Varying hierarchy levels found in image directory structure:', list(sorted(nlvl)))
     nlvl = list(nlvl)[0]
@@ -152,12 +181,16 @@ def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]):
             cls2idx[str(lvl)][cls] = len(classes[str(lvl)]) - 1
     return cls2idx
 
+
 def _keys_str_int(d : dict):
     return all([isinstance(k, str) and k.isdigit() for k in d.keys()])
+
+
 def _values_int(d : dict):
     return all([isinstance(v, int) for v in d.values()])
 
-def is_taxonomical_cls2idx(cls2idx):
+
+def is_taxonomical_cls2idx(cls2idx): # noqa: D103
     if not isinstance(cls2idx, dict):
         return False
     if len(cls2idx) == 0:

@@ -4,15 +4,14 @@ import os
 import re
 import warnings
 from copy import deepcopy
-from functools import reduce
 from typing import Any
 
 import torch
 
 
 def _nullify(d: dict[str, Any]):
-    """
-    Recursively replaces all values in a dictionary with None.
+    """Recursively replaces all values in a dictionary with None.
+    
     Recurses on nested dictionaries. 
     """
     for k, v in list(d.items()):
@@ -24,8 +23,7 @@ def _nullify(d: dict[str, Any]):
 
 
 def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
-    """
-    Recursively drop keys with value ``None`` and empty dicts.
+    """Recursively drop keys with value ``None`` and empty dicts.
     """
     out: dict[str, Any] = {}
     for k, v in d.items():
@@ -39,13 +37,13 @@ def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
 def _stringify_types(obj: Any) -> Any:
     """Recursively convert values to YAML/JSON-friendly primitives.
 
-    - torch.device -> str
-    - torch.dtype -> canonical lowercase str without 'torch.' prefix
-    - type/class -> 'module.QualName'
-    - sequences/mappings -> converted recursively
-    - arbitrary objects -> class path string
+    Rules:
+        - torch.device -> str
+        - torch.dtype -> canonical lowercase str without 'torch.' prefix
+        - type/class -> 'module.QualName'
+        - sequences/mappings -> converted recursively
+        - arbitrary objects -> class path string
     """
-
     if isinstance(obj, dict):
         return {k: _stringify_types(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set)):
@@ -68,8 +66,7 @@ def dump_resolved_config(
     local_vars: dict[str, Any],
     overrides: dict[str, Any] | None = None,
 ) -> None:
-    """
-    Dump a YAML (or JSON fallback) config derived from function parameters.
+    """Dump a YAML (or JSON fallback) config derived from function parameters.
 
     Args:
         output_dir: Destination directory for the config file.
@@ -115,10 +112,10 @@ def dump_resolved_config(
         raise SystemExit(
             f"YAML dump failed ({e!s}). Wrote JSON fallback at: {path_json}"
         )
-    
+
+
 def save_yaml_template(path: str) -> str:
-    """
-    Write a YAML template for the given function to "path".
+    """Write a YAML template for the given function to "path".
 
     Returns the absolute path written.
     """
@@ -139,8 +136,7 @@ def save_yaml_template(path: str) -> str:
 
 
 def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
-    """
-    Load a YAML config file into a dict of keyword arguments.
+    """Load a YAML config file into a dict of keyword arguments.
 
     Supports optional "builder" as an import path string.
     """
@@ -191,13 +187,14 @@ def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
         if os.path.exists(weight_dir) and os.path.exists(last_checkpoint):
             out["checkpoint"] = str(last_checkpoint)
         else:
-            raise FileNotFoundError(f'Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.')
+            raise FileNotFoundError(
+                f'Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.'
+            )
     return out
 
 
 def defaults_from_function(fn: Any) -> dict[str, Any]:
-    """
-    Return a dict mapping parameter names to their default values for ``fn``.
+    """Return a dict mapping parameter names to their default values for ``fn``.
 
     The structure matches the function signature exactly and preserves types
     (e.g., the ``builder`` remains a class/type if that is the default).
@@ -215,8 +212,7 @@ def defaults_from_function(fn: Any) -> dict[str, Any]:
 
 
 def merge_dicts(*dicts: dict[str, Any]) -> dict[str, Any]:
-    """
-    Recursively merge multiple dictionaries left-to-right. Later dicts win.
+    """Recursively merge multiple dictionaries left-to-right. Later dicts win.
     """
     out: dict[str, Any] = {}
     for d in dicts:
@@ -229,14 +225,14 @@ def merge_dicts(*dicts: dict[str, Any]) -> dict[str, Any]:
 
 
 def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
-    """
-    Map flat CLI args into the nested dict based on the keys.
+    """Map flat CLI args into the nested dict based on the keys.
 
     Rules:
     - Skip keys with value ``None`` (treated as not provided).
     - (A) dot(s) (".") in the key specify nested values (e.g. ``{"A.B.C" : 1}`` -> ``{"A" : {"B" : {"C" : 1}}}``)
     """
     out = {}
+    
     # Helpers for setting nested values
     def _inset(d : dict, loc : list[str], value : Any):
         for k in loc[:-1]:

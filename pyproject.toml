@@ -46,12 +46,13 @@ mt_predict = "mini_trainer.predict:run"
 
 [tool.ruff]
 target-version = "py312"
+line-length = 120
 
 [tool.ruff.lint]
 # Enable core checks, imports, pyupgrade, and pydocstyle
 select = ["E", "F", "I", "UP", "D"]
 # Prefer multi-line docstring summaries (D213); ignore D200 (summary must be on first line)
-ignore = ["D200"]
+ignore = ["D100", "D102", "D105", "D200", "E203", "D205", "E231", "E252", "E261", "UP015"]
 preview = true
 
 [tool.ruff.lint.pydocstyle]
@@ -64,3 +65,8 @@ pre-summary-newline = true
 # Leave lines unwrapped; let editors/linters handle wrapping
 wrap-summaries = 0
 wrap-descriptions = 0
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.5",
+]
