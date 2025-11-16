@@ -58,7 +58,7 @@ def get_metadata_from_parquet(
         path : str, 
         cls2idx : dict[str, int | dict[str, int]],
         **kwargs
-    ) -> dict[Literal['split', 'class', 'path'], list[str | int]]:
+    ) -> dict[Literal['split', 'class', 'path', 'label'], list[str | int]]:
     """
     This functions retrieves the metadata index for use with minitrainer.
     

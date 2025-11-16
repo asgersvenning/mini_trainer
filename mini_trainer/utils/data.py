@@ -63,7 +63,7 @@ def create_metadata(
         if isinstance(cls2idx.get("0", None), dict):
             from mini_trainer.hierarchical.gbif import create_taxonomy, labels_from_taxonomy, is_taxonomical_cls2idx
             if not is_taxonomical_cls2idx(cls2idx):
-                raise ValueError(f'Hierarchical class index passed without labels and is not taxonomical.')
+                raise ValueError('Hierarchical class index passed without labels and is not taxonomical.')
             dirs = [
                 name for name in os.listdir(directory) 
                 if os.path.isdir(subdir := os.path.join(directory, name))

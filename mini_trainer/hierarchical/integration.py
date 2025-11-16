@@ -2,6 +2,7 @@ import json
 import os
 from collections import OrderedDict
 from collections.abc import Callable
+from itertools import repeat
 from typing import Iterable
 
 import torch
@@ -308,10 +309,11 @@ class HierarchicalResultCollector(BaseResultCollector):
         data = {
             k : list() for k in SCHEMA
         }
-        for i, (path, preds, confs) in enumerate(zip(self.paths, self.preds, self.confs)):
-            labels = getattr(self, "labels")[i] if hasattr(self, "labels") else [-1] * self._levels
+        labels = getattr(self, "labels", repeat([-1] * self._levels))
+        for i, (path, preds, labs, confs) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
+            
             for level in range(self._levels):
-                label, pred, conf = labels[level], preds[level], confs[level]
+                label, pred, conf = labs[level], preds[level], confs[level]
                 do_predict = int(conf >= threshold)
                 row = {
                     "instance_id" : i,

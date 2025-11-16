@@ -282,20 +282,20 @@ class BaseResultCollector(_ResultsCollector):
         data = {
             k : list() for k in SCHEMA
         }
-        for i, (path, pred, conf) in enumerate(zip(self.paths, self.preds, self.confs)):
-            label = getattr(self, "labels")[i] if hasattr(self, "labels") else -1
+        labels = getattr(self, "labels", repeat(-1))
+        for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
             do_predict = int(conf >= threshold)
             row = {
                 "instance_id" : i,
                 "filename" : path,
                 "level" : 0,
-                "label" : label,
+                "label" : lab,
                 "prediction" : pred,
                 "confidence" : conf,
                 "threshold" : float(threshold),
-                "known_label" : int(label in self.cls2idx),
+                "known_label" : int(lab in self.cls2idx),
                 "prediction_made" : do_predict,
-                "correct" : do_predict if do_predict == 0 else 1 if pred == label else -1
+                "correct" : do_predict if do_predict == 0 else 1 if pred == lab else -1
             }
             for k, v in row.items():
                 assert isinstance(v, SCHEMA.get(k, "None")), f'Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, "None")}'
