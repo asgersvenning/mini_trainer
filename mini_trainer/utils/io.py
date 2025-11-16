@@ -11,12 +11,10 @@ from typing import Any
 
 import numpy as np
 import torch
-import zarr
 from PIL import Image
 from torchvision.io import ImageReadMode, read_image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
-from zarr.storage import LocalStore
 
 from mini_trainer import TQDM
 from mini_trainer.utils import (make_convert_dtype, memory_proportion,
@@ -273,6 +271,12 @@ class LazyDataset(torch.utils.data.Dataset):
                 raise ValueError(f"Invalid cache mode '{self._cache_mode}'. Choose from [None, 'disk', 'cpu'].")
 
     def _cache_disk_zarr(self):
+        try:
+            import zarr
+            from zarr.storage import LocalStore
+        except ImportError as e:
+            e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
+            raise e
         print(f"Using Zarr disk cache at: {self.cache_path}")
         if os.path.exists(self.cache_path):
             print("Found existing Zarr cache.")
