@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
-from torchvision.io import ImageReadMode, read_image
+from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
@@ -131,36 +131,17 @@ def make_read_and_resize_fn(
     w, h = size
 
     def read_and_resize(path: str) -> torch.Tensor:
-        img = read_image(path, mode=ImageReadMode.RGB)               # uint8 [C,H,W]
+        try:
+            img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False) # uint8 [C,H,W]
+        except Exception as e:
+            e.add_note(f'Image path: {path}')
+            raise e
         img = TF.resize(img, size=(h, w), interpolation=interp, antialias=antialias)
         if img.dtype != dtype:
             img = converter(img)
         return img.to(device)
 
     return read_and_resize
-
-# def make_read_and_resize_fn(
-#     size: tuple[int, int],
-#     device: torch.device,
-#     dtype: torch.dtype | str,
-#     interpolation=Image.Resampling.NEAREST,
-#     **kwargs
-# ):
-#     if isinstance(dtype, str):
-#         dtype = getattr(torch, dtype, None)
-#         if not isinstance(dtype, torch.dtype):
-#             raise ValueError(f'Unknown dtype "{dtype}"')
-#
-#     converter = make_convert_dtype(dtype)
-#
-#     def read_and_resize(path: str) -> torch.Tensor:
-#         img = Image.open(path).convert("RGB").resize(size, interpolation)
-#         tensor = TF.pil_to_tensor(img)  # returns torch.uint8 [C,H,W]
-#         if tensor.dtype != dtype:
-#             tensor = converter(tensor)
-#         return tensor.to(device)
-#
-#     return read_and_resize
 
 
 def _normalize_to_tuple(data):

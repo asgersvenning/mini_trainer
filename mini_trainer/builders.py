@@ -694,7 +694,8 @@ class BaseBuilder:
             warmup_epochs : float,
             steps_per_epoch : int,
             min_factor : float = 1e-3,
-            start_factor : float = 1e-4
+            start_factor : float = 1e-4,
+            pretrained_backbone : bool=True
         ) -> torch.optim.lr_scheduler.LRScheduler:
         """Only the *shape* of the LR curve is defined here; the *magnitude* should be set in the optimizer.
         I suggest using `torch.optim.lr_scheduler.LambdaLR`.
@@ -703,24 +704,25 @@ class BaseBuilder:
             The learning rate scheduler (shape only).
         """
         warmup_steps = round(warmup_epochs * steps_per_epoch)
-        warmup_proportion = warmup_epochs / epochs # noqa: F841
         head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
         
-        # backbone_warmup_steps = round(warmup_steps * (1 - warmup_proportion))
-        # _backbone_schedule = cosine_schedule_with_warmup(
-        #     epochs * steps_per_epoch - warmup_steps,
-        #     backbone_warmup_steps,
-        #     start_factor,
-        #     min_factor
-        # )
-        # def backbone_schedule(step : int):
-        #     if step < warmup_steps:
-        #         return start_factor
-        #     return _backbone_schedule(step - warmup_steps)
+        if pretrained_backbone:
+            def backbone_schedule(step: int):
+                if step < warmup_steps:
+                    return 0.0  # Completely frozen during head warmup
+                
+                # Re-align step count so backbone starts cosine decay from index 0
+                # after warmup finishes
+                return cosine_schedule_with_warmup(
+                    epochs * steps_per_epoch - warmup_steps, # Backbone trains for fewer total steps
+                    0, 1.0, min_factor
+                )(step - warmup_steps)
+        else:
+            backbone_schedule = head_schedule
         
-        lr_lambdas = [head_schedule for _ in optimizer.param_groups]
-        # for grp in optimizer.param_groups:
-        #     lr_lambdas.append(head_schedule if "head" in grp["name"] else backbone_schedule)
+        lr_lambdas = [] # [head_schedule for _ in optimizer.param_groups]
+        for grp in optimizer.param_groups:
+            lr_lambdas.append(head_schedule if "head" in grp.get("name", "head") else backbone_schedule)
 
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer=optimizer, 
