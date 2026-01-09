@@ -7,8 +7,32 @@ def test_iinfo_maxval_static():
     assert iinfo_maxval_static(torch.int8) == 127
     assert iinfo_maxval_static(torch.int16) == 32767
     
+    assert iinfo_maxval_static(torch.int32) == 2147483647
+    
     with pytest.raises((ValueError, torch.jit.Error)):
         iinfo_maxval_static(torch.float32)
+
+def test_debug_augmentation(tmp_path):
+    from mini_trainer.utils.augmentation import debug_augmentation
+    
+    # Mock dataset
+    class MockDataset(torch.utils.data.Dataset):
+        def __len__(self): return 5
+        def __getitem__(self, idx):
+            return torch.zeros((3, 10, 10)), 0
+            
+    ds = MockDataset()
+    
+    # Simple augmentation
+    def aug(x): return x
+    
+    # Mock plt to avoid display related errors or actually writing
+    # But we can just use a tmp dir and let it write?
+    # It requires matplotlib.
+    
+    ret = debug_augmentation(aug, ds, output_dir=str(tmp_path), strict=True)
+    assert ret is True
+    assert (tmp_path / "example_augmentation.png").exists()
 
 def test_salt_and_pepper():
     # Create a small image

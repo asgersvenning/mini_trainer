@@ -43,6 +43,19 @@ def test_guess_cache_mode():
     # So should return NONE.
     assert guess_cache_mode([100, 100, 3], torch.uint8, thresholds=thresholds) == CACHE_MODE.NONE
 
+def test_cache_mode_enum():
+    assert CACHE_MODE.NONE == 0
+    assert CACHE_MODE(0) == CACHE_MODE.NONE
+    assert CACHE_MODE["NONE"] == CACHE_MODE.NONE
+    # Test case insensitivity/string parsing handled in _missing_?
+    # The code says: name = value.strip().upper(). return cls[name].
+    assert CACHE_MODE("none") == CACHE_MODE.NONE
+    assert CACHE_MODE(" Disk ") == CACHE_MODE.DISK
+    
+    with pytest.raises(ValueError):
+        CACHE_MODE("invalid")
+
+
 def test_is_image():
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
         f.write(b"not an image")

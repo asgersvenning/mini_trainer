@@ -65,7 +65,7 @@ class Timer: # noqa: D101
 
     def __str__(self):
         if self.running:
-            return f'Timer[Running]: {format_duration(self.total)} + {format_duration(time.time() - self._last)}'
+            return f'Timer[Running]: {format_duration(self._total)} + {format_duration(time.time() - self._last)}'
         else:
             return f'Timer[Stopped]: {format_duration(self.total)}'
     

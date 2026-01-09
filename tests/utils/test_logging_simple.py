@@ -24,6 +24,21 @@ def test_Timer():
     t.stop()
     assert not t.running
     assert t.total >= 0.0
+    
+    # Test errors
+    with pytest.raises(RuntimeError):
+        t.stop() # already stopped
+        
+    t.start()
+    with pytest.raises(RuntimeError):
+        t.start() # already running
+    with pytest.raises(RuntimeError):
+        _ = t.total # total is invalid while running? -> Code says: raise RuntimeError("Attempting to grab total of a running timer!")
+        
+    assert "Timer[Running]" in str(t)
+    t.stop()
+    assert "Timer[Stopped]" in str(t)
+
 
 def test_ETA():
     eta = ETA(total_steps=10)
