@@ -10,6 +10,7 @@ from types import GeneratorType
 from typing import Any, TextIO, TypeVar
 
 import numpy as np
+import psutil
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -1082,7 +1083,7 @@ class MultiLogger:
         if torch.cuda.is_available():
             mem = torch.cuda.max_memory_allocated() / MB
         else:
-            mem = None
+            mem = psutil.Process().memory_info().rss / MB
         self.log_statistic(mem=mem)
     
     def default_consume(
