@@ -13,7 +13,8 @@ dependencies = [
   "diskcache",
   "psutil",
   "tensorboard",
-  "scipy"
+  "scipy",
+  "pyarrow"
 ]
 requires-python = ">=3.12"
 authors = [
