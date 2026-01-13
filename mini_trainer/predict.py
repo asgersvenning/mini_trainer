@@ -241,7 +241,7 @@ def main( # noqa: D417
     collector = collector_cls(**collector_cls_kwargs, **class_spec)
     
     idx = 0
-    with torch.inference_mode(), torch.autocast(device_type=str(device)):
+    with torch.inference_mode(), torch.autocast(device_type=str(device), dtype=dtype):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
             pred : torch.Tensor | list[torch.Tensor] = nn_model(model_preprocess(batch.to(device)))
             # pred_is_list = False
@@ -314,7 +314,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
         "-o", "--output", type=str, 
-        default=None, required=False,
+        default=".", required=False,
         help='Root directory for all created files and directories.\n'
         'Default is current working directory (".").'
     )
