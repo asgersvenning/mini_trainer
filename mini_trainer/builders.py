@@ -446,13 +446,13 @@ class BaseBuilder:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
         if not weighted or labels is None or num_classes is None:
-            return criterion_cls(*args, **kwargs)
+            return criterion_cls(*args, reduction="none", **kwargs)
         counts = torch.ones((num_classes, ))
         for cls_idx in labels:
             counts[cls_idx] += 1
         weights = 1 / counts
         weights /= torch.mean(weights)
-        return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
+        return criterion_cls(*args, weight=weights.to(device, dtype), reduction="none", **kwargs)
 
     @staticmethod
     def build_regularizer(strength : float=1e-3, *args, **kwargs):

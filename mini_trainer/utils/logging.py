@@ -213,7 +213,10 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         """
         self.paths.extend(paths)
         self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
-        self.confs.extend(predictions.softmax(1).max(1).values.tolist())
+        confs = predictions.softmax(1).max(1).values.tolist()
+        if np.any(~np.isfinite(np.array(confs))):
+            pass #  print(predictions)
+        self.confs.extend(confs)
 
     def _collect_extra_attributes(
             self, 

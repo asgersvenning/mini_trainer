@@ -17,7 +17,10 @@ from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
 from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
 from mini_trainer.utils.logging import MultiLogger
+from mini_trainer.utils.loader import AdaptiveDataLoader
 
+
+from collections import Counter
 
 def train_one_epoch(
         model : nn.Module, 
@@ -26,7 +29,7 @@ def train_one_epoch(
         optimizer : Optimizer, 
         scaler : GradScaler,
         lr_scheduler : LRScheduler,
-        data_loader : DataLoader, 
+        data_loader : AdaptiveDataLoader, 
         epoch : int, 
         logger : MultiLogger,
         preprocess : Callable=lambda x : x,
@@ -67,6 +70,7 @@ def train_one_epoch(
     nan_errs = 0
     distill_loss = 0
 
+    cls_stats = {i : [0, 0, 0, 0] for i in range(10)}
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
         step = n_batches * epoch + i
@@ -83,9 +87,14 @@ def train_one_epoch(
                 student=logits
             )
             reg = regularizer(model)
-
-        if isinstance(loss, torch.Tensor) and loss.numel() == 1:
+        if isinstance(loss, torch.Tensor):
             loss = [loss]
+        for c, l, ls in zip(logits.argmax(1).tolist(), target.tolist(), loss[0].tolist()):
+            cls_stats[l][0] += 1
+            cls_stats[l][1 + int(c != l)] += 1
+            cls_stats[l][3] += ls
+        data_loader.update(loss)
+        loss = [l.mean() for l in loss]
         optimizer.zero_grad()
         if not all([torch.isfinite(term).all() for term in loss]) or not torch.isfinite(torch.as_tensor(distill_loss)):
             nan_errs += 1
@@ -126,7 +135,10 @@ def train_one_epoch(
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
     logger.stop_timing()
-
+    for cls in cls_stats.keys():
+        for i in range(1, 4):
+            cls_stats[cls][i] /= cls_stats[cls][0]
+    print("Class stats:", *[f'{cls}: {'#{:>4} {:>6.1%}/{:<6.1%} ({:>3.1f})'.format(*stats)}' for cls, stats in sorted(cls_stats.items())], sep="\n")
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
     #     with torch.no_grad():
@@ -138,7 +150,7 @@ def train_one_epoch(
 def evaluate(
         model : nn.Module, 
         criterion : _Loss, 
-        data_loader : DataLoader, 
+        data_loader : AdaptiveDataLoader, 
         epoch : int,
         logger : MultiLogger,
         preprocess : Callable=lambda x : x,
@@ -174,6 +186,10 @@ def evaluate(
             with autocast(device_type=device.type, dtype=dtype):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
+            if isinstance(loss, torch.Tensor):
+                loss = [loss]
+            data_loader.update([1.0 for _ in range(len(batch))])
+            loss = [l.mean() for l in loss]
             logger.consume(
                 index=i, 
                 batch=batch, 

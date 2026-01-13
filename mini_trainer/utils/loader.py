@@ -5,9 +5,18 @@ import numpy as np
 import torch
 from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
                               SequentialSampler)
+from mini_trainer.utils.sampler import InfiniteOnlineHardExampleSampler
 
 from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
                                    make_read_and_resize_fn)
+
+
+class AdaptiveDataLoader(DataLoader):
+    def update(self, loss : list[torch.Tensor]):
+        if hasattr(self.sampler, "update"):
+            self.sampler.update(loss)
+        elif hasattr(self.batch_sampler, "sampler") and hasattr(self.batch_sampler.sampler, "update"):
+            self.batch_sampler.sampler.update(loss)
 
 def get_dataloader( # noqa: D103
         dataset : torch.utils.data.Dataset,
@@ -22,10 +31,11 @@ def get_dataloader( # noqa: D103
         shuffle = drop_last = True
     else:
         shuffle = drop_last = False
-    sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+    # sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+    sampler = InfiniteOnlineHardExampleSampler(dataset) if shuffle else SequentialSampler(dataset)
     sampler = BatchSampler(sampler, batch_size=batch_size, drop_last=drop_last)
     
-    return DataLoader(
+    return AdaptiveDataLoader(
         dataset,
         batch_sampler=sampler,
         num_workers=num_workers,
