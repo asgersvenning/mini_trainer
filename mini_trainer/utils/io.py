@@ -462,7 +462,7 @@ class LazyDataset(torch.utils.data.Dataset):
                 (len(self), *template.shape), 
                 dtype=template.dtype, 
                 device=template.device, 
-                pin_memory=template.device == torch.device("cpu")
+                pin_memory=(template.device == torch.device("cpu")) and torch.cuda.is_available()
             ) 
             for template in templates
         ]
@@ -556,6 +556,8 @@ class LazyDataset(torch.utils.data.Dataset):
                         f'Indexing with {i} is not implemented. Only integer, '
                         'slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.'
                     )
+                if isinstance(elements[0], torch.Tensor):
+                    return torch.stack(elements)
                 return [torch.stack(values) for values in zip(*elements)]
             case CACHE_MODE.DISK:
                 return self._load_from_zarr(i)
