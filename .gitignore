@@ -27,3 +27,4 @@ examples/*/**
 # Specific cases
 examples/test.ipynb
 uv.lock
+!/.github/workflows/*.yml

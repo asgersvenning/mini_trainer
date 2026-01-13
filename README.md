@@ -1,3 +1,4 @@
+[![codecov](https://codecov.io/github/asgersvenning/mini_trainer/graph/badge.svg?token=3BCL6NH5GC)](https://codecov.io/github/asgersvenning/mini_trainer)
 # Mini trainer
 This is an attempt to create a minimal extendable framework for development and research on classification models.
 
