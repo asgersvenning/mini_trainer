@@ -1,6 +1,7 @@
 import datetime
 import os
 import time
+from statistics import mean
 import warnings
 from collections.abc import Callable
 
@@ -15,12 +16,26 @@ from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
-from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
-from mini_trainer.utils.logging import MultiLogger
+from mini_trainer.utils import (TERMINAL_WIDTH, is_dist_avail_and_initialized,
+                                reduce_across_processes, save_on_master)
 from mini_trainer.utils.loader import AdaptiveDataLoader
+from mini_trainer.utils.logging import MultiLogger
 
 
-from collections import Counter
+@torch.no_grad()
+def EL2N(logits : torch.Tensor, labels : torch.Tensor):
+    out = []
+    for lo, la in zip(logits, labels):
+        lo = lo.detach().clone().softmax(0)
+        lo[la] -= 1
+        out.append((lo ** 2).sum().item())
+    return out
+
+SQRT2 = 2**(1/2)
+
+@torch.no_grad()
+def CE_2_EL2N(loss : list[torch.Tensor]):
+    return [mean(vs) for vs in zip(*[(SQRT2 * (1 - (-term.detach()/2).exp())).tolist() for term in loss])]
 
 def train_one_epoch(
         model : nn.Module, 
@@ -70,7 +85,6 @@ def train_one_epoch(
     nan_errs = 0
     distill_loss = 0
 
-    cls_stats = {i : [0, 0, 0, 0] for i in range(10)}
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
         step = n_batches * epoch + i
@@ -89,11 +103,8 @@ def train_one_epoch(
             reg = regularizer(model)
         if isinstance(loss, torch.Tensor):
             loss = [loss]
-        for c, l, ls in zip(logits.argmax(1).tolist(), target.tolist(), loss[0].tolist()):
-            cls_stats[l][0] += 1
-            cls_stats[l][1 + int(c != l)] += 1
-            cls_stats[l][3] += ls
-        data_loader.update(loss)
+        prior = CE_2_EL2N(loss)
+        data_loader.update(prior)
         loss = [l.mean() for l in loss]
         optimizer.zero_grad()
         if not all([torch.isfinite(term).all() for term in loss]) or not torch.isfinite(torch.as_tensor(distill_loss)):
@@ -135,10 +146,6 @@ def train_one_epoch(
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
     logger.stop_timing()
-    for cls in cls_stats.keys():
-        for i in range(1, 4):
-            cls_stats[cls][i] /= cls_stats[cls][0]
-    print("Class stats:", *[f'{cls}: {'#{:>4} {:>6.1%}/{:<6.1%} ({:>3.1f})'.format(*stats)}' for cls, stats in sorted(cls_stats.items())], sep="\n")
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
     #     with torch.no_grad():

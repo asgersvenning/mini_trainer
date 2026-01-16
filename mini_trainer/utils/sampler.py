@@ -164,7 +164,7 @@ class LogBucketQueue:
         bucket[jdx] = bucket[-1]
         bucket.pop()
         self.weights[idx] -= priority
-        self.total -= priority
+        self.total = max(0, self.total - priority)
         self._len -= 1
         if len(bucket) == 0:
             self.buckets.pop(idx)
@@ -200,11 +200,11 @@ class InfiniteOnlineHardExampleSampler(Sampler[int]):
         seed=None
     ):
         self.data_source = data_source
-        self.queue = LogBucketQueue(width=1.5, starvation_rate=0.0, seed=seed)
+        self.queue = LogBucketQueue(width=1.5, starvation_rate=0.05, seed=seed)
         self.out = deque()
         # Populate queue with practically infinite priority at start
         for i in range(len(self.data_source)):
-            self.queue.insert(i, 1e12)
+            self.queue.insert(i, 1e3)
 
     def __len__(self):
         return len(self.data_source)
@@ -248,7 +248,7 @@ class InfiniteOnlineHardExampleSampler(Sampler[int]):
             )
         for p in priorities:
             el, _ = self.out.popleft()
-            self.queue.insert(el, (1-math.exp(-p))**4)
+            self.queue.insert(el, p)
 
     def state_dict(self):
         return {

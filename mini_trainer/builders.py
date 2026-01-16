@@ -21,7 +21,7 @@ from mini_trainer.utils.ema import EMATeacher, ema_lambda_per_update
 from mini_trainer.utils.loader import (get_dataset_dataloader,
                                        get_inference_dataloader)
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import (coherence_hinge_regularization,
+from mini_trainer.utils.loss import (FocalLoss, coherence_hinge_regularization,
                                      weight_kl_gaussian)
 
 
@@ -292,7 +292,7 @@ class BaseBuilder:
         """
         return tt.Compose([
             # tt.AugMix(severity=3),
-            SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
+            SaltAndPepper(proportion=(0.1, 0.1), probability=1.0),
             tt.RandomHorizontalFlip(),
             tt.RandomVerticalFlip(),
             tt.RandomRotation(15),
@@ -445,6 +445,7 @@ class BaseBuilder:
         Returns:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
+        return FocalLoss(gamma=2, reduction="none", num_classes=num_classes, task_type="multi-class")
         if not weighted or labels is None or num_classes is None:
             return criterion_cls(*args, reduction="none", **kwargs)
         counts = torch.ones((num_classes, ))
