@@ -2,8 +2,6 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
-import numpy as np
-import pandas as pd
 import pyarrow.compute as pc
 import pyarrow.parquet as pp
 from tqdm import tqdm
@@ -23,6 +21,7 @@ COLUMNS = (
     "set",
     *KCOLUMNS
 )
+
 
 def nrow(path : str):
     return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
@@ -124,81 +123,123 @@ def combine_dicts(dicts : Iterable[dict]):
 #     return combine_dicts(map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path))))
 
 def get_metadata_from_parquet(
-        path: str, 
-        cls2idx: dict[str, int | dict[str, int]], 
-        **kwargs
-    ) -> dict[str, list]:
-    
+    path: str,
+    cls2idx: dict[str, int | dict[str, int]],
+    **kwargs,
+) -> dict[str, list]:
     root_dir = os.path.dirname(os.path.abspath(path))
-    is_hierarchical = isinstance(cls2idx[next(iter(cls2idx))], dict)
-    
-    # Pre-calculate string constants for path construction to speed up loop
-    # We will use vectorized string concatenation
     base_dir = os.path.join(root_dir, "images") + os.sep
 
-    results = []
-    
-    # We manually manage the progress bar to count ROWS, not batches
-    with tqdm(total=nrow(path), desc=f"Parsing metadata (Vectorized) from {path[-min(25, len(path)):]}...") as pbar:
-        
+    first_val = cls2idx[next(iter(cls2idx))]
+    is_hierarchical = isinstance(first_val, dict)
+
+    out_split: list[str] = []
+    out_class: list[int | tuple[int | None, ...] | None] = []
+    out_path: list[str] = []
+    out_label: list[str | tuple[str, ...]] = []
+
+    def _to_str(x: object) -> str:
+        return "" if x is None else str(x)
+
+    def _to_int_or_minus1(x: object) -> int:
+        if x is None:
+            return -1
+        if isinstance(x, bool):
+            return int(x)
+        if isinstance(x, int):
+            return x
+        if isinstance(x, float):
+            return int(x) if x.is_integer() else -1
+        try:
+            s = str(x).strip()
+            if s == "":
+                return -1
+            return int(float(s))
+        except Exception:
+            return -1
+
+    path_str = path if len(path) < (25 + 3) else ("..." + path[-min(25, len(path)):])
+    with tqdm(
+        total=nrow(path),
+        desc=f"Parsing metadata from {path_str}",
+    ) as pbar:
         for batch in iter_parquet_batches(path):
-            # 1. Convert Arrow Batch to Pandas DataFrame (Zero-copy where possible)
-            df = batch.to_pandas()
-            
-            # 2. Vectorized Path Construction
-            # Logic: dir + "images/" + speciesKey + "/" + filename
-            # We assume 'speciesKey' corresponds to gid (keys[0]) as per your original logic
-            # Converting series to string might be needed if they are ints
-            gid_col = df[KCOLUMNS[0]].astype(str)
-            df['path'] = base_dir + gid_col + os.sep + df['filename']
+            names = batch.schema.names
+            idx = {name: i for i, name in enumerate(names)}
 
-            # 3. Vectorized Split Mapping
-            # Logic: 0->test, 1->val, else->train
-            # We use numpy select for fast conditional logic
-            sets = pd.to_numeric(df['set'], errors='coerce').fillna(-1)
-            conditions = [sets == 0, sets == 1]
-            choices = ["test", "validation"]
-            df['split'] = np.select(conditions, choices, default="train")
+            missing = [c for c in ("filename", "set") if c not in idx]
+            if missing:
+                raise KeyError(f"Missing required columns: {missing}")
 
-            # 4. Vectorized Class/Label Mapping
+            for k in KCOLUMNS:
+                if k not in idx:
+                    raise KeyError(f"Missing required key column: {k}")
+
+            filename_list = batch.column(idx["filename"]).to_pylist()
+            set_list = batch.column(idx["set"]).to_pylist()
+
+            gid_list = batch.column(idx[KCOLUMNS[0]]).to_pylist()
+
+            n = len(filename_list)
+            if not (len(set_list) == len(gid_list) == n):
+                raise ValueError("Column lengths mismatch inside a parquet batch.")
+
+            split_batch: list[str] = []
+            path_batch: list[str] = []
+            for gid, fn, s in zip(gid_list, filename_list, set_list, strict=True):
+                si = _to_int_or_minus1(s)
+                if si == 0:
+                    split_batch.append("test")
+                elif si == 1:
+                    split_batch.append("validation")
+                else:
+                    split_batch.append("train")
+
+                path_batch.append(base_dir + _to_str(gid) + os.sep + _to_str(fn))
+
             if is_hierarchical:
-                # Handle hierarchical (list of classes)
-                # We create a matrix of classes
-                class_cols = []
-                label_cols = []
-                
+                level_maps: list[dict[str, int]] = []
                 for level in range(len(cls2idx)):
-                    key_col_name = KCOLUMNS[level]
-                    # Map the column using the dictionary for this level
-                    # map() is much faster than a loop comprehension
-                    col_str = df[key_col_name].astype(str).str.strip()
-                    mapped_cls = col_str.map(cls2idx[str(level)])
-                    
-                    class_cols.append(mapped_cls)
-                    label_cols.append(col_str)
-                
-                # Stack results into lists (this is the only slow-ish part, but still faster)
-                df['class'] = list(zip(*class_cols))
-                df['label'] = list(zip(*label_cols))
-                
+                    lm = cls2idx.get(str(level))
+                    if not isinstance(lm, dict):
+                        raise TypeError(
+                            f"Expected hierarchical cls2idx['{level}'] to be dict[str,int], got {type(lm)}"
+                        )
+                    level_maps.append(lm)
+
+                key_lists = [batch.column(idx[KCOLUMNS[level]]).to_pylist() for level in range(len(level_maps))]
+
+                class_batch: list[tuple[int | None, ...]] = []
+                label_batch: list[tuple[str, ...]] = []
+                for i in range(n):
+                    labels = tuple(_to_str(key_lists[level][i]).strip() for level in range(len(level_maps)))
+                    classes = tuple(level_maps[level].get(labels[level]) for level in range(len(level_maps)))
+                    label_batch.append(labels)
+                    class_batch.append(classes)
+
+                out_label.extend(label_batch)
+                out_class.extend(class_batch)
             else:
-                # Handle flat (single class)
-                key_col_name = KCOLUMNS[0]
-                col_str = df[key_col_name].astype(str).str.strip()
-                
-                df['class'] = col_str.map(cls2idx)
-                df['label'] = col_str
+                mapping: dict[str, int] = cls2idx  # type: ignore[assignment]
+                key_list = batch.column(idx[KCOLUMNS[0]]).to_pylist()
 
-            # 5. append valid columns to results
-            # We only keep the columns your interface expects
-            results.append(df[['split', 'class', 'path', 'label']])
-            
-            # Update progress bar by the actual number of rows processed
-            pbar.update(len(df))
+                label_batch = [_to_str(v).strip() for v in key_list]
+                class_batch = [mapping.get(lbl) for lbl in label_batch]
 
-    # Concatenate all mini-dataframes and convert to dict of lists
-    final_df = pd.concat(results, ignore_index=True)
-    return final_df.to_dict(orient='list')
+                out_label.extend(label_batch)
+                out_class.extend(class_batch)
+
+            out_split.extend(split_batch)
+            out_path.extend(path_batch)
+
+            pbar.update(n)
+
+    return {
+        "split": out_split,
+        "class": out_class,
+        "path": out_path,
+        "label": out_label,
+    }
 
 
 def parquet_to_class_spec(path : str):

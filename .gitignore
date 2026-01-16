@@ -16,7 +16,6 @@
 **.yaml
 **.yml
 **.parquet
-examples/*/**
 
 # Unwanted temporary files
 **events.out.tfevents*

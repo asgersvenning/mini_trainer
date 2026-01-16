@@ -6,10 +6,10 @@ from argparse import ArgumentParser
 from itertools import chain
 from typing import cast
 
-from mini_trainer.hierarchical.gbif import (TAXONOMY_KEYS, create_taxonomy,
-                                            labels_from_taxonomy)
+from mini_trainer.hierarchical.gbif import TAXONOMY_KEYS, create_taxonomy, labels_from_taxonomy
 
 SCIENTIFICNAME_OR_NUMBER = re.compile(r"^(\d+|\w+(\s+\w+)?)$")
+
 
 def detect_sep(content : str, options : tuple[str]=(",", ";", r"\t")):
     counts = {o : content.count(o) for o in options}
@@ -24,12 +24,14 @@ def detect_sep(content : str, options : tuple[str]=(",", ";", r"\t")):
             return candidates[0]
         case _:
             raise RuntimeError(
-                f'Unable to automatically determine line separator in:\n'
+                'Unable to automatically determine line separator in:\n'
                 + content
             )
 
+
 def is_taxalist(content : str | list[str]):
     return all(map(lambda s : bool(re.match(SCIENTIFICNAME_OR_NUMBER, s)), content))
+
 
 def labels_from_json(file : str):
     with open(file, "r") as f:
@@ -64,6 +66,7 @@ def labels_from_json(file : str):
         labels = list(labels.values())
     return labels, levels
 
+
 def labels_from_csv(file : str):
     with open(file, "r") as f:
         reader = csv.reader(f)
@@ -73,14 +76,20 @@ def labels_from_csv(file : str):
             for c, v in zip(headers, row):
                 data[c].append(v)
     if "level" in data:
-        data = {k : [vi for lvl, vi in zip(data["level"], v) if lvl in (0, "0", "species", "Species")] for k, v in data.items()}
+        data = {
+            k : [
+                vi for lvl, vi in zip(data["level"], v) if lvl in (0, "0", "species", "Species")
+            ] for k, v in data.items()
+        }
     if "label" not in data and "prediction" not in data:
         raise RuntimeError(
             f'File {file} contains unknown CSV schema:\n' +
             " | ".join(f"{k} : {type(v[0] if v else None)}" for k, v in data.items()) +
             "\nExpected a 'label' column of type str/int"
         )
-    return labels_from_taxalist(list(set(map(str, chain.from_iterable(data.get(col, []) for col in ["label", "prediction"])))))
+    cols = ["label", "prediction"]
+    return labels_from_taxalist(list(set(map(str, chain.from_iterable(data.get(c, []) for c in cols)))))
+
 
 def labels_from_txt(file : str):
     with open(file, "r") as f:
@@ -90,6 +99,7 @@ def labels_from_txt(file : str):
     if len(content) == 1:
         content = content[0].split(detect_sep(content[0]))
     return labels_from_taxalist(content)
+
 
 def labels_from_taxalist(taxa : list[str]):
     if is_taxalist(taxa):
@@ -104,6 +114,7 @@ def labels_from_taxalist(taxa : list[str]):
     else:
         raise RuntimeError(f'Unknown content: {taxa[:min(len(taxa), 10)]}')
     return labels, levels
+
 
 def main(file : str, output : str | None=None):
     if not os.path.exists(file):
@@ -129,15 +140,16 @@ def main(file : str, output : str | None=None):
                 writer.writerow(label)
     return labels
 
+
 def cli():
     parser = ArgumentParser(
         prog="class2combinations",
-        description="Create a hierarchical combinations file from a list of species or a class specification created by mini_trainer"
+        description="Create a hierarchical combinations file from a list of "
+        "species or a class specification created by mini_trainer"
     )
     parser.add_argument(
         "-i", "--input", dest="file", type=str, required=True,
-        help=
-        "Source for creating the combinations, "
+        help="Source for creating the combinations, "
         "either a file with a list of species, "
         "or a class specification JSON created by mini_trainer."
     )
@@ -147,6 +159,7 @@ def cli():
     )
 
     return vars(parser.parse_args())
+
 
 if __name__ == "__main__":
     main(**cli())
