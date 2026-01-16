@@ -1,6 +1,8 @@
-import torch
 import pytest
-from mini_trainer.utils.augmentation import iinfo_maxval_static, salt_and_pepper, SaltAndPepper
+import torch
+
+from mini_trainer.utils.augmentation import SaltAndPepper, iinfo_maxval_static, salt_and_pepper
+
 
 def test_iinfo_maxval_static():
     assert iinfo_maxval_static(torch.uint8) == 255
@@ -12,12 +14,14 @@ def test_iinfo_maxval_static():
     with pytest.raises((ValueError, torch.jit.Error)):
         iinfo_maxval_static(torch.float32)
 
+
 def test_debug_augmentation(tmp_path):
     from mini_trainer.utils.augmentation import debug_augmentation
     
     # Mock dataset
     class MockDataset(torch.utils.data.Dataset):
         def __len__(self): return 5
+
         def __getitem__(self, idx):
             return torch.zeros((3, 10, 10)), 0
             
@@ -33,6 +37,7 @@ def test_debug_augmentation(tmp_path):
     ret = debug_augmentation(aug, ds, output_dir=str(tmp_path), strict=True)
     assert ret is True
     assert (tmp_path / "example_augmentation.png").exists()
+
 
 def test_salt_and_pepper():
     # Create a small image
@@ -55,6 +60,7 @@ def test_salt_and_pepper():
     # Ideally should be only 0.0 and 1.0, but original image was 0.0 so we might just see 0 and 1.
     for val in unique_vals:
         assert val.item() in [0.0, 1.0]
+
 
 def test_salt_and_pepper_module():
     mod = SaltAndPepper(proportion=(0.5, 0.5), probability=1.0)

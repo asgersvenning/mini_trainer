@@ -1,7 +1,10 @@
-import os
 import json
+import os
+
 import pytest
+
 from mini_trainer.utils.data import find_images, get_metadata, parse_class_spec
+
 
 def test_find_images(tmp_path):
     d = tmp_path / "images"
@@ -14,6 +17,7 @@ def test_find_images(tmp_path):
     assert len(images) == 2
     basenames = sorted([os.path.basename(p) for p in images])
     assert basenames == ["img1.jpg", "img2.png"]
+
 
 def test_get_metadata(tmp_path):
     p = tmp_path / "meta.json"
@@ -32,6 +36,7 @@ def test_get_metadata(tmp_path):
     
     with pytest.raises(FileNotFoundError):
         get_metadata(str(tmp_path / "nonexistent.json"))
+
 
 def test_parse_class_spec(tmp_path):
     d = tmp_path / "classes"

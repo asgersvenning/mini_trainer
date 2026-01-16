@@ -1,23 +1,26 @@
-import pytest
 import torch
+
 from mini_trainer.config import (
-    _nullify,
     _drop_none,
+    _nullify,
     _stringify_types,
     defaults_from_function,
     merge_dicts,
     restructure_cli_args,
 )
 
+
 def test_nullify():
     d = {"a": 1, "b": {"c": 2, "d": {"e": 3}}}
     expected = {"a": None, "b": {"c": None, "d": {"e": None}}}
     assert _nullify(d) == expected
 
+
 def test_drop_none():
     d = {"a": 1, "b": None, "c": {"d": 2, "e": None}, "f": {}}
     expected = {"a": 1, "c": {"d": 2}}
     assert _drop_none(d) == expected
+
 
 def test_stringify_types():
     class MyClass:
@@ -62,6 +65,7 @@ def test_stringify_types():
     assert result["none"] is None
     assert "test_stringify_types.<locals>.MyClass" in result["object"]
 
+
 def test_defaults_from_function():
     def func(a=1, b="test", c=None, d=[1, 2]):
         pass
@@ -76,6 +80,7 @@ def test_defaults_from_function():
     defaults["d"].append(3)
     assert defaults_from_function(func)["d"] == [1, 2]
 
+
 def test_merge_dicts():
     d1 = {"a": 1, "b": {"c": 2}}
     d2 = {"b": {"d": 3}, "e": 4}
@@ -86,6 +91,7 @@ def test_merge_dicts():
     d3 = {"a": 2}
     merged = merge_dicts(d1, d3)
     assert merged["a"] == 2
+
 
 def test_restructure_cli_args():
     args = {

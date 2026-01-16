@@ -1,6 +1,6 @@
 import os
 from collections.abc import Iterable
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,7 @@ COLUMNS = (
 
 def nrow(path : str):
     return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
+
 
 def iter_parquet(path : str, columns=COLUMNS):
     """Iterate lazily over rows in ``gbifxdl`` parquet.
@@ -198,6 +199,7 @@ def get_metadata_from_parquet(
     # Concatenate all mini-dataframes and convert to dict of lists
     final_df = pd.concat(results, ignore_index=True)
     return final_df.to_dict(orient='list')
+
 
 def parquet_to_class_spec(path : str):
     """Create flat class specification from ``gbifxdl`` parquet.

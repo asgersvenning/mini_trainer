@@ -1,11 +1,13 @@
 
 import os
-import shutil
-import torch
+
 import numpy as np
-from PIL import Image
-from mini_trainer.utils.io import LazyDataset, CACHE_MODE
 import pytest
+import torch
+from PIL import Image
+
+from mini_trainer.utils.io import LazyDataset
+
 
 def create_dummy_images(root_dir, n=10, size=(32, 32)):
     os.makedirs(root_dir, exist_ok=True)
@@ -19,10 +21,12 @@ def create_dummy_images(root_dir, n=10, size=(32, 32)):
         paths.append(path)
     return paths
 
+
 def dummy_loader(path):
     # Retrieve the image directly using PIL to verify content
     img = Image.open(path).convert("RGB")
     return torch.from_numpy(np.array(img)).permute(2, 0, 1)
+
 
 def dummy_loader_tuple(path):
     # Returns (img, label_dummy_tensor)
@@ -30,6 +34,7 @@ def dummy_loader_tuple(path):
     t_img = torch.from_numpy(np.array(img)).permute(2, 0, 1)
     label = torch.tensor([1])
     return t_img, label
+
 
 class TestLazyDatasetIntegration:
     

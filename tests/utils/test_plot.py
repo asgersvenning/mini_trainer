@@ -1,10 +1,7 @@
 import numpy as np
-import pytest
-from mini_trainer.utils.plot import (
-    raw_confusion_matrix,
-    _aggregate_matrix_max,
-    _get_scaled_matrix_for_display
-)
+
+from mini_trainer.utils.plot import _aggregate_matrix_max, _get_scaled_matrix_for_display, raw_confusion_matrix
+
 
 def test_raw_confusion_matrix():
     # 3 classes: 0, 1, 2
@@ -28,6 +25,7 @@ def test_raw_confusion_matrix():
     assert cm[2, 0] == 1.0
     assert cm[2, 2] == 0.0
 
+
 def test_aggregate_matrix_max():
     mat = np.array([
         [1, 2, 3, 4],
@@ -44,6 +42,7 @@ def test_aggregate_matrix_max():
     agg = _aggregate_matrix_max(mat, (2, 2))
     expected = np.array([[6, 8], [14, 16]])
     np.testing.assert_array_equal(agg, expected)
+
 
 def test_get_scaled_matrix_for_display():
     # Create large matrix

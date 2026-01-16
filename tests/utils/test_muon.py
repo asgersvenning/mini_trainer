@@ -1,11 +1,8 @@
-import torch
 import pytest
-from mini_trainer.utils.muon import (
-    Muon,
-    _to_scalar,
-    _zeropower_via_newtonschulz,
-    _adjust_lr
-)
+import torch
+
+from mini_trainer.utils.muon import Muon, _adjust_lr, _to_scalar, _zeropower_via_newtonschulz
+
 
 def test_to_scalar():
     assert _to_scalar(0.5) == 0.5
@@ -16,6 +13,7 @@ def test_to_scalar():
     # If tensor dim != 0 -> squeeze.
     t = torch.randn(2)
     assert _to_scalar(t).shape == (2,)
+
 
 def test_zeropower_via_newtonschulz():
     # Needs 2D matrix
@@ -36,6 +34,7 @@ def test_zeropower_via_newtonschulz():
     # Just check it returns valid values.
     assert torch.isfinite(out).all()
 
+
 def test_adjust_lr():
     # original: sqrt(max(1, A/B))
     lr = 0.1
@@ -53,6 +52,7 @@ def test_adjust_lr():
     adj = _adjust_lr(lr, "match_rms_adamw", torch.Size([100, 10]))
     assert abs(adj - 0.1 * 2.0) < 1e-5
 
+
 def test_Muon_init():
     p = torch.randn(10, 10)
     opt = Muon([p], lr=1e-3)
@@ -62,6 +62,7 @@ def test_Muon_init():
     p_bad = torch.randn(10)
     with pytest.raises(ValueError):
         Muon([p_bad])
+
 
 def test_Muon_step():
     p = torch.randn(10, 10, requires_grad=True)

@@ -1,6 +1,7 @@
 import numpy as np
-import pytest
+
 from mini_trainer.utils.tensorboard import make_empty_array
+
 
 def test_make_empty_array():
     arr = make_empty_array(5)

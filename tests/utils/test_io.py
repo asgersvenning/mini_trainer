@@ -1,15 +1,18 @@
-import torch
-import pytest
 import os
 import tempfile
+
+import pytest
+import torch
+
 from mini_trainer.utils.io import (
-    guess_cache_mode, 
-    CACHE_MODE, 
-    is_image, 
-    reweight, 
-    generate_indices, 
-    _normalize_to_tuple
+    CACHE_MODE,
+    _normalize_to_tuple,
+    generate_indices,
+    guess_cache_mode,
+    is_image,
+    reweight,
 )
+
 
 def test_guess_cache_mode():
     # Small shape, should fit in RAM usually, but depends on thresholds
@@ -43,6 +46,7 @@ def test_guess_cache_mode():
     # So should return NONE.
     assert guess_cache_mode([100, 100, 3], torch.uint8, thresholds=thresholds) == CACHE_MODE.NONE
 
+
 def test_cache_mode_enum():
     assert CACHE_MODE.NONE == 0
     assert CACHE_MODE(0) == CACHE_MODE.NONE
@@ -72,12 +76,14 @@ def test_is_image():
     assert is_image(jpg_path) is True
     os.remove(jpg_path)
 
+
 def test_reweight():
     weights = [1.0, 2.0]
     target_sum = 6.0
     # 1+2 = 3. 6/3 = 2.
     # 1*2 = 2, 2*2 = 4. Sum = 6.
     assert reweight(weights, target_sum) == [2.0, 4.0]
+
 
 def test_generate_indices():
     weights = [1, 2]
@@ -95,6 +101,7 @@ def test_generate_indices():
     assert len(indices) == 6
     assert indices.count(0) == 2
     assert indices.count(1) == 4
+
 
 def test_normalize_to_tuple():
     assert _normalize_to_tuple(1) == (1,)

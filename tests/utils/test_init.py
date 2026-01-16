@@ -1,17 +1,18 @@
-import os
-import pytest
 import csv
-import torch
 from collections import OrderedDict
+
+import pytest
+
 from mini_trainer.utils import (
-    write_csv_from_dict,
+    cosine_schedule_with_warmup,
+    decimals,
     filter_ordered_dict,
     float_signif_decimal,
-    decimals,
     increment_name_dir,
     recursive_dfs_attr,
-    cosine_schedule_with_warmup
+    write_csv_from_dict,
 )
+
 
 def test_write_csv_from_dict(tmp_path):
     d = {"a": [1, 2], "b": [3, 4]}
@@ -38,6 +39,7 @@ def test_write_csv_from_dict(tmp_path):
     with pytest.raises(ValueError):
         write_csv_from_dict({"a": [1], "b": [1, 2]}, str(p))
 
+
 def test_filter_ordered_dict():
     od = OrderedDict([("a", 1), ("b", 2), ("c", 3)])
     res = filter_ordered_dict(od, ("a", "c"))
@@ -45,11 +47,13 @@ def test_filter_ordered_dict():
     assert res["a"] == 1
     assert res["c"] == 3
 
+
 def test_float_signif_decimal():
     assert float_signif_decimal(0.001, digits=3) >= 3
     # 100.0 -> log10=2. digits=3. 2-3+1=0. min(-1, 0)=-1. -(-1)=1.
     assert float_signif_decimal(100.0) >= 0
     assert float_signif_decimal(0) == 0
+
 
 def test_decimals():
     assert decimals(1.234) == 3
@@ -77,6 +81,7 @@ def test_increment_name_dir(tmp_path):
     n3 = increment_name_dir(name, str(p))
     assert n3 == "run_2"
     
+
 def test_recursive_dfs_attr():
     class A:
         def __init__(self):
@@ -103,6 +108,7 @@ def test_recursive_dfs_attr():
     
     val = recursive_dfs_attr([A()], "x")
     assert val == 1
+
 
 def test_cosine_schedule_with_warmup():
     fn = cosine_schedule_with_warmup(total=10, warmup=2, start=0.1, end=0.0)

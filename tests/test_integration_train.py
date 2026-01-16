@@ -1,12 +1,14 @@
-import pytest
+import os
+from unittest.mock import patch
+
 import torch
 import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
 import torchvision.transforms as tt
+from torch.utils.data import DataLoader, TensorDataset
+
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.train import main
-import os
-import shutil
+
 
 class MockModel(nn.Module):
     def __init__(self, num_classes=2):
@@ -19,6 +21,7 @@ class MockModel(nn.Module):
 
     def forward(self, x):
         return self.fc(self.flat(x))
+
 
 class MockBuilder(BaseBuilder):
     @staticmethod
@@ -47,11 +50,11 @@ class MockBuilder(BaseBuilder):
         # Class 0: mean 0. Class 1: mean 1.
         n = 20
         c, h, w = 3, 5, 5
-        data_0 = torch.randn(10, c, h, w)
-        data_1 = torch.randn(10, c, h, w) + 1.0
+        data_0 = torch.randn(n, c, h, w)
+        data_1 = torch.randn(n, c, h, w) + 1.0
         data = torch.cat([data_0, data_1])
         # labels need to be LongTensor
-        labels = torch.cat([torch.zeros(10, dtype=torch.long), torch.ones(10, dtype=torch.long)])
+        labels = torch.cat([torch.zeros(n, dtype=torch.long), torch.ones(n, dtype=torch.long)])
         
         dataset = TensorDataset(data, labels)
         
@@ -78,11 +81,11 @@ class MockBuilder(BaseBuilder):
         # Disable regularization to avoid last_layer_weights dependency on Classifier class
         return lambda x: torch.tensor(0.0)
 
-from unittest.mock import patch
 
 # Mock last_layer_weights to avoid Classifier check in plotting
 def get_mock_last_layer_weights(model):
     return model.fc.weight
+
 
 def test_integration_train_cpu(tmp_path):
     # Setup paths

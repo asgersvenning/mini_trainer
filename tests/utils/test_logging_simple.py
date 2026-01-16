@@ -1,19 +1,15 @@
 import time
+
 import pytest
 import torch
-import numpy as np
-from mini_trainer.utils.logging import (
-    format_duration,
-    Timer,
-    ETA,
-    accuracy,
-    compute_aligned_steps,
-    SmoothedValue
-)
+
+from mini_trainer.utils.logging import ETA, SmoothedValue, Timer, accuracy, compute_aligned_steps, format_duration
+
 
 def test_format_duration():
     assert format_duration(3661) == "01h01m01s"
     assert format_duration(60) == "01m00s"
+
 
 def test_Timer():
     t = Timer()
@@ -47,6 +43,7 @@ def test_ETA():
     assert eta.remaining == 9
     assert eta.eta is not None
 
+
 def test_accuracy():
     output = torch.tensor([[0.1, 0.9], [0.8, 0.2]])
     target = torch.tensor([1, 0])
@@ -56,6 +53,7 @@ def test_accuracy():
     output = torch.tensor([[0.9, 0.1], [0.2, 0.8]]) # Wrong
     acc1 = accuracy(output, target, topk=(1,))
     assert acc1[0] == 0.0
+
 
 def test_compute_aligned_steps():
     # target len 10, origin len 10
@@ -75,6 +73,7 @@ def test_compute_aligned_steps():
     # [0, 2, 4, 7, 9]
     assert steps == [0, 2, 4, 7, 9]
 
+
 def test_SmoothedValue():
     sv = SmoothedValue(window_size=2)
     sv.update(1.0)
@@ -89,4 +88,4 @@ def test_SmoothedValue():
     assert sv.value == 3.0
     assert sv.avg == 2.5
     # Global avg is over all history
-    assert sv.global_avg == 6.0/3.0 # 2.0
+    assert sv.global_avg == 6.0 / 3.0 # 2.0

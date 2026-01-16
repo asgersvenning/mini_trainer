@@ -1,12 +1,13 @@
 import torch
-import pytest
+
 from mini_trainer.utils.loss import (
     EvenCrossEntropyLoss,
-    kl_distill_ema,
     class_weight_distribution_regularization,
+    coherence_hinge_regularization,
+    kl_distill_ema,
     weight_kl_gaussian,
-    coherence_hinge_regularization
 )
+
 
 def test_EvenCrossEntropyLoss():
     loss_fn = EvenCrossEntropyLoss()
@@ -27,12 +28,14 @@ def test_EvenCrossEntropyLoss():
     expected = ce / torch.tensor(input.size(1)).float().log()
     assert torch.allclose(loss, expected)
 
+
 def test_kl_distill_ema():
     logits = torch.randn(4, 10)
     ema_logits = torch.randn(4, 10)
     loss = kl_distill_ema(logits, ema_logits, T=1.0)
     assert loss >= 0
     
+
 def test_regularizations():
     W = torch.randn(10, 32)
     
