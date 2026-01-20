@@ -1,11 +1,14 @@
 import os
 import warnings
 from collections import OrderedDict
+from contextlib import contextmanager
 from functools import partial
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
@@ -158,18 +161,39 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
 
+        # Create linear classification layer
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.linear = self._normalize_layer(layer) if normalized else layer
+
+        # Prepare class masking buffer
+        self.register_buffer("active_indices", None)
+    
+    def set_active_features(self, indices : list[int] | torch.Tensor | np.ndarray | None=None):
+        """Mask a selection of output features (classes).
+
+        Args:
+            indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+        """
+        if indices is None:
+            self.active_indices = None
+            return
+        device = next(self.parameters()).device
+        self.active_indices = torch.as_tensor(indices, dtype=torch.long, device=device).clone()
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
             x = self.dropout(x)
             x = self.hidden(x)
-            x = nn.functional.leaky_relu(x)
+            x = F.leaky_relu(x)
         return self.batch_norm(x)
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
-        return self.linear(self.preclassification(x))
+        weight, bias = self.linear.weight, self.linear.bias
+        if self.active_indices is not None:
+            weight = weight.index_select(0, self.active_indices)
+            if bias is not None:
+                bias = bias.index_select(0, self.active_indices)
+        return F.linear(self.preclassification(x), weight=weight, bias=bias)
     
     def get_extra_state(self):
         return self._metadata
@@ -336,17 +360,57 @@ class Classifier(nn.Module): # noqa: D101 TODO
         return model, model_preprocess
 
 
-def last_layer_weights(model : nn.Module):
-    """Retrieve the weights of the last layer of a model created with `mini_trainer.classifier.Classifier.build()`.
+def classification_module(model : nn.Module):
+    """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`.
     """
     backbone_name = getattr(model, "_backbone_output_name", None)
     if backbone_name is None:
         for name, module in model.named_modules():
             if isinstance(module, Classifier):
                 setattr(model, "_backbone_output_name", name)
-                return module.linear.weight
+                return module
+        raise RuntimeError("Unable to find classification module.")
     else:
-        classification_head = getattr(model, backbone_name, None)
-        if not isinstance(classification_head, Classifier):
-            raise RuntimeError(f"Unexpected classification head type {type(classification_head)} found.")
-        return classification_head.linear.weight
+        module = getattr(model, backbone_name, None)
+        if not isinstance(module, Classifier):
+            raise RuntimeError(f"Unexpected classification head type {type(module)} found.")
+        return module
+
+
+def last_layer_weights(model : nn.Module):
+    return classification_module(model).linear.weight
+
+
+def set_classification_mask(
+        model : nn.Module, 
+        indices : list[int] | torch.Tensor | np.ndarray | None=None
+    ):
+    """Mask a selection of output features (classes).
+
+    Args:
+        model: A model created with `mini_trainer.classifier.Classifier.build()`.
+        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    """
+    classification_module(model).set_active_features(indices)
+
+
+@contextmanager
+def mask_classifier(
+        model : nn.Module,
+        indices : list[int] | torch.Tensor | np.ndarray | None=None
+    ):
+    """Mask a selection of output features (classes).
+
+    Args:
+        model: A model created with `mini_trainer.classifier.Classifier.build()`.
+        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    """
+    classifier = classification_module(model)
+    orig_indices = classifier.active_indices
+
+    classifier.set_active_features(indices)
+    
+    try:
+        yield
+    finally:
+        classifier.set_active_features(orig_indices)
