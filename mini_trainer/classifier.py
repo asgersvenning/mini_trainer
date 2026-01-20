@@ -179,6 +179,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             return
         device = next(self.parameters()).device
         self.active_indices = torch.as_tensor(indices, dtype=torch.long, device=device).clone()
+        self.active_indices = self.active_indices.sort().values
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
@@ -291,8 +292,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 model_type = stored_model_type
             stored_head_name = cfg.pop("backbone_output_name", None)
             assert stored_head_name is None or isinstance(stored_head_name, str)
-            stored_version = cfg.pop("mini_trainer_version")
-            assert isinstance(stored_version, int)
+            stored_version = cfg.pop("mini_trainer_version", None)
+            assert stored_version is None or isinstance(stored_version, int)
         else:
             if model_type is None:
                 raise ValueError(

@@ -70,7 +70,15 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
 
     @property
     def masks(self):
-        return [self.mask(i) for i in range(self.num_masks)]
+        masks = []
+        filter = self.active_indices
+        for i in range(self.num_masks):
+            mask = self.mask(i)
+            if filter is not None:
+                mask = mask[filter]
+                filter, mask = mask.unique(sorted=False, return_inverse=True)
+            masks.append(mask)
+        return masks
 
     def hierarchy(self, log_probs : torch.Tensor):
         ys = [log_probs]
@@ -88,10 +96,13 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         super().__init__(normalized=normalized, **kwargs)
         # Conditional layers
         layers : list[nn.Linear] = []
+        orig_indices = self.active_indices
+        self.active_indices = None
         for m in self.masks:
             out = int(m.max().item() + 1)
             layer = nn.Linear(self.preclassification_size, out, bias=True)
             layers.append(self._normalize_layer(layer) if normalized else layer)
+        self.active_indices = orig_indices
         self.layers = nn.ModuleList(layers)
 
     @property
@@ -104,12 +115,12 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
     def forward(self, x : torch.Tensor):
         M = self.marginals(self.preclassification(x))
         C : list[torch.Tensor] = []
+        masks = self.masks
         for i in reversed(range(len(M))):
             if not C:
                 ci = M[i]
             else:
-                mask = self.mask(i)
-                ci = M[i] + (C[0] - batched_scatter_logsumexp(M[i], mask)).gather(1, mask.expand_as(M[i]))
+                ci = M[i] + (C[0] - batched_scatter_logsumexp(M[i], masks[i])).gather(1, masks[i].expand_as(M[i]))
             C.insert(0, ci)
         return C
 
