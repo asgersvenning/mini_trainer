@@ -1,10 +1,14 @@
 import os
+import warnings
 from collections import OrderedDict
+from contextlib import contextmanager
 from functools import partial
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
 from torchvision.io import ImageReadMode, decode_image
 
@@ -83,6 +87,8 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
 
 
 class Classifier(nn.Module): # noqa: D101 TODO
+    _version = 1
+
     @staticmethod
     @torch.no_grad()
     def _normalize_layer(layer: nn.Linear):
@@ -93,6 +99,17 @@ class Classifier(nn.Module): # noqa: D101 TODO
         layer.parametrizations.weight.original0.fill_(1.0)
         layer.parametrizations.weight.original0.requires_grad_(False)
         return layer
+    
+    @staticmethod
+    def extract_metadata(state: dict[str, Any]) -> dict[str, Any]:
+        """Scans the state dictionary for Classifier metadata.
+        Returns the config dict if found, otherwise None.
+        """
+        for key, value in state.items():
+            if key.endswith("._extra_state") and isinstance(value, dict):
+                if "mini_trainer_version" in value:
+                    return value.copy()
+        return {}
 
     def __init__( # noqa: D107
             self, 
@@ -100,15 +117,42 @@ class Classifier(nn.Module): # noqa: D101 TODO
             out_features : int, 
             hidden : bool | int=True, 
             droprate : float=0.1,
-            normalized : bool=True
+            normalized : bool=True,
+            **metadata
         ):
         super().__init__()
-        # Create one hidden layer
-        if isinstance(hidden, int):
+        # Input sanitization and checking
+        if not isinstance(in_features, int) or not isinstance(out_features, int):
+            raise TypeError(
+                f'Supplied classification head input and output dimensions {in_features}x{out_features} '
+                f'should be `int`, not `{type(in_features)}`/`{type(out_features)}`.'
+            )
+        if isinstance(hidden, bool): # Check boolean first because it is a subclass of int
+            self.preclassification_size = in_features
+        elif isinstance(hidden, int):
             assert hidden > 0
             self.preclassification_size = hidden
         else:
-            self.preclassification_size = in_features
+            raise TypeError(f'`hidden` must be an integer or boolean, not ({type(hidden)}): {hidden}.')
+        if not isinstance(droprate, (float, int)):
+            raise TypeError(f'Dropout-rate `{droprate}` should be a `float` (or `int`), not `{type(droprate)}`.')
+        elif not (0 <= droprate <= 1):
+            raise ValueError(f'Dropout-rate should be between 0 and 1, not: {droprate}.')
+        if not isinstance(normalized, bool):
+            raise TypeError(f'Normalized should be a `bool`, not `{normalized}` ({type(normalized)}).')
+        
+        # Store metadata
+        metadata.update({
+            "mini_trainer_version" : self._version,
+            "in_features" : in_features,
+            "out_features" : out_features,
+            "hidden" : hidden,
+            "droprate" : droprate,
+            "normalized" : normalized
+        })
+        self._metadata = metadata
+
+        # Create one hidden layer     
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
         # Create a dropout layer (if hidden)
@@ -117,18 +161,59 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
 
+        # Create linear classification layer
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.linear = self._normalize_layer(layer) if normalized else layer
+
+        # Prepare class masking buffer
+        self.register_buffer("active_indices", None)
+    
+    def set_active_features(self, indices : list[int] | torch.Tensor | np.ndarray | None=None):
+        """Mask a selection of output features (classes).
+
+        Args:
+            indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+        """
+        if indices is None:
+            self.active_indices = None
+            return
+        device = next(self.parameters()).device
+        self.active_indices = torch.as_tensor(indices, dtype=torch.long, device=device).clone()
+        self.active_indices = self.active_indices.sort().values
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
             x = self.dropout(x)
             x = self.hidden(x)
-            x = nn.functional.leaky_relu(x)
+            x = F.leaky_relu(x)
         return self.batch_norm(x)
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
-        return self.linear(self.preclassification(x))
+        weight, bias = self.linear.weight, self.linear.bias
+        if self.active_indices is not None:
+            weight = weight.index_select(0, self.active_indices)
+            if bias is not None:
+                bias = bias.index_select(0, self.active_indices)
+        return F.linear(self.preclassification(x), weight=weight, bias=bias)
+    
+    def get_extra_state(self):
+        return self._metadata
+    
+    def set_extra_state(self, state: Any):
+        if state is None:
+            return
+
+        loaded_version = state.get("mini_trainer_version", 0)
+        if loaded_version != self._version:
+            warnings.warn(
+                f"Version mismatch: Loading Classifier weights saved with mini_trainer_version {loaded_version} "
+                f"into current code version {self._version}. This may result in unexpected behavior.",
+                UserWarning
+            )
+
+        # Implement migration logic here if it becomes relevant
+
+        self._metadata.update(state)
 
     @classmethod
     def load(
@@ -143,19 +228,34 @@ class Classifier(nn.Module): # noqa: D101 TODO
         ):
         """Load weights into model architecture.
         """
+        cfg = {
+            "backbone_class" : architecture_class,
+            "backbone_output_name" : architecture_output_name
+        }
+        kwargs.update(cfg)
         architecture.add_module(architecture_output_name, cls(**kwargs))
-        setattr(architecture, "_backbone_class", architecture_class)
-        setattr(architecture, "_backbone_output_name", architecture_output_name)
+        for k, v in cfg.items():
+            setattr(architecture, f'_{k}', v)
         if state is not None:
-            architecture.load_state_dict(state)
-        architecture.to(device, dtype)
-        
+            try:
+                architecture.load_state_dict(state, strict=True)
+            except RuntimeError as e:
+                if "Missing key(s)" in str(e) and "_extra_state" in str(e):
+                    architecture.load_state_dict(state, strict=False)
+                    warnings.warn(
+                        f'{architecture_class} loaded with `strict=False`, proceed with caution!',
+                        UserWarning
+                    )
+                else:
+                    raise e
+
+        architecture.to(device, dtype)        
         return architecture
 
     @classmethod    
     def build(
             cls,
-            model_type : str, 
+            model_type : str | None=None, 
             weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
             num_classes : list[int] | int | None=None,
             device : torch.types.Device=torch.device("cpu"), 
@@ -164,54 +264,154 @@ class Classifier(nn.Module): # noqa: D101 TODO
         ):
         if not isinstance(device, torch.device):
             device = torch.device(device)
+        cfg = {}
+        state = stored_head_name = stored_version = None
+        # Parse metadata stored in .pt file if available
+        if weights is not None:
+            if isinstance(weights, str):
+                state = torch.load(
+                    f=weights, 
+                    map_location=device, 
+                    weights_only=True
+                )
+                state : OrderedDict[str, torch.Tensor | Any] = state.get("model", state)
+            else:
+                state = weights
+            cfg = cls.extract_metadata(state)
+            stored_model_type = cfg.pop("backbone_class", None)
+            if stored_model_type is None:
+                if model_type is None:
+                    raise RuntimeError('Unable to infer missing model type from supplied weights.')
+            else:
+                assert isinstance(stored_model_type, str)
+                if stored_model_type != model_type and model_type is not None:
+                    warnings.warn(
+                        f'Manually specified model type "{model_type}" overridden to "{stored_model_type}"!',
+                        UserWarning
+                    )
+                model_type = stored_model_type
+            stored_head_name = cfg.pop("backbone_output_name", None)
+            assert stored_head_name is None or isinstance(stored_head_name, str)
+            stored_version = cfg.pop("mini_trainer_version", None)
+            assert stored_version is None or isinstance(stored_version, int)
+        else:
+            if model_type is None:
+                raise ValueError(
+                    f'Building a {cls.__name__} from scratch (w.o. weight file) '
+                    f'requires specifying the model type, not {model_type}'
+                )
+        
+        # Build backbone
         architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=dtype)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
-        
+        if stored_head_name is not None and stored_head_name != head_name:
+            warnings.warn(
+                f'Classification head module name "{stored_head_name}" implied in weights '
+                f'does not match the derived name "{head_name}"!'
+            )
+
+        # Config heuristics
         num_embeddings = recursive_dfs_attr(
             getattr(architecture, head_name), 
             "in_features", 
             lambda x : isinstance(x, int)
         )
-        state = None
-
-        if weights is not None:
-            if isinstance(weights, str):
-                state : dict[str, Any] | OrderedDict[str, torch.Tensor] = torch.load(weights, device, weights_only=True)
-                if "model" in state:
-                    state : OrderedDict[str, torch.Tensor] = state["model"]
-            else:
-                state = weights
+        if state is not None:
             for key in list(state.keys()):
                 if isinstance(state[key], torch.Tensor):
                     state[key] = state[key].to(device, dtype)
-            num_classes, _ = state.get(
-                f"{head_name}.linear.weight",
-                state.get(f"{head_name}.linear.parametrizations.weight.original1")
-            ).shape
-        else:
-            if isinstance(num_classes, list):
-                # Here we assume that the number of classes for each level has been passed 
-                # and that the number of classes at the leaf level is contained in the first element
-                num_classes = num_classes[0]
-            if not isinstance(num_classes, int):
-                raise RuntimeError(
-                    'Unable to build classifier with unknown number of output classes. '
-                    'If `weights` is not passed (`None`), the number of classes, `num_classes`, must be specified.'
+            head_weights = state.get(f"{head_name}.linear.weight", None)
+            if head_weights is None:
+                head_weights = state.get(f"{head_name}.linear.parametrizations.weight.original1", None)
+            if head_weights is not None:
+                num_classes, _ = head_weights.shape
+            else:
+                warnings.warn(
+                    'Unable to infer number of classes from supplied weights.',
+                    UserWarning
                 )
+            hidden_layer = state.get(f"{head_name}.hidden.weight", None)
+            kwargs.update({"hidden" : isinstance(hidden_layer, torch.Tensor) and hidden_layer.shape[0]})
+        if isinstance(num_classes, (list, tuple)):
+            num_classes = num_classes[0]
+        kwargs.update({
+            "in_features" : num_embeddings,
+            "out_features" : num_classes
+        })
+
+        # Check parity between supplied/heuristic and stored config, and let stored override
+        for k, v in cfg.items():
+            if kwargs.get(k, None) is None:
+                kwargs[k] = v
+                continue
+            if v != kwargs[k]:
+                warnings.warn(
+                    f'Model configuration option {k} overriden by value stored in config: ' 
+                    f'{kwargs[k]} ==> {v}',
+                    UserWarning
+                )
+                kwargs[k] = v
+
+        # Rebuild (and load) integrated backbone and classifier
         model = cls.load(
             model_type, head_name, architecture, state, device, dtype, 
-            in_features=num_embeddings, out_features=num_classes, **kwargs
+            **kwargs
         )
         return model, model_preprocess
 
 
-def last_layer_weights(model : nn.Module):
-    """Retrieve the weights of the last layer of a model created with `mini_trainer.classifier.Classifier.build()`.
+def classification_module(model : nn.Module):
+    """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`.
     """
-    classification_head = getattr(model, getattr(model, "_backbone_output_name", None), None)
-    if classification_head is None:
-        return None
-    elif not isinstance(classification_head, Classifier):
-        raise RuntimeError(f"Unexpected classification head type {type(classification_head)} found.")
-    return classification_head.linear.weight
+    backbone_name = getattr(model, "_backbone_output_name", None)
+    if backbone_name is None:
+        for name, module in model.named_modules():
+            if isinstance(module, Classifier):
+                setattr(model, "_backbone_output_name", name)
+                return module
+        raise RuntimeError("Unable to find classification module.")
+    else:
+        module = getattr(model, backbone_name, None)
+        if not isinstance(module, Classifier):
+            raise RuntimeError(f"Unexpected classification head type {type(module)} found.")
+        return module
+
+
+def last_layer_weights(model : nn.Module):
+    return classification_module(model).linear.weight
+
+
+def set_classification_mask(
+        model : nn.Module, 
+        indices : list[int] | torch.Tensor | np.ndarray | None=None
+    ):
+    """Mask a selection of output features (classes).
+
+    Args:
+        model: A model created with `mini_trainer.classifier.Classifier.build()`.
+        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    """
+    classification_module(model).set_active_features(indices)
+
+
+@contextmanager
+def mask_classifier(
+        model : nn.Module,
+        indices : list[int] | torch.Tensor | np.ndarray | None=None
+    ):
+    """Mask a selection of output features (classes).
+
+    Args:
+        model: A model created with `mini_trainer.classifier.Classifier.build()`.
+        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    """
+    classifier = classification_module(model)
+    orig_indices = classifier.active_indices
+
+    classifier.set_active_features(indices)
+    
+    try:
+        yield
+    finally:
+        classifier.set_active_features(orig_indices)

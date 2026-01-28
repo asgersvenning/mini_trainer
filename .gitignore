@@ -16,7 +16,6 @@
 **.yaml
 **.yml
 **.parquet
-examples/*/**
 
 # Unwanted temporary files
 **events.out.tfevents*
@@ -27,3 +26,5 @@ examples/*/**
 # Specific cases
 examples/test.ipynb
 uv.lock
+!/.github/workflows/*.yml
+!conda.yaml

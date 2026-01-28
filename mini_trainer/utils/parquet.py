@@ -1,9 +1,10 @@
 import os
 from collections.abc import Iterable
-from typing import Any, Literal
+from typing import Any
 
 import pyarrow.compute as pc
 import pyarrow.parquet as pp
+from tqdm import tqdm
 
 KCOLUMNS = (
     "speciesKey",
@@ -22,15 +23,32 @@ COLUMNS = (
 )
 
 
+def nrow(path : str):
+    return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
+
+
 def iter_parquet(path : str, columns=COLUMNS):
     """Iterate lazily over rows in ``gbifxdl`` parquet.
     """
-    for batch in pp.ParquetFile(path).iter_batches():
+    for batch in pp.ParquetFile(path).iter_batches(columns=columns):
         yield from batch.filter(
             pc.match_substring_regex(pc.field("set"), pattern="^\\d+$")
         ).select(
             columns
-        ).to_pylist()
+        ).tolist()
+
+
+def iter_parquet_batches(path : str, columns=COLUMNS):
+    """Iterate lazily over rows in ``gbifxdl`` parquet.
+    """
+    for batch in pp.ParquetFile(path).iter_batches(columns=columns):
+        filtered = batch.filter(
+            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$")
+        ).select(
+            columns
+        )
+        if filtered.num_rows > 0:
+            yield filtered
 
 
 def set2split(set : int):
@@ -71,38 +89,157 @@ def combine_dicts(dicts : Iterable[dict]):
     return retval
 
 
+# def get_metadata_from_parquet(
+#         path : str, 
+#         cls2idx : dict[str, int | dict[str, int]],
+#         **kwargs
+#     ) -> dict[Literal['split', 'class', 'path', 'label'], list[str | int]]:
+#     """This functions retrieves the metadata index for use with minitrainer.
+    
+#     Args:
+#         path: Path to parquet created by ``gbifxdl``.
+#         cls2idx: A dictionary with mappings from GBIF taxon (probably species) IDs to indexes used for DL training.
+#             Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above, 
+#             where the key denotes the taxonomic level, such that ``"0"`` is species, ``"1"`` is genus and so forth.
+#         kwargs: unused.
+#     """
+#     if isinstance(cls2idx[next(iter(cls2idx))], dict):
+#         def parse_row(row : dict[str, Any]):
+#             nonlocal path
+#             split = set2split(int(row["set"].strip()))
+#             keys = get_keys(row)
+#             cls : list[int] = [cls2idx[str(level)][keys[level]] for level in range(len(cls2idx))]
+#             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
+#             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys}
+#     else:
+#         def parse_row(row : dict[str, Any]):
+#             nonlocal path
+#             split = set2split(int(row["set"].strip()))
+#             keys = get_keys(row)
+#             cls : int = cls2idx[keys[0]]
+#             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
+#             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
+    
+#     return combine_dicts(map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path))))
+
 def get_metadata_from_parquet(
-        path : str, 
-        cls2idx : dict[str, int | dict[str, int]],
-        **kwargs
-    ) -> dict[Literal['split', 'class', 'path', 'label'], list[str | int]]:
-    """This functions retrieves the metadata index for use with minitrainer.
-    
-    Args:
-        path: Path to parquet created by ``gbifxdl``.
-        cls2idx: A dictionary with mappings from GBIF taxon (probably species) IDs to indexes used for DL training.
-            Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above, 
-            where the key denotes the taxonomic level, such that ``"0"`` is species, ``"1"`` is genus and so forth.
-        kwargs: unused.
-    """
-    if isinstance(cls2idx[next(iter(cls2idx))], dict):
-        def parse_row(row : dict[str, Any]):
-            nonlocal path
-            split = set2split(int(row["set"].strip()))
-            keys = get_keys(row)
-            cls : list[int] = [cls2idx[str(level)][keys[level]] for level in range(len(cls2idx))]
-            filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-            return {"split" : split, "class" : cls, "path" : filepath, "label" : keys}
-    else:
-        def parse_row(row : dict[str, Any]):
-            nonlocal path
-            split = set2split(int(row["set"].strip()))
-            keys = get_keys(row)
-            cls : int = cls2idx[keys[0]]
-            filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-            return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
-    
-    return combine_dicts(map(parse_row, iter_parquet(path)))
+    path: str,
+    cls2idx: dict[str, int | dict[str, int]],
+    **kwargs,
+) -> dict[str, list]:
+    root_dir = os.path.dirname(os.path.abspath(path))
+    base_dir = os.path.join(root_dir, "images") + os.sep
+
+    first_val = cls2idx[next(iter(cls2idx))]
+    is_hierarchical = isinstance(first_val, dict)
+
+    out_split: list[str] = []
+    out_class: list[int | tuple[int | None, ...] | None] = []
+    out_path: list[str] = []
+    out_label: list[str | tuple[str, ...]] = []
+
+    def _to_str(x: object) -> str:
+        return "" if x is None else str(x)
+
+    def _to_int_or_minus1(x: object) -> int:
+        if x is None:
+            return -1
+        if isinstance(x, bool):
+            return int(x)
+        if isinstance(x, int):
+            return x
+        if isinstance(x, float):
+            return int(x) if x.is_integer() else -1
+        try:
+            s = str(x).strip()
+            if s == "":
+                return -1
+            return int(float(s))
+        except Exception:
+            return -1
+
+    path_str = path if len(path) < (25 + 3) else ("..." + path[-min(25, len(path)):])
+    with tqdm(
+        total=nrow(path),
+        desc=f"Parsing metadata from {path_str}",
+    ) as pbar:
+        for batch in iter_parquet_batches(path):
+            names = batch.schema.names
+            idx = {name: i for i, name in enumerate(names)}
+
+            missing = [c for c in ("filename", "set") if c not in idx]
+            if missing:
+                raise KeyError(f"Missing required columns: {missing}")
+
+            for k in KCOLUMNS:
+                if k not in idx:
+                    raise KeyError(f"Missing required key column: {k}")
+
+            filename_list = batch.column(idx["filename"]).to_pylist()
+            set_list = batch.column(idx["set"]).to_pylist()
+
+            gid_list = batch.column(idx[KCOLUMNS[0]]).to_pylist()
+
+            n = len(filename_list)
+            if not (len(set_list) == len(gid_list) == n):
+                raise ValueError("Column lengths mismatch inside a parquet batch.")
+
+            split_batch: list[str] = []
+            path_batch: list[str] = []
+            for gid, fn, s in zip(gid_list, filename_list, set_list, strict=True):
+                si = _to_int_or_minus1(s)
+                if si == 0:
+                    split_batch.append("test")
+                elif si == 1:
+                    split_batch.append("validation")
+                else:
+                    split_batch.append("train")
+
+                path_batch.append(base_dir + _to_str(gid) + os.sep + _to_str(fn))
+
+            if is_hierarchical:
+                level_maps: list[dict[str, int]] = []
+                for level in range(len(cls2idx)):
+                    lm = cls2idx.get(str(level))
+                    if not isinstance(lm, dict):
+                        raise TypeError(
+                            f"Expected hierarchical cls2idx['{level}'] to be dict[str,int], got {type(lm)}"
+                        )
+                    level_maps.append(lm)
+
+                key_lists = [batch.column(idx[KCOLUMNS[level]]).to_pylist() for level in range(len(level_maps))]
+
+                class_batch: list[tuple[int | None, ...]] = []
+                label_batch: list[tuple[str, ...]] = []
+                for i in range(n):
+                    labels = tuple(_to_str(key_lists[level][i]).strip() for level in range(len(level_maps)))
+                    classes = tuple(level_maps[level].get(labels[level]) for level in range(len(level_maps)))
+                    label_batch.append(labels)
+                    class_batch.append(classes)
+
+                out_label.extend(label_batch)
+                out_class.extend(class_batch)
+            else:
+                mapping: dict[str, int] = cls2idx  # type: ignore[assignment]
+                key_list = batch.column(idx[KCOLUMNS[0]]).to_pylist()
+
+                label_batch = [_to_str(v).strip() for v in key_list]
+                class_batch = [mapping.get(lbl) for lbl in label_batch]
+
+                out_label.extend(label_batch)
+                out_class.extend(class_batch)
+
+            out_split.extend(split_batch)
+            out_path.extend(path_batch)
+
+            pbar.update(n)
+
+    return {
+        "split": out_split,
+        "class": out_class,
+        "path": out_path,
+        "label": out_label,
+    }
 
 
 def parquet_to_class_spec(path : str):

@@ -1,5 +1,4 @@
-"""
-Apply quality control model to gbifxdl parquet.
+"""Apply quality control model to gbifxdl parquet.
 The model has been trained to infer if a given image contains
 an image of an adult moth at a good resolution, 
 or one of a number of other "classes".
@@ -15,7 +14,15 @@ but is NOT intended to actually be run.
 # 2) The actual class must have 50 or more images **after** applying the first heuristic.
 
 import csv
+import os
 from collections import Counter
+from tempfile import tempdir
+
+import pyarrow
+import pyarrow.compute as cp
+import pyarrow.dataset as ds
+from pyarrow.parquet import ParquetWriter
+from pyremotedata.implicit_mount import IOHandler
 from tqdm.auto import tqdm
 
 src = "quality/global_lepi.csv"
@@ -26,7 +33,7 @@ non_selected = []
 with open(src) as f:
     lines = f.readlines()
     reader = csv.DictReader(lines)
-    for row in tqdm(reader, total=len(lines)-1, desc="Selecting from predictions"):
+    for row in tqdm(reader, total=len(lines) - 1, desc="Selecting from predictions"):
         path, pred, conf = row["path"], row["prediction"], row["confidence"]
         if pred in ["Valid", "Dead"] and float(conf) >= 0.5:
             init_selected.append(path)
@@ -45,9 +52,16 @@ for proposed in init_selected:
         non_selected.append(proposed)
 
 summary_str = "\n".join(
-    f"{lab:<20}: {{:>10}}" for lab in ["Total images", "Passed QC", "Enough per-class", "Removed", "Total classes", "Retained classes"]
+    f"{lab:<20}: {{:>10}}" for lab in [
+        "Total images", 
+        "Passed QC", 
+        "Enough per-class", 
+        "Removed", 
+        "Total classes", 
+        "Retained classes"
+    ]
 ).format(
-    len(lines)-1, len(init_selected), len(selected), len(non_selected), len(init_class_counts), len(class_counts)
+    len(lines) - 1, len(init_selected), len(selected), len(non_selected), len(init_class_counts), len(class_counts)
 )
 print(summary_str)
 
@@ -61,16 +75,6 @@ with open("quality/non_selected_images.txt", "w") as f:
 # *Crucially this is done lazily on disk to avoid OOM on large parquet files!*
 
 # Original parquet is downloaded from ERDA and updated parquet is uploaded to ERDA if it doesn't exist.
-
-import os
-from tempfile import tempdir
-
-import pyarrow
-import pyarrow.compute as cp
-import pyarrow.dataset as ds
-from pyarrow.parquet import ParquetWriter
-from pyremotedata.implicit_mount import IOHandler
-from tqdm.auto import tqdm
 
 with IOHandler(user="On0rdRltgS", password="On0rdRltgS") as io:
     io.cd("global_lepi")
@@ -88,7 +92,7 @@ if not isinstance(data, ds.Dataset):
     raise RuntimeError("...")
 
 with open(select_index, "r") as f:
-    selected = [l.strip() for l in f.readlines()]
+    selected = [line.strip() for line in f.readlines()]
 
 selected_uuid = set([s.split("/")[1].split(".")[0] for s in selected])
 
@@ -100,7 +104,10 @@ scanner = ds.Scanner.from_dataset(
     )
 )
 
-with ParquetWriter(dst, scanner.dataset_schema, compression="ZSTD") as writer, tqdm(total=scanner.count_rows(), desc="Writing parquet...") as pbar:
+with (
+    ParquetWriter(dst, scanner.dataset_schema, compression="ZSTD") as writer, 
+    tqdm(total=scanner.count_rows(), desc="Writing parquet...") as pbar
+    ):
     for batch in scanner.scan_batches():
         batch = batch.record_batch
         writer.write_batch(batch)

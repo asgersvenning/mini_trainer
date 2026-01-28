@@ -10,6 +10,7 @@ from types import GeneratorType
 from typing import Any, TextIO, TypeVar
 
 import numpy as np
+import psutil
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -65,7 +66,7 @@ class Timer: # noqa: D101
 
     def __str__(self):
         if self.running:
-            return f'Timer[Running]: {format_duration(self.total)} + {format_duration(time.time() - self._last)}'
+            return f'Timer[Running]: {format_duration(self._total)} + {format_duration(time.time() - self._last)}'
         else:
             return f'Timer[Stopped]: {format_duration(self.total)}'
     
@@ -1085,7 +1086,7 @@ class MultiLogger:
         if torch.cuda.is_available():
             mem = torch.cuda.max_memory_allocated() / MB
         else:
-            mem = None
+            mem = psutil.Process().memory_info().rss / MB
         self.log_statistic(mem=mem)
     
     def default_consume(

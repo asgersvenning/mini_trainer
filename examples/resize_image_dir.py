@@ -7,7 +7,7 @@ from PIL import Image
 from tqdm.contrib.concurrent import process_map
 
 if __name__ == "__main__":
-    parser = ArgumentParser(prog = "resizer")
+    parser = ArgumentParser(prog="resizer")
     parser.add_argument(
         "-i", "--input_dir", type=str, required=True,
         help="Root directory containing images (arbitrarily nested)."
@@ -31,13 +31,16 @@ if __name__ == "__main__":
             return
         Image.open(src).convert("RGB").resize((size, size), Image.Resampling.NEAREST).save(dst, "JPEG", quality=95)
     def proc_one(x):
-        os.makedirs(os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))), exist_ok=True) is None and rewrite_image_pillow(x, dst, args.size)
+        os.makedirs(
+            os.path.dirname(dst := os.path.join(args.output_dir, os.path.relpath(x, args.input_dir))),
+            exist_ok=True
+        ) is None and rewrite_image_pillow(x, dst, args.size)
 
     pattern = re.compile(args.image_pattern, re.IGNORECASE)
     imgs = list(filter(lambda x : bool(re.search(pattern, x)), iglob(os.path.join(args.input_dir, "**", "*"))))
     process_map(
         proc_one, 
         imgs,
-        max_workers = min(64, max(1, os.cpu_count() // 2)),
-        chunksize = 32
+        max_workers=min(64, max(1, os.cpu_count() // 2)),
+        chunksize=32
     )

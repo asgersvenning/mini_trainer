@@ -1,6 +1,7 @@
 import json
 import sys
 
+
 def run_notebook(notebook_path):
     with open(notebook_path, "r", encoding="utf-8") as nb_file:
         notebook = json.load(nb_file)
@@ -14,6 +15,7 @@ def run_notebook(notebook_path):
             # Optionally, add a separator (e.g., a comment) between cells.
             full_code += f"\n# Begin cell\n{cell_code}\n# End cell\n"
     return full_code
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
