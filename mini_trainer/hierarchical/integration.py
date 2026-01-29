@@ -2,19 +2,37 @@ import json
 import os
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
+from functools import lru_cache
 from itertools import repeat
 
 import torch
+from torch import nn
 
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.hierarchical.gbif import cls2idx_from_labels, create_taxonomy, labels_from_taxonomy
+from mini_trainer.classifier import classification_module
+from mini_trainer.hierarchical.gbif import cls2idx_from_labels, create_taxonomy, id_to_name, labels_from_taxonomy
 from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
-from mini_trainer.hierarchical.model import HierarchicalClassifier
+from mini_trainer.hierarchical.model import HierarchicalClassifier, HierarchicalPrediction
 from mini_trainer.utils import write_csv_from_dict
 from mini_trainer.utils.data import find_images
 from mini_trainer.utils.logging import BaseResultCollector
 from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
 from mini_trainer.utils.plot import named_confusion_matrix
+
+
+def _freeze(d: dict[str, dict[str, int]]):
+    return tuple((k, tuple(sorted(v.items()))) for k, v in sorted(d.items()))
+
+
+@lru_cache
+def _cls2idx_to_names(frozen):
+    ids = [id_ for _, inner in frozen for id_, _ in inner]
+    id2name = dict(zip(ids, id_to_name(ids)))
+    return {lvl: {id2name[i]: idx for i, idx in inner} for lvl, inner in frozen}
+
+
+def cls2idx_to_names(cls2idx: dict[str, dict[str, int]]):
+    return _cls2idx_to_names(_freeze(cls2idx))
 
 
 def linnean_labels_from_directory(dir : str, levels="family", **kwargs): # noqa: D103
@@ -202,13 +220,16 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
         
     @staticmethod
     def build_model(
-            cls2idx : dict[int, dict[str, int]], 
-            labels : list[tuple[str, ...]], 
+            cls2idx : dict[int, dict[str, int]] | None=None, 
+            labels : list[tuple[str, ...]] | None=None, 
             *args, 
             cls=HierarchicalClassifier, 
             **kwargs
         ):
-        sparse_masks = sparse_masks_from_labels(labels, cls2idx)
+        if labels is not None and cls2idx is not None:
+            sparse_masks = sparse_masks_from_labels(labels, cls2idx)
+        else:
+            sparse_masks = None
         return BaseBuilder.build_model(*args, cls=cls, sparse_masks=sparse_masks, **kwargs)
     
     @staticmethod
@@ -250,33 +271,45 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
 class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
     def __init__( # noqa: D107
             self, 
+            model : nn.Module | None=None,
             idx2cls : dict[str, dict[int, str]] | None=None,
             cls2idx : dict[str, dict[str, int]] | None=None,
             *args, 
+            scientific_names : bool=True,
             **kwargs
         ):
-        if idx2cls is None and cls2idx is None:
-            raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
-        if idx2cls is None:
+        if model is not None:
+            model_metadata = classification_module(model)._metadata
+            cls2idx = model_metadata.get("cls2idx", None)
+        if cls2idx is not None and scientific_names:
+            cls2idx = cls2idx_to_names(cls2idx)
+            idx2cls = None
+        if idx2cls is None and cls2idx is not None:
             idx2cls = {lvl : {v : k for k, v in _cls2idx.items()} for lvl, _cls2idx in cls2idx.items()}
-        if cls2idx is None:
+        if cls2idx is None and idx2cls is not None:
             cls2idx = {lvl : {v : k for k, v in _idx2cls.items()} for lvl, _idx2cls in idx2cls.items()}
         super().__init__(idx2cls=idx2cls, cls2idx=cls2idx, *args, **kwargs)
-        self.idx2cls = idx2cls
-        self.cls2idx = cls2idx
         self._levels = None
 
-    def _collect_base_attributes(self, paths : list[str], predictions : list[torch.Tensor]):
+    def _collect_base_attributes(self, paths : list[str], predictions : list[torch.Tensor] | list[HierarchicalPrediction]):
         """Override in subclasses!
         """
-        if self._levels is None:
-            self._levels = len(predictions)
+        if isinstance(predictions, list) and (not predictions or isinstance(predictions[0], HierarchicalPrediction)):
+            if self._levels is None and predictions:
+                self._levels = len(predictions[0][0].label)
+            indices, predictions, confidences = zip(*[(pred[0].index, pred[0].label, pred[0].confidence) for pred in predictions])
+            # TODO: RECALCULATE PREDICTIONS FROM INDICES, idx2cls/cls2idx may have changes!
+            self.preds.extend(predictions)
+            self.confs.extend(confidences)
+        else:
+            if self._levels is None:
+                self._levels = len(predictions)
+            self.preds.extend(list(zip(*[
+                map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist())
+                for lvl, p in enumerate(predictions)
+            ])))
+            self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
         self.paths.extend(paths)
-        self.preds.extend(list(zip(*[
-            map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist())
-            for lvl, p in enumerate(predictions)
-        ])))
-        self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
 
     def eval_label_fn(
             self,

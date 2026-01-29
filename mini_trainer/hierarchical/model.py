@@ -1,10 +1,12 @@
 
+from dataclasses import dataclass
+from functools import lru_cache
 from itertools import chain
 
 import torch
 from torch import nn as nn
 
-from mini_trainer.classifier import Classifier
+from mini_trainer.classifier import Classifier, Prediction
 
 
 def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
@@ -52,8 +54,21 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         # Store masks
         self._num_masks = 0
         if sparse_masks is not None:
-            [self.register_buffer(f'mask_{i}', m, persistent=True) for i, m in enumerate(sparse_masks)]
+            [self.register_buffer(f'mask_{i}', m.long(), persistent=True) for i, m in enumerate(sparse_masks)]
             self._num_masks = len(sparse_masks)
+
+    @classmethod
+    def load(cls, architecture_class, architecture_output_name, architecture, state, device, dtype, **kwargs):
+        if state is not None:
+            prefix = f"{architecture_output_name}.mask_"
+            # Extract (index, tensor) tuples, sort by index, and retrieve tensors
+            masks = [(int(k.split("_")[-1]), v) for k, v in state.items() if k.startswith(prefix)]
+            if masks:
+                kwargs["sparse_masks"] = [v for _, v in sorted(masks)]
+
+        return super().load(
+            architecture_class, architecture_output_name, architecture, state, device, dtype, **kwargs
+        )
 
     @property
     def num_masks(self):
@@ -89,6 +104,11 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     
     def forward(self, x):
         return self.hierarchy(super().forward(x).log_softmax(dim=1))
+    
+    @torch.no_grad()
+    def predict(self, x, topk : int=1, **kwargs):
+        out = list(zip(*self(x)))
+        return [HierarchicalPrediction(p, topk=topk, **{**self._metadata, **kwargs}) for p in out]
 
 
 class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
@@ -109,8 +129,21 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
     def last_layers(self):
         return chain([self.linear], self.layers)
 
-    def marginals(self, x : torch.Tensor) -> list[torch.Tensor]:
-        return [layer(x).log_softmax(dim=1) for layer in self.last_layers]
+    # def marginals(self, x : torch.Tensor) -> list[torch.Tensor]:
+    #     return [layer(x).log_softmax(dim=1) for layer in self.last_layers]
+    def marginals(self, x: torch.Tensor) -> list[torch.Tensor]:
+        outputs = [self.linear(x).log_softmax(dim=1)]
+
+        indices = self.active_indices
+        for i, layer in enumerate(self.layers):
+            if indices is not None:
+                indices = self.mask(i)[indices].unique()
+            out = layer(x)
+            if indices is not None:
+                out = out.index_select(1, indices)
+            outputs.append(out.log_softmax(dim=1))
+            
+        return outputs
 
     def forward(self, x : torch.Tensor):
         M = self.marginals(self.preclassification(x))
@@ -128,3 +161,83 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
 class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
     def forward(self, x):
         return super().marginals(super().preclassification(x))
+
+
+@dataclass
+class HierarchicalPredictionItem:
+    """Hierarchical data container.
+    Auto-converts inputs to native Python types on initialization.
+    """
+    label: tuple[str, ...] | None
+    confidence: tuple[float, ...]
+    index: tuple[int, ...] | None
+
+    def __post_init__(self):
+        # Factory coercion: ensures native types immediately
+        if self.label is not None:
+            self.label = tuple(str(e) for e in self.label)
+        if self.confidence is not None:
+            self.confidence = tuple(float(e) for e in self.confidence)
+        if self.index is not None:
+            self.index = tuple(int(e) for e in self.index)
+
+    def __repr__(self):
+        if self.label is not None:
+            return "/".join([f'{label}: ({conf:.1%})' for conf, label in zip(self.confidence, self.label)])
+        else:
+            return "/".join([f'I[{idx}]: ({conf:.1%})' for conf, idx in zip(self.confidence, self.index)])
+
+    def to_dict(self):
+        return {
+            "label": self.label,
+            "confidence": self.confidence,
+            "index": self.index
+        }
+
+
+class HierarchicalPrediction(Prediction):
+    """Hierarchical PyTorch Prediction class.
+    """
+    ITEM_CLASS = HierarchicalPredictionItem
+
+    def __init__(self, *args, cls2idx : dict[str, dict[str, int]], **kwargs):
+        super().__init__(*args, cls2idx=cls2idx, **kwargs)
+
+    @property
+    @lru_cache(1)
+    def idx2cls(self):
+        if self.cls2idx:
+            return {level : {v: k for k, v in mapping.items()} for level, mapping in self.cls2idx.items()}
+        return None
+
+    def _process(self, raw_prediction : list[torch.Tensor]):
+        logits, indices = [], []
+        for rp in raw_prediction:
+            dim = rp.shape[-1]
+            k = self.topk if 1 <= self.topk < dim else dim
+            lgs, idx = torch.topk(rp, k)
+            logits.append(lgs)
+            indices.append(idx)
+        return [torch.stack(v) for v in zip(*logits)], [torch.stack(v) for v in zip(*indices)]
+
+    def _translate(self) -> list[list[str]]:
+        if self.idx2cls:
+            return [[self.idx2cls[str(level)][i.item()] for level, i in enumerate(e)] for e in self.indices]
+        else:
+            return [[f'{i.item()}[{level}]' for level, i in enumerate(e)] for e in self.indices]
+
+    def _extract_confidence(self, raw_prediction: list[torch.Tensor]) -> list[torch.Tensor]:
+        confidences = []
+        for rp, idx in zip(raw_prediction, zip(*self.indices)):
+            idx = torch.stack(idx)
+            if not (
+                torch.all(rp >= 0) and
+                torch.isclose(
+                    rp.sum(), 
+                    torch.tensor(1.0, dtype=rp.dtype), 
+                    atol=1e-3 if rp.dtype == torch.float16 else 1e-5
+                )
+            ):
+                rp = rp.softmax(dim=-1)
+            confidences.append(rp[idx])
+        return [torch.stack(v) for v in zip(*confidences)]

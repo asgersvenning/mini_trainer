@@ -23,6 +23,7 @@ from mini_trainer.utils.plot import (
     plot_model_class_distance,
     raw_confusion_matrix,
 )
+from mini_trainer.classifier import Prediction, classification_module
 
 
 def format_duration(sec : int, suffix="dhms"):
@@ -183,6 +184,7 @@ class _ResultsCollector:
 class BaseResultCollector(_ResultsCollector): # noqa: D101
     def __init__( # noqa: D107
             self, 
+            model : nn.Module | None=None,
             idx2cls : dict[int, str] | None=None, 
             cls2idx : dict[str, int] | None=None,
             verbose : bool=False, 
@@ -190,6 +192,10 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
             *args, 
             **kwargs
         ):
+        if model is not None:
+            model_metadata = classification_module(model)._metadata
+            cls2idx = model_metadata.get("cls2idx", None)
+            idx2cls = model_metadata.get("idx2cls", None)
         if idx2cls is None and cls2idx is None:
             raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
         if cls2idx is None:
@@ -205,16 +211,21 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         for attr in self._extra_attr:
             setattr(self, attr, [])
 
-    def collect(self, paths : list[str], predictions : torch.Tensor, **kwargs):
+    def collect(self, paths : list[str], predictions : torch.Tensor | list[Prediction], **kwargs):
         self._collect_base_attributes(paths, predictions)
         self._collect_extra_attributes(**kwargs)
 
-    def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor):
+    def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor | list[Prediction]):
         """Override in subclasses!
         """
         self.paths.extend(paths)
-        self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
-        self.confs.extend(predictions.softmax(1).max(1).values.tolist())
+        if isinstance(predictions, list) and (not predictions or isinstance(predictions[0], Prediction)):
+            predictions, confidences = zip(*[(pred[0].label, pred[0].confidence) for pred in predictions])
+            self.preds.extend(predictions)
+            self.confs.extend(confidences)
+        else:
+            self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
+            self.confs.extend(predictions.softmax(1).max(1).values.tolist())
 
     def _collect_extra_attributes(
             self, 

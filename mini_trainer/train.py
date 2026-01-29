@@ -28,6 +28,7 @@ def main( # noqa: D417
         checkpoint : list[str] | None=None,
         class_spec : str | None=None,
         epochs : int=15,
+        size : int=256,
         name: str | None=None,
         device : str="cuda:0",
         dtype : str="float16",
@@ -45,7 +46,6 @@ def main( # noqa: D417
         },
         dataloader_builder_kwargs : dict[str, Any]={
             "batch_size" : 16,
-            "resize_size" : 256, 
             "train_proportion" : 0.9
         },
         augmentation_builder_kwargs : dict[str, Any]={},
@@ -91,6 +91,7 @@ def main( # noqa: D417
             If the file does not exist, it will be created based on subdirectories
             found under `output` if it is set. Default is 'class_index.json'.
         epochs: Number of training epochs. Default is 15.
+        size: Size of the input image (width/height). Default is 256.
         name: Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is ``None``.
         device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
@@ -171,6 +172,8 @@ def main( # noqa: D417
         dir=input,
         **spec_model_dataloader_kwargs
     )
+    # Add image size to class spec as it is needed to instantiate both the model and dataloader
+    class_spec["resize_size"] = size
 
     # Prepare model
     # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to 
@@ -469,8 +472,7 @@ def cli(description="Train a classifier", **extra_kwargs): # noqa: D103
         help='Number of warmup epochs (default=2.0).'
     )
     train_args.add_argument(
-        "--size", type=int, dest="dataloader_builder_kwargs.resize_size",
-        default=None, required=False,
+        "--size", type=int, default=None, required=False,
         help='Size of the input images; width, height (default=256).'
     )
     train_args.add_argument(

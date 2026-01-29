@@ -1,7 +1,9 @@
+import json
 import os
 import warnings
 from collections import OrderedDict
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -18,6 +20,8 @@ try:
     from torch.nn.utils.parametrizations import weight_norm
 except Exception:  # fallback for older installs
     from torch.nn.utils import weight_norm
+
+from functools import lru_cache
 
 _UNSUPPORTED_MODELS = [
     'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 
@@ -118,6 +122,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             hidden : bool | int=True, 
             droprate : float=0.1,
             normalized : bool=True,
+            active_indices : torch.Tensor | None=None,
             **metadata
         ):
         super().__init__()
@@ -166,7 +171,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
         self.linear = self._normalize_layer(layer) if normalized else layer
 
         # Prepare class masking buffer
-        self.register_buffer("active_indices", None)
+        if active_indices is not None:
+            self.register_buffer("active_indices", active_indices, persistent=True)
+        else:
+            self.register_buffer("active_indices", None)
     
     def set_active_features(self, indices : list[int] | torch.Tensor | np.ndarray | None=None):
         """Mask a selection of output features (classes).
@@ -180,6 +188,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         device = next(self.parameters()).device
         self.active_indices = torch.as_tensor(indices, dtype=torch.long, device=device).clone()
         self.active_indices = self.active_indices.sort().values
+        # TODO: APPLY FILTER TO cls2idx in metadata (also needs fixing in hierarchical!)
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
@@ -215,6 +224,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
 
         self._metadata.update(state)
 
+    @torch.no_grad()
+    def predict(self, x, topk : int=1, **kwargs):
+        return [Prediction(p, topk=topk, **{**self._metadata, **kwargs}) for p in self(x)]
+
     @classmethod
     def load(
             cls,
@@ -228,6 +241,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
         ):
         """Load weights into model architecture.
         """
+        if state is not None:
+            indices_key = f"{architecture_output_name}.active_indices"
+            if indices_key in state:
+                kwargs["active_indices"] = state[indices_key].long()
         cfg = {
             "backbone_class" : architecture_class,
             "backbone_output_name" : architecture_output_name
@@ -359,6 +376,132 @@ class Classifier(nn.Module): # noqa: D101 TODO
             **kwargs
         )
         return model, model_preprocess
+
+
+@dataclass
+class PredictionItem:
+    """Simple data container.
+    Auto-converts inputs to native Python types on initialization.
+    """
+    label: str | None
+    confidence: float
+    index: int | None
+
+    def __post_init__(self):
+        # Factory coercion: ensures native types immediately
+        if self.label is not None:
+            self.label = str(self.label)
+        if self.confidence is not None:
+            self.confidence = float(self.confidence)
+        if self.index is not None:
+            self.index = int(self.index)
+
+    def __repr__(self):
+        lbl = f"'{self.label}'" if self.label else f"Index {self.index}"
+        return f"{lbl}: {self.confidence:.2%}"
+
+    def to_dict(self):
+        return {
+            "label": self.label,
+            "confidence": self.confidence,
+            "index": self.index
+        }
+
+
+class Prediction:
+    """Standard PyTorch Prediction class.
+    Assumes inputs are Tensors. Subclass to handle other types.
+    """
+    ITEM_CLASS = PredictionItem
+
+    def __init__(
+            self,
+            prediction: torch.Tensor | Any,
+            topk: int = 1,
+            cls2idx: dict[str, int] | None = None,
+            **kwargs
+        ):
+        self.topk = topk
+        self.cls2idx = cls2idx
+        self.metadata = kwargs
+        
+        self.logits, self.indices = self._process(prediction)
+        self.labels = self._translate()
+        self.confidence = self._extract_confidence(prediction)
+        self.items = [
+            self.ITEM_CLASS(*data) 
+            for data in zip(self.labels, self.confidence, self.indices)
+        ]
+
+    # --- Standard Implementations (override) ---
+    @property
+    @lru_cache(1)
+    def idx2cls(self):
+        if self.cls2idx:
+            return {v: k for k, v in self.cls2idx.items()}
+        return None
+
+    def _process(self, raw_prediction: torch.Tensor):
+        dim = raw_prediction.shape[-1]
+        k = self.topk if 1 <= self.topk < dim else dim
+        return torch.topk(raw_prediction, k)
+
+    def _translate(self):
+        if self.idx2cls:
+            return [self.idx2cls[i.item()] for i in self.indices]
+        else:
+            return [str(i.item()) for i in self.indices]
+
+    def _extract_confidence(self, raw_prediction: torch.Tensor):
+        if not (
+            torch.all(raw_prediction >= 0) and
+            torch.isclose(
+                raw_prediction.sum(), 
+                torch.tensor(1.0, dtype=raw_prediction.dtype), 
+                atol=1e-3 if raw_prediction.dtype == torch.float16 else 1e-5
+            )
+        ):
+            raw_prediction = raw_prediction.softmax(dim=-1)
+            
+        return raw_prediction[self.indices]
+
+    # --- Convenience & Serialization (do not override) ---
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, idx):
+        return self.items[idx]
+
+    def __iter__(self):
+        yield from self.items
+
+    def __repr__(self) -> str:
+        if not self:
+            return f"<{type(self).__name__}(Empty)>"
+        return f"<{type(self).__name__}(topk={self.topk})>\n" + "\n".join([f"\t{item!r}" for item in self])
+
+    def to_dict(self) -> list[dict]:
+        return [item.to_dict() for item in self]
+
+    def save(self, path: str):
+        data = {
+            "results": self.to_dict(),
+            "metadata": self.metadata,
+            "config": {
+                "topk": self.topk, 
+                "cls2idx": self.cls2idx if isinstance(self.cls2idx, dict) else str(type(self.cls2idx))
+            }
+        }
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+
+
+def predict(model : nn.Module, x : torch.Tensor, topk : int=1, **kwargs):
+    return classification_module(model).predict(backbone(model)(x), topk=topk, **kwargs)
+
+
+def backbone(model : nn.Module):
+    return nn.Sequential(*list(model.children())[:-1], nn.Flatten(start_dim=1, end_dim=-1))
 
 
 def classification_module(model : nn.Module):

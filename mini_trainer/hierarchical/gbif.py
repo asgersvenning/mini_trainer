@@ -127,6 +127,17 @@ def name_to_id(
             return id, rank, threshold
         return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold)
 
+@multithread_vectorize(desc="Translating names...")
+def id_to_name(id : str | int):
+    if isinstance(id, str):
+        id = id.strip()
+        if not id.isdigit():
+            raise ValueError(f'{id} must be a digit.')
+        id = int(id)
+    req = f'{GBIF_SPECIES_API_ENDPOINT}{id}/name'
+    data = retrive_request(req)
+    return data["scientificName"]
+
     
 @multithread_vectorize(desc="Resolving taxa...")
 def resolve_name_or_id(name_or_id : str | int): # noqa: D103
