@@ -87,12 +87,15 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def masks(self):
         masks = []
         filter = self.active_indices
+        filters = []
         for i in range(self.num_masks):
+            filters.append(filter)
             mask = self.mask(i)
             if filter is not None:
                 mask = mask[filter]
                 filter, mask = mask.unique(sorted=False, return_inverse=True)
             masks.append(mask)
+        self._active_indices = filters
         return masks
 
     def hierarchy(self, log_probs : torch.Tensor):
@@ -108,7 +111,10 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
         out = list(zip(*self(x)))
-        return [HierarchicalPrediction(p, topk=topk, **{**self._metadata, **kwargs}) for p in out]
+        return [
+            HierarchicalPrediction(p, topk=topk, active_indices=self._active_indices, **{**self._metadata, **kwargs}) 
+            for p in out
+        ]
 
 
 class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
@@ -200,7 +206,20 @@ class HierarchicalPrediction(Prediction):
     """
     ITEM_CLASS = HierarchicalPredictionItem
 
-    def __init__(self, *args, cls2idx : dict[str, dict[str, int]], **kwargs):
+    def __init__(
+            self, 
+            *args, 
+            cls2idx : dict[str, dict[str, int]], 
+            active_indices : list[list[int] | torch.Tensor | None] | None=None, 
+            **kwargs
+        ):
+        if active_indices is not None and not any(ai is None for ai in active_indices):
+            active_indices = [sorted(ai.tolist() if isinstance(ai, torch.Tensor) else ai for ai in active_indices)]
+            reindex = [{old : new for new, old in enumerate(ai)} for ai in active_indices]
+            cls2idx = {
+                outer : {k : reindex[i][v] for k, v in inner.items()}
+                for i, (outer, inner) in enumerate(cls2idx.items())
+            }
         super().__init__(*args, cls2idx=cls2idx, **kwargs)
 
     @property

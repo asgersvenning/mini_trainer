@@ -226,7 +226,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
 
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
-        return [Prediction(p, topk=topk, **{**self._metadata, **kwargs}) for p in self(x)]
+        return [
+            Prediction(p, topk=topk, active_indices=self.active_indices, **{**self._metadata, **kwargs})
+            for p in self(x)
+        ]
 
     @classmethod
     def load(
@@ -419,8 +422,15 @@ class Prediction:
             prediction: torch.Tensor | Any,
             topk: int = 1,
             cls2idx: dict[str, int] | None = None,
+            active_indices: list[int] | torch.Tensor | None=None,
             **kwargs
         ):
+        if active_indices is not None and cls2idx is not None:
+            if isinstance(active_indices, torch.Tensor):
+                active_indices = active_indices.tolist()
+            active_indices = sorted(active_indices)
+            reindex = {old : new for new, old in enumerate(active_indices)}
+            cls2idx = {k : reindex[v] for k, v in cls2idx.items()}
         self.topk = topk
         self.cls2idx = cls2idx
         self.metadata = kwargs
