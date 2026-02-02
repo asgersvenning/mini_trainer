@@ -430,7 +430,7 @@ class Prediction:
                 active_indices = active_indices.tolist()
             active_indices = sorted(active_indices)
             reindex = {old : new for new, old in enumerate(active_indices)}
-            cls2idx = {k : reindex[v] for k, v in cls2idx.items()}
+            cls2idx = {k : reindex[v] for k, v in cls2idx.items() if v in reindex}
         self.topk = topk
         self.cls2idx = cls2idx
         self.metadata = kwargs

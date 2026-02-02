@@ -87,14 +87,14 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def masks(self):
         masks = []
         filter = self.active_indices
-        filters = []
+        filters = [filter]
         for i in range(self.num_masks):
-            filters.append(filter)
             mask = self.mask(i)
             if filter is not None:
                 mask = mask[filter]
                 filter, mask = mask.unique(sorted=False, return_inverse=True)
             masks.append(mask)
+            filters.append(filter)
         self._active_indices = filters
         return masks
 
@@ -214,10 +214,10 @@ class HierarchicalPrediction(Prediction):
             **kwargs
         ):
         if active_indices is not None and not any(ai is None for ai in active_indices):
-            active_indices = [sorted(ai.tolist() if isinstance(ai, torch.Tensor) else ai for ai in active_indices)]
+            active_indices = [sorted(ai.tolist() if isinstance(ai, torch.Tensor) else ai) for ai in active_indices]
             reindex = [{old : new for new, old in enumerate(ai)} for ai in active_indices]
             cls2idx = {
-                outer : {k : reindex[i][v] for k, v in inner.items()}
+                outer : {k : reindex[i][v] for k, v in inner.items() if v in reindex[i]}
                 for i, (outer, inner) in enumerate(cls2idx.items())
             }
         super().__init__(*args, cls2idx=cls2idx, **kwargs)
