@@ -33,8 +33,7 @@ _UNSUPPORTED_MODELS = [
     'raft_large', 'raft_small', 
     'retinanet_resnet50_fpn', 'retinanet_resnet50_fpn_v2', 
     'ssd300_vgg16', 'ssdlite320_mobilenet_v3_large', 
-    'swin3d_b', 'swin3d_s', 'swin3d_t', 'swin_b', 'swin_s', 'swin_t', 'swin_v2_b', 'swin_v2_s', 'swin_v2_t', 
-    'vit_b_16', 'vit_b_32', 'vit_h_14', 'vit_l_16', 'vit_l_32'
+    'swin3d_b', 'swin3d_s', 'swin3d_t'
 ]
 
 
@@ -57,7 +56,7 @@ def preprocess(item, transform, func=None):
     
 
 def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
-              classifier_name: str | list[str] = ["classifier", "fc"],
+              classifier_name: str | list[str] = ["classifier", "fc", "heads", "head"],
               preprocess_dtype : torch.dtype | None=None):
     """Get torchvision model and preprocessing function by name.
     """
@@ -66,15 +65,24 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
         if backbone_model in _UNSUPPORTED_MODELS:
             raise ValueError(f"The model {backbone_model} is not supported.")
         default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
-        default_transform = default_weights.transforms(antialias=True)
+        try:
+            default_transform = default_weights.transforms(antialias=True)
+        except TypeError as e:
+            if "unexpected keyword argument 'antialias'" not in str(e):
+                raise e
+            default_transform = default_weights.transforms()
         backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
     if not isinstance(backbone_model, nn.Module):
         raise ValueError("backbone_model must be a string or a torch.nn.Module")
     backbone_classifier_name = None
     if isinstance(classifier_name, str):
         classifier_name = [classifier_name]
-    for name in classifier_name:
-        if hasattr(backbone_model, name):
+    # for name in classifier_name:
+    #     if hasattr(backbone_model, name):
+    #         backbone_classifier_name = name
+    #         break
+    for name, module in backbone_model.named_modules():
+        if name in classifier_name:
             backbone_classifier_name = name
             break
     if backbone_classifier_name is None:
