@@ -321,7 +321,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         data = {
             k : list() for k in SCHEMA
         }
-        labels = getattr(self, "labels", repeat(-1))
+        labels = getattr(self, "labels", repeat("-1"))
         for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
             do_predict = int(conf >= threshold)
             row = {

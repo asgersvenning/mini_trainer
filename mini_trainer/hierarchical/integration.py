@@ -362,7 +362,7 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
         data = {
             k : list() for k in SCHEMA
         }
-        labels = getattr(self, "labels", repeat([-1] * self._levels))
+        labels = getattr(self, "labels", repeat(["-1"] * self._levels))
         for i, (path, preds, labs, confs) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
             
             for level in range(self._levels):
