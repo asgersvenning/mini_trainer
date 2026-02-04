@@ -1,11 +1,11 @@
 import json
 import os
 import warnings
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, TypeVar
 
 import numpy as np
 import torch
@@ -183,6 +183,9 @@ class Classifier(nn.Module): # noqa: D101 TODO
             self.register_buffer("active_indices", active_indices, persistent=True)
         else:
             self.register_buffer("active_indices", None)
+        self._dirty_cache = defaultdict(lambda : True)
+        self.register_buffer("_linear_weight", torch.empty(0), persistent=False)
+        self.register_buffer("_linear_bias", torch.empty(0), persistent=False)
     
     def set_active_features(self, indices : list[int] | torch.Tensor | np.ndarray | None=None):
         """Mask a selection of output features (classes).
@@ -190,13 +193,26 @@ class Classifier(nn.Module): # noqa: D101 TODO
         Args:
             indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
         """
+        self._dirty_cache.clear()
         if indices is None:
             self.active_indices = None
             return
         device = next(self.parameters()).device
         self.active_indices = torch.as_tensor(indices, dtype=torch.long, device=device).clone()
         self.active_indices = self.active_indices.sort().values
-        # TODO: APPLY FILTER TO cls2idx in metadata (also needs fixing in hierarchical!)
+        _ = self._preprocess_metadata()
+
+    def _weight_bias(self):
+        if self._dirty_cache["_weight_bias"] or self.training:
+            weight, bias = self.linear.weight, self.linear.bias
+            if self.active_indices is not None:
+                weight = weight.index_select(0, self.active_indices)
+                if bias is not None:
+                    bias = bias.index_select(0, self.active_indices)
+            self._linear_weight = weight
+            self._linear_bias = bias
+            self._dirty_cache["_weight_bias"] = False
+        return self._linear_weight, self._linear_bias
 
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         if self.hidden:
@@ -206,11 +222,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         return self.batch_norm(x)
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
-        weight, bias = self.linear.weight, self.linear.bias
-        if self.active_indices is not None:
-            weight = weight.index_select(0, self.active_indices)
-            if bias is not None:
-                bias = bias.index_select(0, self.active_indices)
+        weight, bias = self._weight_bias()
         return F.linear(self.preclassification(x), weight=weight, bias=bias)
     
     def get_extra_state(self):
@@ -231,11 +243,32 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Implement migration logic here if it becomes relevant
 
         self._metadata.update(state)
+    
+    def _preprocess_metadata(self, cls2idx=None, **kwargs):
+        if self._dirty_cache["_preprocess_metadata"] or cls2idx is not None:
+            metadata = self._metadata.copy()
+            if cls2idx is None:
+                cls2idx = metadata.get("cls2idx", None)
+            active_indices = self.active_indices
+            if active_indices is not None and cls2idx is not None:
+                if isinstance(active_indices, torch.Tensor):
+                    active_indices = active_indices.tolist()
+                active_indices = sorted(active_indices)
+                reindex = {old : new for new, old in enumerate(active_indices)}
+                cls2idx = {k : reindex[v] for k, v in cls2idx.items() if v in reindex}
+                metadata["cls2idx"] = cls2idx
+            self._preprocessed_metadata = metadata
+            self._dirty_cache["_preprocess_metadata"] = False
+        return {**self._preprocessed_metadata, **kwargs}
+
+    @property
+    def metadata(self):
+        return self._preprocess_metadata()
 
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
         return [
-            Prediction(p, topk=topk, active_indices=self.active_indices, **{**self._metadata, **kwargs})
+            Prediction(p, topk=topk, **self._preprocess_metadata(**kwargs))
             for p in self(x)
         ]
 
@@ -394,18 +427,15 @@ class PredictionItem:
     """Simple data container.
     Auto-converts inputs to native Python types on initialization.
     """
-    label: str | None
+    label: str
     confidence: float
-    index: int | None
+    index: int
 
     def __post_init__(self):
         # Factory coercion: ensures native types immediately
-        if self.label is not None:
-            self.label = str(self.label)
-        if self.confidence is not None:
-            self.confidence = float(self.confidence)
-        if self.index is not None:
-            self.index = int(self.index)
+        self.label = str(self.label)
+        self.confidence = float(self.confidence)
+        self.index = int(self.index)
 
     def __repr__(self):
         lbl = f"'{self.label}'" if self.label else f"Index {self.index}"
@@ -419,26 +449,23 @@ class PredictionItem:
         }
 
 
-class Prediction:
+T = TypeVar("T", bound=PredictionItem)
+I = TypeVar("I")
+
+class BasePrediction[T : PredictionItem, I]:
     """Standard PyTorch Prediction class.
     Assumes inputs are Tensors. Subclass to handle other types.
     """
-    ITEM_CLASS = PredictionItem
+    ITEM_CLASS : type[T] = PredictionItem
+    items : list[T]
 
     def __init__(
             self,
-            prediction: torch.Tensor | Any,
+            prediction: I,
             topk: int = 1,
             cls2idx: dict[str, int] | None = None,
-            active_indices: list[int] | torch.Tensor | None=None,
             **kwargs
         ):
-        if active_indices is not None and cls2idx is not None:
-            if isinstance(active_indices, torch.Tensor):
-                active_indices = active_indices.tolist()
-            active_indices = sorted(active_indices)
-            reindex = {old : new for new, old in enumerate(active_indices)}
-            cls2idx = {k : reindex[v] for k, v in cls2idx.items() if v in reindex}
         self.topk = topk
         self.cls2idx = cls2idx
         self.metadata = kwargs
@@ -453,41 +480,23 @@ class Prediction:
 
     # --- Standard Implementations (override) ---
     @property
-    @lru_cache(1)
     def idx2cls(self):
-        if self.cls2idx:
-            return {v: k for k, v in self.cls2idx.items()}
-        return None
+        raise NotImplementedError()
 
-    def _process(self, raw_prediction: torch.Tensor):
-        dim = raw_prediction.shape[-1]
-        k = self.topk if 1 <= self.topk < dim else dim
-        return torch.topk(raw_prediction, k)
+    def _process(self, raw_prediction: I):
+        raise NotImplementedError()
 
     def _translate(self):
-        if self.idx2cls:
-            return [self.idx2cls[i.item()] for i in self.indices]
-        else:
-            return [str(i.item()) for i in self.indices]
+        raise NotImplementedError()
 
-    def _extract_confidence(self, raw_prediction: torch.Tensor):
-        if not (
-            torch.all(raw_prediction >= 0) and
-            torch.isclose(
-                raw_prediction.sum(), 
-                torch.tensor(1.0, dtype=raw_prediction.dtype), 
-                atol=1e-3 if raw_prediction.dtype == torch.float16 else 1e-5
-            )
-        ):
-            raw_prediction = raw_prediction.softmax(dim=-1)
-            
-        return raw_prediction[self.indices]
+    def _extract_confidence(self, raw_prediction: I):
+        raise NotImplementedError()
 
     # --- Convenience & Serialization (do not override) ---
     def __len__(self):
         return len(self.items)
-
-    def __getitem__(self, idx):
+    
+    def __getitem__(self, idx : int):
         return self.items[idx]
 
     def __iter__(self):
@@ -512,6 +521,39 @@ class Prediction:
         }
         with open(path, 'w') as f:
             json.dump(data, f, indent=2, default=str)
+
+
+class Prediction(BasePrediction[PredictionItem, torch.Tensor]):
+    @property
+    @lru_cache(1)
+    def idx2cls(self):
+        if self.cls2idx:
+            return {v: k for k, v in self.cls2idx.items()}
+        return None
+
+    def _process(self, raw_prediction):
+        dim = raw_prediction.shape[-1]
+        k = self.topk if 1 <= self.topk < dim else dim
+        return torch.topk(raw_prediction, k)
+
+    def _translate(self):
+        if self.idx2cls:
+            return [self.idx2cls[i.item()] for i in self.indices]
+        else:
+            return [str(i.item()) for i in self.indices]
+
+    def _extract_confidence(self, raw_prediction):
+        if not (
+            torch.all(raw_prediction >= 0) and
+            torch.isclose(
+                raw_prediction.sum(), 
+                torch.tensor(1.0, dtype=raw_prediction.dtype), 
+                atol=1e-3 if raw_prediction.dtype == torch.float16 else 1e-5
+            )
+        ):
+            raw_prediction = raw_prediction.softmax(dim=-1)
+            
+        return raw_prediction[self.indices]
 
 
 def predict(model : nn.Module, x : torch.Tensor, topk : int=1, **kwargs):

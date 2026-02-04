@@ -193,9 +193,10 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
             **kwargs
         ):
         if model is not None:
-            model_metadata = classification_module(model)._metadata
+            model_metadata = classification_module(model).metadata
             cls2idx = model_metadata.get("cls2idx", None)
-            idx2cls = model_metadata.get("idx2cls", None)
+            if cls2idx is not None:
+                idx2cls = None
         if idx2cls is None and cls2idx is None:
             raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
         if cls2idx is None:
@@ -205,27 +206,41 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         self.paths = []
         self.preds = []
         self.confs = []
+        self.labels = []
         self.cls2idx, self.idx2cls = cls2idx, idx2cls
         self.verbose = verbose
         self._extra_attr = set(additional_attributes or [])
         for attr in self._extra_attr:
             setattr(self, attr, [])
 
-    def collect(self, paths : list[str], predictions : torch.Tensor | list[Prediction], **kwargs):
-        self._collect_base_attributes(paths, predictions)
+    def collect(
+            self,
+            paths : list[str],
+            predictions : torch.Tensor | list[Prediction],
+            labels : list[str] | None=None,
+            **kwargs
+        ):
+        self._collect_base_attributes(paths, predictions, labels)
         self._collect_extra_attributes(**kwargs)
 
-    def _collect_base_attributes(self, paths : list[str], predictions : torch.Tensor | list[Prediction]):
+    def _collect_base_attributes(
+            self, 
+            paths : list[str], 
+            predictions : torch.Tensor | list[Prediction], 
+            labels : list[str] | None=None
+        ):
         """Override in subclasses!
         """
         self.paths.extend(paths)
         if isinstance(predictions, list) and (not predictions or isinstance(predictions[0], Prediction)):
-            predictions, confidences = zip(*[(pred[0].label, pred[0].confidence) for pred in predictions])
-            self.preds.extend(predictions)
+            predictions, confidences, indices = zip(*[(pred[0].label, pred[0].confidence, pred[0].index) for pred in predictions])
+            self.preds.extend([self.idx2cls[i] for i in indices])
             self.confs.extend(confidences)
         else:
             self.preds.extend(map(self.idx2cls.get, predictions.argmax(1).tolist()))
             self.confs.extend(predictions.softmax(1).max(1).values.tolist())
+        if labels is not None:
+            self.labels.extend(labels)
 
     def _collect_extra_attributes(
             self, 
@@ -321,7 +336,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         data = {
             k : list() for k in SCHEMA
         }
-        labels = getattr(self, "labels", repeat("-1"))
+        labels = self.labels or repeat("-1")
         for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
             do_predict = int(conf >= threshold)
             row = {

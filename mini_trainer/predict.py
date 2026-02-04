@@ -141,8 +141,6 @@ def main( # noqa: D417
     #         f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
     #     )
     
-    if labels is not None:
-        collector_cls_kwargs["additional_attributes"] = ["labels"]
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
     
     idx = 0

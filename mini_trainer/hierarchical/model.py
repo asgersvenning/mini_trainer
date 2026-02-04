@@ -1,12 +1,12 @@
 
 from dataclasses import dataclass
 from functools import lru_cache
-from itertools import chain
 
 import torch
 from torch import nn as nn
+from torch.nn import functional as F
 
-from mini_trainer.classifier import Classifier, Prediction
+from mini_trainer.classifier import BasePrediction, Classifier, PredictionItem
 
 
 def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
@@ -54,8 +54,12 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         # Store masks
         self._num_masks = 0
         if sparse_masks is not None:
-            [self.register_buffer(f'mask_{i}', m.long(), persistent=True) for i, m in enumerate(sparse_masks)]
+            for i, m in enumerate(sparse_masks):
+                self.register_buffer(f'mask_{i}', m.long(), persistent=True)
+                self.register_buffer(f'_mask_{i}', torch.empty(0), persistent=False)
+                self.register_buffer(f'_filter_{i}', torch.empty(0), persistent=False)
             self._num_masks = len(sparse_masks)
+            self.register_buffer(f'_filter_{self.num_masks}', torch.empty(0), persistent=False)
 
     @classmethod
     def load(cls, architecture_class, architecture_output_name, architecture, state, device, dtype, **kwargs):
@@ -81,21 +85,30 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         return stored
 
     def mask(self, idx : int) -> torch.Tensor:
-        return getattr(self, f'mask_{idx}')
+        if self._dirty_cache["_masks"]:
+            _ = self.masks
+        return getattr(self, f'_mask_{idx}')
 
     @property
     def masks(self):
-        masks = []
-        filter = self.active_indices
-        filters = [filter]
+        if self._dirty_cache["_masks"]:
+            masks = []
+            filter = self.active_indices
+            filters = [filter]
+            for i in range(self.num_masks):
+                mask = getattr(self, f"mask_{i}")
+                setattr(self, f"_filter_{i}", filter)
+                if filter is not None:
+                    mask = mask[filter]
+                    filter, mask = mask.unique(sorted=False, return_inverse=True)
+                setattr(self, f"_mask_{i}", mask)
+                masks.append(mask)
+                filters.append(filter)
+            setattr(self, f"_filter_{self.num_masks}", filter)
+            self._dirty_cache["_masks"] = False
+        masks : list[torch.Tensor] = []
         for i in range(self.num_masks):
-            mask = self.mask(i)
-            if filter is not None:
-                mask = mask[filter]
-                filter, mask = mask.unique(sorted=False, return_inverse=True)
-            masks.append(mask)
-            filters.append(filter)
-        self._active_indices = filters
+            masks.append(self.mask(i))
         return masks
 
     def hierarchy(self, log_probs : torch.Tensor):
@@ -108,11 +121,31 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def forward(self, x):
         return self.hierarchy(super().forward(x).log_softmax(dim=1))
     
+    def _preprocess_metadata(self, cls2idx=None, **kwargs):
+        if self._dirty_cache["_preprocess_metadata"] or cls2idx is not None:
+            if self._dirty_cache["_masks"]:
+                _ = self.masks
+            active_indices = [getattr(self, f"_filter_{i}") for i in range(self.num_masks + 1)]
+            metadata = self._metadata.copy()
+            if cls2idx is None:
+                cls2idx = metadata.get("cls2idx", None)
+            if active_indices is not None and not any(ai is None for ai in active_indices) and cls2idx is not None:
+                active_indices = [sorted(ai.tolist() if isinstance(ai, torch.Tensor) else ai) for ai in active_indices]
+                reindex = [{old : new for new, old in enumerate(ai)} for ai in active_indices]
+                cls2idx = {
+                    outer : {k : reindex[i][v] for k, v in inner.items() if v in reindex[i]}
+                    for i, (outer, inner) in enumerate(cls2idx.items())
+                }
+                metadata["cls2idx"] = cls2idx
+            self._preprocessed_metadata = metadata
+            self._dirty_cache["_preprocess_metadata"] = False
+        return {**self._preprocessed_metadata, **kwargs}
+
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
         out = list(zip(*self(x)))
         return [
-            HierarchicalPrediction(p, topk=topk, active_indices=self._active_indices, **{**self._metadata, **kwargs}) 
+            HierarchicalPrediction(p, topk=topk, **self._preprocess_metadata(**kwargs)) 
             for p in out
         ]
 
@@ -121,7 +154,7 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
     def __init__(self, normalized : bool=True, **kwargs): # noqa: D107
         super().__init__(normalized=normalized, **kwargs)
         # Conditional layers
-        layers : list[nn.Linear] = []
+        layers : list[nn.Linear] = [self.linear]
         orig_indices = self.active_indices
         self.active_indices = None
         for m in self.masks:
@@ -130,37 +163,37 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
             layers.append(self._normalize_layer(layer) if normalized else layer)
         self.active_indices = orig_indices
         self.layers = nn.ModuleList(layers)
+        for i in range(len(self.layers)):
+            self.register_buffer(f"_linear_weight_{i}", torch.empty(0), persistent=False)
+            self.register_buffer(f"_linear_bias_{i}", torch.empty(0), persistent=False)
 
-    @property
-    def last_layers(self):
-        return chain([self.linear], self.layers)
+    def _weight_bias(self, i : int):
+        if self._dirty_cache[f"_weight_bias_{i}"] or self.training:
+            if self._dirty_cache["_masks"]:
+                _ = self.masks
+            layer : nn.Linear = self.layers[i]
+            weight, bias = layer.weight, layer.bias
+            filter = getattr(self, f"_filter_{i}")
+            if filter is not None:
+                weight = weight.index_select(0, filter)
+                if bias is not None:
+                    bias = bias.index_select(0, filter)
+            setattr(self, f"_linear_weight_{i}", weight)
+            setattr(self, f"_linear_bias_{i}", bias)
+            self._dirty_cache[f"_weight_bias_{i}"] = False
+        return getattr(self, f"_linear_weight_{i}"), getattr(self, f"_linear_bias_{i}")
 
-    # def marginals(self, x : torch.Tensor) -> list[torch.Tensor]:
-    #     return [layer(x).log_softmax(dim=1) for layer in self.last_layers]
-    def marginals(self, x: torch.Tensor) -> list[torch.Tensor]:
-        outputs = [self.linear(x).log_softmax(dim=1)]
-
-        indices = self.active_indices
-        for i, layer in enumerate(self.layers):
-            if indices is not None:
-                indices = self.mask(i)[indices].unique()
-            out = layer(x)
-            if indices is not None:
-                out = out.index_select(1, indices)
-            outputs.append(out.log_softmax(dim=1))
-            
-        return outputs
+    def marginals(self, x : torch.Tensor) -> list[torch.Tensor]:
+        return [F.linear(x, *self._weight_bias(i)).log_softmax(dim=1) for i in range(len(self.layers))]
 
     def forward(self, x : torch.Tensor):
         M = self.marginals(self.preclassification(x))
-        C : list[torch.Tensor] = []
-        masks = self.masks
-        for i in reversed(range(len(M))):
-            if not C:
-                ci = M[i]
-            else:
-                ci = M[i] + (C[0] - batched_scatter_logsumexp(M[i], masks[i])).gather(1, masks[i].expand_as(M[i]))
-            C.insert(0, ci)
+        N = len(M)
+        C : list[torch.Tensor] = [torch.empty(0) for _ in range(N)]
+        for i in reversed(range(N)):
+            if i < N - 1:
+                M[i] += (C[i + 1] - batched_scatter_logsumexp(M[i], self.mask(i))).gather(1, self.mask(i).expand_as(M[i]))
+            C[i] = M[i]
         return C
 
 
@@ -170,22 +203,19 @@ class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
 
 
 @dataclass
-class HierarchicalPredictionItem:
+class HierarchicalPredictionItem(PredictionItem):
     """Hierarchical data container.
     Auto-converts inputs to native Python types on initialization.
     """
-    label: tuple[str, ...] | None
+    label: tuple[str, ...]
     confidence: tuple[float, ...]
-    index: tuple[int, ...] | None
+    index: tuple[int, ...]
 
     def __post_init__(self):
         # Factory coercion: ensures native types immediately
-        if self.label is not None:
-            self.label = tuple(str(e) for e in self.label)
-        if self.confidence is not None:
-            self.confidence = tuple(float(e) for e in self.confidence)
-        if self.index is not None:
-            self.index = tuple(int(e) for e in self.index)
+        self.label = tuple(str(e) for e in self.label)
+        self.confidence = tuple(float(e) for e in self.confidence)
+        self.index = tuple(int(e) for e in self.index)
 
     def __repr__(self):
         if self.label is not None:
@@ -193,34 +223,11 @@ class HierarchicalPredictionItem:
         else:
             return "/".join([f'I[{idx}]: ({conf:.1%})' for conf, idx in zip(self.confidence, self.index)])
 
-    def to_dict(self):
-        return {
-            "label": self.label,
-            "confidence": self.confidence,
-            "index": self.index
-        }
 
-
-class HierarchicalPrediction(Prediction):
+class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[torch.Tensor]]):
     """Hierarchical PyTorch Prediction class.
     """
     ITEM_CLASS = HierarchicalPredictionItem
-
-    def __init__(
-            self, 
-            *args, 
-            cls2idx : dict[str, dict[str, int]], 
-            active_indices : list[list[int] | torch.Tensor | None] | None=None, 
-            **kwargs
-        ):
-        if active_indices is not None and not any(ai is None for ai in active_indices):
-            active_indices = [sorted(ai.tolist() if isinstance(ai, torch.Tensor) else ai) for ai in active_indices]
-            reindex = [{old : new for new, old in enumerate(ai)} for ai in active_indices]
-            cls2idx = {
-                outer : {k : reindex[i][v] for k, v in inner.items() if v in reindex[i]}
-                for i, (outer, inner) in enumerate(cls2idx.items())
-            }
-        super().__init__(*args, cls2idx=cls2idx, **kwargs)
 
     @property
     @lru_cache(1)
@@ -229,7 +236,7 @@ class HierarchicalPrediction(Prediction):
             return {level : {v: k for k, v in mapping.items()} for level, mapping in self.cls2idx.items()}
         return None
 
-    def _process(self, raw_prediction : list[torch.Tensor]):
+    def _process(self, raw_prediction):
         logits, indices = [], []
         for rp in raw_prediction:
             dim = rp.shape[-1]
@@ -245,7 +252,7 @@ class HierarchicalPrediction(Prediction):
         else:
             return [[f'{i.item()}[{level}]' for level, i in enumerate(e)] for e in self.indices]
 
-    def _extract_confidence(self, raw_prediction: list[torch.Tensor]) -> list[torch.Tensor]:
+    def _extract_confidence(self, raw_prediction) -> list[torch.Tensor]:
         confidences = []
         for rp, idx in zip(raw_prediction, zip(*self.indices)):
             idx = torch.stack(idx)

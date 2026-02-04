@@ -167,8 +167,13 @@ def main( # noqa: D417
 
     # Load additional information for model and dataloader instantiation
     # e.g. number of classes, class-to-index dictionary
+    if class_spec is None:
+        if output_dir is None:
+            class_spec = None
+        else:
+            class_spec = os.path.join(output_dir, "class_spec.json")
     class_spec = builder.class_spec(
-        path=class_spec if class_spec is not None else os.path.join(output_dir, "class_spec.json"), 
+        path=class_spec, 
         dir=input,
         **spec_model_dataloader_kwargs
     )

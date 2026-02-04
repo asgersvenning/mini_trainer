@@ -1,9 +1,10 @@
 import json
 import os
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
+from typing import cast
 
 import torch
 from torch import nn
@@ -188,7 +189,7 @@ def sparse_masks_from_labels(
         ) + '\n'.join([f'|{mask_i:^6}|{element_i:^9}|' for mask_i, element_i in invalid])
         raise ValueError(err_msg)
     # Check that all classes in last layer class index are used
-    if (missing := set(cls2idx[str(nlvl - 1)].values()) - set(masks[-1])):
+    if masks and (missing := set(cls2idx[str(nlvl - 1)].values()) - set(masks[-1])):
         err_msg = f'Found {len(missing)} unused classes in top level: [{", ".join(map(str, missing))}]'
         raise ValueError(err_msg)
     
@@ -274,14 +275,18 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
             model : nn.Module | None=None,
             idx2cls : dict[str, dict[int, str]] | None=None,
             cls2idx : dict[str, dict[str, int]] | None=None,
-            *args, 
             scientific_names : bool=True,
+            *args, 
             **kwargs
         ):
         if model is not None:
-            model_metadata = classification_module(model)._metadata
+            model_metadata = classification_module(model).metadata
             cls2idx = model_metadata.get("cls2idx", None)
-        if cls2idx is not None and scientific_names:
+            if cls2idx is not None:
+                idx2cls = None
+        self.scientific_names = scientific_names
+        self._sn_cache = defaultdict(str)
+        if cls2idx is not None and self.scientific_names:
             cls2idx = cls2idx_to_names(cls2idx)
             idx2cls = None
         if idx2cls is None and cls2idx is not None:
@@ -291,15 +296,21 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
         super().__init__(idx2cls=idx2cls, cls2idx=cls2idx, *args, **kwargs)
         self._levels = None
 
-    def _collect_base_attributes(self, paths : list[str], predictions : list[torch.Tensor] | list[HierarchicalPrediction]):
+    def _collect_base_attributes(
+            self, 
+            paths : list[str], 
+            predictions : list[torch.Tensor] | list[HierarchicalPrediction], 
+            labels : list[tuple[str, ...]] | None=None
+        ):
         """Override in subclasses!
         """
-        if isinstance(predictions, list) and (not predictions or isinstance(predictions[0], HierarchicalPrediction)):
+        self.paths.extend(paths)
+        if isinstance(predictions, list) and all(isinstance(p, HierarchicalPrediction) for p in predictions):
+            predictions = cast(list[HierarchicalPrediction], predictions)
             if self._levels is None and predictions:
                 self._levels = len(predictions[0][0].label)
-            indices, predictions, confidences = zip(*[(pred[0].index, pred[0].label, pred[0].confidence) for pred in predictions])
-            # TODO: RECALCULATE PREDICTIONS FROM INDICES, idx2cls/cls2idx may have changes!
-            self.preds.extend(predictions)
+            predictions, confidences, indices = zip(*[(pred[0].label, pred[0].confidence, pred[0].index) for pred in predictions])
+            self.preds.extend([[self.idx2cls[str(lvl)][i] for lvl, i in enumerate(idxs)] for idxs in indices])
             self.confs.extend(confidences)
         else:
             if self._levels is None:
@@ -309,7 +320,15 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
                 for lvl, p in enumerate(predictions)
             ])))
             self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
-        self.paths.extend(paths)
+        if labels is not None:
+            if self.scientific_names:
+                labels = [
+                    tuple(
+                        self._sn_cache[e] if e in self._sn_cache else self._sn_cache.setdefault(e, id_to_name(e)) 
+                        for e in label
+                    ) for label in labels
+                ]
+            self.labels.extend(labels)
 
     def eval_label_fn(
             self,
@@ -362,9 +381,8 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
         data = {
             k : list() for k in SCHEMA
         }
-        labels = getattr(self, "labels", repeat(["-1"] * self._levels))
+        labels = self.labels or repeat(tuple(["-1"] * self._levels))
         for i, (path, preds, labs, confs) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
-            
             for level in range(self._levels):
                 label, pred, conf = labs[level], preds[level], confs[level]
                 do_predict = int(conf >= threshold)

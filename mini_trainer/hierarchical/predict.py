@@ -24,6 +24,14 @@ def cli(description : str="Predict with a trained hierarchical model", **extra_k
             "help" : 'Which type of classification head architecture to use. '
             'Options are "hierarchical" (default), "conditional" and "independent".'
         }, 
+        scientific_names={
+            None : "-S",
+            "action" : "store_true",
+            "dest" : "collector_cls_kwargs.scientific_names",
+            "default" : False,
+            "required" : False,
+            "help" : "Convert GBIF IDs in output to scientific names via GBIF API."
+        },
         **extra_kwargs
     )
     kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])

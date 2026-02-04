@@ -43,6 +43,13 @@ def cli(desc="Train a hierarchical classifier", **kwargs): # noqa: D103
             "help" : 'Which type of classification head architecture to use. '
             'Options are "hierarchical" (default), "conditional" and "independent".'
         },
+        no_gbif={
+            "action" : "store_false",
+            "dest" : "spec_model_dataloader_kwargs.species",
+            "default" : True,
+            "required" : False,
+            "help" : "Class names are not GBIF IDs.",
+        },
         **kwargs
     ) 
     for key in overrides:
