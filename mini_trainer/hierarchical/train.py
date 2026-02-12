@@ -1,5 +1,10 @@
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
-from mini_trainer.hierarchical.model import ConditionalClassifier, HierarchicalClassifier, IndependentClassifier
+from mini_trainer.hierarchical.model import (
+    AutoregressiveClassifier,
+    ConditionalClassifier,
+    HierarchicalClassifier,
+    IndependentClassifier,
+)
 from mini_trainer.train import cli as mt_train_args
 from mini_trainer.train import main as mt_train
 
@@ -8,7 +13,8 @@ overrides = []
 HEAD_OPTIONS = {
     "hierarchical" : HierarchicalClassifier,
     "conditional" : ConditionalClassifier,
-    "independent" : IndependentClassifier
+    "independent" : IndependentClassifier,
+    "autoregressive" : AutoregressiveClassifier
 }
 
 

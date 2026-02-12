@@ -202,6 +202,45 @@ class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
         return super().marginals(super().preclassification(x))
 
 
+class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sequence_length = len(self.layers) + 2 # total = layers + (start_token + end_token)
+        self.positional_embeddings = nn.Embedding(
+            num_embeddings=self.sequence_length,
+            embedding_dim=self.preclassification_size
+        )
+        self.BOS, self.EOS = [nn.Embedding(num_embeddings=1, embedding_dim=self.preclassification_size) for _ in range(2)]
+        self.decoder = nn.TransformerDecoder(
+            decoder_layer=nn.TransformerDecoderLayer(
+                d_model=self.preclassification_size,
+                nhead=8 # TODO: Should not be hardcoded
+            ),
+            num_layers=2 # TODO: Should not be hardcoded
+        )
+
+    def embedding(self, i : int):
+        return self._weight_bias(i)[0]
+        # return torch.cat([, self.EOS.weight], dim=0)
+    
+    @property
+    def embeddings(self):
+        return [self.embedding(i) for i in range(len(self.layers))]
+
+    def forward(self, x : torch.Tensor):
+        context = self.preclassification(x)
+        batch_size, _, device = len(context), context.dtype, context.device
+        zero = torch.zeros((batch_size,), dtype=torch.long, device=device)
+        positional = self.positional_embeddings(torch.arange(self.sequence_length, device=device)).unsqueeze(1)
+        sequence = [self.BOS(zero) if i == 0 else self.EOS(zero) for i in range(self.sequence_length)]
+        for i in range(len(self.layers)):
+            mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
+            prior = torch.stack(sequence, dim=0)#.detach().requires_grad_(False)
+            value = self.decoder(prior + positional, context.unsqueeze(0), tgt_mask=mask)
+            sequence[i + 1] = value[i]
+        return [(self.batch_norm(x) @ self.embedding(i).T).log_softmax(dim=1) for i, x in enumerate(sequence[1:-1])]
+
+
 @dataclass
 class HierarchicalPredictionItem(PredictionItem):
     """Hierarchical data container.
