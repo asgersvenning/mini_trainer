@@ -1,5 +1,6 @@
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
 from mini_trainer.hierarchical.model import (
+    AutoregressiveClassifierV2,
     AutoregressiveClassifier,
     ConditionalClassifier,
     HierarchicalClassifier,
@@ -14,7 +15,8 @@ HEAD_OPTIONS = {
     "hierarchical" : HierarchicalClassifier,
     "conditional" : ConditionalClassifier,
     "independent" : IndependentClassifier,
-    "autoregressive" : AutoregressiveClassifier
+    "autoregressive" : AutoregressiveClassifier,
+    "v2.autoregressive" : AutoregressiveClassifierV2
 }
 
 

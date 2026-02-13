@@ -17,7 +17,7 @@ from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
 from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
 from mini_trainer.utils.logging import MultiLogger
-
+from mini_trainer.classifier import SupervisionContext
 
 def train_one_epoch(
         model : nn.Module, 
@@ -73,7 +73,7 @@ def train_one_epoch(
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
         batch, target = batch.to(device), target.to(device)
-        with autocast(device_type=device.type, dtype=dtype):
+        with autocast(device_type=device.type, dtype=dtype), SupervisionContext(target):
             logits = model(preprocess(augmentation(batch)))
             loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
             # If EMA is disabled ``distill_loss`` is ``0.0``

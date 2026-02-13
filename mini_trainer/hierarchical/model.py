@@ -6,7 +6,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.classifier import BasePrediction, Classifier, PredictionItem
+from mini_trainer.classifier import BasePrediction, Classifier, PredictionItem, SupervisionContext
 
 
 def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
@@ -205,40 +205,167 @@ class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
 class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.sequence_length = len(self.layers) + 2 # total = layers + (start_token + end_token)
-        self.positional_embeddings = nn.Embedding(
+        self.sequence_length = len(self.layers) + 1 # total = layers + <BOS>
+        self.positional = nn.Embedding(
             num_embeddings=self.sequence_length,
             embedding_dim=self.preclassification_size
         )
-        self.BOS, self.EOS = [nn.Embedding(num_embeddings=1, embedding_dim=self.preclassification_size) for _ in range(2)]
+        self.BOS = nn.Embedding(
+            num_embeddings=1,
+            embedding_dim=self.preclassification_size
+        )
         self.decoder = nn.TransformerDecoder(
             decoder_layer=nn.TransformerDecoderLayer(
                 d_model=self.preclassification_size,
-                nhead=8 # TODO: Should not be hardcoded
+                nhead=8, # TODO: Should not be hardcoded
+                dim_feedforward=self.preclassification_size,
+                dropout=0.1,
+                norm_first=True
             ),
             num_layers=2 # TODO: Should not be hardcoded
         )
 
-    def embedding(self, i : int):
+    def embedding(self, i : int) -> torch.Tensor:
         return self._weight_bias(i)[0]
-        # return torch.cat([, self.EOS.weight], dim=0)
     
     @property
     def embeddings(self):
         return [self.embedding(i) for i in range(len(self.layers))]
 
-    def forward(self, x : torch.Tensor):
+    def _classify(self, sequence : torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
+        if isinstance(sequence, torch.Tensor):
+            sequence = [e for e in sequence]        
+        return [
+            (x @ self.embedding(i).T).log_softmax(dim=1) 
+            for i, x in list(enumerate(sequence[::-1]))
+        ]
+
+    def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
+        if y is None:
+            # Check if a label is passed around parent module via context manager
+            y = SupervisionContext.get()
+
+        # Image embedding context
         context = self.preclassification(x)
-        batch_size, _, device = len(context), context.dtype, context.device
-        zero = torch.zeros((batch_size,), dtype=torch.long, device=device)
-        positional = self.positional_embeddings(torch.arange(self.sequence_length, device=device)).unsqueeze(1)
-        sequence = [self.BOS(zero) if i == 0 else self.EOS(zero) for i in range(self.sequence_length)]
-        for i in range(len(self.layers)):
-            mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
-            prior = torch.stack(sequence, dim=0)#.detach().requires_grad_(False)
-            value = self.decoder(prior + positional, context.unsqueeze(0), tgt_mask=mask)
-            sequence[i + 1] = value[i]
-        return [(self.batch_norm(x) @ self.embedding(i).T).log_softmax(dim=1) for i, x in enumerate(sequence[1:-1])]
+        
+        # Prepare variables and state
+        batch_size, _, device = context.shape[0], context.dtype, context.device
+        mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
+        BOS : torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
+        POS = self.positional.weight.unsqueeze(1) 
+
+        if y is None:
+            decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
+            for i in range(self.sequence_length - 1):
+                sequence = self.decoder(
+                    tgt=decision + POS, 
+                    memory=context.unsqueeze(0), 
+                    tgt_mask=mask, 
+                    tgt_is_causal=True
+                )
+                di = self.sequence_length - 2 - i
+                decision[i + 1] = (sequence[i] @ self.embedding(di).T).softmax(dim=1) @ self.embedding(di)
+        else:
+            sequence = [self.embedding(j)[y[:, j]] for j in range(self.sequence_length - 1)]
+            sequence.append(BOS)
+            sequence = torch.stack(sequence[::-1], dim=0)
+            sequence = self.decoder(
+                tgt=sequence + POS,
+                memory=context.unsqueeze(0),
+                tgt_mask=mask,
+                tgt_is_causal=True
+            )
+        
+        return self._classify(sequence[:-1])
+
+
+# Differs from the one above in that we don't carry explicit independent embeddings for each layer
+class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sequence_length = self.num_masks + 1 + 1 # total = masks + leaf + <BOS>
+        self.positional = nn.Embedding(
+            num_embeddings=self.sequence_length,
+            embedding_dim=self.preclassification_size
+        )
+        self.BOS = nn.Embedding(
+            num_embeddings=1,
+            embedding_dim=self.preclassification_size
+        )
+        self.decoder = nn.TransformerDecoder(
+            decoder_layer=nn.TransformerDecoderLayer(
+                d_model=self.preclassification_size,
+                nhead=8, # TODO: Should not be hardcoded
+                dim_feedforward=self.preclassification_size,
+                dropout=0.1,
+                norm_first=True
+            ),
+            num_layers=2 # TODO: Should not be hardcoded
+        )
+    
+    @property
+    def embeddings(self):
+        return self._weight_bias()[0]
+
+    def _classify(self, sequence : torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
+        if isinstance(sequence, torch.Tensor):
+            sequence = [e for e in sequence]        
+        return [
+            self.hierarchy(x @ self.embeddings.T)[i].log_softmax(dim=1)
+            for i, x in list(enumerate(sequence[::-1]))
+        ]
+
+    def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
+        if y is None:
+            # Check if a label is passed around parent module via context manager
+            y = SupervisionContext.get()
+
+        # Image embedding context
+        context = self.preclassification(x)
+        
+        # Prepare variables and state
+        batch_size, dtype, device = context.shape[0], context.dtype, context.device
+        mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
+        BOS : torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
+        POS = self.positional.weight.unsqueeze(1) 
+
+        if y is None:
+            decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
+            for i in range(self.sequence_length - 1):
+                sequence = self.decoder(
+                    tgt=decision + POS, 
+                    memory=context.unsqueeze(0), 
+                    tgt_mask=mask, 
+                    tgt_is_causal=True
+                )
+                decision[i + 1] = self.hierarchy(sequence[i] @ self.embeddings.T)[0].softmax(dim=1) @ self.embeddings
+        else:
+            sequence = []
+            for i in range(self.sequence_length - 1):
+                if i == 0:
+                    emb = self.embeddings[y[:, 0]]
+                else:
+                    idx = y[:, i]
+                    con = self.mask(0)
+                    for j in range(1, i):
+                        con = self.mask(j)[con]
+                    a, b = torch.nonzero((idx == con.unsqueeze(1)).T, as_tuple=True)
+                    lidx = b.tensor_split((a.diff() != 0).nonzero(as_tuple=True)[0].cpu() + 1)
+                    dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype).requires_grad_(False)
+                    for j, k in enumerate(lidx):
+                        dist[j][k] = 1 / len(k)
+                    emb = dist @ self.embeddings
+                sequence.append(emb)
+            sequence.append(BOS)
+            sequence = torch.stack(sequence[::-1], dim=0)
+            sequence = self.decoder(
+                tgt=sequence + POS,
+                memory=context.unsqueeze(0),
+                tgt_mask=mask,
+                tgt_is_causal=True
+            )
+        
+        return self._classify(sequence[:-1])
 
 
 @dataclass

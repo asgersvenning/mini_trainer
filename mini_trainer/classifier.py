@@ -98,6 +98,33 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
     )
 
 
+class SupervisionContext:
+    """Used for passing a target to the classification module.
+    """
+    _target = None
+    
+    @classmethod
+    def set(cls, target):
+        cls._target = target
+        
+    @classmethod
+    def get(cls):
+        return cls._target
+        
+    @classmethod
+    def clear(cls):
+        cls._target = None
+
+    def __init__(self, target):
+        self.target = target
+        
+    def __enter__(self):
+        SupervisionContext.set(self.target)
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        SupervisionContext.clear()
+
+
 class Classifier(nn.Module): # noqa: D101 TODO
     _version = 1
 
@@ -171,8 +198,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        # Create a BatchNormalization layer
-        self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
+        # # Create a BatchNormalization layer
+        # self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
 
         # Create linear classification layer
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
@@ -219,7 +246,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             x = self.dropout(x)
             x = self.hidden(x)
             x = F.leaky_relu(x)
-        return self.batch_norm(x)
+        return F.layer_norm(x, x.shape[-1:])
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
         weight, bias = self._weight_bias()
