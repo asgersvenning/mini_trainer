@@ -254,7 +254,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
         BOS : torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
         POS = self.positional.weight.unsqueeze(1) 
 
-        if y is None:
+        if y is None or torch.rand((1, )).item() > 0.5:
             decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
             for i in range(self.sequence_length - 1):
                 sequence = self.decoder(
@@ -329,18 +329,29 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
         BOS : torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
         POS = self.positional.weight.unsqueeze(1) 
 
-        if y is None:
+        if y is None or torch.rand((1, )).item() > 0.5:
             decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
             for i in range(self.sequence_length - 1):
-                sequence = self.decoder(
+                sequence : torch.Tensor = self.decoder(
                     tgt=decision + POS, 
                     memory=context.unsqueeze(0), 
                     tgt_mask=mask, 
                     tgt_is_causal=True
                 )
-                decision[i + 1] = self.hierarchy(sequence[i] @ self.embeddings.T)[0].softmax(dim=1) @ self.embeddings
+                logits = (sequence[i] @ self.embeddings.T).log_softmax(dim=1)
+                mi = self.num_masks - 1 - i
+                if mi > 0:
+                    logits = self.hierarchy(logits)[mi]
+                    con = self.mask(mi)
+                    for mj in range(mi + 1):
+                        con = con[self.mask(mi - mj)]
+                    logits = (
+                        logits.gather(1, con.unsqueeze(0).expand(logits.size(0), -1)) - 
+                        con.bincount(minlength=logits.size(1)).to(dtype).log()[con]
+                    )                    
+                decision[i + 1] = logits.exp() @ self.embeddings
         else:
-            sequence = []
+            sequence : list[torch.Tensor] = []
             for i in range(self.sequence_length - 1):
                 if i == 0:
                     emb = self.embeddings[y[:, 0]]
@@ -358,7 +369,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                 sequence.append(emb)
             sequence.append(BOS)
             sequence = torch.stack(sequence[::-1], dim=0)
-            sequence = self.decoder(
+            sequence : torch.Tensor = self.decoder(
                 tgt=sequence + POS,
                 memory=context.unsqueeze(0),
                 tgt_mask=mask,
