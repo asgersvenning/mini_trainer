@@ -64,15 +64,15 @@ def cli(desc="Train a hierarchical classifier", **kwargs): # noqa: D103
         kwargs.pop(key, None)
     
     kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
+    kwargs["spec_model_dataloader_kwargs"]["levels"] = len(kwargs["criterion_builder_kwargs"]["weights"])
     kwargs["builder"] = HierarchicalBuilder
 
     return kwargs
 
 
-if __name__ == "__main__":
+def run():
+    mt_train(**cli())
 
-    # import torch
-    # torch.autograd.set_detect_anomaly(True)
-    mt_train(
-        **cli()
-    )
+
+if __name__ == "__main__":
+    run()

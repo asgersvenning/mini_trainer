@@ -117,20 +117,40 @@ def create_metadata(
 def get_metadata(
         path : str, 
         splits : tuple[str, ...]=("train", "validation"),
-        check_integrity : bool=False
+        check_integrity : bool=False,
+        cls2idx : dict[str, int] | dict[str, dict[str, int]] | None=None,
+        **kwargs
     ) -> tuple[dict[str, list[str | int | list[int]]], dict[str, list[str | int | list[int]]]]:
     """Load training metadata.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(
             f'Meta data file ({path}) for training split not found. '
-            'Please provide a JSON with the following keys: "path", "class", "split".'
+            'Please provide a JSON with the following keys: "path", "class" or "label", "split".'
         )
     with open(path, "rb") as f:
         metadata = {k : np.array(v) for k, v in json.load(f).items()}
     if check_integrity:
         integrity_mask = np.array(is_image(metadata["path"]))
         metadata = {k : v[integrity_mask] for k, v in metadata.items()}
+    if "class" not in metadata:
+        if "label" not in metadata:
+            raise KeyError(f"No 'class's or 'label's found in {path}")
+        if cls2idx is None:
+            raise TypeError(f"Found 'label's in {path}, but no 'cls2idx' was supplied.")
+        multilabel = isinstance(list(cls2idx.values())[0], dict)
+        if not multilabel:
+            cls2idx = {"0" : cls2idx}
+        levels = sorted(cls2idx.keys(), key=int)
+        metadata["class"] = [
+            [
+                cls2idx[level][lab] 
+                for level, lab in zip(levels, labs if labs.size > 1 else [labs])
+            ] 
+            for labs in metadata["label"]
+        ]
+        if not multilabel:
+            metadata["class"] = [c[0] for c in metadata["class"]]
     return metadata
 
 

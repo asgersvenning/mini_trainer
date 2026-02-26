@@ -17,7 +17,10 @@ from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
 from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.classifier import SupervisionContext
+from mini_trainer.classifier import SupervisionContext, EmbeddingContext
+# from mini_trainer.contrastive import SupConLoss
+
+# contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
 
 def train_one_epoch(
         model : nn.Module, 
@@ -73,9 +76,11 @@ def train_one_epoch(
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
         batch, target = batch.to(device), target.to(device)
-        with autocast(device_type=device.type, dtype=dtype), SupervisionContext(target):
+        with autocast(device_type=device.type, dtype=dtype), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
             loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
+            # TODO: Add optional contrastive path
+            # ctr_loss = contrastive_criterion()
             # If EMA is disabled ``distill_loss`` is ``0.0``
             distill_loss = model_ema.teach(
                 step=step,

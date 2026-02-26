@@ -48,6 +48,8 @@ Repository = "https://github.com/asgersvenning/mini_trainer"
 [project.scripts]
 mt_train = "mini_trainer.train:run"
 mt_predict = "mini_trainer.predict:run"
+mt_htrain = "mini_trainer.hierarchical.train:run"
+mt_hpredict = "mini_trainer.hierarchical.predict:run"
 
 [tool.ruff]
 target-version = "py312"
@@ -57,7 +59,7 @@ line-length = 120
 # Enable core checks, imports, pyupgrade, and pydocstyle
 select = ["E", "F", "I", "UP", "D"]
 # Prefer multi-line docstring summaries (D213); ignore D200 (summary must be on first line)
-ignore = ["D100", "D102", "D105", "D200", "E203", "D205", "E231", "E252", "E261", "UP015"]
+ignore = ["D100", "D102", "D105", "D200", "E203", "D205", "E231", "E252", "E261", "UP015", "D415"]
 preview = true
 
 [tool.ruff.lint.pydocstyle]

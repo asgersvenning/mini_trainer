@@ -40,5 +40,9 @@ def cli(description : str="Predict with a trained hierarchical model", **extra_k
     return kwargs
 
 
-if __name__ == "__main__":
+def run():
     mt_predict(**cli())
+
+
+if __name__ == "__main__":
+    run()

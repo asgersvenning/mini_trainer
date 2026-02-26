@@ -81,7 +81,127 @@ class BaseBuilder:
                 if param.requires_grad and model._architecture_output_name not in name:
                     param.requires_grad_(False)
         return model, model_preprocess
+
+    @staticmethod
+    def build_dataloader(
+            input_dir : str,
+            output_dir : str,
+            cls2idx : dict[str, int],
+            preprocess : Callable[[torch.Tensor], torch.Tensor],
+            batch_size : int,
+            device : torch.device,
+            dtype : torch.dtype,
+            data_index : str | None=None,
+            splits : tuple[str, ...]=("train", "val"),
+            num_workers : int | None=None,
+            resize_size : int | None=None,
+            subsample : int | None=None,
+            cache : int | str | None=None,
+            train_proportion : float=0.9,
+            labels : Any | None=None,
+            num_classes : int | None=None,
+            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
+            **kwargs
+        ):
+        """TODO.
+
+        Returns:
+            (train_label_cls, train_loader, validation_loader): The training and validation dataloaders.
+        """
+        # Prepare datasets/dataloaders
+        if data_index is None:
+            metadata = create_metadata(
+                directory=input_dir, 
+                cls2idx=cls2idx, 
+                labels=labels, 
+                train_proportion=train_proportion
+            )
+            if output_dir is not None:
+                data_index = os.path.join(output_dir, "data_index.json")
+            else:
+                data_index = NamedTemporaryFile(suffix="data_index.json", delete=False).name
+            if not os.path.exists(data_index):
+                with open(data_index, "w") as f:
+                    json.dump(metadata, f)
+        else:
+            metadata = get_metadata(data_index, cls2idx=cls2idx)
+        metasplits = metadata["split"].copy()
+        metadata = [
+            {
+                k : [vi for vi, s in zip(v, metasplits) if s.startswith(split.strip().lower())] 
+                for k, v in metadata.items()
+            } 
+            for split in splits
+        ]
+        datasets, loaders = get_dataset_dataloader(
+            *metadata,
+            resize_size=resize_size or getattr(preprocess, "resize_size"),
+            modes=splits,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            subsample=subsample,
+            device=device, 
+            dtype=dtype,
+            cache=cache,
+            hook=hook,
+            **kwargs
+        )
+
+        return metadata[0]["class"], *loaders
     
+    @staticmethod
+    def build_inference_dataloader(
+            images : list[str],
+            preprocess : Callable[[torch.Tensor], torch.Tensor],
+            batch_size : int,
+            device : torch.device,
+            dtype : torch.dtype,
+            data_index : str | None=None,
+            splits : tuple[str, ...]=("train", "val"),
+            num_workers : int | None=None,
+            resize_size : int | None=None,
+            subsample : int | None=None,
+            cache : int | str | None=None,
+            train_proportion : float=0.9,
+            labels : Any | None=None,
+            num_classes : int | None=None,
+            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
+            **kwargs
+        ):
+        return get_inference_dataloader(
+            images=images, 
+            resize_size=resize_size,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            subsample=subsample,
+            device=device, 
+            dtype=dtype,
+            hook=hook,
+            **kwargs
+        )[1]
+
+    @staticmethod
+    def build_augmentation(dtype : torch.dtype):
+        """Returns a training augmentation pipeline for normalized tensors.
+        
+        Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
+
+        Returns:
+            A composition of augmentations.
+        """
+        return tt.Compose([
+            # tt.AugMix(severity=3),
+            SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
+            tt.RandomHorizontalFlip(),
+            tt.RandomVerticalFlip(),
+            tt.RandomRotation(15),
+            tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1))
+            # # tt.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
+            # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            # # Convert back to tensor (in case some augmentations convert to PIL Image)
+            # tt.ToTensor()
+        ])
+
     @staticmethod
     def parameter_groups(
         model: nn.Module,
@@ -180,126 +300,6 @@ class BaseBuilder:
             raise RuntimeError(f'No parameter groups detected for model with {n_params} trainable parameters!')
 
         return param_groups
-
-    @staticmethod
-    def build_dataloader(
-            input_dir : str,
-            output_dir : str,
-            cls2idx : dict[str, int],
-            preprocess : Callable[[torch.Tensor], torch.Tensor],
-            batch_size : int,
-            device : torch.device,
-            dtype : torch.dtype,
-            data_index : str | None=None,
-            splits : tuple[str, ...]=("train", "val"),
-            num_workers : int | None=None,
-            resize_size : int | None=None,
-            subsample : int | None=None,
-            cache : int | str | None=None,
-            train_proportion : float=0.9,
-            labels : Any | None=None,
-            num_classes : int | None=None,
-            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
-            **kwargs
-        ):
-        """TODO.
-
-        Returns:
-            (train_label_cls, train_loader, validation_loader): The training and validation dataloaders.
-        """
-        # Prepare datasets/dataloaders
-        if data_index is None:
-            metadata = create_metadata(
-                directory=input_dir, 
-                cls2idx=cls2idx, 
-                labels=labels, 
-                train_proportion=train_proportion
-            )
-            if output_dir is not None:
-                data_index = os.path.join(output_dir, "data_index.json")
-            else:
-                data_index = NamedTemporaryFile(suffix="data_index.json", delete=False).name
-            if not os.path.exists(data_index):
-                with open(data_index, "w") as f:
-                    json.dump(metadata, f)
-        else:
-            metadata = get_metadata(data_index)
-        metasplits = metadata["split"].copy()
-        metadata = [
-            {
-                k : [vi for vi, s in zip(v, metasplits) if s.startswith(split.strip().lower())] 
-                for k, v in metadata.items()
-            } 
-            for split in splits
-        ]
-        datasets, loaders = get_dataset_dataloader(
-            *metadata,
-            resize_size=resize_size or getattr(preprocess, "resize_size"),
-            modes=splits,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            subsample=subsample,
-            device=device, 
-            dtype=dtype,
-            cache=cache,
-            hook=hook,
-            **kwargs
-        )
-
-        return metadata[0]["class"], *loaders
-    
-    @staticmethod
-    def build_inference_dataloader(
-            images : list[str],
-            preprocess : Callable[[torch.Tensor], torch.Tensor],
-            batch_size : int,
-            device : torch.device,
-            dtype : torch.dtype,
-            data_index : str | None=None,
-            splits : tuple[str, ...]=("train", "val"),
-            num_workers : int | None=None,
-            resize_size : int | None=None,
-            subsample : int | None=None,
-            cache : int | str | None=None,
-            train_proportion : float=0.9,
-            labels : Any | None=None,
-            num_classes : int | None=None,
-            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
-            **kwargs
-        ):
-        return get_inference_dataloader(
-            images=images, 
-            resize_size=resize_size or getattr(preprocess, "resize_size"),
-            batch_size=batch_size,
-            num_workers=num_workers,
-            subsample=subsample,
-            device=device, 
-            dtype=dtype,
-            hook=hook,
-            **kwargs
-        )[1]
-
-    @staticmethod
-    def build_augmentation(dtype : torch.dtype):
-        """Returns a training augmentation pipeline for normalized tensors.
-        
-        Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
-
-        Returns:
-            A composition of augmentations.
-        """
-        return tt.Compose([
-            # tt.AugMix(severity=3),
-            SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
-            tt.RandomHorizontalFlip(),
-            tt.RandomVerticalFlip(),
-            tt.RandomRotation(15),
-            tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1))
-            # # tt.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
-            # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-            # # Convert back to tensor (in case some augmentations convert to PIL Image)
-            # tt.ToTensor()
-        ])
     
     @classmethod
     def build_optimizer(

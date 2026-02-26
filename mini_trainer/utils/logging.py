@@ -231,6 +231,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         ):
         """Override in subclasses!
         """
+        labels = [e if isinstance(e, str) else str(e[0]) for e in labels]
         self.paths.extend(paths)
         if isinstance(predictions, list) and (not predictions or isinstance(predictions[0], Prediction)):
             predictions, confidences, indices = zip(*[(pred[0].label, pred[0].confidence, pred[0].index) for pred in predictions])

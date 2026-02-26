@@ -40,7 +40,7 @@ def main( # noqa: D417
             "model_type" : "efficientnet_v2_s",
             "weights" : None,
             "fine_tune" : False,
-            "hidden" : 512,
+            "hidden" : True,
             "droprate" : 0.1,
             "normalized" : True
         },
@@ -192,8 +192,10 @@ def main( # noqa: D417
     nn_model, model_preprocess = builder.build_model(
         device=device, 
         dtype=model_dtype,
-        **class_spec,
-        **model_builder_kwargs
+        **{
+            **class_spec,
+            **model_builder_kwargs
+        }
     ) 
     if not isinstance(nn_model, torch.nn.Module):
         raise TypeError(
@@ -208,8 +210,10 @@ def main( # noqa: D417
         preprocess=model_preprocess,
         device=device,
         dtype=dtype,
-        **class_spec, 
-        **dataloader_builder_kwargs
+        **{
+            **class_spec, 
+            **dataloader_builder_kwargs
+        }
     )
     if not isinstance(train_loader, torch.utils.data.DataLoader):
         raise TypeError(

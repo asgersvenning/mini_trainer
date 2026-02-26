@@ -2,6 +2,9 @@ import json
 import os
 import re
 from collections import OrderedDict
+from dataclasses import dataclass, fields
+from types import NoneType
+from typing import get_args
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -34,6 +37,98 @@ def retrive_request(req : str):
         return json.load(resp)
 
 
+@dataclass(kw_only=True)
+class GBIFTaxa:
+    """Convenience container for GBIF taxa.
+    """
+    species_name : str | None
+    species_id : int | None
+    genus_name : str | None
+    genus_id : int | None
+    family_name : str | None
+    family_id : int | None
+    order_name : str | None
+    order_id : int | None
+    class_name : str | None
+    class_id : int | None
+    phylum_name : str | None
+    phylum_id : int | None
+    kingdom_name : str | None
+    kingdom_id : int | None
+
+    @classmethod
+    def from_kwargs(cls, **kwargs):
+        proc = {}
+        for rank, value in kwargs.items():
+            rank = rank.removesuffix("_")
+            if rank.split("_")[-1] in ("id", "name"):
+                proc[rank] = value
+            else:
+                id, name = value
+                idk, namek = f'{rank}_id', f'{rank}_name'
+                if idk not in proc:
+                    proc[idk] = id
+                if namek not in proc:
+                    proc[namek] = name
+        return cls(**proc)
+
+    def __post_init__(self):
+        struct = fields(self)
+        for field in struct:
+            value = getattr(self, field.name, None)
+            if value is None:
+                continue
+            tp = [tp for tp in get_args(field.type) if tp != NoneType]
+            assert len(tp) == 1
+            tp = tp[0]
+            if not isinstance(value, tp):
+                setattr(self, field.name, tp(value))
+
+    @property
+    def ranks(self):
+        default = ["species", "genus", "family", "order", "class", "phylum", "kingdom"]
+        
+        def _full_rank(rank : str):
+            name = getattr(self, rank + "_name")
+            id = getattr(self, rank + "_id")
+            return name is not None and id is not None
+        
+        return list(filter(_full_rank, default))
+    
+    @property
+    def names(self) -> list[str]:
+        return [getattr(self, rank + "_name") for rank in self.ranks]
+    
+    @property
+    def ids(self) -> list[int]:
+        return [getattr(self, rank + "_id") for rank in self.ranks]
+
+    @property
+    def rank(self):
+        return self.ranks[0]
+    
+    @property
+    def id(self) -> int:
+        return getattr(self, self.rank + "_id")
+    
+    @property
+    def name(self) -> str:
+        return getattr(self, self.rank + "_name")
+
+    def __hash__(self):
+        return self.id
+
+    def __repr__(self):
+        ranks = self.ranks
+        fmt = "\n  ".join([f'{r.title():>7}: {{{r}}}' for r in ranks])
+        fmt = f'GBIFTaxa(\n  {fmt}\n)'
+        data = {
+            level : f'{getattr(self, level + "_name")} [{getattr(self, level + "_id")}]'
+            for level in ranks
+        }
+        return fmt.format(**data)
+
+
 def resolve_id(id : str | int):
     """Resolves a GBIF id to the accepted GBIF id and scientific name for all taxonomic levels.
     
@@ -57,7 +152,7 @@ def resolve_id(id : str | int):
     return clean_data
 
 
-SPACE_PATTERN = re.compile(r'[\s_]+')
+SPACE_PATTERN = re.compile(r'\s[x×]\s|[\s_]+')
 
 
 def parse_name(name : str | None, user_author : str | None=None):
@@ -80,13 +175,18 @@ def name_to_id(
         name : str, 
         author : str | None=None, 
         rank_contains : str | None=None, 
-        threshold : int=0
+        threshold : int=0,
+        attempt : int=0,
+        max_attempts : int=10
     ) -> tuple[int, str, int]:
     """Convert taxa name to GBIF ID.
     
     Returns:
         (key, rank, confidence): Returns the matched GBIF `usageKey` and `rank`, and the matching confidence.
     """
+    attempt += 1
+    if attempt > max_attempts:
+        raise RuntimeError(f'Unable to convert {name} ({author=}, {rank_contains=}) at {threshold=} to GBIF id in {max_attempts=}')
     name, _ = parse_name(name, author)
     try:
         req = f'{GBIF_SPECIES_API_ENDPOINT}match?name={quote(name)}'
@@ -98,7 +198,9 @@ def name_to_id(
             return name_to_id(
                 " ".join([data["genus"], name.split(" ")[1]]),
                 rank_contains=rank_contains,
-                threshold=threshold
+                threshold=threshold,
+                attempt=attempt,
+                max_attempts=max_attempts
             )
         if (
             not (isinstance(id, int) and isinstance(rank, str) and isinstance(conf, int)) or 
@@ -108,6 +210,8 @@ def name_to_id(
             raise RuntimeError(f'Unable to properly resolve {name} using "{req}" got {id=} {rank=} {conf=}:\n{data}') 
         return id, rank, conf
     except Exception as e:
+        if "Unable to convert" in str(e):
+            raise e
         req = f'{GBIF_SPECIES_API_ENDPOINT}search?nameType=SCIENTIFIC&q={quote(name)}'
         data = retrive_request(req)["results"]
         if len(data) == 0 or (new_name := parse_name(data[0].get("scientificName", None))[0]) is None:
@@ -125,7 +229,7 @@ def name_to_id(
             assert isinstance(id, int)
             assert isinstance(rank, str)
             return id, rank, threshold
-        return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold)
+        return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold, attempt=attempt, max_attempts=max_attempts)
 
 @multithread_vectorize(desc="Translating names...")
 def id_to_name(id : str | int):

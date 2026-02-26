@@ -117,7 +117,7 @@ def parse_class_spec(
                     f'If `path` is not the path to a valid file, `dir` must be a valid directory, not "{dir}".'
                 )
         else:
-            labels = label_fn(dir, **kwargs)
+            labels = label_fn(dir, levels=levels, **kwargs)
             if levels is not None:
                 for lab in labels.keys():
                     labels[lab] = labels[lab][:levels]
@@ -231,6 +231,8 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
             sparse_masks = sparse_masks_from_labels(labels, cls2idx)
         else:
             sparse_masks = None
+        if cls2idx is not None:
+            kwargs["cls2idx"] = cls2idx
         return BaseBuilder.build_model(*args, cls=cls, sparse_masks=sparse_masks, **kwargs)
     
     @staticmethod

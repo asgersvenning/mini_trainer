@@ -1,3 +1,4 @@
+import json
 import os
 from argparse import ArgumentParser
 from typing import Any
@@ -26,6 +27,7 @@ def main( # noqa: D417
         name: str | None=None,
         threshold : float=0,
         data_index : str | None=None,
+        class_spec : str | None=None,
         subsample : int | None=None,
         device : str="cuda:0",
         dtype : str="float16",
@@ -100,20 +102,27 @@ def main( # noqa: D417
     )
 
     # Prepare model
+    if class_spec is None:
+        class_spec = {}
+    else:
+        with open(class_spec, "r") as f:
+            class_spec = json.load(f)
     nn_model, model_preprocess = builder.build_model(
         weights=weights,
         device=device, 
-        dtype=torch.float32
+        dtype=torch.float32,
+        strict=False,
+        **class_spec
     )
     nn_model.eval()
-    metadata = classification_module(nn_model)._metadata.copy()
+    metadata = classification_module(nn_model).metadata.copy()
     
     # Prepare dataloader
     labels = None
     if data_index is not None:
-        metadata = get_metadata(data_index)
-        images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
-        labels = [p for p, s in zip(metadata["label"], metadata["split"]) if s == "test"]
+        _data_metadata = get_metadata(data_index, **metadata)
+        images = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
+        labels = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **metadata)
     if subsample is not None and subsample > 1:
@@ -227,6 +236,12 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
         'The arrays should all have equal lengths and can be considered "columns" in a table.\n'
         'The "split" column should contain values "train", "validation" or other,\n'
         'and the "class" column should contain the the class *names* (not indices) for each file/path.'
+    )
+    mod_args.add_argument(
+        "-C", "--class_spec", type=str, default=None, required=False,
+        help='Path to a JSON file containing the class name to index mapping and other\n'
+        'important information for constructing models and dataloaders.\n'
+        'If it doesn\'t exist, one will be created based on the directories found under `output` if it is set.'
     )
     inf_args.add_argument(
         "--batch_size", type=int, dest="dataloader_builder_kwargs.batch_size",

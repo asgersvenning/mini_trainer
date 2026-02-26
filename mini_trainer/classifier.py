@@ -101,7 +101,7 @@ def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
 class SupervisionContext:
     """Used for passing a target to the classification module.
     """
-    _target = None
+    _target : torch.Tensor | None = None
     
     @classmethod
     def set(cls, target):
@@ -125,18 +125,90 @@ class SupervisionContext:
         SupervisionContext.clear()
 
 
+class EmbeddingContext:
+    """Used for passing embeddings from the classification module to the criterion (or elsewhere).
+    """
+    _embeddings : torch.Tensor | None = None
+    _active     : bool = False
+    
+    @classmethod
+    def set(cls, embeddings):
+        cls._embeddings = embeddings
+        
+    @classmethod
+    def get(cls):
+        return cls._embeddings
+        
+    @classmethod
+    def clear(cls):
+        cls._embeddings = None
+        cls._active = False
+
+    @classmethod
+    def activate(cls):
+        if cls._active:
+            raise RuntimeError("EmbeddingContext is already active")
+        cls._active = True
+
+    @classmethod
+    def active(cls):
+        return cls._active
+        
+    def __enter__(self):
+        self.activate()
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        EmbeddingContext.clear()
+
+
+def theta_to_zscore(theta : torch.Tensor, ndim : int):
+    r"""Converts an angle between random vectors in D dimensions to z-score.
+    
+            ::math::`Z(\theta) = \sqrt(D-2) * (cos^{-1}(-\theta) - \frac{\pi}{2})`
+    
+    This function is a *very* good approximation for transforming the distribution
+    given by the inner product between random unit vectors in D dimensions 
+    to the standard normal distribution - i.e. if the embeddings and weights are random
+    then the output logits here will follow a normal distribution.
+    """
+    z_var : float = 1 / (float(ndim) - 2)**0.5
+    z_mu = torch.pi / 2
+    z_rel = torch.acos(-theta.clamp(-1 + 1e-7, 1 - 1e-7))
+    return (z_rel - z_mu) / z_var
+
+
 class Classifier(nn.Module): # noqa: D101 TODO
     _version = 1
 
-    @staticmethod
+    @classmethod
     @torch.no_grad()
-    def _normalize_layer(layer: nn.Linear):
+    def init_spherical_repulsion(cls, layer: nn.Module, iterations: int = 100, lr: float = 0.5):
+        w = layer.weight
+        nn.init.normal_(w)
+        
+        for _ in range(iterations):
+            w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
+            
+            # Gradient of sum((w @ w.T)^2) is 4 * (w @ w.T @ w)
+            # We subtract the projection onto the vectors to stay on the sphere
+            grad = w @ w.t() @ w
+            proj = (grad * w).sum(dim=1, keepdim=True) * w
+            w.sub_(lr * (grad - proj))
+
+        w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
+        return layer
+
+    @classmethod
+    @torch.no_grad()
+    def _normalize_layer(cls, layer: nn.Linear, orthogonal_init : bool=False):
         if layer.bias is not None:
-            layer.bias.fill_(-1)
+            layer.bias.fill_(0)
             layer.bias.requires_grad_(False)
+        if orthogonal_init:
+            layer = cls.init_spherical_repulsion(layer)
         weight_norm(layer, name="weight", dim=0)
-        layer.parametrizations.weight.original0.fill_(1.0)
-        layer.parametrizations.weight.original0.requires_grad_(False)
+        layer.parametrizations.weight.original0.fill_(1) 
+        layer.parametrizations.weight.original0.requires_grad_(False) # Freeze weight row norm
         return layer
     
     @staticmethod
@@ -198,12 +270,13 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        # # Create a BatchNormalization layer
-        # self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
+        # Create a BatchNormalization layer
+        self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
 
         # Create linear classification layer
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
-        self.linear = self._normalize_layer(layer) if normalized else layer
+        self.normalized = normalized
+        self.linear = self._normalize_layer(layer, True) if self.normalized else layer
 
         # Prepare class masking buffer
         if active_indices is not None:
@@ -236,8 +309,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 weight = weight.index_select(0, self.active_indices)
                 if bias is not None:
                     bias = bias.index_select(0, self.active_indices)
-            self._linear_weight = weight
-            self._linear_bias = bias
+            self._linear_weight = weight.view_as(weight)
+            self._linear_bias = bias.view_as(bias)
             self._dirty_cache["_weight_bias"] = False
         return self._linear_weight, self._linear_bias
 
@@ -246,11 +319,23 @@ class Classifier(nn.Module): # noqa: D101 TODO
             x = self.dropout(x)
             x = self.hidden(x)
             x = F.leaky_relu(x)
-        return F.layer_norm(x, x.shape[-1:])
+        if self.normalized:
+            # Output is unit vectors
+            return F.normalize(x, 2, -1)
+        else:
+            # Output is MVN
+            return self.batch_norm(x)
 
     def forward(self, x : torch.Tensor) -> torch.Tensor:
         weight, bias = self._weight_bias()
-        return F.linear(self.preclassification(x), weight=weight, bias=bias)
+        embeddings = self.preclassification(x)
+        if EmbeddingContext.active():
+            EmbeddingContext.set(embeddings)
+        if self.normalized:
+            theta = F.linear(embeddings, weight=weight, bias=bias)
+            return theta_to_zscore(theta, self.preclassification_size)
+        else:
+            return F.linear(embeddings, weight=weight, bias=bias)
     
     def get_extra_state(self):
         return self._metadata
@@ -308,6 +393,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             state : OrderedDict[str, torch.Tensor | Any] | None,
             device : torch.types.Device,
             dtype : torch.dtype,
+            strict : bool=True,
             **kwargs
         ):
         """Load weights into model architecture.
@@ -326,7 +412,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             setattr(architecture, f'_{k}', v)
         if state is not None:
             try:
-                architecture.load_state_dict(state, strict=True)
+                architecture.load_state_dict(state, strict=strict)
             except RuntimeError as e:
                 if "Missing key(s)" in str(e) and "_extra_state" in str(e):
                     architecture.load_state_dict(state, strict=False)
@@ -440,7 +526,6 @@ class Classifier(nn.Module): # noqa: D101 TODO
                     UserWarning
                 )
                 kwargs[k] = v
-
         # Rebuild (and load) integrated backbone and classifier
         model = cls.load(
             model_type, head_name, architecture, state, device, dtype, 
