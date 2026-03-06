@@ -296,7 +296,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.normalized = normalized
         self.linear = self._normalize_layer(layer, True) if self.normalized else layer
-        if "prior" in self._metadata:
+        if self._metadata.get("prior", None) is not None:
             self.linear.bias.data[:] = torch.tensor(self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype)
 
         # Prepare class masking buffer

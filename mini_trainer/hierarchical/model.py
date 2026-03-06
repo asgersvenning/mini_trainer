@@ -1,3 +1,5 @@
+import math
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -46,8 +48,22 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
 
 
+def prior_from_labels(labels : list[int | list[int]], cls2idx : dict):
+    if isinstance(labels[0], int):
+        raise ValueError("Expected hierarchical labels, but got flat.")
+    ncls = [len(cls2idx[str(lvl)]) for lvl in range(len(cls2idx))]
+    nlvls = len(ncls)
+    counts = {str(lvl) : Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
+    counts = {k : [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
+    prior = {k : [math.log(c) if c > 0 else 0 for c in v] for k, v in counts.items()}
+    pmu = {k : sum(v) / len(v) for k, v in prior.items()}
+    pvar = {k : sum([(p - pmu[k])**2 for p in v]) / (len(v) - 1) for k, v in prior.items()}
+    psig = {k : v ** 0.5 for k, v in pvar.items()}
+    retval = {k : [-(p - pmu[k]) / psig[k] for p in v] for k, v in prior.items()} 
+    return [retval[str(lvl)] for lvl in range(nlvls)]
+
 class HierarchicalClassifier(Classifier): # noqa: D101 TODO
-    def __init__(self, sparse_masks : list[torch.Tensor] | None=None, **kwargs):
+    def __init__(self, sparse_masks : list[torch.Tensor] | None=None, prior : list[torch.Tensor | list[float]] | None=None, **kwargs):
         """TODO.
 
         Args:
@@ -58,6 +74,12 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         super().__init__(**kwargs)
         if not self.normalized:
             raise NotImplementedError("Unnormalized hierarchical models is not implemented yet!")
+
+        if prior is not None:
+            self._metadata["prior"] = [p.tolist() if isinstance(p, torch.Tensor) else p for p in prior]
+        
+        if self._metadata.get("prior", None) is not None:
+            self.linear.bias.data[:] = torch.tensor(self._metadata["prior"][0], device=self.linear.weight.device, dtype=self.linear.weight.dtype)
 
         # Store masks
         self._num_masks = 0
@@ -71,13 +93,28 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         _ = self.masks # Call the masks attribute to "warm up" the mask-related buffer cache
 
     @classmethod
-    def load(cls, architecture_class, architecture_output_name, architecture, state, device, dtype, **kwargs):
+    def load(
+        cls, 
+        architecture_class, 
+        architecture_output_name, 
+        architecture, 
+        state, 
+        device, 
+        dtype, 
+        cls2idx : dict[str, dict[str, int]] | None=None, 
+        train_labels : list[list[int]] | None=None, 
+        **kwargs
+    ):
         if state is not None:
             prefix = f"{architecture_output_name}.mask_"
             # Extract (index, tensor) tuples, sort by index, and retrieve tensors
             masks = [(int(k.split("_")[-1]), v) for k, v in state.items() if k.startswith(prefix)]
             if masks:
                 kwargs["sparse_masks"] = [v for _, v in sorted(masks)]
+        if cls2idx is not None:
+            kwargs["cls2idx"] = cls2idx
+            if train_labels is not None:
+                kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
         return super().load(architecture_class, architecture_output_name, architecture, state, device, dtype, **kwargs)
 
     @property
@@ -163,17 +200,20 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         layers : list[nn.Linear] = [self.linear]
         orig_indices = self.active_indices
         self.active_indices = None
-        for m in self.masks:
+        for i, m in enumerate(self.masks):
             out = int(m.max().item() + 1)
             layer = nn.Linear(self.preclassification_size, out, bias=True)
-            layers.append(self._normalize_layer(layer) if normalized else layer)
+            layer = self._normalize_layer(layer) if normalized else layer
+            if self._metadata.get("prior", None) is not None:
+                layer.bias.data[:] = torch.tensor(self._metadata["prior"][i + 1], device=layer.weight.device, dtype=layer.weight.dtype)
+            layers.append(layer)
         self.active_indices = orig_indices
         self.layers = nn.ModuleList(layers)
         for i in range(len(self.layers)):
             self.register_buffer(f"_linear_weight_{i}", torch.empty(0), persistent=False)
             self.register_buffer(f"_linear_bias_{i}", torch.empty(0), persistent=False)
 
-    def _weight_bias(self, i : int):
+    def _weight_bias(self, i : int) -> tuple[torch.Tensor, torch.Tensor]:
         if self._dirty_cache[f"_weight_bias_{i}"] or self.training:
             if self._dirty_cache["_masks"]:
                 _ = self.masks
@@ -190,13 +230,15 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         return getattr(self, f"_linear_weight_{i}"), getattr(self, f"_linear_bias_{i}")
 
     def marginals(self, x : torch.Tensor) -> list[torch.Tensor]:
-        return [
-            theta_to_zscore(
-                F.linear(x, *self._weight_bias(i)), 
+        M = []
+        for i in range(len(self.layers)):
+            w, b = self._weight_bias(i)
+            L = theta_to_zscore(
+                F.linear(x, w), 
                 self.preclassification_size
-            ).log_softmax(dim=1) 
-            for i in range(len(self.layers))
-        ]
+            ) + b
+            M.append(L.log_softmax(dim=1))
+        return M
 
     def forward(self, x : torch.Tensor):
         embeddings = self.preclassification(x)
@@ -253,13 +295,15 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
     def _classify(self, sequence : torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
         if isinstance(sequence, torch.Tensor):
             sequence = [e for e in sequence]
-        return [
-            theta_to_zscore(
-                F.normalize(x, 2, 1) @ self.embedding(i).T, 
+        M = []
+        for i, x in list(enumerate(sequence[::-1])):
+            w, b = self._weight_bias(i)
+            L = theta_to_zscore(
+                F.linear(F.normalize(x, 2, 1), w), 
                 self.preclassification_size
-            ).log_softmax(dim=1)
-            for i, x in list(enumerate(sequence[::-1]))
-        ]
+            ) + b
+            M.append(L.log_softmax(dim=1))
+        return M
 
     def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
         if y is None:
@@ -302,7 +346,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
                 tgt_is_causal=True
             )
 
-        return self._classify(sequence[:-1])
+        return self._classify(sequence[1:])
 
 
 # Differs from the one above in that we don't carry explicit independent embeddings for each layer
@@ -336,15 +380,16 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
     def _classify(self, sequence : torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
         if isinstance(sequence, torch.Tensor):
             sequence = [e for e in sequence]
-        return [
-            self.hierarchy(
-                theta_to_zscore(
-                    F.normalize(x, 2, 1) @ self.embeddings.T, 
-                    self.preclassification_size
-                ).log_softmax(dim=1)
-            )[i]
-            for i, x in list(enumerate(sequence[::-1]))
-        ]
+        M = []
+        w, b = self._weight_bias()
+        for i, x in list(enumerate(sequence[::-1])):
+            L = theta_to_zscore(
+                F.linear(F.normalize(x, 2, 1), w), 
+                self.preclassification_size
+            ) + b
+            H = self.hierarchy(L.log_softmax(dim=1))
+            M.append(H[i])
+        return M
 
     def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
         if y is None:
@@ -412,7 +457,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                 tgt_is_causal=True
             )
 
-        return self._classify(sequence[:-1])
+        return self._classify(sequence[1:])
 
 
 @dataclass
