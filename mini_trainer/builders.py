@@ -87,7 +87,6 @@ class BaseBuilder:
             input_dir : str,
             output_dir : str,
             cls2idx : dict[str, int],
-            preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
             dtype : torch.dtype,
@@ -135,7 +134,7 @@ class BaseBuilder:
         ]
         datasets, loaders = get_dataset_dataloader(
             *metadata,
-            resize_size=resize_size or getattr(preprocess, "resize_size"),
+            resize_size=resize_size,
             modes=splits,
             batch_size=batch_size,
             num_workers=num_workers,

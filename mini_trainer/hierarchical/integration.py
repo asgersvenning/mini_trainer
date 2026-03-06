@@ -40,6 +40,7 @@ def linnean_labels_from_directory(dir : str, levels="family", **kwargs): # noqa:
     images = find_images(dir)
     dirnames = set([os.path.split(os.path.dirname(im))[1] for im in images])
     taxonomy = create_taxonomy(dirnames, levels=levels)
+    taxonomy = OrderedDict([(k, v) for k, v in sorted(taxonomy.items(), key=lambda kv : tuple(vv[0] for vv in kv[1].values())[::-1])])
     return labels_from_taxonomy(taxonomy)
 
 
@@ -215,7 +216,7 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
         """
         if species:
             if "label_fn" in kwargs:
-                raise ValueError(f'`label_fn` passed to `BaseBuilder.spec_model_dataloader` when `{species=})`')
+                raise ValueError(f'`label_fn` passed to `HierarchicalBuilder.spec_model_dataloader` when `{species=})`')
             kwargs["label_fn"] = linnean_labels_from_directory
         return parse_class_spec(path=path, dir=dir, levels=levels, **kwargs)
         

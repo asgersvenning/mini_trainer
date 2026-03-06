@@ -1,7 +1,8 @@
 import json
 import os
 import warnings
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
+import math
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -177,6 +178,22 @@ def theta_to_zscore(theta : torch.Tensor, ndim : int):
     return (z_rel - z_mu) / z_var
 
 
+def prior_from_labels(labels : list[int | list[int]], cls2idx : dict):
+    if isinstance(labels[0], (list, tuple)):
+        labels = [l[0] for l in labels]
+        ncls = len(cls2idx["0"])
+    else:
+        ncls = len(cls2idx)
+    counts = Counter(labels)
+    counts = [counts.get(i, 0) for i in range(ncls)]
+    prior = [math.log(c) if c > 0 else 0 for c in counts]
+    pmu = sum(prior) / len(prior)
+    pvar = sum([(p - pmu)**2 for p in prior]) / (len(prior) - 1)
+    psig = pvar ** 0.5
+    retval = [-(p - pmu) / psig for p in prior]
+    return retval
+
+
 class Classifier(nn.Module): # noqa: D101 TODO
     _version = 1
 
@@ -230,6 +247,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             droprate : float=0.1,
             normalized : bool=True,
             active_indices : torch.Tensor | None=None,
+            prior : torch.Tensor | list[float] | None=None,
             **metadata
         ):
         super().__init__()
@@ -260,7 +278,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
             "out_features" : out_features,
             "hidden" : hidden,
             "droprate" : droprate,
-            "normalized" : normalized
+            "normalized" : normalized,
+            "prior" : prior.tolist() if isinstance(prior, torch.Tensor) else prior
         })
         self._metadata = metadata
 
@@ -277,6 +296,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.normalized = normalized
         self.linear = self._normalize_layer(layer, True) if self.normalized else layer
+        if "prior" in self._metadata:
+            self.linear.bias.data[:] = torch.tensor(self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype)
 
         # Prepare class masking buffer
         if active_indices is not None:
@@ -332,8 +353,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
         if self.normalized:
-            theta = F.linear(embeddings, weight=weight, bias=bias)
-            return theta_to_zscore(theta, self.preclassification_size)
+            theta = F.linear(embeddings, weight=weight)
+            return theta_to_zscore(theta, self.preclassification_size) + bias
         else:
             return F.linear(embeddings, weight=weight, bias=bias)
     
@@ -394,6 +415,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
             device : torch.types.Device,
             dtype : torch.dtype,
             strict : bool=True,
+            train_labels : list[int | list[int]] | None=None,
+            cls2idx : dict[str, int] | None=None,
             **kwargs
         ):
         """Load weights into model architecture.
@@ -407,6 +430,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
             "backbone_output_name" : architecture_output_name
         }
         kwargs.update(cfg)
+        if cls2idx is not None:
+            kwargs["cls2idx"] = cls2idx
+            if train_labels is not None:
+                kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
         architecture.add_module(architecture_output_name, cls(**kwargs))
         for k, v in cfg.items():
             setattr(architecture, f'_{k}', v)

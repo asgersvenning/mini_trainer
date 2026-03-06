@@ -179,35 +179,11 @@ def main( # noqa: D417
     )
     # Add image size to class spec as it is needed to instantiate both the model and dataloader
     class_spec["resize_size"] = size
-
-    # Prepare model
-    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to 
-    # facilitate mixed precision training
-    # RE: Trying to disable again - perhaps this is why fastai is faster?
-    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some
-    # performance by following the pattern given in:
-    # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244, 
-    # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
-    model_dtype = torch.float32 
-    nn_model, model_preprocess = builder.build_model(
-        device=device, 
-        dtype=model_dtype,
-        **{
-            **class_spec,
-            **model_builder_kwargs
-        }
-    ) 
-    if not isinstance(nn_model, torch.nn.Module):
-        raise TypeError(
-            'Expected `model_builder` to return a tuple, where the first element'
-            f'is an object inheriting from `torch.nn.Module`, but got `{type(nn_model)}`.'
-        )
     
     # Prepare dataloader
     train_labels, train_loader, val_loader = builder.build_dataloader(
         input_dir=input,
         output_dir=output_dir,
-        preprocess=model_preprocess,
         device=device,
         dtype=dtype,
         **{
@@ -224,6 +200,30 @@ def main( # noqa: D417
         raise TypeError(
             'Expected `dataloader_builder` to return an objects'
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
+        )
+
+        # Prepare model
+    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to 
+    # facilitate mixed precision training
+    # RE: Trying to disable again - perhaps this is why fastai is faster?
+    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some
+    # performance by following the pattern given in:
+    # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244, 
+    # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
+    model_dtype = torch.float32 
+    nn_model, model_preprocess = builder.build_model(
+        device=device, 
+        dtype=model_dtype,
+        train_labels=train_labels,
+        **{
+            **class_spec,
+            **model_builder_kwargs
+        }
+    ) 
+    if not isinstance(nn_model, torch.nn.Module):
+        raise TypeError(
+            'Expected `model_builder` to return a tuple, where the first element'
+            f'is an object inheriting from `torch.nn.Module`, but got `{type(nn_model)}`.'
         )
 
     # Prepare augmentation

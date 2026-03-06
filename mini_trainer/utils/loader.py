@@ -1,13 +1,12 @@
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 import torch
-from torch.utils.data import (BatchSampler, DataLoader, RandomSampler,
-                              SequentialSampler)
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
-from mini_trainer.utils.io import (CACHE_MODE, LazyDataset, guess_cache_mode,
-                                   make_read_and_resize_fn)
+from mini_trainer.utils.io import CACHE_MODE, LazyDataset, Reindexed, guess_cache_mode, make_read_and_resize_fn
+
 
 def get_dataloader( # noqa: D103
         dataset : torch.utils.data.Dataset,
@@ -99,13 +98,15 @@ def get_dataset_dataloader( # noqa: D103
             image = hook(image)
         return image, label
     
-    datasets = [
-        LazyDataset(
+    datasets = []
+    for data in metadata:
+        dset = LazyDataset(
             func=proc_path_label, 
             items=list(zip(data["path"], data["class"])),
             cache=cache
-        ) for data in metadata
-    ]
+        ) 
+        datasets.append(dset)
+    
 
     if num_workers is None:
         num_workers = os.cpu_count() - 4

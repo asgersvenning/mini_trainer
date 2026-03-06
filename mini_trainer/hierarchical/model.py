@@ -5,7 +5,14 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.classifier import BasePrediction, Classifier, PredictionItem, SupervisionContext, theta_to_zscore
+from mini_trainer.classifier import (
+    BasePrediction,
+    Classifier,
+    EmbeddingContext,
+    PredictionItem,
+    SupervisionContext,
+    theta_to_zscore,
+)
 
 
 def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
@@ -192,7 +199,10 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         ]
 
     def forward(self, x : torch.Tensor):
-        M = self.marginals(self.preclassification(x))
+        embeddings = self.preclassification(x)
+        if EmbeddingContext.active():
+            EmbeddingContext.set(embeddings)
+        M = self.marginals(embeddings)
         N = len(M)
         C : list[torch.Tensor] = [torch.empty(0) for _ in range(N)]
         for i in reversed(range(N)):
@@ -204,7 +214,10 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
 
 class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
     def forward(self, x):
-        return super().marginals(super().preclassification(x))
+        embeddings = self.preclassification(x)
+        if EmbeddingContext.active():
+            EmbeddingContext.set(embeddings)
+        return self.marginals(embeddings)
 
 
 class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
@@ -255,6 +268,8 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
 
         # Image embedding context
         context = self.preclassification(x)
+        if EmbeddingContext.active():
+            EmbeddingContext.set(context)
 
         # Prepare variables and state
         batch_size, _, device = context.shape[0], context.dtype, context.device
@@ -338,6 +353,8 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
 
         # Image embedding context
         context = self.preclassification(x)
+        if EmbeddingContext.active():
+            EmbeddingContext.set(context)
 
         # Prepare variables and state
         batch_size, dtype, device = context.shape[0], context.dtype, context.device
