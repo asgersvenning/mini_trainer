@@ -13,6 +13,9 @@ from mini_trainer.classifier import (
     EmbeddingContext,
     PredictionItem,
     SupervisionContext,
+    prior_ldam_shift,
+    prior_logit_adjustment,
+    prior_scratch,
     theta_to_zscore,
 )
 
@@ -48,19 +51,29 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
 
 
-def prior_from_labels(labels : list[int | list[int]], cls2idx : dict):
+def prior_from_labels(labels : list[int | list[int]], cls2idx : dict, method : str="adjust", **kwargs):
     if isinstance(labels[0], int):
         raise ValueError("Expected hierarchical labels, but got flat.")
     ncls = [len(cls2idx[str(lvl)]) for lvl in range(len(cls2idx))]
     nlvls = len(ncls)
-    counts = {str(lvl) : Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
+    counts = {lvl : Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
     counts = {k : [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
-    prior = {k : [math.log(c) if c > 0 else 0 for c in v] for k, v in counts.items()}
-    pmu = {k : sum(v) / len(v) for k, v in prior.items()}
-    pvar = {k : sum([(p - pmu[k])**2 for p in v]) / (len(v) - 1) for k, v in prior.items()}
-    psig = {k : v ** 0.5 for k, v in pvar.items()}
-    retval = {k : [-(p - pmu[k]) / psig[k] for p in v] for k, v in prior.items()} 
-    return [retval[str(lvl)] for lvl in range(nlvls)]
+    method = method.lower().strip()
+    priors = []
+    for lvl in range(nlvls):
+        match method:
+            case "adjust":
+                prior = prior_logit_adjustment(counts[lvl], **kwargs)
+            case "ldam":
+                prior = prior_ldam_shift(counts[lvl], **kwargs)
+            case "custom":
+                prior = prior_scratch(counts[lvl], **kwargs)
+            case _:
+                raise NotImplementedError(
+                    f'Class frequency prior implementations currently include: "adjust", "ldam", and "custom", not: {method}'
+                )
+        priors.append(prior)
+    return priors
 
 class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def __init__(self, sparse_masks : list[torch.Tensor] | None=None, prior : list[torch.Tensor | list[float]] | None=None, **kwargs):
