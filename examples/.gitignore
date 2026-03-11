@@ -1,0 +1,8 @@
+**
+!.gitignore
+!mnist.ipynb
+!blair.ipynb
+!run_notebook.py
+!resize_image_dir.py
+!create_combinations.py
+!apply_quality_filter.py

@@ -1,8 +1,8 @@
 import json
+import math
 import os
 import warnings
 from collections import Counter, OrderedDict, defaultdict
-import math
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -162,10 +162,10 @@ class EmbeddingContext:
         EmbeddingContext.clear()
 
 
-def theta_to_zscore(theta : torch.Tensor, ndim : int):
-    r"""Converts an angle between random vectors in D dimensions to z-score.
+def cosine_to_zscore(cosine : torch.Tensor, ndim : int):
+    r"""Converts a cosine (or inner product) between random unit vectors in D dimensions to z-score.
     
-            ::math::`Z(\theta) = \sqrt(D-2) * (cos^{-1}(-\theta) - \frac{\pi}{2})`
+            ::math::`Z(x) = \sqrt(D-2) * (cos^{-1}(-x) - \frac{\pi}{2})`
     
     This function is a *very* good approximation for transforming the distribution
     given by the inner product between random unit vectors in D dimensions 
@@ -174,7 +174,7 @@ def theta_to_zscore(theta : torch.Tensor, ndim : int):
     """
     z_var : float = 1 / (float(ndim) - 2)**0.5
     z_mu = torch.pi / 2
-    z_rel = torch.acos(-theta.clamp(-1 + 1e-7, 1 - 1e-7))
+    z_rel = torch.acos(-cosine.clamp(-1 + 1e-7, 1 - 1e-7))
     return (z_rel - z_mu) / z_var
 
 
@@ -392,7 +392,39 @@ class Classifier(nn.Module): # noqa: D101 TODO
             self._dirty_cache["_weight_bias"] = False
         return self._linear_weight, self._linear_bias
 
+    def _reshape_backbone_embeddings(self, x: torch.Tensor) -> torch.Tensor:
+        D = self.preclassification_size
+
+        if x.ndim == 2:
+            if x.shape[1] == D:
+                return x
+            if x.shape[1] == 1 and x.numel() % D == 0:
+                return x.reshape(-1, D)
+            raise ValueError(f"Unexpected 2D preclassification input shape: {tuple(x.shape)}")
+
+        if x.ndim == 3:
+            if x.shape[-1] == D:
+                if x.shape[1] == 1:
+                    return x[:, 0, :]
+                raise ValueError(
+                    f"Ambiguous 3D preclassification input shape {tuple(x.shape)}; "
+                    f"expected singleton token dimension."
+                )
+            if x.shape[1] == D and x.shape[-1] == 1:
+                return x[:, :, 0]
+            raise ValueError(f"Unexpected 3D preclassification input shape: {tuple(x.shape)}")
+
+        if x.ndim == 4:
+            if x.shape[1] == D and x.shape[-2:] == (1, 1):
+                return x.flatten(1)
+            if x.shape[-1] == D and x.shape[1:3] == (1, 1):
+                return x.squeeze(1).squeeze(1)
+            raise ValueError(f"Unexpected 4D preclassification input shape: {tuple(x.shape)}")
+
+        raise ValueError(f"Unexpected preclassification input shape: {tuple(x.shape)}")
+
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
+        x = self._reshape_backbone_embeddings(x)
         if self.hidden:
             x = self.dropout(x)
             x = self.hidden(x)
@@ -410,8 +442,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
         if self.normalized:
-            theta = F.linear(embeddings, weight=weight)
-            return theta_to_zscore(theta, self.preclassification_size) + bias
+            return cosine_to_zscore(F.linear(embeddings, weight=weight), self.preclassification_size) + bias
         else:
             return F.linear(embeddings, weight=weight, bias=bias)
     

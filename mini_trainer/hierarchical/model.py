@@ -13,10 +13,10 @@ from mini_trainer.classifier import (
     EmbeddingContext,
     PredictionItem,
     SupervisionContext,
+    cosine_to_zscore,
     prior_ldam_shift,
     prior_logit_adjustment,
     prior_scratch,
-    theta_to_zscore,
 )
 
 
@@ -246,7 +246,7 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         M = []
         for i in range(len(self.layers)):
             w, b = self._weight_bias(i)
-            L = theta_to_zscore(
+            L = cosine_to_zscore(
                 F.linear(x, w), 
                 self.preclassification_size
             ) + b
@@ -311,7 +311,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
         M = []
         for i, x in list(enumerate(sequence[::-1])):
             w, b = self._weight_bias(i)
-            L = theta_to_zscore(
+            L = cosine_to_zscore(
                 F.linear(F.normalize(x, 2, 1), w), 
                 self.preclassification_size
             ) + b
@@ -344,7 +344,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
                     tgt_is_causal=True
                 )
                 di = self.sequence_length - 2 - i
-                decision[i + 1] = theta_to_zscore(
+                decision[i + 1] = cosine_to_zscore(
                     F.normalize(sequence[i], 2, 1) @ self.embedding(di).T,
                     self.preclassification_size
                 ).softmax(dim=1) @ self.embedding(di)
@@ -396,7 +396,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
         M = []
         w, b = self._weight_bias()
         for i, x in list(enumerate(sequence[::-1])):
-            L = theta_to_zscore(
+            L = cosine_to_zscore(
                 F.linear(F.normalize(x, 2, 1), w), 
                 self.preclassification_size
             ) + b
@@ -428,7 +428,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                     tgt_mask=mask, 
                     tgt_is_causal=True
                 )
-                logits = theta_to_zscore(
+                logits = cosine_to_zscore(
                     F.normalize(sequence[i], 2, 1) @ self.embeddings.T,
                     self.preclassification_size
                 )
