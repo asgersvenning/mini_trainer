@@ -273,8 +273,9 @@ def parquet_to_class_spec_hierarchical(path : str, levels : int=3):
             this_cls2idx[cls] = len(clss)
             clss.add(cls)
         cls2idx[str(level)] = this_cls2idx
+    num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
     return {
         "cls2idx" : cls2idx,
         "labels" : combs,
-        "num_classes" : len(cls2idx["0"])
+        "num_classes" : num_classes
     }

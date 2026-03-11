@@ -124,7 +124,8 @@ def parse_class_spec(
                 for lab in labels.keys():
                     labels[lab] = labels[lab][:levels]
             cls2idx = cls2idx_from_labels(labels)
-            retval = {"cls2idx" : cls2idx, "labels" : labels, "num_classes" : len(labels)}
+            num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
+            retval = {"cls2idx" : cls2idx, "labels" : labels, "num_classes" : num_classes}
         if path is not None:
             with open(path, "w") as f:
                 json.dump(retval, f)
