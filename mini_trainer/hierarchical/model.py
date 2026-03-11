@@ -45,7 +45,7 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
         output: Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
     """
     # Scaffold tensor - same size as output
-    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max() + 1))
+    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max().item() + 1))
     index = index.expand_as(input)
     c = z.scatter_reduce(dim=dim, index=index, src=input, reduce="amax", include_self=False)
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
@@ -175,7 +175,7 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
         return ys
 
     def forward(self, x):
-        return self.hierarchy(super().forward(x).log_softmax(dim=1))
+        return self.hierarchy(super().forward(x))
 
     def _preprocess_metadata(self, cls2idx=None, **kwargs):
         if self._dirty_cache["_preprocess_metadata"] or cls2idx is not None:
@@ -250,7 +250,7 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
                 F.linear(x, w), 
                 self.preclassification_size
             ) + b
-            M.append(L.log_softmax(dim=1))
+            M.append(L)
         return M
 
     def forward(self, x : torch.Tensor):
@@ -315,7 +315,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
                 F.linear(F.normalize(x, 2, 1), w), 
                 self.preclassification_size
             ) + b
-            M.append(L.log_softmax(dim=1))
+            M.append(L)
         return M
 
     def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
@@ -400,8 +400,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                 F.linear(F.normalize(x, 2, 1), w), 
                 self.preclassification_size
             ) + b
-            H = self.hierarchy(L.log_softmax(dim=1))
-            M.append(H[i])
+            M.append(self.hierarchy(L)[i])
         return M
 
     def forward(self, x : torch.Tensor, y : torch.Tensor | list[int] | None=None):
@@ -432,7 +431,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                 logits = theta_to_zscore(
                     F.normalize(sequence[i], 2, 1) @ self.embeddings.T,
                     self.preclassification_size
-                ).log_softmax(dim=1)
+                )
                 mi = self.num_masks - 1 - i
                 if mi > 0:
                     logits = self.hierarchy(logits)[mi]
@@ -443,7 +442,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                         logits.gather(1, con.unsqueeze(0).expand(logits.size(0), -1)) - 
                         con.bincount(minlength=logits.size(1)).to(dtype).log()[con]
                     )
-                decision[i + 1] = logits.exp() @ self.embeddings
+                decision[i + 1] = logits.softmax(dim=1) @ self.embeddings
         else:
             sequence : list[torch.Tensor] = []
             for i in range(self.sequence_length - 1):

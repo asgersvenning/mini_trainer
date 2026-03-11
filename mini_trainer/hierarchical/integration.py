@@ -1,6 +1,6 @@
 import json
 import os
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
@@ -17,6 +17,7 @@ from mini_trainer.hierarchical.model import HierarchicalClassifier, Hierarchical
 from mini_trainer.utils import write_csv_from_dict
 from mini_trainer.utils.data import find_images
 from mini_trainer.utils.logging import BaseResultCollector
+from mini_trainer.utils.loss import EMLACrossEntropy
 from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
 from mini_trainer.utils.plot import named_confusion_matrix
 
@@ -246,7 +247,7 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
     def build_criterion(
             *args, 
             weighted : bool=False,
-            labels : Iterable[int] | None=None, 
+            labels : Iterable[Iterable[int]] | None=None, 
             num_classes : list[int] | None=None, 
             device : torch.types.Device | None=None,
             dtype : torch.dtype | None=None,
@@ -254,20 +255,19 @@ class HierarchicalBuilder(BaseBuilder): # noqa: D101
         ):
         if not weighted or labels is None or num_classes is None:
             return MultiLevelWeightedCrossEntropyLoss(*args, device=device, dtype=dtype, **kwargs)
-        class_weights = []
+        labels = [labs.tolist() if not isinstance(labels, list) else labs for labs in labels]
+        labels = list(zip(*labels))
+        counts = []
         for lvl, ncls in enumerate(num_classes):
-            counts = torch.ones((ncls, ))
-            for cls_idx in labels:
-                counts[cls_idx[lvl]] += 1
-            # weights = torch.log(counts)
-            weights = 1 / counts
-            weights /= weights.mean()
-            class_weights.append(weights)
+            lvlc = Counter(labels[lvl])
+            lvlc = [lvlc.get(i, 0) for i in range(ncls)]
+            counts.append(lvlc)
         return MultiLevelWeightedCrossEntropyLoss(
             *args, 
-            class_weights=class_weights, 
+            class_frequencies=counts, 
             device=device,
             dtype=dtype,
+            loss_cls=EMLACrossEntropy,
             **kwargs
         )
 
@@ -368,7 +368,9 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
             ) for level in range(self._levels)
         }
     
-    def save_mini_metric_csv(self, dst : str, threshold : float=0.0):
+    def save(self, dst : str, threshold : float=0.0):
+        if os.path.isdir(dst):
+            dst = os.path.join(dst, "mini_metric.csv")
         SCHEMA = dict((
             ("instance_id", int),
             ("filename", str),

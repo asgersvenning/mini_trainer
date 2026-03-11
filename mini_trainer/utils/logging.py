@@ -181,6 +181,95 @@ class _ResultsCollector:
         raise NotImplementedError('Result collector must have `data` class propery suitable for JSON serialization.')
 
 
+_BaseTypes = bool | str | float | int | torch.Tensor | np.ndarray | np.str_
+
+class RawResultCollector(_ResultsCollector):
+    _attributes = ("predictions", "labels", "paths")
+    def __init__(
+            self,
+            strict : bool=True,
+            *args,
+            **kwargs
+        ):
+        self.strict = strict
+        self.predictions, self.labels, self.paths = [], [], []
+    
+    def collect(
+            self,
+            paths : list[str] | None=None,
+            predictions : torch.Tensor | list[torch.Tensor] | None=None,
+            labels : list[int] | list[list[int]] | None=None,
+            **kwargs
+        ):
+        contrib = locals()
+        for attr in self._attributes:
+            try:
+                values = contrib.get(attr, None)
+                if isinstance(values, torch.Tensor):
+                    values = values.detach().cpu()
+                if values is not None and len(values) > 0:
+                    if not isinstance(values, (torch.Tensor, np.ndarray)):
+                        if isinstance(values[0], torch.Tensor):
+                            values = [v.detach().cpu() for v in values]
+                        if isinstance(values[0], torch.Tensor) and values[0].ndim <= 1:
+                            values = torch.stack(values)
+                        elif isinstance(values[0], (np.ndarray, np.str_)) and values[0].ndim <= 1:
+                            values = np.stack(values)
+                    if len(getattr(self, attr)) > 0:
+                        assert isinstance(getattr(self, attr)[0], type(values))
+                    getattr(self, attr).append(values)
+            except Exception as e:
+                e.add_note(f'Error while collecting {attr}.')
+                raise e
+
+    def _stack_and_normalize(self, data : list[_BaseTypes | list[_BaseTypes]]):
+        if len(data) < 1:
+            return data
+        if isinstance(data[0], (list, tuple)):
+            return [self._stack_and_normalize(col) for col in zip(*data)]
+        assert isinstance(data[0], _BaseTypes)
+        if data and isinstance(data[0], torch.Tensor):
+            data = torch.cat(data)
+        elif data and isinstance(data[0], np.ndarray):
+            data = np.concat(data)
+        if isinstance(data, np.ndarray):
+            if data.dtype.type is np.str_:
+                data = data.tolist()
+            else:
+                data = torch.from_numpy(data)
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], (float, int, bool)):
+            data = torch.tensor(data)
+        return data
+
+    def _datalength(self, data : torch.Tensor | list[str] | list[torch.Tensor] | list[list[str]]):
+        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], torch.Tensor):
+            lengths = list(map(len, data))
+            assert len(set(lengths)) == 1
+            return lengths[0]
+        return len(data)
+
+    @property
+    def data(self):
+        data = {}
+        for attr in self._attributes:
+            values = getattr(self, attr)
+            data[attr] = self._stack_and_normalize(values)
+        dl = {k : self._datalength(v) for k, v in data.items()}
+        non_empty = [k for k, l in dl.items() if l > 0]
+        if self.strict and len(non_empty) == 0:
+            raise RuntimeError(f'Attempt to access empty data: {dl}')
+        mdl = max(dl.values())
+        consistent = [dl[k] == mdl for k in non_empty]
+        if self.strict and not all(consistent):
+            raise RuntimeError(f'Stored data is heterogeneous: {dl}')
+        return data
+
+    def save(self, dst : str, *args, **kwargs):
+        if os.path.isdir(dst):
+            dst = os.path.join(dst, "predictions.pt")
+        torch.save(self.data, dst)
+
+
 class BaseResultCollector(_ResultsCollector): # noqa: D101
     def __init__( # noqa: D107
             self, 
@@ -227,7 +316,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
             self, 
             paths : list[str], 
             predictions : torch.Tensor | list[Prediction], 
-            labels : list[str] | None=None
+            labels : list[int] | list[list[int]] | None=None
         ):
         """Override in subclasses!
         """
@@ -321,7 +410,9 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
             **{attr : getattr(self, attr) for attr in self._extra_attr}
         }
     
-    def save_mini_metric_csv(self, dst : str, threshold : float=0.0):
+    def save(self, dst : str, threshold : float=0.0):
+        if os.path.isdir(dst):
+            dst = os.path.join(dst, "mini_metric.csv")
         SCHEMA = dict((
             ("instance_id", int),
             ("filename", str),

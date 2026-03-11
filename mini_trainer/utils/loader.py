@@ -4,8 +4,15 @@ from collections.abc import Callable
 import numpy as np
 import torch
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from collections import Counter
 
-from mini_trainer.utils.io import CACHE_MODE, LazyDataset, Reindexed, guess_cache_mode, make_read_and_resize_fn
+from mini_trainer.utils.io import (
+    CACHE_MODE,
+    Reindexed,
+    LazyDataset,
+    guess_cache_mode,
+    make_read_and_resize_fn,
+)
 
 
 def get_dataloader( # noqa: D103
@@ -41,6 +48,7 @@ def get_dataset_dataloader( # noqa: D103
         batch_size : int=16, 
         num_workers : int | None=None,
         subsample : int | None=None,
+        resample : bool | str=False, # Enable with: "ilog1p",
         device : torch.device | str=torch.device("cpu"), 
         dtype : torch.dtype=torch.float32,
         cache : CACHE_MODE | str | int | None=None,
@@ -99,10 +107,23 @@ def get_dataset_dataloader( # noqa: D103
         return image, label
     
     datasets = []
-    for data in metadata:
+    for mode, data in zip(modes, metadata):
+        items = list(zip(data["path"], data["class"]))
+        # TODO: Abstract and modularize
+        if mode.strip().lower() == "train" and resample:
+            if cache != CACHE_MODE.NONE:
+                raise NotImplementedError("Resampling with caching is not supported.")
+            labs = data["class"]
+            if isinstance(labs[0], (list, tuple)):
+                labs = [l[0] for l in labs]
+            cc = Counter(labs)
+            resample_kwargs = {}
+            if isinstance(resample, str):
+                resample_kwargs["transform"] = resample
+            items = Reindexed(items, [cc.get(k, 0) for k in labs], inflation=2, **resample_kwargs)
         dset = LazyDataset(
             func=proc_path_label, 
-            items=list(zip(data["path"], data["class"])),
+            items=items,
             cache=cache
         ) 
         datasets.append(dset)

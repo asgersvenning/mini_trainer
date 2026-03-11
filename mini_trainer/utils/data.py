@@ -19,7 +19,7 @@ def find_images(root : str):
     return [p for p, f in zip(paths, check) if f]
 
 
-def auto_find_images(src : str, **kwargs) -> tuple[list[int], list[str]]:
+def auto_find_images(src : str, **kwargs) -> tuple[list[int] | list[list[int]], list[str]]:
     """Find images in source and possibly create training metadata.
     """
     metadata = labels = images = None

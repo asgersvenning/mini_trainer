@@ -1,28 +1,26 @@
 import json
 import os
 import warnings
+from collections import Counter
 from collections.abc import Callable
 from tempfile import NamedTemporaryFile
 from typing import Any
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torchvision.transforms as tt
+from torch import nn
 from torch.amp import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn
 
 from mini_trainer.classifier import Classifier, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
 from mini_trainer.utils.augmentation import SaltAndPepper
-from mini_trainer.utils.data import (create_metadata, get_metadata,
-                                     parse_class_spec)
+from mini_trainer.utils.data import create_metadata, get_metadata, parse_class_spec
 from mini_trainer.utils.ema import EMATeacher, ema_lambda_per_update
-from mini_trainer.utils.loader import (get_dataset_dataloader,
-                                       get_inference_dataloader)
+from mini_trainer.utils.loader import get_dataset_dataloader, get_inference_dataloader
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import (coherence_hinge_regularization,
-                                     weight_kl_gaussian)
+from mini_trainer.utils.loss import EMLACrossEntropy, coherence_hinge_regularization, weight_kl_gaussian
 
 
 class BaseBuilder:
@@ -342,16 +340,6 @@ class BaseBuilder:
         if 'lr' not in optimizer_kwargs:
             optimizer_kwargs['lr'] = head_lr # A sensible default
 
-        # (DISABLED) Clip gradients during backprop (prevent gradient explosion)
-        # backbone_params : list[nn.Parameter] = [
-        #     p
-        #     for pg in param_groups
-        #     if "backbone" in pg["name"] for p in pg["params"]
-        # ]
-        # for p in backbone_params:
-        #     if p.requires_grad:
-        #         p.register_hook(lambda grad: torch.clamp(grad, -1, 1))
-
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
     
     def build_scaler(
@@ -431,8 +419,7 @@ class BaseBuilder:
             *args, 
             weighted : bool=False,
             labels : np.ndarray | None=None, 
-            num_classes : int | None=None, 
-            criterion_cls : type[nn.modules.loss._Loss]=nn.CrossEntropyLoss, 
+            num_classes : int | None=None,
             device : torch.types.Device | None=None,
             dtype : torch.dtype | None=None,
             **kwargs
@@ -443,13 +430,12 @@ class BaseBuilder:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
         if not weighted or labels is None or num_classes is None:
-            return criterion_cls(*args, **kwargs)
-        counts = torch.ones((num_classes, ))
-        for cls_idx in labels:
-            counts[cls_idx] += 1
-        weights = 1 / counts
-        weights /= torch.mean(weights)
-        return criterion_cls(*args, weight=weights.to(device, dtype), **kwargs)
+            return nn.CrossEntropyLoss(*args, **kwargs)
+        if not isinstance(labels, list):
+            labels = labels.tolist()
+        counts = Counter(labels)
+        counts = [counts.get(i, 0) for i in range(num_classes)]
+        return EMLACrossEntropy(class_frequencies=counts, *args, **kwargs)
 
     @staticmethod
     def build_regularizer(strength : float=1e-3, *args, **kwargs):

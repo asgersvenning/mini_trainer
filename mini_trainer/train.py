@@ -214,7 +214,7 @@ def main( # noqa: D417
     nn_model, model_preprocess = builder.build_model(
         device=device, 
         dtype=model_dtype,
-        train_labels=train_labels,
+        # train_labels=train_labels, # Disable prior on model - moved to loss function
         **{
             **class_spec,
             **model_builder_kwargs

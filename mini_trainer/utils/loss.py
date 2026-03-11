@@ -1,3 +1,6 @@
+import math
+
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.distributions import Chi2
@@ -12,6 +15,103 @@ class EvenCrossEntropyLoss(CrossEntropyLoss):
     def forward(self, input : torch.Tensor, target : torch.Tensor):
         max_CE = input.new_full((1, ), input.size(1), requires_grad=False).log()
         return super().forward(input=input, target=target) / max_CE
+
+
+class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
+    """Entropy-Modulated Logit Adjusted (EMLA) Cross Entropy for Long-Tail Learning.
+
+    This loss function dynamically applies the Logit Adjustment penalty proposed by 
+    Menon et al. (2021) based on the model's instance-level confidence (Shannon Entropy).
+    
+    Standard Logit Adjustment applies a static penalty to rare classes to ensure 
+    Fisher consistency for the balanced error. It enforces a large relative margin 
+    between the logits of rare and dominant labels. However, applying this penalty 
+    uniformly can disrupt early-stage feature learning or over-penalize genuinely ambiguous samples. 
+    
+    This method introduces an instance-aware curriculum-learning gate:
+    1. Calculates the exact Shannon Entropy of the raw logits using purely numerically 
+       stable log-space arithmetic via the identity: log(softmax(z)) = z - LSE(z).
+    2. Normalizes the entropy to a [0, 1] scale (where 0 is fully certain, 1 is uniform).
+    3. Computes a 'confidence' score (1 - normalized_entropy) which is detached from the gradient.
+    4. Scales the class prior penalty (tau * log(pi_y)) by this confidence score.
+    5. Applies the modulated penalty to the raw logits before native Cross-Entropy normalization.
+
+    Mechanics:
+        Unconfident predictions (e.g., early training or noisy samples) yield high entropy, 
+        suppressing the penalty and allowing standard Empirical Risk Minimization (ERM). 
+        Conversely, when the model becomes overconfident on a rare-attribute sample, 
+        the low entropy triggers the full negative logit penalty, driving the softmax 
+        probability to zero and generating a maximum-strength gradient to correct the boundary.
+
+    References:
+        - Menon, A. K., Jain, H., Rawat, A. S., Veit, A., & Kumar, S. (2021). 
+          Long-tail learning via logit adjustment. arXiv preprint arXiv:2007.07314.
+    """
+    
+    def __init__(
+        self, 
+        class_frequencies: list[int] | list[float] | np.ndarray | torch.Tensor, 
+        tau: float = 1.0, 
+        weight: torch.Tensor | None = None,
+        ignore_index: int = -100, # Apparently `-100` is used instead of `None` in nn.CrossEntropy
+        reduction: str = 'mean',
+        label_smoothing: float = 0.0
+    ) -> None:
+        """.
+
+        Args:
+            class_frequencies: The raw frequency or count of each class in the training dataset.
+            tau: The scaling parameter for the logit adjustment.
+            weight: A manual rescaling weight given to each class.
+            ignore_index: Specifies a target value that is ignored and does not contribute to the input gradient.
+            reduction: Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'.
+            label_smoothing: A float in [0.0, 1.0]. Specifies the amount of smoothing when computing the loss.
+        """
+        # Initialize the parent nn.CrossEntropyLoss with all standard arguments
+        super().__init__(
+            weight=weight, 
+            ignore_index=ignore_index, 
+            reduction=reduction, 
+            label_smoothing=label_smoothing
+        )
+        
+        # Safely convert to a float tensor whether the input is a list or already a tensor
+        if isinstance(class_frequencies, np.ndarray):
+            class_frequencies = torch.from_numpy(class_frequencies)
+        if isinstance(class_frequencies, (list, tuple)):
+            class_frequencies = torch.tensor(class_frequencies)
+        if isinstance(class_frequencies, torch.Tensor):
+            counts = class_frequencies.round().long()
+        
+        counts = torch.clamp(counts, min=1)
+        log_priors = torch.log(counts) - torch.log(counts.sum())
+        
+        # Register the base adjustments as a buffer so they move to the correct device
+        self.register_buffer('adjustments', tau * log_priors)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """.
+
+        Args:
+            logits: Raw, unnormalized outputs of shape (Batch, Classes).
+            targets: Ground truth class indices of shape (Batch,).
+            
+        Returns:
+            The computed loss.
+        """
+        # 1. The LSE Skip: log(softmax(x)) = x - LSE(x)
+        # We avoid F.softmax and torch.log entirely, preventing redundant normalization.
+        lse = torch.logsumexp(logits, dim=-1, keepdim=True)
+        log_probs = logits - lse
+        
+        
+        # Uncertainty gate: 1.0 when confident, 0.0 when uncertain
+        with torch.no_grad():
+            entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=-1, keepdim=True)
+            evenness = 1.0 - entropy / math.log(logits.size(-1))
+        
+        return super().forward(logits + (evenness * self.adjustments), targets)
+
 
 
 def kl_distill_ema(

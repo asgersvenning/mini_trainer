@@ -4,8 +4,6 @@ from torch import nn
 from torch._prims_common import DeviceLikeType
 from torch.types import _dtype
 
-from mini_trainer.utils.loss import EvenCrossEntropyLoss  # noqa: F401
-
 
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss): # noqa: D101 TODO
     def __init__( # noqa: D107
@@ -13,21 +11,15 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss): # noqa: D
             weights : list[float | int] | torch.Tensor,
             device : DeviceLikeType, 
             dtype : _dtype, 
-            class_weights : list[torch.Tensor] | None=None,
-            label_smoothing : float = 0.0
+            label_smoothing : float = 0.0,
+            loss_cls : nn.CrossEntropyLoss = nn.CrossEntropyLoss,
+            **kwargs
         ):
         self.device = device
         self.dtype = dtype
 
         self.weights = torch.tensor(weights).to(device=device, dtype=dtype)
-        # self.weights /= self.weights.sum()
         self.n_levels = len(weights)
-        # if class_weights is None:
-        #     self.class_weights = None
-        # else:
-        #     self.class_weights = [w.to(device=device, dtype=dtype) for w in class_weights]
-        #     for i in self.class_weights:
-        #         i.requires_grad = False
 
         # The adjustment:
         #   ls(L)=1-(1-ls(0))^(1/(L+1)), ls(0)=k
@@ -39,64 +31,24 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss): # noqa: D
         # (if it gives any confidence to the sibling classes), meaning that the model is encouraged NOT to give any
         # confidence to the sibling classes, which is counter to the point of hierarchical learning
         self.label_smoothing = [1 - (1 - label_smoothing)**(1 / (i + 1)) for i in range(self.n_levels)]
+        kwargs["label_smoothing"] = self.label_smoothing
         
-        self._loss_fns = [
-            nn.CrossEntropyLoss(
-                # weight=None, #self.class_weights[i], 
-                # reduction="none", 
-                label_smoothing=label_smoothing
-            ) for _ in range(self.n_levels)
-        ]
+        # Construct marginal loss functions and handle vectorized (per-level) keyword arguments
+        self._loss_fns : list[nn.CrossEntropyLoss] = []
+        for lvl in range(self.n_levels):
+            lvlkw = dict()
+            for k, v in kwargs.items():
+                if not isinstance(v, list) and len(v) == self.n_levels:
+                    lvlkw[k] = v
+                else:
+                    lvlkw[k] = v[lvl] 
+            self._loss_fns.append(loss_cls(**lvlkw))
 
     def __call__(
             self, 
             preds : torch.Tensor, 
             targets : torch.Tensor
-        ) -> "MultiLevelLoss":
-        targets = targets.transpose(0, 1)
-        # if self.class_weights is None:
-        #     item_weights = [targets[i].new_ones(targets[i].shape, dtype=torch.float32) for i in range(self.n_levels)]
-        # else:
-        #     item_weights = [self.class_weights[i][targets[i]] for i in range(self.n_levels)]
-        # item_weights = [iw / iw.mean(dim=-1, keepdim=True) for iw in item_weights]
-        return list(MultiLevelLoss(
-            [
-                # (self._loss_fns[i](preds[i], targets[i].to(self.device)) * item_weights[i]).mean()
-                self._loss_fns[i](preds[i], targets[i])
-                for i in range(self.n_levels)
-            ], 
-             self.weights
-        ))
-
-
-class MultiLevelLoss: # noqa: D101
-    def __init__( # noqa: D107
-            self, 
-            losses : list[torch.Tensor], 
-            weights : list[float | int]
         ):
-        self.losses = losses
-        self.weights = weights
-        if any([w < 0 for w in weights]):
-            raise ValueError("Weights must be non-negative.")
-
-    def aggregate(self) -> torch.Tensor:
-        return sum([self.losses[i] * self.weights[i] for i in range(len(self.weights)) if self.weights[i] > 0])
-    
-    def __getitem__(self, idx : int | slice) -> torch.Tensor:
-        return self.losses[idx] * self.weights[idx]
-    
-    def __len__(self) -> int:
-        return sum([int(w > 0 for w in self.weights)])
-
-    def __iter__(self):
-        for weight, loss in zip(self.weights, self.losses):
-            if weight == 0:
-                continue
-            yield weight * loss
-    
-    def __repr__(self):
-        return (
-            f'Losses: [{", ".join([f"{loss.item():.1f}" for loss in self.losses])}]\n'
-            'Weights: [{", ".join([f"{weight:.1f}" for weight in self.weights])}]'
-        )
+        targets = targets.transpose(0, 1)
+        losses : list[torch.Tensor] = [self._loss_fns[i](preds[i], targets[i]) for i in range(self.n_levels)]
+        return [loss * weight for loss, weight in zip(losses, self.weights)]

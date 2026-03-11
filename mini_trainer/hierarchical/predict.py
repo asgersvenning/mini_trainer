@@ -2,6 +2,7 @@ from mini_trainer.hierarchical.integration import HierarchicalBuilder, Hierarchi
 from mini_trainer.hierarchical.train import head_name_to_cls
 from mini_trainer.predict import cli as mt_predict_cli
 from mini_trainer.predict import main as mt_predict
+from mini_trainer.utils.logging import RawResultCollector
 
 
 def cli(description : str="Predict with a trained hierarchical model", **extra_kwargs): # noqa: D103
@@ -36,7 +37,8 @@ def cli(description : str="Predict with a trained hierarchical model", **extra_k
     )
     kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
     kwargs["builder"] = HierarchicalBuilder
-    kwargs["collector_cls"] = HierarchicalResultCollector
+    if kwargs["collector_cls"] is not RawResultCollector:
+        kwargs["collector_cls"] = HierarchicalResultCollector
     return kwargs
 
 

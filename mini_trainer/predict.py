@@ -17,7 +17,7 @@ from mini_trainer.config import (
 )
 from mini_trainer.utils import increment_name_dir
 from mini_trainer.utils.data import auto_find_images, get_metadata
-from mini_trainer.utils.logging import BaseResultCollector
+from mini_trainer.utils.logging import BaseResultCollector, RawResultCollector
 
 
 def main( # noqa: D417
@@ -121,8 +121,8 @@ def main( # noqa: D417
     labels = None
     if data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
-        images = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
-        labels = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
+        images : list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
+        labels : list[int] | list[list[int]] = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **metadata)
     if subsample is not None and subsample > 1:
@@ -155,7 +155,15 @@ def main( # noqa: D417
     idx = 0
     with torch.inference_mode(), torch.autocast(device_type=str(device), dtype=dtype):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
-            predictions = predict(nn_model, model_preprocess(batch.to(device)))
+            batch = model_preprocess(batch.to(device))
+            if not isinstance(collector, RawResultCollector):
+                predictions = predict(nn_model, batch)
+            else:
+                predictions = nn_model(batch)
+                if isinstance(predictions, torch.Tensor):
+                    predictions = predictions.to(dtype=dtype)
+                else:
+                    predictions = [p.to(dtype=dtype) for p in predictions]
             idxs = slice(idx, idx + len(batch))
             idx += len(batch)
             collector.collect(
@@ -165,7 +173,7 @@ def main( # noqa: D417
             )
     del loader, nn_model
 
-    collector.save_mini_metric_csv(os.path.join(output, name, "mini_metric.csv"), threshold=threshold)
+    collector.save(os.path.join(output, name), threshold=threshold)
     # collector.evaluate(os.path.join(output, name))
             
 
@@ -230,6 +238,12 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
         'Default is 0 (always predict).'
     )
     inf_args.add_argument(
+        "-r", "--raw", action="store_true",
+        default=False, required=False,
+        help='If True the raw unnormalized logits will be stored alongside the labels without any further processing. '
+        'Default=False.'
+    )
+    inf_args.add_argument(
         "-D", "--data_index", type=str,
         default=None, required=False,
         help='JSON file containing three arrays with keys "path", "split" and "class".\n'
@@ -283,6 +297,9 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
         help='Print training statistics in the terminal.'
     )
     cli_args = vars(parser.parse_args())
+
+    if cli_args.pop("raw", False):
+        cli_args["collector_cls"] = RawResultCollector
 
     # Build the three layers
     defaults_full = defaults_from_function(main) # Defaults defined in the function signature

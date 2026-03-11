@@ -1,23 +1,28 @@
 import hashlib
+import math
+import operator
 import os
 import warnings
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 import torch
 from PIL import Image
+from torch.utils.data import Sampler
 from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
 from mini_trainer import TQDM
 from mini_trainer.utils import make_convert_dtype, memory_proportion, multithread_vectorize
+
+T = TypeVar("T")
 
 
 class CACHE_MODE(int, Enum): # noqa: D101
@@ -152,7 +157,7 @@ def _normalize_to_tuple(data):
 def reweight(
         weights : list[float], 
         target_sum : float | int
-    ) -> list[float]:
+    ):
     """Reweights the provided list of weights so that their sum equals the target sum.
 
     Args:
@@ -163,12 +168,12 @@ def reweight(
         Reweighted weights.
     """
     sum_weights = sum(weights)
-    return [max(round(w * target_sum / sum_weights), 1) for w in weights]
+    return [int(max(round(w * target_sum / sum_weights), 1)) for w in weights]
 
 
 def generate_indices(
-        weights : list[float | int], 
-        target_size : int | None=None
+        weights : list[float], 
+        target_size : int
     ) -> list[int]:
     """Deterministically generates a list of indices based on the provided weights to oversample the items.
 
@@ -181,7 +186,7 @@ def generate_indices(
     Returns:
         tuple of list of indices to oversample the items and list of final weights.
     """
-    weights = [max(round(w), 1) for w in weights]
+    assert all([w >= 0 for w in weights]), "Weights have to be >= 0"
     indices = []
 
     if target_size is not None:
@@ -196,35 +201,108 @@ def generate_indices(
     return indices, weights
 
 
-class Reindexed:
-    """A class to handle oversampling via index indirection.
-    """
-    def __init__( # noqa: D107
-            self, 
-            items : list, 
-            weights : list[float | int], 
-            inflation : float | int=2
-        ):
-        self.items = items
-        self._length = len(self.items)
-        if len(weights) != len(self):
-            raise ValueError(
-                f'Length of the supplied items ({len(items)}) to reindex '
-                'does not match the length of the supplied weights ({len(weights)}).'
-            )
-        self._indices, self.weights = generate_indices(weights, round(len(self) * inflation))
-    
-    def __len__(self):
-        return self._length
-    
-    def __getitem__(self, x):
-        indices = self._indices[x]
-        if isinstance(indices, int):
-            return self.items[indices]
-        return [self.items[idx] for idx in indices]
+STANDARD_TRANSFORMS : dict[str, Callable[[float], float]] = {
+    "identity" : None,
+    "ilog1p" : lambda x : 1 / math.log1p(x),
+    "log" : math.log,
+    "sqrt" : math.sqrt,
+    "pow2" : lambda x : x ** 2
+}
 
-    def __repr__(self):
-        return f'[{", ".join(f"({repr(e)} * {w})" for e, w in zip(self.items, self.weights))}]'
+
+class Reindexed(Generic[T]):
+    def __init__(
+        self,
+        items: list[T],
+        weights: list[float | int],
+        inflation: float | int = 2,
+        transform: Callable[[float], float] | str | None = "identity",
+    ) -> None:
+        if isinstance(transform, str):
+            try:
+                transform = STANDARD_TRANSFORMS[transform]
+            except KeyError as e:
+                raise ValueError(
+                    f"Unknown transform {transform!r}. "
+                    f"Expected one of {tuple(STANDARD_TRANSFORMS)}."
+                ) from e
+
+        processed_weights = [float(w) for w in weights]
+        if transform is not None:
+            processed_weights = [transform(w) for w in processed_weights]
+
+        if any(not math.isfinite(w) for w in processed_weights):
+            raise ValueError("All transformed weights must be finite.")
+
+        self.items = items
+        self._length = len(items)
+
+        if len(processed_weights) != self._length:
+            raise ValueError(
+                f"Length of supplied items ({self._length}) does not match length "
+                f"of supplied weights ({len(processed_weights)})."
+            )
+
+        target_size = round(self._length * float(inflation))
+        self._indices, self.weights = generate_indices(processed_weights, target_size)
+
+    def __len__(self) -> int:
+        return self._length
+
+    def _get_single(self, x: int) -> T:
+        return self.items[self._indices[x]]
+
+    def _gather_from_positions(self, positions) -> T | list[T] | list:
+        if isinstance(positions, int):
+            return self.items[positions]
+        return [self._gather_from_positions(p) for p in positions]
+
+    def __getitem__(self, x):
+        if isinstance(x, slice):
+            return [self.items[i] for i in self._indices[x]]
+
+        if isinstance(x, np.ndarray):
+            if x.ndim == 0:
+                return self._get_single(operator.index(x.item()))
+            mapped = np.asarray(self._indices, dtype=np.int64)[x]
+            return self._gather_from_positions(mapped.tolist())
+
+        if torch.is_tensor(x):
+            if x.ndim == 0:
+                return self._get_single(operator.index(x.item()))
+            mapped = torch.as_tensor(self._indices, dtype=torch.long)[x]
+            return self._gather_from_positions(mapped.tolist())
+
+        try:
+            return self._get_single(operator.index(x))
+        except TypeError:
+            pass
+
+        if isinstance(x, Iterable):
+            return [self._get_single(operator.index(i)) for i in x]
+
+        raise TypeError(f"Unsupported index type: {type(x)!r}")
+
+    def __repr__(self) -> str:
+        return (
+            f"[{', '.join(f'({repr(e)} * {w})' for e, w in zip(self.items, self.weights))}]"
+        )
+
+    @property
+    def indices(self) -> list[int]:
+        return list(self._indices)
+
+    @property
+    def reindexed_len(self) -> int:
+        return len(self._indices)
+
+
+class ReindexedSampler(Reindexed[T], Sampler[int]):
+    def __iter__(self) -> Iterator[int]:
+        return iter(self._indices)
+
+    def __len__(self) -> int:
+        return len(self._indices)
 
 
 class LazyDataset(torch.utils.data.Dataset):
