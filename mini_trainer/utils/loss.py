@@ -84,6 +84,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             counts = class_frequencies.round().long()
         
         counts = torch.clamp(counts, min=1)
+        # counts = counts.clamp(min=0).log1p()
         log_priors = torch.log(counts) - torch.log(counts.sum())
         
         # Register the base adjustments as a buffer so they move to the correct device
@@ -99,18 +100,13 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         Returns:
             The computed loss.
         """
-        # 1. The LSE Skip: log(softmax(x)) = x - LSE(x)
-        # We avoid F.softmax and torch.log entirely, preventing redundant normalization.
-        lse = torch.logsumexp(logits, dim=-1, keepdim=True)
-        log_probs = logits - lse
-        
-        
         # Uncertainty gate: 1.0 when confident, 0.0 when uncertain
         with torch.no_grad():
-            entropy = -torch.sum(torch.exp(log_probs) * log_probs, dim=-1, keepdim=True)
+            log_probs = logits.log_softmax(dim=-1)
+            entropy = -(torch.exp(log_probs) * log_probs).sum(dim=-1, keepdim=True)
             evenness = 1.0 - entropy / math.log(logits.size(-1))
         
-        return super().forward(logits + (evenness * self.adjustments), targets)
+        return super().forward(logits + (evenness * self.adjustments.to(logits.device)), targets)
 
 
 

@@ -394,7 +394,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
         do_save = isinstance(outdir, str)
         if do_save and not os.path.isdir(outdir):
             raise OSError(f'Specified output directory (`{outdir}`) does not exist.')
-        if "labels" in self._extra_attr:
+        if self.labels:
             results = self.eval_label_fn(data=self.data, outdir=outdir, save=do_save, prefix=prefix, **kwargs)
             if do_save:
                 with open(os.path.join(outdir, f'{prefix}eval_results.json'), "w") as f:
@@ -407,6 +407,7 @@ class BaseResultCollector(_ResultsCollector): # noqa: D101
             "paths" : self.paths,
             "preds" : self.preds,
             "confs" : self.confs,
+            "labels" : self.labels,
             **{attr : getattr(self, attr) for attr in self._extra_attr}
         }
     
