@@ -12,6 +12,7 @@ dependencies = [
   "tqdm",
   "diskcache",
   "psutil",
+  "setuptools<=81.0.0", # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
   "tensorboard",
   "scipy",
   "pyarrow",

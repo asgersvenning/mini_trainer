@@ -9,6 +9,7 @@ dependencies:
   - matplotlib
   - tqdm
   - psutil
+  - micromamba install setuptools"<=81.0.0" # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
   - tensorboard
   - pandas
   - zarr
