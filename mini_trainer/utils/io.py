@@ -173,7 +173,7 @@ def reweight(
 
 def generate_indices(
         weights : list[float], 
-        target_size : int
+        target_size : int | None=None
     ) -> list[int]:
     """Deterministically generates a list of indices based on the provided weights to oversample the items.
 
@@ -186,6 +186,12 @@ def generate_indices(
     Returns:
         tuple of list of indices to oversample the items and list of final weights.
     """
+    if target_size is None:
+        target_size = sum(weights)
+        if target_size < len(weights):
+            raise ValueError(
+                f'Target size not specified, and could not be derived from weights with sum: {target_size}'
+            )
     assert all([w >= 0 for w in weights]), "Weights have to be >= 0"
     indices = []
 
