@@ -187,7 +187,7 @@ def generate_indices(
         tuple of list of indices to oversample the items and list of final weights.
     """
     if target_size is None:
-        target_size = sum(weights)
+        target_size = round(sum(weights))
         if target_size < len(weights):
             raise ValueError(
                 f'Target size not specified, and could not be derived from weights with sum: {target_size}'
