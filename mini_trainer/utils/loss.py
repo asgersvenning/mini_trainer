@@ -51,7 +51,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
     def __init__(
         self, 
         class_frequencies: list[int] | list[float] | np.ndarray | torch.Tensor, 
-        tau: float = 1.0, 
+        flatten: float = 0.1, 
         weight: torch.Tensor | None = None,
         ignore_index: int = -100, # Apparently `-100` is used instead of `None` in nn.CrossEntropy
         reduction: str = 'mean',
@@ -61,7 +61,8 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
 
         Args:
             class_frequencies: The raw frequency or count of each class in the training dataset.
-            tau: The scaling parameter for the logit adjustment.
+            flatten: Adjusts the weights (i.e. the inverse class frequencies, normalized) 
+                such that they are a mixture of the uniform and the raw distribution with weight `flatten`. 
             weight: A manual rescaling weight given to each class.
             ignore_index: Specifies a target value that is ignored and does not contribute to the input gradient.
             reduction: Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'.
@@ -84,11 +85,14 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             counts = class_frequencies.round().long()
         
         counts = torch.clamp(counts, min=1)
-        # counts = counts.clamp(min=0).log1p()
-        log_priors = torch.log(counts) - torch.log(counts.sum())
+        if flatten != 0:
+            assert flatten > 0 and flatten <= 1
+            counts = flatten * counts.sum() + (1 - flatten) * counts
+        log_counts = torch.log(counts)
+        log_priors = (log_counts - log_counts.mean())
         
         # Register the base adjustments as a buffer so they move to the correct device
-        self.register_buffer('adjustments', tau * log_priors)
+        self.register_buffer('adjustments', log_priors)
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """.

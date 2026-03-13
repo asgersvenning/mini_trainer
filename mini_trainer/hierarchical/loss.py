@@ -12,7 +12,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss): # noqa: D
             device : DeviceLikeType, 
             dtype : _dtype, 
             label_smoothing : float = 0.0,
-            loss_cls : nn.CrossEntropyLoss = nn.CrossEntropyLoss,
+            loss_cls : type[nn.CrossEntropyLoss] = nn.CrossEntropyLoss,
             **kwargs
         ):
         self.device = device

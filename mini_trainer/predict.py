@@ -153,7 +153,7 @@ def main( # noqa: D417
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
     
     idx = 0
-    with torch.inference_mode(), torch.autocast(device_type=str(device), dtype=dtype):
+    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype):
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
             batch = model_preprocess(batch.to(device))
             if not isinstance(collector, RawResultCollector):
