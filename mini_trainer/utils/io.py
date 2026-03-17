@@ -230,6 +230,7 @@ STANDARD_TRANSFORMS : dict[str, Callable[[list[float]], list[float]] | None] = {
     "ilog" : _vectorize(lambda x : 1 / math.log(x)),
     "log" : _vectorize(math.log),
     "sqrt" : _vectorize(math.sqrt),
+    "isqrt" : _vectorize(lambda x : x ** -0.5),
     "pow2" : _vectorize(lambda x : x ** 2)
 }
 
@@ -241,7 +242,7 @@ class Reindexed(Generic[T]):
         weights: list[float | int],
         inflation: float | int = 2,
         flatten: float = 0.1,
-        transform: Callable[[list[float]], float] | str | None = "ilog",
+        transform: Callable[[list[float]], float] | str | None = "isqrt",
     ) -> None:
         if isinstance(transform, str):
             try:
@@ -252,11 +253,11 @@ class Reindexed(Generic[T]):
                     f"Expected one of {tuple(STANDARD_TRANSFORMS)}."
                 ) from e
 
-        processed_weights = uniform_mixture([float(w) for w in weights], p=flatten)
+        processed_weights = uniform_mixture(list(map(float, weights)), p=flatten)
         if transform is not None:
-            processed_weights = transform(weights)
-        mw = sum(weights) / len(weights)
-        weights = [w / mw * inflation for w in weights]
+            processed_weights = transform(processed_weights)
+        mw = sum(processed_weights) / len(processed_weights)
+        processed_weights = [w / mw * inflation for w in processed_weights]
 
         if any(not math.isfinite(w) for w in processed_weights):
             raise ValueError("All transformed weights must be finite.")
