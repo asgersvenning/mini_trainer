@@ -8,15 +8,6 @@ from mini_trainer.utils.logging import RawResultCollector
 def cli(description : str="Predict with a trained hierarchical model", **extra_kwargs): # noqa: D103
     kwargs = mt_predict_cli(
         description=description,
-        loss_weights={
-            "type" : float, 
-            "nargs" : "+", 
-            "dest" : "criterion_builder_kwargs.weights",
-            "default" : (1., 1., 1.), 
-            "required" : False, 
-            "help" : 'Weights for the hierarchical loss terms (species, genus, family). '
-            'Three numbers should be supplied.'
-        },
         head={
             "type" : str,
             "dest" : "model_builder_kwargs.cls",
