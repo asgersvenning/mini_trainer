@@ -7,7 +7,7 @@ import torch
 
 from mini_trainer import TQDM, Formatter
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.classifier import classification_module, predict
+from mini_trainer.classifier import EmbeddingContext, classification_module, predict
 from mini_trainer.config import (
     defaults_from_function,
     dump_resolved_config,
@@ -107,12 +107,17 @@ def main( # noqa: D417
     else:
         with open(class_spec, "r") as f:
             class_spec = json.load(f)
+    
+    model_dtype = torch.float32
     nn_model, model_preprocess = builder.build_model(
         weights=weights,
-        device=device, 
-        dtype=torch.float32,
+        device=device,
+        dtype=model_dtype,
         strict=False,
-        **class_spec
+        **{
+            **class_spec,
+            **model_builder_kwargs
+        }
     )
     nn_model.eval()
     metadata = classification_module(nn_model).metadata.copy()
@@ -153,7 +158,7 @@ def main( # noqa: D417
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
     
     idx = 0
-    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype):
+    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
             batch = model_preprocess(batch.to(device))
             if not isinstance(collector, RawResultCollector):

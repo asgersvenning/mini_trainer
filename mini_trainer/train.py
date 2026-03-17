@@ -202,7 +202,7 @@ def main( # noqa: D417
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}.'
         )
 
-        # Prepare model
+    # Prepare model
     # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to 
     # facilitate mixed precision training
     # RE: Trying to disable again - perhaps this is why fastai is faster?

@@ -303,27 +303,21 @@ class HierarchicalResultCollector(BaseResultCollector): # noqa: D101 TODO
     def _collect_base_attributes(
             self, 
             paths : list[str], 
-            predictions : list[torch.Tensor] | list[HierarchicalPrediction], 
+            predictions : list[torch.Tensor] | HierarchicalPrediction, 
             labels : list[tuple[str, ...]] | None=None
         ):
         """Override in subclasses!
         """
         self.paths.extend(paths)
-        if isinstance(predictions, list) and all(isinstance(p, HierarchicalPrediction) for p in predictions):
-            predictions = cast(list[HierarchicalPrediction], predictions)
-            if self._levels is None and predictions:
-                self._levels = len(predictions[0][0].label)
-            predictions, confidences, indices = zip(*[(pred[0].label, pred[0].confidence, pred[0].index) for pred in predictions])
-            self.preds.extend([[self.idx2cls[str(lvl)][i] for lvl, i in enumerate(idxs)] for idxs in indices])
-            self.confs.extend(confidences)
-        else:
-            if self._levels is None:
-                self._levels = len(predictions)
-            self.preds.extend(list(zip(*[
-                map(self.idx2cls[str(lvl)].get, p.argmax(1).tolist())
-                for lvl, p in enumerate(predictions)
-            ])))
-            self.confs.extend(list(zip(*[p.softmax(1).max(1).values.tolist() for p in predictions])))
+
+        if not isinstance(predictions, HierarchicalPrediction):
+            predictions = HierarchicalPrediction(predictions, topk=1, cls2idx=self.cls2idx)
+        if self._levels is None:
+            self._levels = len(predictions[0].label)
+        confidences, indices = predictions.confidence.squeeze(1), predictions.indices.squeeze(1)
+        self.preds.extend([[self.idx2cls[str(lvl)][i.item()] for lvl, i in enumerate(idxs)] for idxs in indices])
+        self.confs.extend([c.tolist() for c in confidences])
+        
         if labels is not None:
             if self.scientific_names:
                 labels = [

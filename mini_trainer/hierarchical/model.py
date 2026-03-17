@@ -199,11 +199,7 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
 
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
-        out = list(zip(*self(x)))
-        return [
-            HierarchicalPrediction(p, topk=topk, **self._preprocess_metadata(**kwargs)) 
-            for p in out
-        ]
+        return HierarchicalPrediction(self(x), topk=topk, **self._preprocess_metadata(**kwargs))
 
 
 class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
@@ -490,9 +486,10 @@ class HierarchicalPredictionItem(PredictionItem):
 
     def __repr__(self):
         if self.label is not None:
-            return "/".join([f"{label}: ({conf:.1%})" for conf, label in zip(self.confidence, self.label)])
+            data_str = " / ".join([f"{label}-({conf:.1%})" for conf, label in zip(self.confidence, self.label)])
         else:
-            return "/".join([f"I[{idx}]: ({conf:.1%})" for conf, idx in zip(self.confidence, self.index)])
+            data_str = " / ".join([f"I[{idx}]-({conf:.1%})" for conf, idx in zip(self.confidence, self.index)])
+        return f'| {data_str} |'
 
 
 class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[torch.Tensor]]):
@@ -502,7 +499,7 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
 
     @property
     @lru_cache(1)
-    def idx2cls(self):
+    def idx2cls(self) -> dict[str, dict[int, str]] | None:
         if self.cls2idx:
             return {level : {v: k for k, v in mapping.items()} for level, mapping in self.cls2idx.items()}
         return None
@@ -511,22 +508,29 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
         logits, indices = [], []
         for rp in raw_prediction:
             dim = rp.shape[-1]
-            k = self.topk if 1 <= self.topk < dim else dim
-            lgs, idx = torch.topk(rp, k)
+            if self.topk > dim:
+                raise RuntimeError(f'{self.topk=} must be less than the number of classes in the smallest layer in the hierarchy.')
+            lgs, idx = torch.topk(rp, self.topk)
             logits.append(lgs)
             indices.append(idx)
-        return [torch.stack(v) for v in zip(*logits)], [torch.stack(v) for v in zip(*indices)]
+        return (
+            torch.stack([torch.stack(v, dim=1) for v in zip(*logits)]), 
+            torch.stack([torch.stack(v, dim=1) for v in zip(*indices)])
+        )
 
-    def _translate(self) -> list[list[str]]:
-        if self.idx2cls:
-            return [[self.idx2cls[str(level)][i.item()] for level, i in enumerate(e)] for e in self.indices]
+    def _translate(self):
+        idx2cls = self.idx2cls
+        if idx2cls is not None:
+            def fmt_idx(level, i): 
+                return idx2cls[str(level)][i.item()]
         else:
-            return [[f"{i.item()}[{level}]" for level, i in enumerate(e)] for e in self.indices]
+            def fmt_idx(level, i):
+                return f"{i.item()}[{level}]"
+        return [[[fmt_idx(level, i) for level, i in enumerate(idxs)] for idxs in e] for e in self.indices]
 
     def _extract_confidence(self, raw_prediction) -> list[torch.Tensor]:
         confidences = []
-        for rp, idx in zip(raw_prediction, zip(*self.indices)):
-            idx = torch.stack(idx)
+        for rp, idx in zip(raw_prediction, torch.permute(self.indices, (2, 0, 1))):
             if not (
                 torch.all(rp >= 0) and
                 torch.isclose(
@@ -536,5 +540,5 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
                 )
             ):
                 rp = rp.softmax(dim=-1)
-            confidences.append(rp[idx])
-        return [torch.stack(v) for v in zip(*confidences)]
+            confidences.append(rp.gather(-1, idx))
+        return torch.stack([torch.stack(v, dim=1) for v in zip(*confidences)])

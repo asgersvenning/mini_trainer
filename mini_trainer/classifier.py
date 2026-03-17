@@ -488,10 +488,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
 
     @torch.no_grad()
     def predict(self, x, topk : int=1, **kwargs):
-        return [
-            Prediction(p, topk=topk, **self._preprocess_metadata(**kwargs))
-            for p in self(x)
-        ]
+        return Prediction(self(x), topk=topk, **self._preprocess_metadata(**kwargs))
 
     @classmethod
     def load(
@@ -597,7 +594,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
         if stored_head_name is not None and stored_head_name != head_name:
             warnings.warn(
                 f'Classification head module name "{stored_head_name}" implied in weights '
-                f'does not match the derived name "{head_name}"!'
+                f'does not match the derived name "{head_name}"!',
+                UserWarning
             )
 
         # Config heuristics
@@ -700,10 +698,20 @@ class BasePrediction[T : PredictionItem, I]:
         self.logits, self.indices = self._process(prediction)
         self.labels = self._translate()
         self.confidence = self._extract_confidence(prediction)
-        self.items = [
-            self.ITEM_CLASS(*data) 
-            for data in zip(self.labels, self.confidence, self.indices)
-        ]
+        if self.topk == 1:
+            self.items = [
+                self.ITEM_CLASS(label=lab[0], confidence=conf[0], index=idx[0]) 
+                for lab, conf, idx in zip(self.labels, self.confidence, self.indices)
+            ]
+        else:
+            warnings.warn(
+                f"{topk=}, all values except topk=1 are experimental and will result in unexpected behaviour.",
+                UserWarning
+            )
+            self.items = [
+                [self.ITEM_CLASS(label=labi, confidence=confi, index=idxi) for labi, confi, idxi in zip(lab, conf, idx)] 
+                for lab, conf, idx in zip(self.labels, self.confidence, self.indices)
+            ]
 
     # --- Standard Implementations (override) ---
     @property
@@ -765,9 +773,12 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):
 
     def _translate(self):
         if self.idx2cls:
-            return [self.idx2cls[i.item()] for i in self.indices]
+            def fmt_idx(i):
+                return self.idx2cls[i.item()]
         else:
-            return [str(i.item()) for i in self.indices]
+            def fmt_idx(i):
+                return str(i.item())
+        return [[fmt_idx(i) for i in idxs] for idxs in self.indices]
 
     def _extract_confidence(self, raw_prediction):
         if not (
@@ -780,7 +791,7 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):
         ):
             raw_prediction = raw_prediction.softmax(dim=-1)
             
-        return raw_prediction[self.indices]
+        return raw_prediction.gather(-1, self.indices)
 
 
 def predict(model : nn.Module, x : torch.Tensor, topk : int=1, **kwargs):
