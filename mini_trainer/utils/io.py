@@ -192,9 +192,7 @@ def generate_indices(
             raise ValueError(
                 f'Target size not specified, and could not be derived from weights with sum: {target_size}'
             )
-    else:
-        ws = sum(weights)
-        weights = [w / ws * target_size for w in weights]
+    weights = list(map(round, weights))
     assert all([w >= 0 for w in weights]), "Weights have to be >= 0"
     indices = []
 
@@ -257,6 +255,8 @@ class Reindexed(Generic[T]):
         processed_weights = uniform_mixture([float(w) for w in weights], p=flatten)
         if transform is not None:
             processed_weights = transform(weights)
+        mw = sum(weights) / len(weights)
+        weights = [w / mw * inflation for w in weights]
 
         if any(not math.isfinite(w) for w in processed_weights):
             raise ValueError("All transformed weights must be finite.")
