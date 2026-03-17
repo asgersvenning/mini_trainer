@@ -46,7 +46,8 @@ def main( # noqa: D417
         },
         dataloader_builder_kwargs : dict[str, Any]={
             "batch_size" : 16,
-            "train_proportion" : 0.9
+            "train_proportion" : 0.9,
+            "resample" : False
         },
         augmentation_builder_kwargs : dict[str, Any]={},
         optimizer_builder_kwargs : dict[str, Any]={
@@ -506,6 +507,11 @@ def cli(description="Train a classifier", **extra_kwargs): # noqa: D103
         "--class_weighted", action="store_true", dest="criterion_builder_kwargs.weighted",
         default=None, required=False,
         help='Add class-weights to cross entropy loss (or other criterion) proportional to the inverse log-counts.'
+    )
+    train_args.add_argument(
+        "--oversample", action="store_true", dest="dataloader_builder_kwargs.resample",
+        default=None, required=False,
+        help='Enable class-weighted oversampling at a rate slightly more uniform than the inverse log-frequency of the classes.'
     )
     train_args.add_argument(
         "--fine-tune", action="store_true", dest="model_builder_kwargs.fine_tune",

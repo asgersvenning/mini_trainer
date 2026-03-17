@@ -1,15 +1,15 @@
 import os
+from collections import Counter
 from collections.abc import Callable
 
 import numpy as np
 import torch
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
-from collections import Counter
 
 from mini_trainer.utils.io import (
     CACHE_MODE,
-    Reindexed,
     LazyDataset,
+    Reindexed,
     guess_cache_mode,
     make_read_and_resize_fn,
 )

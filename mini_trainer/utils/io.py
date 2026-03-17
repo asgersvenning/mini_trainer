@@ -23,7 +23,7 @@ from mini_trainer import TQDM
 from mini_trainer.utils import make_convert_dtype, memory_proportion, multithread_vectorize
 
 T = TypeVar("T")
-
+V = TypeVar("V")
 
 class CACHE_MODE(int, Enum): # noqa: D101
     NONE  = 0 # noqa: E221
@@ -192,6 +192,9 @@ def generate_indices(
             raise ValueError(
                 f'Target size not specified, and could not be derived from weights with sum: {target_size}'
             )
+    else:
+        ws = sum(weights)
+        weights = [w / ws * target_size for w in weights]
     assert all([w >= 0 for w in weights]), "Weights have to be >= 0"
     indices = []
 
@@ -207,12 +210,29 @@ def generate_indices(
     return indices, weights
 
 
-STANDARD_TRANSFORMS : dict[str, Callable[[float], float]] = {
+def _vectorize(func : Callable[[V], V]):
+    return lambda x : list(map(func, x))
+
+
+def uniform_mixture(x : list[float], p : float):
+    assert p >= 0 and p <= 1
+    if len(x) == 0:
+        raise ValueError('Unable to flatten empty distribution.')
+    if p == 0:
+        return list(x)
+    xm = sum(x) / len(x)
+    if p == 1:
+        return [xm] * len(x)
+    return [p * xm + (1 - p) * xi for xi in x]
+
+
+STANDARD_TRANSFORMS : dict[str, Callable[[list[float]], list[float]] | None] = {
     "identity" : None,
-    "ilog1p" : lambda x : 1 / math.log1p(x),
-    "log" : math.log,
-    "sqrt" : math.sqrt,
-    "pow2" : lambda x : x ** 2
+    "ilog1p" : _vectorize(lambda x : 1 / math.log1p(x)),
+    "ilog" : _vectorize(lambda x : 1 / math.log(x)),
+    "log" : _vectorize(math.log),
+    "sqrt" : _vectorize(math.sqrt),
+    "pow2" : _vectorize(lambda x : x ** 2)
 }
 
 
@@ -222,7 +242,8 @@ class Reindexed(Generic[T]):
         items: list[T],
         weights: list[float | int],
         inflation: float | int = 2,
-        transform: Callable[[float], float] | str | None = "identity",
+        flatten: float = 0.1,
+        transform: Callable[[list[float]], float] | str | None = "ilog",
     ) -> None:
         if isinstance(transform, str):
             try:
@@ -233,9 +254,9 @@ class Reindexed(Generic[T]):
                     f"Expected one of {tuple(STANDARD_TRANSFORMS)}."
                 ) from e
 
-        processed_weights = [float(w) for w in weights]
+        processed_weights = uniform_mixture([float(w) for w in weights], p=flatten)
         if transform is not None:
-            processed_weights = [transform(w) for w in processed_weights]
+            processed_weights = transform(weights)
 
         if any(not math.isfinite(w) for w in processed_weights):
             raise ValueError("All transformed weights must be finite.")
