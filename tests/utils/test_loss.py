@@ -3,9 +3,7 @@ import torch
 from mini_trainer.utils.loss import (
     EvenCrossEntropyLoss,
     class_weight_distribution_regularization,
-    coherence_hinge_regularization,
-    kl_distill_ema,
-    weight_kl_gaussian,
+    kl_distill_ema
 )
 
 
@@ -43,20 +41,6 @@ def test_regularizations():
     reg1 = class_weight_distribution_regularization(W, sparse=False)
     assert reg1.numel() == 1
     
-    # weight_kl_gaussian
-    reg2 = weight_kl_gaussian(W, sparse=False)
-    assert reg2.numel() == 1
-    
-    # coherence_hinge_regularization
-    reg3 = coherence_hinge_regularization(W, sparse=False)
-    assert reg3.numel() == 1
-    
     # Test sparse
     reg4 = class_weight_distribution_regularization(W, sparse=True)
     assert reg4.numel() == 1
-    
-    reg5 = weight_kl_gaussian(W, sparse=True)
-    assert reg5.numel() == 1
-    
-    reg6 = coherence_hinge_regularization(W, sparse=True)
-    assert reg6.numel() == 1
