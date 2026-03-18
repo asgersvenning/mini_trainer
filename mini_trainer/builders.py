@@ -61,7 +61,7 @@ class BaseBuilder:
     def build_model(
             fine_tune : bool=False,
             cls : type[Classifier]=Classifier,
-            fine_tune_dtype : torch.dtype=torch.float16,
+            fine_tune_dtype : torch.dtype=torch.bfloat16,
             **kwargs : Any
         ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
         """TODO.

@@ -115,18 +115,18 @@ class BackboneModel(nn.Module):
         return self.classifier(x)
 
 
-def get_bioclip2_encoder():
+def get_bioclip2_encoder(version : str="bioclip-2"):
     try:
         import open_clip
     except ImportError as e:
         e.add_note("The `open_clip` module was not found in the current Python environment. Please install with `pip install open_clip_torch`.")
         raise
 
-    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('hf-hub:imageomics/bioclip-2')
+    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(f'hf-hub:imageomics/{version}')
     model = cast(open_clip.model.CLIP, model)
     preprocess_train = cast(torchvision.transforms.transforms.Compose, preprocess_train)
     preprocess_val = cast(torchvision.transforms.transforms.Compose, preprocess_val)
-    tokenizer = open_clip.get_tokenizer('hf-hub:imageomics/bioclip-2')
+    tokenizer = open_clip.get_tokenizer(f'hf-hub:imageomics/{version}')
     tokenizer = cast(open_clip.tokenizer.SimpleTokenizer, tokenizer)
 
     return model, preprocess_train, preprocess_val, tokenizer
@@ -139,8 +139,8 @@ def get_model(backbone_model: str | nn.Module, model_args: dict = {},
     """
     default_transform = None
     if isinstance(backbone_model, str):
-        if backbone_model.lower().strip() == "bioclip-2":
-            encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder()
+        if "bioclip" in backbone_model.lower().strip():
+            encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder(backbone_model.lower().strip())
             encoder = torch.compile(encoder, mode="reduce-overhead")
             default_transform = torchvision.transforms.transforms.Compose(
                 [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
