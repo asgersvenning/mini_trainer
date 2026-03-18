@@ -1,21 +1,17 @@
 import json
-import math
-import os
 import warnings
-from collections import Counter, OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision
-from torchvision.io import ImageReadMode, decode_image
 
-from mini_trainer.utils import make_convert_dtype, recursive_dfs_attr
+from mini_trainer.utils import recursive_dfs_attr
+from mini_trainer.utils.generic import cosine_to_zscore, prior_from_labels
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
@@ -24,159 +20,7 @@ except Exception:  # fallback for older installs
 
 from functools import lru_cache
 
-_UNSUPPORTED_MODELS = [
-    'fasterrcnn_mobilenet_v3_large_320_fpn', 'fasterrcnn_mobilenet_v3_large_fpn', 
-    'fasterrcnn_resnet50_fpn', 'fasterrcnn_resnet50_fpn_v2', 
-    'fcos_resnet50_fpn', 
-    'keypointrcnn_resnet50_fpn', 
-    'maskrcnn_resnet50_fpn', 'maskrcnn_resnet50_fpn_v2', 
-    'mvit_v1_b', 'mvit_v2_s', 
-    'raft_large', 'raft_small', 
-    'retinanet_resnet50_fpn', 'retinanet_resnet50_fpn_v2', 
-    'ssd300_vgg16', 'ssdlite320_mobilenet_v3_large', 
-    'swin3d_b', 'swin3d_s', 'swin3d_t'
-]
-
-
-def preprocess(item, transform, func=None):
-    """Hook torchvision preprocessing function with load image from file to tensor.
-    """
-    if isinstance(item, str):
-        path = str(item)
-        if not os.path.exists(path):
-            raise FileNotFoundError("Unable to find image: " + path)
-        image = decode_image(path, ImageReadMode.RGB)
-    elif isinstance(item, torch.Tensor):
-        image = item
-    else:
-        raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
-    image = transform(image)
-    if func:
-        image = func(image)
-    return image
-
-
-def module_output_dim(module: nn.Module):
-    """Finds the output dimension by looking for the last parameter and returning the right-most size."""
-    for param in reversed(list(module.parameters())):
-        if param.ndim > 0:
-            return param.shape[0]
-            
-    raise ValueError(f"Could not determine output dimension for {type(module)}")
-
-
-class BackboneModel(nn.Module):
-    """A barebones wrapper for arbitrary encoder-only modules."""
-    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
-        super().__init__()
-        self.backbone = encoder
-        self.encoder_method = encoder_method
-        self.classifier = nn.Linear(in_features=module_output_dim(self.backbone), out_features=10)
-
-        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
-
-    def requires_grad_(self, requires_grad: bool = True):
-        """Override to update our internal cache when the user freezes/unfreezes."""
-        super().requires_grad_(requires_grad)
-        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
-        return self
-
-    def get_extra_state(self):
-        """Standard PyTorch hook to save non-tensor state."""
-        return {"encoder_method": self.encoder_method}
-
-    def set_extra_state(self, state):
-        """Standard PyTorch hook to load non-tensor state."""
-        if "encoder_method" in state:
-            encoder_method = state["encoder_method"]
-        else:
-            warnings.warn('No `encoder_method` found in state, assuming None.', UserWarning)
-            encoder_method = None
-        self.encoder_method = encoder_method 
-
-    def encode(self, x):
-        def _inner():
-            if self.encoder_method is not None:
-                return getattr(self.backbone, self.encoder_method)(x)
-            return self.backbone(x)
-        
-        if self._backbone_is_trainable:
-            return _inner()   
-        with torch.inference_mode():
-            return _inner()
-    
-    def forward(self, x):
-        x = self.encode(x)
-        if not isinstance(x, torch.Tensor):
-            raise RuntimeError(
-                f'Output of encoder of type {type(self.backbone)} was of type {type(x)}, but it should be a torch.Tensor.'
-                "\nPerhaps you forgot to pass the relevant `encoder_method` to `BackboneModel`?"
-            )
-        return self.classifier(x)
-
-
-def get_bioclip2_encoder(version : str="bioclip-2"):
-    try:
-        import open_clip
-    except ImportError as e:
-        e.add_note("The `open_clip` module was not found in the current Python environment. Please install with `pip install open_clip_torch`.")
-        raise
-
-    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(f'hf-hub:imageomics/{version}')
-    model = cast(open_clip.model.CLIP, model)
-    preprocess_train = cast(torchvision.transforms.transforms.Compose, preprocess_train)
-    preprocess_val = cast(torchvision.transforms.transforms.Compose, preprocess_val)
-    tokenizer = open_clip.get_tokenizer(f'hf-hub:imageomics/{version}')
-    tokenizer = cast(open_clip.tokenizer.SimpleTokenizer, tokenizer)
-
-    return model, preprocess_train, preprocess_val, tokenizer
-
-
-def get_model(backbone_model: str | nn.Module, model_args: dict = {},
-              classifier_name: str | list[str] = ["classifier", "fc", "heads", "head"],
-              preprocess_dtype : torch.dtype | None=None):
-    """Get torchvision model and preprocessing function by name.
-    """
-    default_transform = None
-    if isinstance(backbone_model, str):
-        if "bioclip" in backbone_model.lower().strip():
-            encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder(backbone_model.lower().strip())
-            encoder = torch.compile(encoder, mode="reduce-overhead")
-            default_transform = torchvision.transforms.transforms.Compose(
-                [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
-            )
-            backbone_model = BackboneModel(encoder=encoder, encoder_method="encode_image")
-        else:
-            if backbone_model in _UNSUPPORTED_MODELS:
-                raise ValueError(f"The model {backbone_model} is not supported.")
-            default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
-            try:
-                default_transform = default_weights.transforms(antialias=True)
-            except TypeError as e:
-                if "unexpected keyword argument 'antialias'" not in str(e):
-                    raise e
-                default_transform = default_weights.transforms()
-            backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
-    if not isinstance(backbone_model, nn.Module):
-        raise ValueError("backbone_model must be a string or a torch.nn.Module")
-    backbone_classifier_name = None
-    if isinstance(classifier_name, str):
-        classifier_name = [classifier_name]
-    for name, module in backbone_model.named_modules():
-        if name in classifier_name:
-            backbone_classifier_name = name
-            break
-    if backbone_classifier_name is None:
-        raise AttributeError(f"No classifier found with names {classifier_name}")
-    return (
-        backbone_model, 
-        backbone_classifier_name, 
-        partial(
-            preprocess, 
-            transform=default_transform, 
-            func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype)
-        )
-    )
+from mini_trainer.utils.model import get_model
 
 
 class SupervisionContext:
@@ -240,95 +84,6 @@ class EmbeddingContext:
         
     def __exit__(self, exc_type, exc_val, exc_tb):
         EmbeddingContext.clear()
-
-
-def cosine_to_zscore(cosine : torch.Tensor, ndim : int):
-    r"""Converts a cosine (or inner product) between random unit vectors in D dimensions to z-score.
-    
-            ::math::`Z(x) = \sqrt(D-2) * (cos^{-1}(-x) - \frac{\pi}{2})`
-    
-    This function is a *very* good approximation for transforming the distribution
-    given by the inner product between random unit vectors in D dimensions 
-    to the standard normal distribution - i.e. if the embeddings and weights are random
-    then the output logits here will follow a normal distribution.
-    """
-    z_var : float = 1 / (float(ndim) - 2)**0.5
-    z_mu = torch.pi / 2
-    z_rel = torch.acos(-cosine.clamp(-1 + 1e-7, 1 - 1e-7))
-    return (z_rel - z_mu) / z_var
-
-
-def prior_logit_adjustment(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> list[float]:
-    """Computes dimension-independent biases based on Bayesian Logit Adjustment.
-    Formula: b_i = -C * log(K * p_i)
-
-    Ref: https://arxiv.org/abs/2007.07314
-    """
-    total_samples = sum(counts)
-    ncls = len(counts)
-    
-    biases = [-C * math.log(ncls * max(c / total_samples, eps)) for c in counts]
-        
-    # Optional but recommended: Center the biases so their mean is 0. 
-    # This keeps the initial Softmax logits numerically stable.
-    mean_bias = sum(biases) / ncls
-    centered_biases = [b - mean_bias for b in biases]
-    
-    return centered_biases
-
-
-def prior_ldam_shift(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> list[float]:
-    """Computes dimension-independent biases using LDAM generalization bounds.
-    Formula: b_i = C * (N_i^{-1/4} - N_max^{-1/4})
-
-    Ref: https://arxiv.org/abs/1906.07413
-    """
-    n_max = max(counts)
-    biases = [C * ((max(c, eps) ** -0.25) - (n_max ** -0.25)) for c in counts]
-        
-    # Again, centering helps network initialization stability
-    mean_bias = sum(biases) / len(biases)
-    centered_biases = [b - mean_bias for b in biases]
-    
-    return centered_biases
-
-
-def prior_scratch(counts : list[int], **kwargs):
-    """Computes dimension-independent biases using Z-scored negative log-frequencies.
-    Formula: b_i = -(log(N_i) - mu) / sigma
-    
-    Note: This is an experimental ad-hoc method. It standardizes the log-counts 
-    to have a mean of 0 and a variance of 1. While it correctly penalizes majority 
-    classes, it can become numerically unstable if the dataset is perfectly balanced 
-    (sigma approaches 0) and maps zero-counts to the same value as singletons (since log(1) == 0).
-    """ 
-    prior = [math.log(c) if c > 0 else 0 for c in counts]
-    pmu = sum(prior) / len(prior)
-    pvar = sum([(p - pmu)**2 for p in prior]) / (len(prior) - 1)
-    psig = pvar ** 0.5
-    retval = [-(p - pmu) / psig for p in prior]
-    return retval
-
-
-def prior_from_labels(labels : list[int | list[int]], cls2idx : dict, method : str="adjust", **kwargs):
-    if isinstance(labels[0], (list, tuple)):
-        labels = [l[0] for l in labels]
-        ncls = len(cls2idx["0"])
-    else:
-        ncls = len(cls2idx)
-    counts = Counter(labels)
-    counts = [counts.get(i, 0) for i in range(ncls)]
-    match method.lower().strip():
-        case "adjust":
-            return prior_logit_adjustment(counts, **kwargs)
-        case "ldam":
-            return prior_ldam_shift(counts, **kwargs)
-        case "custom":
-            return prior_scratch(counts, **kwargs)
-        case _:
-            raise NotImplementedError(
-                f'Class frequency prior implementations currently include: "adjust", "ldam", and "custom", not: {method}'
-            )
 
 
 class Classifier(nn.Module): # noqa: D101 TODO

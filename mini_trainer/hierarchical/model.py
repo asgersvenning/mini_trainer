@@ -1,5 +1,3 @@
-import math
-from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -7,73 +5,10 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.classifier import (
-    BasePrediction,
-    Classifier,
-    EmbeddingContext,
-    PredictionItem,
-    SupervisionContext,
-    cosine_to_zscore,
-    prior_ldam_shift,
-    prior_logit_adjustment,
-    prior_scratch,
-)
+from mini_trainer.classifier import BasePrediction, Classifier, EmbeddingContext, PredictionItem, SupervisionContext
+from mini_trainer.hierarchical.utils import batched_scatter_logsumexp, prior_from_labels
+from mini_trainer.utils.generic import cosine_to_zscore
 
-
-def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
-    shape = list(shape)
-    shape[dim] = value
-    return shape
-
-
-def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : int=1):
-    """Aggregates the elements of the ``input`` tensor with an index along a dimension using logsumexp.
-
-    ```
-    out[j][i] = input[j][index == i].logsumexp()
-    ```
-
-    OBS: Behavior for indexes that do not contain all integers from
-        0 to :math:`max(index)` or when ``dim`` is not 1 is not defined.
-
-    Args:
-        input: Input tensor of size :math:`N x K`.
-        index: Long-Tensor of size :math:`K` containing the elements along ``dim`` in ``input`` to aggregate.
-        dim: Dimension to aggregate over (default=1).
-
-    Returns:
-        output: Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
-    """
-    # Scaffold tensor - same size as output
-    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max().item() + 1))
-    index = index.expand_as(input)
-    c = z.scatter_reduce(dim=dim, index=index, src=input, reduce="amax", include_self=False)
-    return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
-
-
-def prior_from_labels(labels : list[int | list[int]], cls2idx : dict, method : str="adjust", **kwargs):
-    if isinstance(labels[0], int):
-        raise ValueError("Expected hierarchical labels, but got flat.")
-    ncls = [len(cls2idx[str(lvl)]) for lvl in range(len(cls2idx))]
-    nlvls = len(ncls)
-    counts = {lvl : Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
-    counts = {k : [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
-    method = method.lower().strip()
-    priors = []
-    for lvl in range(nlvls):
-        match method:
-            case "adjust":
-                prior = prior_logit_adjustment(counts[lvl], **kwargs)
-            case "ldam":
-                prior = prior_ldam_shift(counts[lvl], **kwargs)
-            case "custom":
-                prior = prior_scratch(counts[lvl], **kwargs)
-            case _:
-                raise NotImplementedError(
-                    f'Class frequency prior implementations currently include: "adjust", "ldam", and "custom", not: {method}'
-                )
-        priors.append(prior)
-    return priors
 
 class HierarchicalClassifier(Classifier): # noqa: D101 TODO
     def __init__(self, sparse_masks : list[torch.Tensor] | None=None, prior : list[torch.Tensor | list[float]] | None=None, **kwargs):
