@@ -51,20 +51,19 @@ def module_output_dim(module: nn.Module):
     raise ValueError(f"Could not determine output dimension for {type(module)}")
 
 
-class BackboneModel(nn.Module):
-    """A barebones wrapper for arbitrary encoder-only modules."""
+class WrappedEncoder(nn.Module):
+    """Barebones encoder wrapper."""
     def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
         super().__init__()
-        self.backbone = encoder
+        self.encoder = encoder
         self.encoder_method = encoder_method
-        self.classifier = nn.Linear(in_features=module_output_dim(self.backbone), out_features=10)
-
-        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
+    
+        self._is_trainable = any(p.requires_grad for p in self.encoder.parameters())
 
     def requires_grad_(self, requires_grad: bool = True):
         """Override to update our internal cache when the user freezes/unfreezes."""
         super().requires_grad_(requires_grad)
-        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
+        self._is_trainable = any(p.requires_grad for p in self.encoder.parameters())
         return self
 
     def get_extra_state(self):
@@ -80,19 +79,27 @@ class BackboneModel(nn.Module):
             encoder_method = None
         self.encoder_method = encoder_method 
 
-    def encode(self, x):
+    def forward(self, x):
         def _inner():
             if self.encoder_method is not None:
-                return getattr(self.backbone, self.encoder_method)(x)
-            return self.backbone(x)
+                return getattr(self.encoder, self.encoder_method)(x)
+            return self.encoder(x)
         
-        if self._backbone_is_trainable:
+        if self._is_trainable:
             return _inner()   
         with torch.inference_mode():
             return _inner()
+
+
+class BackboneModel(nn.Module):
+    """A barebones wrapper for arbitrary encoder-only modules."""
+    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
+        super().__init__()
+        self.backbone = WrappedEncoder(encoder, encoder_method)
+        self.classifier = nn.Linear(in_features=module_output_dim(self.backbone), out_features=10)
     
     def forward(self, x):
-        x = self.encode(x)
+        x = self.backbone(x)
         if not isinstance(x, torch.Tensor):
             raise RuntimeError(
                 f'Output of encoder of type {type(self.backbone)} was of type {type(x)}, but it should be a torch.Tensor.'
@@ -127,7 +134,7 @@ def get_model(backbone_model: str | nn.Module, model_args: dict = {},
     if isinstance(backbone_model, str):
         if "bioclip" in backbone_model.lower().strip():
             encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder(backbone_model.lower().strip())
-            encoder = torch.compile(encoder, mode="reduce-overhead")
+            encoder.compile(mode="reduce-overhead")
             default_transform = torchvision.transforms.transforms.Compose(
                 [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
             )

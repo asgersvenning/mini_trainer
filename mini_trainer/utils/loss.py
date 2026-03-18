@@ -3,8 +3,9 @@ import math
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.distributions import Chi2
 from torch.nn.modules.loss import CrossEntropyLoss
+
+from mini_trainer.utils.generic import cosine_to_zscore
 
 
 class EvenCrossEntropyLoss(CrossEntropyLoss):
@@ -131,31 +132,14 @@ def kl_distill_ema(
 
 def class_weight_distribution_regularization(
     W: torch.Tensor,
-    epsilon: float = 1e-6,
     sparse : bool=True
 ):
-    """Calculates a regularization term based on the pairwise distances of
-      normalized class weight vectors, assuming a Chi-squared distribution prior
-      for these distances.
-
-    The regularization term is defined as:
-        :math:`R = -sum[ log(L_chi2( N_E , tril(WW) )) * 1_{tril(WW) < E(chi2( N_E ))} ] + |tril(WW)|`
-    Where N_E is the number of embedding dimensions and :math:`tril(WW)`
-      is the lower triangle (not including the diagonal) of:
-        :math:`WW = (|| W, W ||^2) / 2`
-    Thus R corresponds to the negative log-likelihood of :math:`tril(WW)`
-      given a Chi2 distribution with N_E degrees of freedom, 
-      divided by the number of "samples".
-
-    For efficiency instead of letting W be the full weight matrix, if `sparse=True`, 
-      a random subset of classes corresponding to :math:`~sqrt(N_C)` is used.
-    This has the effect that the size of WW is :math:`O(N_C)` instead of :math:`O(N_C^2)`, 
-      which is not ideal when you have thousands of classes.
+    """Calculates a regularization term based on the assumption that the weights should be uniformly distributed unit vectors.
+    If the weights are not unit vectors, they will be normalized before the computation.
 
     Args:
         W: Tensor of shape [num_classes, num_embeddings],
             typically the weights of the final linear layer.
-        epsilon: Small value for numerical stability.
         sparse: Use a sparse set of classes to compute the regularization over.
             The size of the set will be equal to the square root of the number of classes.
             Will use a random subset of classes each time.
@@ -163,127 +147,24 @@ def class_weight_distribution_regularization(
     Returns:
         A scalar tensor representing the regularization loss.
     """
-    with torch.no_grad():
-        # Calculate embedding statistics on the full weight matrix 
-        # (without gradient; the embeddings are assumed to be normalized with batchnorm already)
-        muE = W.mean(dim=0, keepdim=True)
-        # Add epsilon to std to prevent division by zero if a weight vector's components are all identical
-        sigE = W.std(dim=0, unbiased=True, keepdim=True) + epsilon
-
     # Select a subset of classes to regularize
     _n = min(len(W), max(32, 2 * round(len(W) ** 0.5)))
     if sparse and _n < len(W):
-        _sparse_idx = torch.randperm(len(W))[:_n]
+        _sparse_idx = torch.randperm(len(W))[:_n].sort().values
         W = W[_sparse_idx]
 
     N, E = W.shape
     if N < 2 or E == 0:
         return torch.tensor(0.0, device=W.device, dtype=W.dtype)
 
-    # 1. Normalize each embedding to have mean 0 and std 1. 
-    # Under the assumption that the embedding dimensions are independent, 
-    # each row in the weight matrix can now be considered a sample from a standard multivariate gaussian.
-    WN = (W - muE) / sigE
-
-    # 2. Calculate squared Euclidean distances and the Chi2 statistic
-    cdm2 = torch.cdist(WN, WN, p=2) ** 2
-
-    # Statistic for Chi2 distribution: D^2 / 2
-    chi2 = cdm2 / 2.0
-    chi2_tril = chi2[*torch.tril_indices(*chi2.shape, -1)]
-
-    # 3. CDF Transformation
-    dof_tensor = torch.tensor(float(E), device=W.device, dtype=W.dtype)
-    if dof_tensor <= 0: # Should not happen if num_embeddings > 0
-        return torch.tensor(0.0, device=W.device, dtype=W.dtype)      
-    chi2_dist = Chi2(dof_tensor)
-    
-    # Calculate the density of the statistics for the values below the expected value
-    # (since we only want to penalize classes which are too close, not too far)
-    # and multiply by two to compensate
-    log_prob : torch.Tensor = 2 * chi2_dist.log_prob(chi2_tril[chi2_tril < chi2_dist.mean])
-    
-    # Return the likelihood divided by the number of statistics
-    return -log_prob.sum() / torch.tensor((N * (N - 1) / 2), device=W.device, dtype=W.dtype)
-
-
-def weight_kl_gaussian(
-        W: torch.Tensor,
-        eps: float = 1e-6,
-        sparse: bool = True,
-        normalize_rows: bool = True,
-    ) -> torch.Tensor:
-    """Regularization term that encourages orthogonality between rows in W.
-    """
-    if W.numel() == 0 or W.ndim != 2 or W.size(0) <= 1 or W.size(1) == 0:
-        # return scalar tensor on same device; fp32 is fine
-        return torch.zeros((), device=W.device, dtype=torch.float32)
-
     with torch.amp.autocast(W.device.type, enabled=False):
-        comp_dtype = torch.float32 if W.dtype in (torch.float16, torch.bfloat16) else W.dtype
-        Wc = W.to(comp_dtype)
+        if not W.norm(2, 1).allclose(torch.ones_like(W[0,0])):
+            with torch.no_grad():
+                WN = W.norm(2, 1, True)
+            W = W / WN
 
-        if normalize_rows:
-            Wc = F.normalize(Wc, dim=1)
-        if sparse:
-            _n = min(Wc.size(0), max(32, 2 * int(Wc.size(0) ** 0.5)))
-            if _n < Wc.size(0):
-                idx = torch.randperm(Wc.size(0), device=Wc.device)[:_n]
-                Wc = Wc[idx]
+        tril_idx = torch.tril_indices(*W.shape, -1)
+        ztril = cosine_to_zscore(W @ W.T, W.shape[-1])[*tril_idx]
 
-        N = Wc.size(0)
-        if N <= 1:
-            return torch.zeros((), device=W.device, dtype=torch.float32)
+        return 2 * ztril[ztril > 0].sum() / tril_idx.shape[-1]
 
-        eps_t = torch.as_tensor(eps, dtype=comp_dtype, device=Wc.device)
-
-        # SVD in fp32 + jitter for stability
-        fro = Wc.norm(p="fro")
-        scale = (fro / (Wc.numel() ** 0.5)).clamp(min=1.0)
-        jitter = eps * scale
-        if jitter > 0:
-            Wc = Wc + jitter * torch.randn_like(Wc)
-        try:
-            s2 = torch.linalg.svdvals(Wc) ** 2
-        except torch._C._LinAlgError:
-            # if SVD still fails, do not destabilize training
-            return torch.zeros((), device=W.device, dtype=torch.float32)
-        R = s2.numel()
-
-        logdet = (s2 + eps_t).log().sum()
-        if N > R:
-            logdet = logdet + (N - R) * eps_t.log()
-
-        tr = s2.sum()
-        return 0.5 * (tr - logdet - N)
-
-
-def coherence_hinge_regularization(
-    W: torch.Tensor,
-    scale: float = 1.5, # >1 makes the threshold looser than Welch bound
-    sparse: bool=True,
-    normalize_rows: bool = True,
-) -> torch.Tensor:
-    """Penalize only overly-similar class directions:
-        :math:`loss = E_{(i,j)} [ ReLU( cos(w_i, w_j) - τ )^2 ]`.
-    τ is set from the Welch bound: 
-        :math:`τ = scale * sqrt((K-d)/(d(K-1)))` Clipped to [0, 0.5]
-    .
-    """
-    if len(W) <= 1 or W.shape[1] == 0:
-        return torch.zeros((1,), dtype=W.dtype, device=W.device)
-    if normalize_rows:
-        W = F.normalize(W, dim=1)
-    _n = min(len(W), max(32, 2 * round(len(W) ** 0.5)))
-    if sparse and _n < len(W):
-        _sparse_idx = torch.randperm(len(W))[:_n]
-        W = W[_sparse_idx]
-    N, E = W.shape
-
-    mu_welch = max((N - E) / (E * (N - 1)), 0.0) ** 0.5
-    tau = float(min(max(scale * mu_welch, 0.0), 0.5))
-
-    i, j = torch.tril_indices(N, E, offset=-1)
-
-    cos_ij = (W[i] * W[j]).sum(dim=1)
-    return F.relu(cos_ij - tau).square().mean()

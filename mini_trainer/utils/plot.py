@@ -448,13 +448,16 @@ def plot_model_class_distance(model : nn.Module, **kwargs):
     in the last-layer weight matrix, assuming that these
     have unit norm.
     """
-    llw = last_layer_weights(model)
-    # cdm = class_distance(llw, True)
+    W = last_layer_weights(model)
+    W = W.detach().cpu().clone().float()
+    # cdm = class_distance(W, True)
     # cdm.fill_diagonal_(torch.nan)
-    D = (1 - torch.corrcoef(llw.cpu().clone().detach().float())) / 2
-    _, E = llw.shape
+    
+    D = (1 - torch.corrcoef(W)) / 2
+    _, E = W.shape
     a = (E - 1) / 2
     Q = 1 - betainc(a, a, D)
+    
     Q.fill_diagonal_(torch.nan)
     Q.clamp_(0.0, 1.0)
     return plot_heatmap(Q, **kwargs)

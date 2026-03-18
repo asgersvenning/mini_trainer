@@ -20,7 +20,7 @@ from mini_trainer.utils.data import create_metadata, get_metadata, parse_class_s
 from mini_trainer.utils.ema import EMATeacher, ema_lambda_per_update
 from mini_trainer.utils.loader import get_dataset_dataloader, get_inference_dataloader
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import EMLACrossEntropy, coherence_hinge_regularization, weight_kl_gaussian
+from mini_trainer.utils.loss import EMLACrossEntropy, class_weight_distribution_regularization
 
 
 class BaseBuilder:
@@ -80,7 +80,9 @@ class BaseBuilder:
         if fine_tune:
             _backbone = backbone(model)
             _backbone.requires_grad_(False)
-            _backbone.to(dtype=fine_tune_dtype)
+            for param in _backbone.parameters():
+                param.to(dtype=fine_tune_dtype)
+                param.requires_grad_(False)
 
         return model, model_preprocess
 
@@ -449,8 +451,7 @@ class BaseBuilder:
         
         def func(model): 
             llw = last_layer_weights(model)
-            # return strength * class_weight_distribution_regularization(llw)
-            return strength * (weight_kl_gaussian(llw) + coherence_hinge_regularization(llw)) 
+            return strength * class_weight_distribution_regularization(llw)
         return func
 
     @staticmethod
