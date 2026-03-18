@@ -6,7 +6,7 @@ from collections import Counter, OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import numpy as np
 import torch
@@ -54,34 +54,114 @@ def preprocess(item, transform, func=None):
     if func:
         image = func(image)
     return image
-    
 
-def get_model(backbone_model: str | torch.nn.Module, model_args: dict = {},
+
+def module_output_dim(module: nn.Module):
+    """Finds the output dimension by looking for the last parameter and returning the right-most size."""
+    for param in reversed(list(module.parameters())):
+        if param.ndim > 0:
+            return param.shape[0]
+            
+    raise ValueError(f"Could not determine output dimension for {type(module)}")
+
+
+class BackboneModel(nn.Module):
+    """A barebones wrapper for arbitrary encoder-only modules."""
+    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
+        super().__init__()
+        self.backbone = encoder
+        self.encoder_method = encoder_method
+        self.classifier = nn.Linear(in_features=module_output_dim(self.backbone), out_features=10)
+
+        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
+
+    def requires_grad_(self, requires_grad: bool = True):
+        """Override to update our internal cache when the user freezes/unfreezes."""
+        super().requires_grad_(requires_grad)
+        self._backbone_is_trainable = any(p.requires_grad for p in self.backbone.parameters())
+        return self
+
+    def get_extra_state(self):
+        """Standard PyTorch hook to save non-tensor state."""
+        return {"encoder_method": self.encoder_method}
+
+    def set_extra_state(self, state):
+        """Standard PyTorch hook to load non-tensor state."""
+        if "encoder_method" in state:
+            encoder_method = state["encoder_method"]
+        else:
+            warnings.warn('No `encoder_method` found in state, assuming None.', UserWarning)
+            encoder_method = None
+        self.encoder_method = encoder_method 
+
+    def encode(self, x):
+        def _inner():
+            if self.encoder_method is not None:
+                return getattr(self.backbone, self.encoder_method)(x)
+            return self.backbone(x)
+        
+        if self._backbone_is_trainable:
+            return _inner()   
+        with torch.inference_mode():
+            return _inner()
+    
+    def forward(self, x):
+        x = self.encode(x)
+        if not isinstance(x, torch.Tensor):
+            raise RuntimeError(
+                f'Output of encoder of type {type(self.backbone)} was of type {type(x)}, but it should be a torch.Tensor.'
+                "\nPerhaps you forgot to pass the relevant `encoder_method` to `BackboneModel`?"
+            )
+        return self.classifier(x)
+
+
+def get_bioclip2_encoder():
+    try:
+        import open_clip
+    except ImportError as e:
+        e.add_note("The `open_clip` module was not found in the current Python environment. Please install with `pip install open_clip_torch`.")
+        raise
+
+    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('hf-hub:imageomics/bioclip-2')
+    model = cast(open_clip.model.CLIP, model)
+    preprocess_train = cast(torchvision.transforms.transforms.Compose, preprocess_train)
+    preprocess_val = cast(torchvision.transforms.transforms.Compose, preprocess_val)
+    tokenizer = open_clip.get_tokenizer('hf-hub:imageomics/bioclip-2')
+    tokenizer = cast(open_clip.tokenizer.SimpleTokenizer, tokenizer)
+
+    return model, preprocess_train, preprocess_val, tokenizer
+
+
+def get_model(backbone_model: str | nn.Module, model_args: dict = {},
               classifier_name: str | list[str] = ["classifier", "fc", "heads", "head"],
               preprocess_dtype : torch.dtype | None=None):
     """Get torchvision model and preprocessing function by name.
     """
     default_transform = None
     if isinstance(backbone_model, str):
-        if backbone_model in _UNSUPPORTED_MODELS:
-            raise ValueError(f"The model {backbone_model} is not supported.")
-        default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
-        try:
-            default_transform = default_weights.transforms(antialias=True)
-        except TypeError as e:
-            if "unexpected keyword argument 'antialias'" not in str(e):
-                raise e
-            default_transform = default_weights.transforms()
-        backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
+        if backbone_model.lower().strip() == "bioclip-2":
+            encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder()
+            encoder = torch.compile(encoder, mode="reduce-overhead")
+            default_transform = torchvision.transforms.transforms.Compose(
+                [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
+            )
+            backbone_model = BackboneModel(encoder=encoder, encoder_method="encode_image")
+        else:
+            if backbone_model in _UNSUPPORTED_MODELS:
+                raise ValueError(f"The model {backbone_model} is not supported.")
+            default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
+            try:
+                default_transform = default_weights.transforms(antialias=True)
+            except TypeError as e:
+                if "unexpected keyword argument 'antialias'" not in str(e):
+                    raise e
+                default_transform = default_weights.transforms()
+            backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
     if not isinstance(backbone_model, nn.Module):
         raise ValueError("backbone_model must be a string or a torch.nn.Module")
     backbone_classifier_name = None
     if isinstance(classifier_name, str):
         classifier_name = [classifier_name]
-    # for name in classifier_name:
-    #     if hasattr(backbone_model, name):
-    #         backbone_classifier_name = name
-    #         break
     for name, module in backbone_model.named_modules():
         if name in classifier_name:
             backbone_classifier_name = name
@@ -535,7 +615,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 else:
                     raise e
 
-        architecture.to(device, dtype)        
+        architecture.to(device, dtype)
         return architecture
 
     @classmethod    
@@ -546,6 +626,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             num_classes : list[int] | int | None=None,
             device : torch.types.Device=torch.device("cpu"), 
             dtype : torch.dtype=torch.float32,
+            preprocess_dtype : torch.dtype | None=None,
             **kwargs
         ):
         if not isinstance(device, torch.device):
@@ -588,7 +669,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 )
         
         # Build backbone
-        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=dtype)
+        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype or dtype)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         if stored_head_name is not None and stored_head_name != head_name:

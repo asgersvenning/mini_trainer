@@ -514,7 +514,7 @@ def cli(description="Train a classifier", **extra_kwargs): # noqa: D103
         help='Enable class-weighted oversampling at a rate slightly more uniform than the inverse log-frequency of the classes.'
     )
     train_args.add_argument(
-        "--fine-tune", action="store_true", dest="model_builder_kwargs.fine_tune",
+        "--fine_tune", action="store_true", dest="model_builder_kwargs.fine_tune",
         default=None, required=False,
         help='OBS: This should probably not be used. Update only the classifier weights.'
     )

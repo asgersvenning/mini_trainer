@@ -41,6 +41,9 @@ notebook = [
     "ipywidgets",
     "pyremotedata"
 ]
+bioclip = [
+    "open_clip_torch"
+]
 
 [project.urls]
 Repository = "https://github.com/asgersvenning/mini_trainer"

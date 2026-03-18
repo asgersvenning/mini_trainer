@@ -13,7 +13,7 @@ from torch import nn
 from torch.amp import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn
 
-from mini_trainer.classifier import Classifier, last_layer_weights
+from mini_trainer.classifier import Classifier, backbone, last_layer_weights
 from mini_trainer.utils import cosine_schedule_with_warmup
 from mini_trainer.utils.augmentation import SaltAndPepper
 from mini_trainer.utils.data import create_metadata, get_metadata, parse_class_spec
@@ -61,6 +61,7 @@ class BaseBuilder:
     def build_model(
             fine_tune : bool=False,
             cls : type[Classifier]=Classifier,
+            fine_tune_dtype : torch.dtype=torch.float16,
             **kwargs : Any
         ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
         """TODO.
@@ -73,11 +74,14 @@ class BaseBuilder:
             (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`):
                 The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
         """
+        if fine_tune:
+            kwargs["preprocess_dtype"] = fine_tune_dtype
         model, model_preprocess = cls.build(**kwargs)
         if fine_tune:
-            for name, param in model.named_parameters():
-                if param.requires_grad and model._architecture_output_name not in name:
-                    param.requires_grad_(False)
+            _backbone = backbone(model)
+            _backbone.requires_grad_(False)
+            _backbone.to(dtype=fine_tune_dtype)
+
         return model, model_preprocess
 
     @staticmethod
@@ -262,7 +266,7 @@ class BaseBuilder:
         n_params = 0
         for name, p in model.named_parameters(): # Iterate through all parameters the model exposes
             if not p.requires_grad:
-                continue 
+                continue
             grp_name = "head" if id(p) in head_module_param_ids else "backbone"
             # Heuristic to detect last-layer-weights: 
             #   Parameters in classification module with "linear" or "layer" in name
