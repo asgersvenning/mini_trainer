@@ -56,7 +56,8 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         weight: torch.Tensor | None = None,
         ignore_index: int = -100, # Apparently `-100` is used instead of `None` in nn.CrossEntropy
         reduction: str = 'mean',
-        label_smoothing: float = 0.0
+        label_smoothing: float = 0.0,
+        device : torch.types.Device=None
     ) -> None:
         """.
 
@@ -68,6 +69,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             ignore_index: Specifies a target value that is ignored and does not contribute to the input gradient.
             reduction: Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'.
             label_smoothing: A float in [0.0, 1.0]. Specifies the amount of smoothing when computing the loss.
+            device: Device expected during training can optionally be passed, otherwise it will be inferred dynamically.
         """
         # Initialize the parent nn.CrossEntropyLoss with all standard arguments
         super().__init__(
@@ -76,6 +78,9 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             reduction=reduction, 
             label_smoothing=label_smoothing
         )
+        self._device = device
+        if isinstance(self._device, (int, str)):
+            self._device = torch.device(self._device)
         
         # Safely convert to a float tensor whether the input is a list or already a tensor
         if isinstance(class_frequencies, np.ndarray):
@@ -91,6 +96,8 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             counts = flatten * counts.sum() + (1 - flatten) * counts
         log_counts = torch.log(counts)
         log_priors = (log_counts - log_counts.mean())
+        if self._device is not None:
+            log_priors = log_priors.to(device=self._device)
         
         # Register the base adjustments as a buffer so they move to the correct device
         self.register_buffer('adjustments', log_priors)
@@ -111,7 +118,11 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             entropy = -(torch.exp(log_probs) * log_probs).sum(dim=-1, keepdim=True)
             evenness = 1.0 - entropy / math.log(logits.size(-1))
         
-        return super().forward(logits + (evenness * self.adjustments.to(logits.device)), targets)
+        adjustments = self.adjustments
+        if self._device is None:
+            adjustments = adjustments.to(logits.device)
+        
+        return super().forward(logits + (evenness * adjustments), targets)
 
 
 def kl_distill_ema(

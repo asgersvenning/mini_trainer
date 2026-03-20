@@ -376,7 +376,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 else:
                     raise
 
-        architecture.to(device, dtype)
+        architecture.to(device)
         return architecture
 
     @classmethod    
@@ -454,7 +454,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
         if state is not None:
             for key in list(state.keys()):
                 if isinstance(state[key], torch.Tensor):
-                    state[key] = state[key].to(device, dtype)
+                    if key.startswith(head_name):
+                        state[key] = state[key].to(device, dtype)
+                    else:
+                        state[key] = state[key].to(device)
             head_weights = state.get(f"{head_name}.linear.weight", None)
             if head_weights is None:
                 head_weights = state.get(f"{head_name}.linear.parametrizations.weight.original1", None)

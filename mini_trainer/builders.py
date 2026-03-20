@@ -442,7 +442,7 @@ class BaseBuilder:
             labels = labels.tolist()
         counts = Counter(labels)
         counts = [counts.get(i, 0) for i in range(num_classes)]
-        return EMLACrossEntropy(class_frequencies=counts, *args, **kwargs)
+        return EMLACrossEntropy(class_frequencies=counts, device=device, *args, **kwargs)
 
     @staticmethod
     def build_regularizer(strength : float=1e-3, *args, **kwargs):
