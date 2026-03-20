@@ -80,6 +80,7 @@ class BaseBuilder:
         if fine_tune:
             _backbone = backbone(model)
             _backbone.requires_grad_(False)
+            _backbone.to(dtype=fine_tune_dtype)
             for param in _backbone.parameters():
                 param.to(dtype=fine_tune_dtype)
                 param.requires_grad_(False)

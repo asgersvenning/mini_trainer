@@ -52,7 +52,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
     def __init__(
         self, 
         class_frequencies: list[int] | list[float] | np.ndarray | torch.Tensor, 
-        flatten: float = 0.1, 
+        flatten: float = 0.0, 
         weight: torch.Tensor | None = None,
         ignore_index: int = -100, # Apparently `-100` is used instead of `None` in nn.CrossEntropy
         reduction: str = 'mean',
