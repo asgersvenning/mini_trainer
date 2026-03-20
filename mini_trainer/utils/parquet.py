@@ -119,8 +119,10 @@ def combine_dicts(dicts : Iterable[dict]):
 #             cls : int = cls2idx[keys[0]]
 #             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
 #             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
-    
-#     return combine_dicts(map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path))))
+#     
+#     return combine_dicts(
+#         map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path)))
+#     )
 
 def get_metadata_from_parquet(
     path: str,

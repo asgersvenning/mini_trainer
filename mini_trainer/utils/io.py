@@ -9,7 +9,7 @@ from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
 import torch
@@ -24,6 +24,7 @@ from mini_trainer.utils import make_convert_dtype, memory_proportion, multithrea
 
 T = TypeVar("T")
 V = TypeVar("V")
+
 
 class CACHE_MODE(int, Enum): # noqa: D101
     NONE  = 0 # noqa: E221
@@ -208,7 +209,7 @@ def generate_indices(
     return indices, weights
 
 
-def _vectorize(func : Callable[[V], V]):
+def _vectorize[V](func : Callable[[V], V]):
     return lambda x : list(map(func, x))
 
 
@@ -235,8 +236,8 @@ STANDARD_TRANSFORMS : dict[str, Callable[[list[float]], list[float]] | None] = {
 }
 
 
-class Reindexed(Generic[T]):
-    def __init__(
+class Reindexed[T]:  # noqa: D101
+    def __init__(  # noqa: D107
         self,
         items: list[T],
         weights: list[float | int],
@@ -325,7 +326,7 @@ class Reindexed(Generic[T]):
         return len(self._indices)
 
 
-class ReindexedSampler(Reindexed[T], Sampler[int]):
+class ReindexedSampler(Reindexed[T], Sampler[int]):  # noqa: D101
     def __iter__(self) -> Iterator[int]:
         return iter(self._indices)
 

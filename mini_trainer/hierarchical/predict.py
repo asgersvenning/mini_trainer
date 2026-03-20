@@ -11,10 +11,9 @@ def cli(description : str="Predict with a trained hierarchical model", **extra_k
         head={
             "type" : str,
             "dest" : "model_builder_kwargs.cls",
-            "default" : "hierarchical",
+            "default" : None,
             "required" : False,
             "help" : 'Which type of classification head architecture to use. '
-            'Options are "hierarchical" (default), "conditional" and "independent".'
         }, 
         scientific_names={
             None : "-S",

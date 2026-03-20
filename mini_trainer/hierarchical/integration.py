@@ -4,7 +4,6 @@ from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
-from typing import cast
 
 import torch
 from torch import nn
@@ -41,7 +40,7 @@ def linnean_labels_from_directory(dir : str, levels="family", **kwargs): # noqa:
     images = find_images(dir)
     dirnames = set([os.path.split(os.path.dirname(im))[1] for im in images])
     taxonomy = create_taxonomy(dirnames, levels=levels)
-    taxonomy = OrderedDict([(k, v) for k, v in sorted(taxonomy.items(), key=lambda kv : tuple(vv[0] for vv in kv[1].values())[::-1])])
+    taxonomy = OrderedDict(sorted(taxonomy.items(), key=lambda kv : tuple(vv[0] for vv in kv[1].values())[::-1]))
     return labels_from_taxonomy(taxonomy)
 
 

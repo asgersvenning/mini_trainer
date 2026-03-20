@@ -11,7 +11,12 @@ from mini_trainer.utils.generic import cosine_to_zscore
 
 
 class HierarchicalClassifier(Classifier): # noqa: D101 TODO
-    def __init__(self, sparse_masks : list[torch.Tensor] | None=None, prior : list[torch.Tensor | list[float]] | None=None, **kwargs):
+    def __init__(  # noqa: D417
+            self, 
+            sparse_masks : list[torch.Tensor] | None=None, 
+            prior : list[torch.Tensor | list[float]] | None=None, 
+            **kwargs
+        ):
         """TODO.
 
         Args:
@@ -27,7 +32,11 @@ class HierarchicalClassifier(Classifier): # noqa: D101 TODO
             self._metadata["prior"] = [p.tolist() if isinstance(p, torch.Tensor) else p for p in prior]
         
         if self._metadata.get("prior", None) is not None:
-            self.linear.bias.data[:] = torch.tensor(self._metadata["prior"][0], device=self.linear.weight.device, dtype=self.linear.weight.dtype)
+            self.linear.bias.data[:] = torch.tensor(
+                data=self._metadata["prior"][0], 
+                device=self.linear.weight.device, 
+                dtype=self.linear.weight.dtype
+            )
 
         # Store masks
         self._num_masks = 0
@@ -149,7 +158,11 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
             layer = nn.Linear(self.preclassification_size, out, bias=True)
             layer = self._normalize_layer(layer) if normalized else layer
             if self._metadata.get("prior", None) is not None:
-                layer.bias.data[:] = torch.tensor(self._metadata["prior"][i + 1], device=layer.weight.device, dtype=layer.weight.dtype)
+                layer.bias.data[:] = torch.tensor(
+                    data=self._metadata["prior"][i + 1], 
+                    device=layer.weight.device, 
+                    dtype=layer.weight.dtype
+                )
             layers.append(layer)
         self.active_indices = orig_indices
         self.layers = nn.ModuleList(layers)
@@ -191,10 +204,13 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         M = self.marginals(embeddings)
         N = len(M)
         C : list[torch.Tensor] = [torch.empty(0) for _ in range(N)]
-        for i in reversed(range(N)):
-            if i < N - 1:
-                M[i] = M[i] + (C[i + 1] - batched_scatter_logsumexp(M[i], self.mask(i))).gather(1, self.mask(i).expand_as(M[i]))
-            C[i] = M[i]
+        C[-1] = M[-1] # Top-level classes are not conditioned
+        for i in reversed(range(N - 1)):
+            parent_logprop = C[i + 1]
+            sibling_norm = batched_scatter_logsumexp(M[i], self.mask(i))
+            # Top-down condition : P_cond(x) = P(x) * P_cond(parent(x)) / P(siblings(x))
+            # ==> log(P_cond(x)) = log(P(x)) + log(P_cond(parent(x))) - log(P(siblings(x)))
+            C[i] += (parent_logprop - sibling_norm).gather(1, self.mask(i).expand_as(M[i]))
         return C
 
 
@@ -207,7 +223,7 @@ class IndependentClassifier(ConditionalClassifier): # noqa: D101 TODO
 
 
 class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):  # noqa: D107
         super().__init__(*args, **kwargs)
         self.sequence_length = len(self.layers) + 1 # total = layers + <BOS>
         self.positional = nn.Embedding(
@@ -295,7 +311,7 @@ class AutoregressiveClassifier(IndependentClassifier): # noqa: D101 TODO
 
 # Differs from the one above in that we don't carry explicit independent embeddings for each layer
 class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):  # noqa: D107
         super().__init__(*args, **kwargs)
         self.sequence_length = self.num_masks + 1 + 1 # total = masks + leaf + <BOS>
         self.positional = nn.Embedding(
@@ -386,7 +402,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier): # noqa: D101 TODO
                         con = self.mask(j)[con]
                     a, b = torch.nonzero((idx == con.unsqueeze(1)).T, as_tuple=True)
                     lidx = b.tensor_split((a.diff() != 0).nonzero(as_tuple=True)[0].cpu() + 1)
-                    dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype).requires_grad_(False)
+                    dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype, requires_grad=False)
                     for j, k in enumerate(lidx):
                         dist[j][k] = 1 / len(k)
                     emb = dist @ self.embeddings
@@ -444,7 +460,9 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
         for rp in raw_prediction:
             dim = rp.shape[-1]
             if self.topk > dim:
-                raise RuntimeError(f'{self.topk=} must be less than the number of classes in the smallest layer in the hierarchy.')
+                raise RuntimeError(
+                    f'{self.topk=} must be less than the number of classes in the smallest layer in the hierarchy.'
+                )
             lgs, idx = torch.topk(rp, self.topk)
             logits.append(lgs)
             indices.append(idx)

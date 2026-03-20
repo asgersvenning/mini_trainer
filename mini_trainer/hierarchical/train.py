@@ -1,7 +1,7 @@
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
 from mini_trainer.hierarchical.model import (
-    AutoregressiveClassifierV2,
     AutoregressiveClassifier,
+    AutoregressiveClassifierV2,
     ConditionalClassifier,
     HierarchicalClassifier,
     IndependentClassifier,

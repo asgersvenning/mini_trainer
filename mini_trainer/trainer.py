@@ -15,12 +15,14 @@ from torch.utils.data import DataLoader
 
 from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
+from mini_trainer.classifier import EmbeddingContext, SupervisionContext
 from mini_trainer.utils import TERMINAL_WIDTH, is_dist_avail_and_initialized, reduce_across_processes, save_on_master
 from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.classifier import SupervisionContext, EmbeddingContext
+
 # from mini_trainer.contrastive import SupConLoss
 
 # contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
+
 
 def train_one_epoch(
         model : nn.Module, 

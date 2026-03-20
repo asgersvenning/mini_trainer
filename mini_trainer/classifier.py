@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 from mini_trainer.utils import recursive_dfs_attr
 from mini_trainer.utils.generic import cosine_to_zscore, prior_from_labels
+from mini_trainer.utils.imports import class_path, import_class
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
@@ -40,7 +41,7 @@ class SupervisionContext:
     def clear(cls):
         cls._target = None
 
-    def __init__(self, target):
+    def __init__(self, target):  # noqa: D107
         self.target = target
         
     def __enter__(self):
@@ -166,6 +167,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         # Store metadata
         metadata.update({
             "mini_trainer_version" : self._version,
+            "classifier_class" : class_path(self),
             "in_features" : in_features,
             "out_features" : out_features,
             "hidden" : hidden,
@@ -189,7 +191,11 @@ class Classifier(nn.Module): # noqa: D101 TODO
         self.normalized = normalized
         self.linear = self._normalize_layer(layer, True) if self.normalized else layer
         if self._metadata.get("prior", None) is not None:
-            self.linear.bias.data[:] = torch.tensor(self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype)
+            self.linear.bias.data[:] = torch.tensor(
+                data=self._metadata["prior"],
+                device=self.linear.weight.device,
+                dtype=self.linear.weight.dtype
+            )
 
         # Prepare class masking buffer
         if active_indices is not None:
@@ -401,6 +407,11 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 state = weights
             cfg = cls.extract_metadata(state)
             stored_model_type = cfg.pop("backbone_class", None)
+            stored_classifier_type = cfg.pop("classifier_class", None)
+            if stored_classifier_type is not None:
+                stored_classifier_type = import_class(stored_classifier_type)
+                if stored_classifier_type is not cls:
+                    cls = stored_classifier_type
             if stored_model_type is None:
                 if model_type is None:
                     raise RuntimeError('Unable to infer missing model type from supplied weights.')
@@ -511,7 +522,8 @@ class PredictionItem:
 
 
 T = TypeVar("T", bound=PredictionItem)
-I = TypeVar("I")
+I = TypeVar("I")  # noqa: E741
+
 
 class BasePrediction[T : PredictionItem, I]:
     """Standard PyTorch Prediction class.
@@ -520,7 +532,7 @@ class BasePrediction[T : PredictionItem, I]:
     ITEM_CLASS : type[T] = PredictionItem
     items : list[T]
 
-    def __init__(
+    def __init__(  # noqa: D107
             self,
             prediction: I,
             topk: int = 1,
@@ -545,7 +557,7 @@ class BasePrediction[T : PredictionItem, I]:
                 UserWarning
             )
             self.items = [
-                [self.ITEM_CLASS(label=labi, confidence=confi, index=idxi) for labi, confi, idxi in zip(lab, conf, idx)] 
+                [self.ITEM_CLASS(label=labi, confidence=confi, index=idxi) for labi, confi, idxi in zip(lab, conf, idx)]
                 for lab, conf, idx in zip(self.labels, self.confidence, self.indices)
             ]
 
@@ -594,7 +606,7 @@ class BasePrediction[T : PredictionItem, I]:
             json.dump(data, f, indent=2, default=str)
 
 
-class Prediction(BasePrediction[PredictionItem, torch.Tensor]):
+class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
     @property
     @lru_cache(1)
     def idx2cls(self):

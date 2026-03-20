@@ -7,7 +7,7 @@ from collections.abc import Callable
 from itertools import chain, repeat
 from threading import RLock
 from types import GeneratorType
-from typing import Any, TextIO, TypeVar, cast
+from typing import Any, TextIO, TypeVar
 
 import numpy as np
 import psutil
@@ -183,9 +183,12 @@ class _ResultsCollector:
 
 _BaseTypes = bool | str | float | int | torch.Tensor | np.ndarray | np.str_
 
+
 class RawResultCollector(_ResultsCollector):
+    """Agnostic collector with minimal postprocessing."""
     _attributes = ("predictions", "labels", "paths")
-    def __init__(
+
+    def __init__(  # noqa: D107
             self,
             strict : bool=True,
             *args,
@@ -253,14 +256,14 @@ class RawResultCollector(_ResultsCollector):
         for attr in self._attributes:
             values = getattr(self, attr)
             data[attr] = self._stack_and_normalize(values)
-        dl = {k : self._datalength(v) for k, v in data.items()}
-        non_empty = [k for k, l in dl.items() if l > 0]
+        data_length = {k : self._datalength(v) for k, v in data.items()}
+        non_empty = [k for k, length in data_length.items() if length > 0]
         if self.strict and len(non_empty) == 0:
-            raise RuntimeError(f'Attempt to access empty data: {dl}')
-        mdl = max(dl.values())
-        consistent = [dl[k] == mdl for k in non_empty]
+            raise RuntimeError(f'Attempt to access empty data: {data_length}')
+        mdl = max(data_length.values())
+        consistent = [data_length[k] == mdl for k in non_empty]
         if self.strict and not all(consistent):
-            raise RuntimeError(f'Stored data is heterogeneous: {dl}')
+            raise RuntimeError(f'Stored data is heterogeneous: {data_length}')
         return data
 
     def save(self, dst : str, *args, **kwargs):

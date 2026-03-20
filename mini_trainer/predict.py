@@ -126,8 +126,12 @@ def main( # noqa: D417
     labels = None
     if data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
-        images : list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
-        labels : list[int] | list[list[int]] = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
+        images : list[str] = [
+            p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"
+        ]
+        labels : list[int] | list[list[int]] = [
+            p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"
+        ]
     else:
         labels, images = auto_find_images(input, **metadata)
     if subsample is not None and subsample > 1:
@@ -146,7 +150,7 @@ def main( # noqa: D417
             f'inheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}.'
         )
 
-    ## (could be used for test-time-augmentation at a later stage)
+    # (could be used for test-time-augmentation at a later stage)
     # Prepare augmentation
     # augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     # if not isinstance(augmentation, torchvision.transforms.Compose):
@@ -158,7 +162,7 @@ def main( # noqa: D417
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
     
     idx = 0
-    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():
+    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():  # noqa: E501
         for batch in TQDM(loader, desc="Running inference", unit="batch"):
             batch = model_preprocess(batch.to(device))
             if not isinstance(collector, RawResultCollector):

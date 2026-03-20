@@ -186,7 +186,9 @@ def name_to_id(
     """
     attempt += 1
     if attempt > max_attempts:
-        raise RuntimeError(f'Unable to convert {name} ({author=}, {rank_contains=}) at {threshold=} to GBIF id in {max_attempts=}')
+        raise RuntimeError(
+            f'Unable to convert {name} ({author=}, {rank_contains=}) at {threshold=} to GBIF id in {max_attempts=}'
+        )
     name, _ = parse_name(name, author)
     try:
         req = f'{GBIF_SPECIES_API_ENDPOINT}match?name={quote(name)}'
@@ -228,7 +230,14 @@ def name_to_id(
             assert isinstance(id, int)
             assert isinstance(rank, str)
             return id, rank, threshold
-        return name_to_id(new_name, rank_contains=rank_contains, threshold=threshold, attempt=attempt, max_attempts=max_attempts)
+        return name_to_id(
+            name=new_name, 
+            rank_contains=rank_contains, 
+            threshold=threshold, 
+            attempt=attempt, 
+            max_attempts=max_attempts
+        )
+
 
 @multithread_vectorize(desc="Translating names...")
 def id_to_name(id : str | int):
@@ -241,7 +250,7 @@ def id_to_name(id : str | int):
     data = retrive_request(req)
     return data["scientificName"]
 
-    
+
 @multithread_vectorize(desc="Resolving taxa...")
 def resolve_name_or_id(name_or_id : str | int): # noqa: D103
     name_or_id = name_or_id.strip()

@@ -82,13 +82,14 @@ def get_prior_method(method : str):
             return prior_scratch
         case _:
             raise NotImplementedError(
-                f'Class frequency prior implementations currently include: "adjust", "ldam", and "custom", not: {method}'
+                'Class frequency prior implementations currently include:'
+                f' "adjust", "ldam", and "custom", not: {method}'
             )
 
 
 def prior_from_labels(labels : list[int | list[int]], cls2idx : dict, method : str="adjust", **kwargs):
     if isinstance(labels[0], (list, tuple)):
-        labels = [l[0] for l in labels]
+        labels = [lab[0] for lab in labels]
         ncls = len(cls2idx["0"])
     else:
         ncls = len(cls2idx)

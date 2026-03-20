@@ -115,7 +115,7 @@ def get_dataset_dataloader( # noqa: D103
                 raise NotImplementedError("Resampling with caching is not supported.")
             labs = data["class"]
             if isinstance(labs[0], (list, tuple)):
-                labs = [l[0] for l in labs]
+                labs = [lab[0] for lab in labs]
             cc = Counter(labs)
             resample_kwargs = {}
             if isinstance(resample, str):
@@ -128,7 +128,6 @@ def get_dataset_dataloader( # noqa: D103
         ) 
         datasets.append(dset)
     
-
     if num_workers is None:
         num_workers = os.cpu_count() - 4
         num_workers -= num_workers % 2

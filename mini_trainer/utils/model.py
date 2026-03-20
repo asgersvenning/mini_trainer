@@ -53,7 +53,7 @@ def module_output_dim(module: nn.Module):
 
 class WrappedEncoder(nn.Module):
     """Barebones encoder wrapper."""
-    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
+    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):  # noqa: D107
         super().__init__()
         self.encoder = encoder
         self.encoder_method = encoder_method
@@ -93,7 +93,7 @@ class WrappedEncoder(nn.Module):
 
 class BackboneModel(nn.Module):
     """A barebones wrapper for arbitrary encoder-only modules."""
-    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):
+    def __init__(self, encoder : nn.Module, encoder_method : str | None=None):  # noqa: D107
         super().__init__()
         self.backbone = WrappedEncoder(encoder, encoder_method)
         self.classifier = nn.Linear(in_features=module_output_dim(self.backbone), out_features=10)
@@ -102,7 +102,8 @@ class BackboneModel(nn.Module):
         x = self.backbone(x)
         if not isinstance(x, torch.Tensor):
             raise RuntimeError(
-                f'Output of encoder of type {type(self.backbone)} was of type {type(x)}, but it should be a torch.Tensor.'
+                f'Output of encoder of type {type(self.backbone)} was of type {type(x)}, '
+                'but it should be a torch.Tensor.'
                 "\nPerhaps you forgot to pass the relevant `encoder_method` to `BackboneModel`?"
             )
         return self.classifier(x)
@@ -112,7 +113,10 @@ def get_bioclip2_encoder(version : str="bioclip-2"):
     try:
         import open_clip
     except ImportError as e:
-        e.add_note("The `open_clip` module was not found in the current Python environment. Please install with `pip install open_clip_torch`.")
+        e.add_note(
+            'The `open_clip` module was not found in the current Python environment. '
+            'Please install with `pip install open_clip_torch`.'
+        )
         raise
 
     model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(f'hf-hub:imageomics/{version}')

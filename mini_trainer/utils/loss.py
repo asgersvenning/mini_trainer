@@ -114,7 +114,6 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         return super().forward(logits + (evenness * self.adjustments.to(logits.device)), targets)
 
 
-
 def kl_distill_ema(
         logits : torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
         ema_logits : torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
@@ -134,7 +133,7 @@ def class_weight_distribution_regularization(
     W: torch.Tensor,
     sparse : bool=True
 ):
-    """Calculates a regularization term based on the assumption that the weights should be uniformly distributed unit vectors.
+    """Calculates a regularization term on the assumption that the weights should be uniformly distributed unit vectors.
     If the weights are not unit vectors, they will be normalized before the computation.
 
     Args:

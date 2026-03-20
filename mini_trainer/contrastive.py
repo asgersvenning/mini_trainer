@@ -13,7 +13,7 @@ class SupConLoss(nn.modules.loss._Loss):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR.
     """
-    def __init__(
+    def __init__(  # noqa: D107
             self, 
             temperature : float=0.07, 
             base_temperature : float=0.07
