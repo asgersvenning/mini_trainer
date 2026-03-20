@@ -25,7 +25,8 @@ def cli(description : str="Predict with a trained hierarchical model", **extra_k
         },
         **extra_kwargs
     )
-    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
+    head : str | None = kwargs["model_builder_kwargs"].get("cls", None)
+    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(head) if head is not None else None
     kwargs["builder"] = HierarchicalBuilder
     if kwargs["collector_cls"] is not RawResultCollector:
         kwargs["collector_cls"] = HierarchicalResultCollector
