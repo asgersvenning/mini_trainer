@@ -147,7 +147,7 @@ def get_model(backbone_model: str | nn.Module, model_args: dict = {},
                 default_transform = default_weights.transforms(antialias=True)
             except TypeError as e:
                 if "unexpected keyword argument 'antialias'" not in str(e):
-                    raise e
+                    raise
                 default_transform = default_weights.transforms()
             backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
     if not isinstance(backbone_model, nn.Module):

@@ -28,7 +28,7 @@ def head_name_to_cls(name : str | type): # noqa: D103
         return HEAD_OPTIONS[name]
     except KeyError as e:
         e.add_note(f"Available options are: {list(HEAD_OPTIONS.keys())}")
-        raise e
+        raise
     
 
 def cli(desc="Train a hierarchical classifier", **kwargs): # noqa: D103

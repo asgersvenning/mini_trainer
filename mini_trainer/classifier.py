@@ -368,7 +368,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
                         UserWarning
                     )
                 else:
-                    raise e
+                    raise
 
         architecture.to(device, dtype)
         return architecture

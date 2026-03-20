@@ -140,7 +140,7 @@ def make_read_and_resize_fn(
             img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False) # uint8 [C,H,W]
         except Exception as e:
             e.add_note(f'Image path: {path}')
-            raise e
+            raise
         img = TF.resize(img, size=(h, w), interpolation=interp, antialias=antialias)
         if img.dtype != dtype:
             img = converter(img)
@@ -404,7 +404,7 @@ class LazyDataset(torch.utils.data.Dataset):
             from zarr.storage import LocalStore
         except ImportError as e:
             e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
-            raise e
+            raise
         print(f"Using Zarr disk cache at: {self.cache_path}")
         if os.path.exists(self.cache_path):
             print("Found existing Zarr cache.")
@@ -527,7 +527,7 @@ class LazyDataset(torch.utils.data.Dataset):
                 from zarr.storage import LocalStore
             except ImportError as e:
                 e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
-                raise e
+                raise
             store = LocalStore(self.cache_path, read_only=True)
             self._zarr_root = zarr.open(store, mode='r', zarr_format=3)
 

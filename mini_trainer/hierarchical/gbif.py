@@ -148,7 +148,7 @@ def resolve_id(id : str | int):
         clean_data = OrderedDict([(key, (str(data[f'{key}Key']), str(data[key]))) for key in TAXONOMY_KEYS])
     except KeyError as e:
         e.add_note(f"Missing keys in: {data}")
-        raise e
+        raise
     return clean_data
 
 
@@ -211,12 +211,11 @@ def name_to_id(
         return id, rank, conf
     except Exception as e:
         if "Unable to convert" in str(e):
-            raise e
+            raise
         req = f'{GBIF_SPECIES_API_ENDPOINT}search?nameType=SCIENTIFIC&q={quote(name)}'
         data = retrive_request(req)["results"]
         if len(data) == 0 or (new_name := parse_name(data[0].get("scientificName", None))[0]) is None:
-            e.add_note(f'Request: {req}')
-            raise e
+            raise RuntimeError(f'Request {req}, returned empty, partial or malformed data: {data}') from e
         if (
             name == new_name and 
             (id := data[0]["speciesKey"]) and 

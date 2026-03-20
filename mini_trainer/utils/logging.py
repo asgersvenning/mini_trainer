@@ -219,8 +219,7 @@ class RawResultCollector(_ResultsCollector):
                         assert isinstance(getattr(self, attr)[0], type(values))
                     getattr(self, attr).append(values)
             except Exception as e:
-                e.add_note(f'Error while collecting {attr}.')
-                raise e
+                raise RuntimeError(f'Error while collecting {attr}.') from e
 
     def _stack_and_normalize(self, data : list[_BaseTypes | list[_BaseTypes]]):
         if len(data) < 1:
@@ -1079,7 +1078,7 @@ class MultiLogger:
         #             os.remove(temp_file_name)
         #         except OSError:
         #             pass # Suppress error during cleanup
-        #     raise e
+        #     raise
 
     def finish(self):
         self._store_summary()

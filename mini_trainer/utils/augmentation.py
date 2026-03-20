@@ -1,4 +1,5 @@
 import os
+import warnings
 from collections.abc import Callable
 from random import sample
 
@@ -42,8 +43,8 @@ def debug_augmentation(
         )
         e.add_note(e_msg)
         if strict:
-            raise e
-        print(e_msg)
+            raise
+        warnings.warn(e_msg, UserWarning)
         return False
     return True
 
