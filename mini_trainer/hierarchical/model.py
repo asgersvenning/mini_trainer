@@ -206,11 +206,10 @@ class ConditionalClassifier(HierarchicalClassifier): # noqa: D101 TODO
         C : list[torch.Tensor] = [torch.empty(0) for _ in range(N)]
         C[-1] = M[-1] # Top-level classes are not conditioned
         for i in reversed(range(N - 1)):
-            parent_logprop = C[i + 1]
             sibling_norm = batched_scatter_logsumexp(M[i], self.mask(i))
             # Top-down condition : P_cond(x) = P(x) * P_cond(parent(x)) / P(siblings(x))
             # ==> log(P_cond(x)) = log(P(x)) + log(P_cond(parent(x))) - log(P(siblings(x)))
-            C[i] += (parent_logprop - sibling_norm).gather(1, self.mask(i).expand_as(M[i]))
+            C[i] = M[i] + (C[i + 1] - sibling_norm).gather(1, self.mask(i).expand_as(M[i]))
         return C
 
 
