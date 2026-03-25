@@ -645,11 +645,46 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
         return raw_prediction.gather(-1, self.indices)
 
 
+@contextmanager
+def bypass_submodule(model: nn.Module, submodule_path: str):
+    """Temporarily replaces a submodule with nn.Identity() for a forward pass.
+    
+    Args:
+        model: The parent PyTorch module.
+        submodule_path: The dotted path to the submodule (e.g., 'backbone.layer3.conv1').
+    """
+    # 1. Traverse the dotted path to find the direct parent of the target
+    parts = submodule_path.split('.')
+    parent = model
+    for part in parts[:-1]:
+        parent = getattr(parent, part)
+    
+    target_name = parts[-1]
+    
+    # 2. Keep a reference to the original submodule
+    original_module = getattr(parent, target_name)
+    
+    try:
+        # 3. Swap in the no-op module
+        setattr(parent, target_name, nn.Identity())
+        yield
+        
+    finally:
+        # 4. Guarantee restoration, even if an error is thrown during the yield
+        setattr(parent, target_name, original_module)
+
+
 def predict(model : nn.Module, x : torch.Tensor, topk : int=1, **kwargs):
-    return classification_module(model).predict(backbone(model)(x), topk=topk, **kwargs)
+    cls_mod = classification_module(model)
+    with bypass_submodule(model, model._backbone_output_name):
+        return cls_mod.predict(model(x), topk=topk, **kwargs)
 
 
 def backbone(model : nn.Module):
+    """This method is suitable for accessing the backbone parameters/modules, but not for inference or forward pass.
+    
+    If you wish to omit the forward pass of the classification module is `bypass_submodule` instead (see `predict`).
+    """
     return nn.Sequential(*list(model.children())[:-1], nn.Flatten(start_dim=1, end_dim=-1))
 
 
