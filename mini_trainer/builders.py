@@ -74,15 +74,21 @@ class BaseBuilder:
             (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`):
                 The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
         """
-        if fine_tune:
-            kwargs["preprocess_dtype"] = fine_tune_dtype
+        # RE: See comment inside the next `fine_tune` block; this also needs to be disabled.
+        # if fine_tune:
+        #     kwargs["preprocess_dtype"] = fine_tune_dtype
         model, model_preprocess = cls.build(**kwargs)
         if fine_tune:
             _backbone = backbone(model)
             _backbone.requires_grad_(False)
-            _backbone.to(dtype=fine_tune_dtype)
-            for param in _backbone.parameters():
-                param.to(dtype=fine_tune_dtype)
+            # RE: Using a different dtype for the backbone currently breaks inference as the 
+            # parameters are not created with the correct data type unless explicitly specified.
+            # This feature can work if we move the `fine_tune` and `fine_tune_dtype` inside the
+            # build function and store the values in the state dict, such that loading can
+            # initialize with the correct specification.
+            # _backbone.to(dtype=fine_tune_dtype)
+            for param in _backbone.parameters(): # This is probably not necessary...
+                # param.to(dtype=fine_tune_dtype)
                 param.requires_grad_(False)
 
         return model, model_preprocess
@@ -156,20 +162,20 @@ class BaseBuilder:
     @staticmethod
     def build_inference_dataloader(
             images : list[str],
-            preprocess : Callable[[torch.Tensor], torch.Tensor],
             batch_size : int,
             device : torch.device,
             dtype : torch.dtype,
-            data_index : str | None=None,
-            splits : tuple[str, ...]=("train", "val"),
             num_workers : int | None=None,
             resize_size : int | None=None,
             subsample : int | None=None,
+            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
+            preprocess : Callable[[torch.Tensor], torch.Tensor] | None=None,
+            data_index : str | None=None,
+            splits : tuple[str, ...]=("train", "val"),
             cache : int | str | None=None,
             train_proportion : float=0.9,
             labels : Any | None=None,
             num_classes : int | None=None,
-            hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
             **kwargs
         ):
         return get_inference_dataloader(

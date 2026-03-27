@@ -119,7 +119,6 @@ def main( # noqa: D417
             **model_builder_kwargs
         }
     )
-    nn_model.eval()
     metadata = classification_module(nn_model).metadata.copy()
     
     # Prepare dataloader
@@ -139,7 +138,6 @@ def main( # noqa: D417
     
     loader = builder.build_inference_dataloader(
         images=images,
-        preprocess=model_preprocess,
         device=device,
         dtype=dtype,
         **{**metadata, **dataloader_builder_kwargs}
@@ -162,24 +160,25 @@ def main( # noqa: D417
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
     
     idx = 0
-    with torch.inference_mode(), torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():  # noqa: E501
-        for batch in TQDM(loader, desc="Running inference", unit="batch"):
+    for batch in TQDM(loader, desc="Running inference", unit="batch"):
+        with torch.inference_mode():
             batch = model_preprocess(batch.to(device))
-            if not isinstance(collector, RawResultCollector):
-                predictions = predict(nn_model, batch)
-            else:
-                predictions = nn_model(batch)
-                if isinstance(predictions, torch.Tensor):
-                    predictions = predictions.to(dtype=dtype)
+            with torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():  # noqa: E501
+                if not isinstance(collector, RawResultCollector):
+                    predictions = predict(nn_model, batch)
                 else:
-                    predictions = [p.to(dtype=dtype) for p in predictions]
-            idxs = slice(idx, idx + len(batch))
-            idx += len(batch)
-            collector.collect(
-                paths=images[idxs], 
-                predictions=predictions,
-                labels=None if labels is None else labels[idxs],
-            )
+                    predictions = nn_model(batch)
+                    if isinstance(predictions, torch.Tensor):
+                        predictions = predictions.to(dtype=dtype)
+                    else:
+                        predictions = [p.to(dtype=dtype) for p in predictions]
+                idxs = slice(idx, idx + len(batch))
+                idx += len(batch)
+                collector.collect(
+                    paths=images[idxs], 
+                    predictions=predictions,
+                    labels=None if labels is None else labels[idxs],
+                )
     del loader, nn_model
 
     collector.save(os.path.join(output, name), threshold=threshold)
