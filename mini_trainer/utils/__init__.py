@@ -188,6 +188,24 @@ def decimals(value : float, tol : int=6):
     return d + 1
 
 
+def dtype_to_string(dtype: torch.dtype | str) -> str:
+    dtype_str = str(dtype)
+    return dtype_str.replace("torch.", "")
+
+
+def string_to_dtype(dtype_str: str) -> torch.dtype:
+    name = dtype_str.replace("torch.", "")
+    return getattr(torch, name)
+
+
+def device_to_string(device: torch.device | str | int) -> str:
+    return str(torch.device(device))
+
+
+def string_to_device(device_str: str) -> torch.device:
+    return torch.device(device_str)
+
+
 def memory_proportion(
         shape : tuple[int, ...], 
         device : torch.types.Device, 

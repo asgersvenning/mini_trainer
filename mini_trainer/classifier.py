@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mini_trainer.utils import recursive_dfs_attr
+from mini_trainer.utils import dtype_to_string, recursive_dfs_attr, string_to_dtype
 from mini_trainer.utils.generic import cosine_to_zscore, prior_from_labels
 from mini_trainer.utils.imports import class_path, import_class
 
@@ -386,7 +386,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
             num_classes : list[int] | int | None=None,
             device : torch.types.Device=torch.device("cpu"), 
-            dtype : torch.dtype=torch.float32,
+            dtype : torch.dtype | None=None,
             preprocess_dtype : torch.dtype | None=None,
             **kwargs
         ):
@@ -406,6 +406,12 @@ class Classifier(nn.Module): # noqa: D101 TODO
             else:
                 state = weights
             cfg = cls.extract_metadata(state)
+            stored_dtype = cfg.pop("_dtype", None)
+            if dtype is None:
+                dtype = string_to_dtype(stored_dtype)
+            stored_preprocess_dtype = cfg.pop("preprocess_dtype", None)
+            if preprocess_dtype is None:
+                preprocess_dtype = string_to_dtype(stored_preprocess_dtype)
             stored_model_type = cfg.pop("backbone_class", None)
             stored_classifier_type = cfg.pop("classifier_class", None)
             if stored_classifier_type is not None:
@@ -435,7 +441,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
                 )
         
         # Build backbone
-        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype or dtype)
+        if dtype is None:
+            dtype = torch.float32
+        preprocess_dtype = preprocess_dtype or dtype
+        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         if stored_head_name is not None and stored_head_name != head_name:
@@ -474,7 +483,9 @@ class Classifier(nn.Module): # noqa: D101 TODO
             num_classes = num_classes[0]
         kwargs.update({
             "in_features" : num_embeddings,
-            "out_features" : num_classes
+            "out_features" : num_classes,
+            "_dtype" : dtype_to_string(dtype),
+            "preprocess_dtype" : dtype_to_string(preprocess_dtype)
         })
 
         # Check parity between supplied/heuristic and stored config, and let stored override
