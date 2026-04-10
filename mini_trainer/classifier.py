@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch._prims_common import DeviceLikeType
 
 from mini_trainer.utils import dtype_to_string, recursive_dfs_attr, string_to_dtype
 from mini_trainer.utils.generic import cosine_to_zscore, prior_from_labels
@@ -385,7 +386,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             model_type : str | None=None, 
             weights : str | OrderedDict[str, torch.Tensor | Any] | None=None, 
             num_classes : list[int] | int | None=None,
-            device : torch.types.Device=torch.device("cpu"), 
+            device : DeviceLikeType=torch.device("cpu"), 
             dtype : torch.dtype | None=None,
             preprocess_dtype : torch.dtype | None=None,
             **kwargs
@@ -410,7 +411,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             if dtype is None:
                 dtype = string_to_dtype(stored_dtype)
             stored_preprocess_dtype = cfg.pop("preprocess_dtype", None)
-            if preprocess_dtype is None:
+            if preprocess_dtype is None and stored_preprocess_dtype is not None:
                 preprocess_dtype = string_to_dtype(stored_preprocess_dtype)
             stored_model_type = cfg.pop("backbone_class", None)
             stored_classifier_type = cfg.pop("classifier_class", None)
