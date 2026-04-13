@@ -43,6 +43,8 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int] | list[list[int]], 
         images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
         labels = [c for c, s in zip(metadata["label"], metadata["split"]) if s == "test"]
     assert images is not None
+    if labels is None:
+        labels = []
     return labels, images
 
 
@@ -52,7 +54,7 @@ def auto_find_images(src : str, **kwargs) -> tuple[list[int] | list[list[int]], 
 def create_metadata(
         directory : str,
         cls2idx : dict[str, int] | dict[str, dict[str, int]], 
-        labels : OrderedDict[str, str | tuple[str, ...]] | list[str] | None,
+        labels : OrderedDict[str, str] | OrderedDict[str, tuple[str, ...]] | list[str] | None,
         train_proportion : float=0.9,
         val_proportion : float=0.5,
         **kwargs
@@ -85,11 +87,11 @@ def create_metadata(
             labels = labels_from_taxonomy(tax)
             del dirs, tax
         else:
-            labels = {
-                name : name for name in os.listdir(directory) 
+            labels = OrderedDict(
+                (name, name) for name in sorted(os.listdir(directory)) 
                 if os.path.isdir(subdir := os.path.join(directory, name))
                 and len(os.listdir(subdir)) > 0
-            }
+            )
     elif isinstance(labels, list):
         # Same if it is a list, in this case we just assume the folders
         # are named after the (leaf) class
@@ -120,7 +122,7 @@ def get_metadata(
         check_integrity : bool=False,
         cls2idx : dict[str, int] | dict[str, dict[str, int]] | None=None,
         **kwargs
-    ) -> tuple[dict[str, list[str | int | list[int]]], dict[str, list[str | int | list[int]]]]:
+    ) -> dict[str, np.ndarray]:
     """Load training metadata.
     """
     if not os.path.exists(path):
@@ -140,17 +142,18 @@ def get_metadata(
             raise TypeError(f"Found 'label's in {path}, but no 'cls2idx' was supplied.")
         multilabel = isinstance(list(cls2idx.values())[0], dict)
         if not multilabel:
-            cls2idx = {"0" : cls2idx}
+            cls2idx = {"0" : cast(dict[str, int], cls2idx)}
+        cls2idx = cast(dict[str, dict[str, int]], cls2idx)
         levels = sorted(cls2idx.keys(), key=int)
-        metadata["class"] = [
+        metadata["class"] = np.array([
             [
                 cls2idx[level][lab] 
                 for level, lab in zip(levels, labs if labs.size > 1 else [labs])
             ] 
             for labs in metadata["label"]
-        ]
+        ])
         if not multilabel:
-            metadata["class"] = [c[0] for c in metadata["class"]]
+            metadata["class"] = np.array([c[0] for c in metadata["class"]])
     return metadata
 
 

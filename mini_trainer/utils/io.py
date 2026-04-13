@@ -3,13 +3,13 @@ import math
 import operator
 import os
 import warnings
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from queue import Queue
 from tempfile import gettempdir
 from threading import Semaphore, Thread
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import numpy as np
 import torch
@@ -75,7 +75,7 @@ def guess_cache_mode(
     for mode, threshold in thresholds.items():
         if threshold is None:
             continue
-        if threshold < 0 or memory_proportion(shape, mode.name, dtype) < threshold:
+        if threshold < 0 or memory_proportion(tuple(shape), mode.name, dtype) < threshold:
             accepted.append(mode)
     if len(accepted) == 0:
         raise RuntimeError(f'Unable to determine a valid caching location using thresholds:\n{thresholds}')
@@ -115,7 +115,7 @@ def _pil_to_torch_interp(interp: int) -> InterpolationMode:
         Image.Resampling.BOX:      InterpolationMode.BOX,
         Image.Resampling.HAMMING:  InterpolationMode.NEAREST,
     }
-    return m.get(interp, InterpolationMode.BILINEAR)
+    return m.get(interp, InterpolationMode.BILINEAR) # type: ignore
 
 
 def make_read_and_resize_fn(
@@ -128,9 +128,11 @@ def make_read_and_resize_fn(
     """Factory to create function to read and resize image from path.
     """
     if isinstance(dtype, str):
-        dtype = getattr(torch, dtype, None)
+        _dtype = getattr(torch, dtype, None)
         if not isinstance(dtype, torch.dtype):
             raise ValueError(f'Unknown dtype "{dtype}"')
+        assert isinstance(_dtype, torch.dtype)
+        dtype = _dtype
     converter = make_convert_dtype(dtype)
     interp = _pil_to_torch_interp(interpolation)
     antialias = kwargs.get("antialias", True)
@@ -142,7 +144,7 @@ def make_read_and_resize_fn(
         except Exception as e:
             e.add_note(f'Image path: {path}')
             raise
-        img = TF.resize(img, size=(h, w), interpolation=interp, antialias=antialias)
+        img = TF.resize(img, size=[h, w], interpolation=interp, antialias=antialias)
         if img.dtype != dtype:
             img = converter(img)
         return img.to(device)
@@ -175,7 +177,7 @@ def reweight(
 def generate_indices(
         weights : list[float], 
         target_size : int | None=None
-    ) -> list[int]:
+    ):
     """Deterministically generates a list of indices based on the provided weights to oversample the items.
 
     Args:
@@ -201,12 +203,13 @@ def generate_indices(
         for _ in range(10):
             if (abs(sum(weights) - target_size) / target_size) < 0.01:
                 break
-            weights = reweight(weights, target_size)
+            weights = list(map(float, reweight(weights, target_size)))
 
-    for i, w in enumerate(weights):
+    out_weights = list(map(int, weights))
+    for i, w in enumerate(out_weights):
         indices.extend([i] * w)
 
-    return indices, weights
+    return indices, out_weights
 
 
 def _vectorize[V](func : Callable[[V], V]):
@@ -243,16 +246,17 @@ class Reindexed[T]:  # noqa: D101
         weights: list[float | int],
         inflation: float | int = 2,
         flatten: float = 0.1,
-        transform: Callable[[list[float]], float] | str | None = "isqrt",
+        transform: Callable[[list[float]], list[float]] | str | None = "isqrt",
     ) -> None:
         if isinstance(transform, str):
             try:
-                transform = STANDARD_TRANSFORMS[transform]
+                transform = STANDARD_TRANSFORMS[transform] # type: ignore
             except KeyError as e:
                 raise ValueError(
                     f"Unknown transform {transform!r}. "
                     f"Expected one of {tuple(STANDARD_TRANSFORMS)}."
                 ) from e
+        assert not isinstance(transform, str)
 
         processed_weights = uniform_mixture(list(map(float, weights)), p=flatten)
         if transform is not None:
@@ -298,7 +302,7 @@ class Reindexed[T]:  # noqa: D101
 
         if torch.is_tensor(x):
             if x.ndim == 0:
-                return self._get_single(operator.index(x.item()))
+                return self._get_single(operator.index(int(x.item())))
             mapped = torch.as_tensor(self._indices, dtype=torch.long)[x]
             return self._gather_from_positions(mapped.tolist())
 
@@ -348,7 +352,7 @@ class LazyDataset(torch.utils.data.Dataset):
     def __init__( # noqa: D107
             self, 
             func : Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]], 
-            items : list,
+            items : Sequence,
             cache : str | int | CACHE_MODE | None=None
         ):
         self.func = func
@@ -392,7 +396,7 @@ class LazyDataset(torch.utils.data.Dataset):
                     'CUDA caching is currently in development and may not work properly. '
                     f'Using device: `{guess_device}` for cache.'
                 )
-                self._ram_cache.tensors = [t.to(guess_device) for t in self._ram_cache.tensors]
+                self._ram_cache.tensors = tuple([t.to(guess_device) for t in self._ram_cache.tensors])
             case _:
                 raise ValueError(
                     f'Invalid cache mode "{self._cache_mode}". '
@@ -438,21 +442,21 @@ class LazyDataset(torch.utils.data.Dataset):
             if not isinstance(component, np.ndarray):
                 raise TypeError(f"For 'disk' cache, `func` must return NumPy arrays. Got {type(component)}.")
             
-            arr = root.create_array(
+            arr = root.create_array( # type: ignore
                 name=f'data_{i}',
                 shape=(len(self), *component.shape),
                 chunks=(1, *component.shape),  # Crucial for fast random access by item,
                 shards=(shard_size, *component.shape),
                 dtype=component.dtype,
-                compressors=zarr.codecs.BloscCodec(cname="zstd", clevel=3, shuffle=zarr.codecs.BloscShuffle.bitshuffle)
+                compressors=zarr.codecs.BloscCodec(cname="zstd", clevel=3, shuffle=zarr.codecs.BloscShuffle.bitshuffle) # type: ignore
             )
-            if not isinstance(arr, zarr.Array):
+            if not isinstance(arr, zarr.Array): # type: ignore
                 raise RuntimeError(f"Created `zarr.Array` is {arr}?")
             zarr_arrays.append(arr)
 
         # We need two pools: one for CPU-bound producers, one for I/O-bound writers
-        producer_workers = min(64, (os.cpu_count() - 1) or 1) # Can be high
-        writer_workers = min(8, (os.cpu_count() // 2) or 1) # Lower, I/O-limited
+        producer_workers = max(1, min(64, ((os.cpu_count() or 0) - 1) or 1)) # Can be high
+        writer_workers = max(1, min(8, ((os.cpu_count() or 0) // 2) or 1)) # Lower, I/O-limited
         
         results_queue = Queue(maxsize=shard_size * 2)
         producer_pool = ThreadPoolExecutor(max_workers=producer_workers, thread_name_prefix="producer")
@@ -530,13 +534,16 @@ class LazyDataset(torch.utils.data.Dataset):
                 e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
                 raise
             store = LocalStore(self.cache_path, read_only=True)
-            self._zarr_root = zarr.open(store, mode='r', zarr_format=3)
+            self._zarr_root = cast(zarr.Group, zarr.open(store, mode='r', zarr_format=3))
+            assert isinstance(self._zarr_root, zarr.Group)
 
         data_parts = []
         j = 0
         while f'data_{j}' in self._zarr_root:
+            arr = self._zarr_root[f'data_{j}']
+            assert isinstance(arr, zarr.Array) # type: ignore
             data_parts.append(
-                torch.from_numpy(self._zarr_root[f'data_{j}'][i])
+                torch.from_numpy(arr[i])
             )
             j += 1
         
@@ -574,12 +581,12 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        max_workers = min(128, ((os.cpu_count() - 2) // 2) * 2 or 1)
+        max_workers = max(0, min(128, (((os.cpu_count() or 0) - 2) // 2) * 2 or 1))
         batch_size = min(256, 4 * max_workers)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue : Queue[tuple[int, torch.Tensor]] = Queue(max(32, batch_size * 4))
-        insert_buffer : dict[int, torch.Tensor] = dict()
-        insert_queue : Queue[tuple[int, torch.Tensor]] = Queue()
+        fetched_queue : Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue(max(32, batch_size * 4))
+        insert_buffer : dict[int, torch.Tensor | Sequence[torch.Tensor]] = dict()
+        insert_queue : Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue()
 
         def _fetch_one(idx_item):
             idx, item = idx_item
@@ -601,6 +608,8 @@ class LazyDataset(torch.utils.data.Dataset):
             slc = slice(idx[0], idx[-1] + 1)
             # Insert data into slice along first dimension in dst (in-place)
             if self._ram_was_single_tensor:
+                assert not data or isinstance(data[0], torch.Tensor)
+                data = cast(list[torch.Tensor], data)
                 torch.stack(data, out=stacked_tensors[0][slc])
             else:
                 for i, elements in enumerate(zip(*data)):
@@ -664,6 +673,7 @@ class LazyDataset(torch.utils.data.Dataset):
                         'slice, or list/np.ndarray/torch.Tensor of integers indexing is supported.'
                     )
                 if isinstance(elements[0], torch.Tensor):
+                    elements = cast(list[torch.Tensor], elements)
                     return torch.stack(elements)
                 return [torch.stack(values) for values in zip(*elements)]
             case CACHE_MODE.DISK:

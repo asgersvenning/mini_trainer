@@ -95,6 +95,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
     @torch.no_grad()
     def init_spherical_repulsion(cls, layer: nn.Module, iterations: int = 100, lr: float = 0.5):
         w = layer.weight
+        assert isinstance(w, torch.Tensor)
         nn.init.normal_(w)
         
         for _ in range(iterations):
@@ -106,7 +107,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
             proj = (grad * w).sum(dim=1, keepdim=True) * w
             w.sub_(lr * (grad - proj))
 
-        w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
+        w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9)) # type: ignore
         return layer
 
     @classmethod
@@ -116,10 +117,10 @@ class Classifier(nn.Module): # noqa: D101 TODO
             layer.bias.fill_(0)
             layer.bias.requires_grad_(False)
         if orthogonal_init:
-            layer = cls.init_spherical_repulsion(layer)
+            layer = cls.init_spherical_repulsion(layer) # type: ignore
         weight_norm(layer, name="weight", dim=0)
-        layer.parametrizations.weight.original0.fill_(1) 
-        layer.parametrizations.weight.original0.requires_grad_(False) # Freeze weight row norm
+        layer.parametrizations.weight.original0.fill_(1)  # type: ignore
+        layer.parametrizations.weight.original0.requires_grad_(False) # type: ignore # Freeze weight row norm
         return layer
     
     @staticmethod
@@ -268,8 +269,8 @@ class Classifier(nn.Module): # noqa: D101 TODO
     def preclassification(self, x : torch.Tensor) -> torch.Tensor:
         x = self._reshape_backbone_embeddings(x)
         if self.hidden:
-            x = self.dropout(x)
-            x = self.hidden(x)
+            x = self.dropout(x) # type: ignore
+            x = self.hidden(x) # type: ignore
             x = F.leaky_relu(x)
         if self.normalized:
             # Output is unit vectors
@@ -394,6 +395,7 @@ class Classifier(nn.Module): # noqa: D101 TODO
         if not isinstance(device, torch.device):
             device = torch.device(device)
         cfg = {}
+        state : None | OrderedDict[str, torch.Tensor | Any]
         state = stored_head_name = stored_version = None
         # Parse metadata stored in .pt file if available
         if weights is not None:
@@ -403,9 +405,11 @@ class Classifier(nn.Module): # noqa: D101 TODO
                     map_location=device, 
                     weights_only=True
                 )
-                state : OrderedDict[str, torch.Tensor | Any] = state.get("model", state)
+                state = state.get("model", state) # type: ignore
             else:
                 state = weights
+            if state is None:
+                raise RuntimeError(f'Failed to extract state from {weights=}')
             cfg = cls.extract_metadata(state)
             stored_dtype = cfg.pop("_dtype", None)
             if dtype is None:
@@ -544,7 +548,7 @@ class BasePrediction[T : PredictionItem, I]:
     """Standard PyTorch Prediction class.
     Assumes inputs are Tensors. Subclass to handle other types.
     """
-    ITEM_CLASS : type[T] = PredictionItem
+    ITEM_CLASS : type[T] = PredictionItem # type: ignore
     items : list[T]
 
     def __init__(  # noqa: D107
@@ -571,7 +575,7 @@ class BasePrediction[T : PredictionItem, I]:
                 f"{topk=}, all values except topk=1 are experimental and will result in unexpected behaviour.",
                 UserWarning
             )
-            self.items = [
+            self.items = [ # type: ignore
                 [self.ITEM_CLASS(label=labi, confidence=confi, index=idxi) for labi, confi, idxi in zip(lab, conf, idx)]
                 for lab, conf, idx in zip(self.labels, self.confidence, self.indices)
             ]
@@ -636,8 +640,8 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
 
     def _translate(self):
         if self.idx2cls:
-            def fmt_idx(i):
-                return self.idx2cls[i.item()]
+            def fmt_idx(i): # type: ignore
+                return self.idx2cls[i.item()] # type: ignore
         else:
             def fmt_idx(i):
                 return str(i.item())
@@ -688,7 +692,7 @@ def bypass_submodule(model: nn.Module, submodule_path: str):
 
 def predict(model : nn.Module, x : torch.Tensor, topk : int=1, **kwargs):
     cls_mod = classification_module(model)
-    with bypass_submodule(model, model._backbone_output_name):
+    with bypass_submodule(model, model._backbone_output_name): # type: ignore
         return cls_mod.predict(model(x), topk=topk, **kwargs)
 
 

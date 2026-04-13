@@ -66,7 +66,9 @@ def get_dataset_dataloader( # noqa: D103
             f'Invalid resize size passed, found {resize_size}, '
             'but expected an integer or a tuple of two integers.'
         )
-    
+    if isinstance(device, str):
+        device = torch.device(device)
+
     if len(metadata) != len(modes):
         raise ValueError(
             f'Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!'
@@ -74,9 +76,9 @@ def get_dataset_dataloader( # noqa: D103
         
     print(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
-        metadata = [{k : v[::subsample] for k, v in md.items()} for md in metadata]
+        metadata = tuple([{k : v[::subsample] for k, v in md.items()} for md in metadata])
     
-    dataset_shape = (sum(map(len, metadata)), *resize_size, 3)
+    dataset_shape = list((sum(map(len, metadata)), *resize_size, 3))
     cache = CACHE_MODE(cache)
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)
@@ -129,7 +131,7 @@ def get_dataset_dataloader( # noqa: D103
         datasets.append(dset)
     
     if num_workers is None:
-        num_workers = os.cpu_count() - 4
+        num_workers = (os.cpu_count() or 0) - 4
         num_workers -= num_workers % 2
         num_workers = min(16, max(0, num_workers))
     if cache is CACHE_MODE.CUDA:
@@ -167,6 +169,8 @@ def get_inference_dataloader( # noqa: D103
             f'Invalid resize size passed, found {resize_size}, '
             'but expected an integer or a tuple of two integers'
         )
+    if isinstance(device, str):
+        device = torch.device(device)
         
     if subsample is not None and subsample > 1:
         images = images[::subsample]
@@ -182,7 +186,7 @@ def get_inference_dataloader( # noqa: D103
     )
 
     if num_workers is None:
-        num_workers = os.cpu_count() - 4
+        num_workers = (os.cpu_count() or 0) - 4
         num_workers -= num_workers % 2
         num_workers = min(32, max(0, num_workers))
 

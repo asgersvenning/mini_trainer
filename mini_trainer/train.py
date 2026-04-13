@@ -96,9 +96,9 @@ def main( # noqa: D417
         name: Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is ``None``.
         device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
-        dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
+        dtype: PyTorch data type for images during training and validation (e.g., ``'float16'``). 
             The model parameters are always stored in float32 with training AMP. 
-            Default is ``'bfloat16'``.
+            Default is ``'float16'``.
         ema: Flag to enable EMA (default=False).
         seed: Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is ``None``.

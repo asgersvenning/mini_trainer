@@ -27,28 +27,29 @@ def nrow(path : str):
     return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
 
 
-def iter_parquet(path : str, columns=COLUMNS):
-    """Iterate lazily over rows in ``gbifxdl`` parquet.
-    """
-    for batch in pp.ParquetFile(path).iter_batches(columns=columns):
-        yield from batch.filter(
-            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$")
-        ).select(
-            columns
-        ).tolist()
-
-
 def iter_parquet_batches(path : str, columns=COLUMNS):
-    """Iterate lazily over rows in ``gbifxdl`` parquet.
+    """Iterate lazily over batches in ``gbifxdl`` parquet.
     """
-    for batch in pp.ParquetFile(path).iter_batches(columns=columns):
+    # 1. Ensure "set" is loaded so we can filter by it
+    read_columns = list(columns)
+    if "set" not in read_columns:
+        read_columns.append("set")
+        
+    for batch in pp.ParquetFile(path).iter_batches(columns=read_columns):
         filtered = batch.filter(
-            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$")
+            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$") # type: ignore
         ).select(
-            columns
+            list(columns) # 2. Select ONLY the originally requested columns
         )
         if filtered.num_rows > 0:
             yield filtered
+
+
+def iter_parquet(path : str, columns=COLUMNS):
+    """Iterate lazily over individual rows in ``gbifxdl`` parquet.
+    """
+    for batch in iter_parquet_batches(path, columns=columns):
+        yield from batch.to_pylist()
 
 
 def set2split(set : int):
@@ -126,7 +127,7 @@ def combine_dicts(dicts : Iterable[dict]):
 
 def get_metadata_from_parquet(
     path: str,
-    cls2idx: dict[str, int | dict[str, int]],
+    cls2idx: dict[str, int] | dict[str, dict[str, int]],
     **kwargs,
 ) -> dict[str, list]:
     root_dir = os.path.dirname(os.path.abspath(path))
@@ -211,8 +212,8 @@ def get_metadata_from_parquet(
 
                 key_lists = [batch.column(idx[KCOLUMNS[level]]).to_pylist() for level in range(len(level_maps))]
 
-                class_batch: list[tuple[int | None, ...]] = []
-                label_batch: list[tuple[str, ...]] = []
+                class_batch = []
+                label_batch = []
                 for i in range(n):
                     labels = tuple(_to_str(key_lists[level][i]).strip() for level in range(len(level_maps)))
                     classes = tuple(level_maps[level].get(labels[level]) for level in range(len(level_maps)))
