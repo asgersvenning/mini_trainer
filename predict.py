@@ -37,7 +37,8 @@ def download(url, dest=None):
                     f.write(chunk)
                     bar.update(len(chunk))
         os.replace(tmp, dest)
-    except Exception:
+    except Exception as e:
+        e.add_note(f'Error while attempting to download {url} to {tmp}')
         if os.path.exists(tmp):
             os.remove(tmp)
         raise
