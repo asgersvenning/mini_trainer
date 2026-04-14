@@ -2,6 +2,7 @@ import os
 import tempfile
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from typing import cast
 
 import numpy as np
@@ -109,7 +110,24 @@ class Predictor:
         self.model.to(device=device)
         self.model.eval()
     
-    def __call__(self, x, **kwargs):
+    def __call__(
+            self, 
+            x : str | np.ndarray | torch.Tensor | Iterable[str | np.ndarray | torch.Tensor], 
+            **kwargs
+        ):
+        """Perform inference on one or more images.
+        
+        Computation is done as simply, efficiently and flexibly as possible, this means that
+        all inputs are stacked into a single batch and inference is done in a single pass.
+        
+        If you need to predict on a larger number of images it may be beneficial to preload
+        the images with multiple workers to avoid IO bottlenecks, and manually batch to avoid
+        OOM errors.
+        
+        Args:
+            x : Input images, supports various mixed formats, such as paths, NumPy arrays and torch.Tensors.
+            kwargs : Passed to model prediction function.
+        """
         with torch.inference_mode(), torch.autocast(device_type=self.device.type, enabled=self.device.type == "cuda"):
             # Ensure tensor
             if isinstance(x, str):
