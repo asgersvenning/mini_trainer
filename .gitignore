@@ -29,3 +29,6 @@ examples/test.ipynb
 uv.lock
 !/.github/workflows/*.yml
 !conda.yaml
+
+# For release!
+!demo.ipynb
