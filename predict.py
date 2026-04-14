@@ -10,9 +10,10 @@ from tqdm.auto import tqdm
 
 try:
     from mini_trainer.builders import BaseBuilder
-    from mini_trainer.classifier import predict, set_classification_mask
+    from mini_trainer.classifier import classification_module, predict, set_classification_mask
     from mini_trainer.hierarchical.predict import cli as default_args
     from mini_trainer.predict import main as mt_predict
+    from mini_trainer.utils.io import make_read_and_resize_fn
 except ImportError as e:
     e.add_note("`mini_trainer` does not seem to be installed, try `pip install -e .`.")
     raise e
@@ -89,6 +90,13 @@ class Predictor:
         self.device = torch.device(device)
         self.weights = ensure_weights(**kwargs)
         self.model, self.preproc = BaseBuilder.build_model(weights=self.weights)
+        self.resize_size = classification_module(self.model).metadata.get("resize_size", None)
+        if not isinstance(self.resize_size, int):
+            raise RuntimeError(
+                f'Failed to extract a valid input size for {type(self.model)=} with {self.weights=}, '
+                f'found {self.resize_size}, but expected an integer.'
+            )
+        self.reader = make_read_and_resize_fn((self.resize_size, self.resize_size), self.device, torch.uint8)
         if class_mask is not None:
             if isinstance(class_mask, int):
                 if class_mask == -1:
@@ -102,8 +110,29 @@ class Predictor:
         self.model.eval()
     
     def __call__(self, x, **kwargs):
-        with torch.inference_mode():
-            x = self.preproc(x)
+        with torch.inference_mode(), torch.autocast(device_type=self.device.type, enabled=self.device.type == "cuda"):
+            # Ensure tensor
+            if isinstance(x, str):
+                x = self.reader(x)
+            elif hasattr(x, "__iter__") and not isinstance(x, (torch.Tensor, np.ndarray)):
+                x = torch.stack([self.reader(xi) if isinstance(xi, str) else torch.as_tensor(xi) for xi in x])
+            if not isinstance(x, torch.Tensor):
+                x = torch.as_tensor(x)
+            
+            # Ensure proper shape
+            if x.ndim == 2:
+                x = x.unsqueeze(0)
+            if x.ndim == 3 and x.size(0) == 1:
+                x = x.repeat(3, 1, 1)
+            if x.ndim == 4 and x.size(1) == 1:
+                x = x.repeat(1, 3, 1, 1)
+            if x.ndim == 3:
+                x = x.unsqueeze(0)
+
+            # Preprocess and ensure device
+            x = self.preproc(x).to(self.device)
+
+            # Predict and return
             return predict(self.model, x, **kwargs)
 
 
