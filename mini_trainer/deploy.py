@@ -9,15 +9,11 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 
-try:
-    from mini_trainer.builders import BaseBuilder
-    from mini_trainer.classifier import classification_module, predict, set_classification_mask
-    from mini_trainer.hierarchical.predict import cli as default_args
-    from mini_trainer.predict import main as mt_predict
-    from mini_trainer.utils.io import make_read_and_resize_fn
-except ImportError as e:
-    e.add_note("`mini_trainer` does not seem to be installed, try `pip install -e .`.")
-    raise e
+from mini_trainer.builders import BaseBuilder
+from mini_trainer.classifier import classification_module, predict, set_classification_mask
+from mini_trainer.hierarchical.predict import cli as default_args
+from mini_trainer.predict import main as mt_predict
+from mini_trainer.utils.io import make_read_and_resize_fn
 
 
 def download(url, dest=None):
@@ -46,7 +42,7 @@ def download(url, dest=None):
         raise
 
 
-DEFAULT_MODEL = "hierarchical_bioclip2_ft_v0.pt"
+DEFAULT_MODEL = "hierarchical_bioclip2_ft_reduced_v0.pt"
 SRC_TEMPLATE = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/MAMBO/{}"
 _tmp_dir = cast(str, tempfile.tempdir)
 if _tmp_dir is None:
@@ -77,14 +73,15 @@ class Predictor:
     def __init__(
             self, 
             device : str="cuda", 
-            class_mask : list[int] | torch.Tensor | np.ndarray | int | None=None, 
+            class_mask : list[int] | list[str] | torch.Tensor | np.ndarray | int | None=None, 
             **kwargs
         ):
         """A wrapped inference model.
         
         Args:
             device: Model/Inference device, default="cuda".
-            class_mask: Optional mask for possible classes in model output.
+            class_mask: Optional mask for possible classes in model output. 
+                Set to `-1` to reset the mask; ensure that all classes are allowed.
             kwargs: Optional, can be used to specify a different model or directory 
                 for storing/caching the weights locally.
         """
@@ -99,16 +96,32 @@ class Predictor:
             )
         self.reader = make_read_and_resize_fn((self.resize_size, self.resize_size), self.device, torch.uint8)
         if class_mask is not None:
-            if isinstance(class_mask, int):
-                if class_mask == -1:
-                    class_mask = None
-                else:
-                    raise ValueError(
-                        f'`class_mask` was interpreted as an integer flag, but {class_mask=} is not known.'
-                    )
-            set_classification_mask(self.model, class_mask)
+            self._apply_class_mask(class_mask)
         self.model.to(device=device)
         self.model.eval()
+
+    def _apply_class_mask(self, class_mask : list[int] | list[str] | torch.Tensor | np.ndarray | int | None):
+        if isinstance(class_mask, int):
+            if class_mask == -1:
+                class_mask = None
+            else:
+                raise ValueError(
+                    f'`class_mask` was interpreted as an integer flag, but {class_mask=} is not known.'
+                )
+        if class_mask is not None:
+            cls2idx = classification_module(self.model).metadata.get("cls2idx", None)
+            if cls2idx is not None:
+                _sp_cls2idx = cls2idx.get("0", cls2idx.get(0, None))
+                if isinstance(_sp_cls2idx, dict) and _sp_cls2idx:
+                    cls2idx = _sp_cls2idx
+                if hasattr(class_mask, "__iter__") and not isinstance(class_mask, (torch.Tensor, np.ndarray)):
+                    class_mask = [cls2idx[cls] if isinstance(cls, str) else cls for cls in class_mask]
+        
+        if isinstance(class_mask, list):
+            assert not any(map(lambda x : isinstance(x, str), class_mask))
+            class_mask = cast(list[int], class_mask)
+        
+        set_classification_mask(self.model, class_mask)
     
     def __call__(
             self, 

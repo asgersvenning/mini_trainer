@@ -54,6 +54,7 @@ mt_train = "mini_trainer.train:run"
 mt_predict = "mini_trainer.predict:run"
 mt_htrain = "mini_trainer.hierarchical.train:run"
 mt_hpredict = "mini_trainer.hierarchical.predict:run"
+mambo_predict = "mini_trainer.deploy:run"
 
 [tool.ruff]
 target-version = "py312"

@@ -32,3 +32,4 @@ uv.lock
 
 # For release!
 !demo.ipynb
+!/data/**
