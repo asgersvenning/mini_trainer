@@ -10,7 +10,7 @@ import torch
 from tqdm.auto import tqdm
 
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.classifier import classification_module, predict, set_classification_mask
+from mini_trainer.classifier import EmbeddingContext, classification_module, predict, set_classification_mask
 from mini_trainer.hierarchical.predict import cli as default_args
 from mini_trainer.predict import main as mt_predict
 from mini_trainer.utils.io import make_read_and_resize_fn
@@ -100,6 +100,9 @@ class Predictor:
         self.model.to(device=device)
         self.model.eval()
 
+    def __call__(self, x):
+        return self.predict(x)
+
     def _apply_class_mask(self, class_mask : list[int] | list[str] | torch.Tensor | np.ndarray | int | None):
         if isinstance(class_mask, int):
             if class_mask == -1:
@@ -123,7 +126,7 @@ class Predictor:
         
         set_classification_mask(self.model, class_mask)
     
-    def __call__(
+    def predict(
             self, 
             x : str | np.ndarray | torch.Tensor | Iterable[str | np.ndarray | torch.Tensor], 
             **kwargs
@@ -165,6 +168,27 @@ class Predictor:
 
             # Predict and return
             return predict(self.model, x, **kwargs)
+
+    def predict_with_embeddings(
+            self, 
+            x : str | np.ndarray | torch.Tensor | Iterable[str | np.ndarray | torch.Tensor], 
+            **kwargs
+        ):
+        """Perform inference on one or more images, and include embeddings in return.
+        
+        Computation is done as simply, efficiently and flexibly as possible, this means that
+        all inputs are stacked into a single batch and inference is done in a single pass.
+        
+        If you need to predict on a larger number of images it may be beneficial to preload
+        the images with multiple workers to avoid IO bottlenecks, and manually batch to avoid
+        OOM errors.
+        
+        Args:
+            x : Input images, supports various mixed formats, such as paths, NumPy arrays and torch.Tensors.
+            kwargs : Passed to model prediction function.
+        """
+        with EmbeddingContext():
+            return self.predict(x, **kwargs), EmbeddingContext.get()
 
 
 def run():
