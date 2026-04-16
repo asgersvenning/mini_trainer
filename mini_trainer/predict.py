@@ -187,7 +187,7 @@ def main( # noqa: D417
 
 def cli(description="Classify images with a trained model", **extra_kwargs): # noqa: D103
     parser = ArgumentParser(
-        prog="train",
+        prog="predict",
         description=description,
         formatter_class=Formatter
     )
