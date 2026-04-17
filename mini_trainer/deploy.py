@@ -1,9 +1,12 @@
+import difflib
 import os
+import re
 import tempfile
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable
-from typing import cast
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, TypeVar, cast
 
 import numpy as np
 import torch
@@ -16,33 +19,123 @@ from mini_trainer.predict import main as mt_predict
 from mini_trainer.utils.io import make_read_and_resize_fn
 
 
-def download(url, dest=None):
+def _download_chunk(url, start, end, tmp_file, bar):
+    """Worker function to download a specific byte range."""
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'Mozilla/5.0', 'Range': f'bytes={start}-{end}'}
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        # Open in read-write-binary to seek to the correct offset
+        with open(tmp_file, 'r+b') as f:
+            f.seek(start)
+            while True:
+                chunk = r.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                bar.update(len(chunk)) # tqdm is generally thread-safe for basic updates
+
+
+def download(url, dest=None, workers=4):
+    """Downloads a file, using concurrent connections if supported by the server."""
     if not dest:
         dest = os.path.basename(urllib.parse.urlparse(url).path)
         if not dest:
-            raise ValueError("Cannot determine filename from URL; please provide a destination.")
+            raise ValueError("Cannot determine filename.")
             
+    dest_dir = os.path.dirname(dest)
+    if dest_dir:
+        os.makedirs(dest_dir, exist_ok=True)
+
     tmp = dest + ".tmp"
     
+    # 1. Probe the server with a HEAD request to check capabilities
+    head_req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'Mozilla/5.0'})
     try:
-        with urllib.request.urlopen(url) as r, open(tmp, 'wb') as f:
-            total = int(r.headers.get('Content-Length', 0))
-            with tqdm(total=total, unit='B', unit_scale=True, unit_divisor=1024, desc=f'Downloading "{dest}"') as bar:
-                while True:
-                    chunk = r.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    bar.update(len(chunk))
-        os.replace(tmp, dest)
+        with urllib.request.urlopen(head_req, timeout=10) as r:
+            total_size = int(r.headers.get('Content-Length', 0))
+            supports_ranges = r.headers.get('Accept-Ranges') == 'bytes'
     except Exception as e:
-        e.add_note(f'Error while attempting to download {url} to {tmp}')
+        raise RuntimeError(f"Failed to probe URL {url}") from e
+
+    try:
+        # 2. Decide between Concurrent vs. Single-Thread
+        # Fall back to 1 worker if the server rejects ranges or the file is small (< 1MB)
+        if not supports_ranges or total_size < 1024 * 1024:
+            workers = 1
+
+        # 3. Pre-allocate the empty file on disk
+        with open(tmp, 'wb') as f:
+            f.truncate(total_size)
+
+        # 4. Calculate byte ranges for each worker
+        chunk_size = total_size // workers
+        ranges = []
+        for i in range(workers):
+            start = i * chunk_size
+            # The last worker grabs whatever bytes remain
+            end = total_size - 1 if i == workers - 1 else (start + chunk_size - 1)
+            ranges.append((start, end))
+
+        # 5. Execute the download
+        with tqdm(total=total_size, unit='B', unit_scale=True, unit_divisor=1024, desc=f'Downloading "{dest}"') as bar:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [
+                    executor.submit(_download_chunk, url, start, end, tmp, bar) 
+                    for start, end in ranges
+                ]
+                
+                for future in as_completed(futures):
+                    future.result() 
+
+        os.replace(tmp, dest)
+        return dest
+
+    except Exception:
         if os.path.exists(tmp):
             os.remove(tmp)
         raise
 
 
-DEFAULT_MODEL = "hierarchical_bioclip2_ft_reduced_v0.pt"
+V = TypeVar("V")
+
+
+class SmartDict[V]:
+    """Smart and flexible dictionary wrapper."""
+    n : str = "item"
+
+    def __init__(self, d : dict[str, V], default : str | None=None):  # noqa: D107
+        self.default = default
+        self.d, self._c = d, lambda s: re.sub(r'\W+', '', str(s).lower())
+        self.m = {self._c(k): k for k in d}
+
+    def __call__(self, q : str | None) -> V:
+        if not q:
+            if self.default is None:
+                raise ValueError("Please supply a query, no default query specified.")
+            q = self.default
+        nq = self._c(q)
+        if nq in self.m: 
+            return self.d[self.m[nq]]
+        if len(h := [k for k in self.m if k.startswith(nq)]) == 1:
+            return self.d[self.m[h[0]]]
+        if len(h) > 1:
+            raise ValueError(f"Ambiguous {self.n} '{q}': {', '.join(self.m[x] for x in h)}")
+        s = difflib.get_close_matches(q, self.d.keys(), n=1)
+        raise KeyError(f"No {self.n} '{q}'." + (f" Did you mean '{s[0]}'?" if s else ""))
+
+
+MODELS : dict[str, str] = {
+    "source" : "hierarchical_bioclip2_ft_v0.pt",
+    "old" : "hierarchical_bioclip2_ft_reduced_v0.pt",
+    "europe" : "hierarchical_bioclip2_ft_eu_v1.pt",
+    "full" : "hierarchical_bioclip2_ft_v1.pt",
+    "north_europe" : "hierarchical_bioclip2_ft_neu_v1.pt"
+}
+DEFAULT_MODEL = "europe"
+MODEL_TABLE = SmartDict(MODELS, DEFAULT_MODEL)
+
 SRC_TEMPLATE = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/MAMBO/{}"
 _tmp_dir = cast(str, tempfile.tempdir)
 if _tmp_dir is None:
@@ -57,22 +150,28 @@ def ensure_weights(model : str | None=None, weight_dir : str | None=None):
     if not os.path.isdir(weight_dir):
         raise NotADirectoryError(f'Weight directory: {weight_dir}, is not a directory.')
     
-    if model is None:
-        model = DEFAULT_MODEL
+    if not model or not (model.endswith(".pt") or model.endswith(".pth")):
+        model = MODEL_TABLE(model)
+    
+    if os.path.exists(model) and os.path.isfile(model):
+        return model, model
+
     src = SRC_TEMPLATE.format(model)
     dst = os.path.join(weight_dir, model)
 
     if not os.path.exists(dst):
         download(src, dst)
     
-    return dst
+    return dst, src
 
 
 class Predictor:
     """A wrapped inference model class."""
-    def __init__(
+    def __init__(  # noqa: D417
             self, 
             device : str="cuda", 
+            model : str | None=None,
+            weights : dict[str, Any | torch.Tensor] | None=None,
             class_mask : list[int] | list[str] | torch.Tensor | np.ndarray | int | None=None, 
             **kwargs
         ):
@@ -80,13 +179,21 @@ class Predictor:
         
         Args:
             device: Model/Inference device, default="cuda".
+            model: Optional name of model (or path to weights).
+            weights: Optional state dict used for loading (instead of specifying a `model`).
             class_mask: Optional mask for possible classes in model output. 
                 Set to `-1` to reset the mask; ensure that all classes are allowed.
             kwargs: Optional, can be used to specify a different model or directory 
                 for storing/caching the weights locally.
         """
         self.device = torch.device(device)
-        self.weights = ensure_weights(**kwargs)
+        if model and weights:
+            raise ValueError('Specifying both `model` and `weights` is ambigous, please use only one.')
+        if weights is None:
+            self.weights, self.source = ensure_weights(model=model, **kwargs)
+        else:
+            self.weights = weights
+            self.source = None
         self.model, self.preproc = BaseBuilder.build_model(weights=self.weights)
         self.resize_size = classification_module(self.model).metadata.get("resize_size", None)
         if not isinstance(self.resize_size, int):
@@ -192,10 +299,20 @@ class Predictor:
 
 
 def run():
-    args = default_args()
-
+    args = default_args(
+        model={
+            None : "-M",
+            "type" : str,
+            "default" : False,
+            "required" : False,
+            "help" : "Convert GBIF IDs in output to scientific names via GBIF API."
+        }
+    )
+    model = args.pop("model", None)
     if args["weights"] is None:
-        args["weights"] = ensure_weights()
+        args["weights"] = ensure_weights(model=model)[0]
+    elif model is not None:
+        raise ValueError('Specifying both weights and model is ambigous, please use only one or the other.')
     if args["name"] in [None, "predict"]:
         args["name"] = "results"
     
