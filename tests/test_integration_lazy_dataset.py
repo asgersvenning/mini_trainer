@@ -77,27 +77,6 @@ class TestLazyDatasetIntegration:
         assert torch.is_tensor(item)
         assert item.shape == (3, 32, 32)
         
-    def test_lazy_dataset_disk_cache(self, image_paths, tmp_path):
-        # Cache = "disk"
-        # Since LazyDataset uses hashlib for unique cache path, we should verify it creates files.
-        # However, LazyDataset hardcodes cache dir to os.path.join(gettempdir(), ".mini_trainer")
-        # We might want to mock gettempdir or just check if it works.
-        
-        ds = LazyDataset(dummy_loader, image_paths, cache="disk")
-        assert len(ds) == len(image_paths)
-        
-        item = ds[0]
-        # Zarr loading
-        assert torch.is_tensor(item)
-        assert item.shape == (3, 32, 32)
-
-        # Force reload from disk to verify persistence
-        # (Re-instantiating with same items should hit cache)
-        # Note: LazyDataset computes hash from items.
-        ds2 = LazyDataset(dummy_loader, image_paths, cache="disk")
-        item2 = ds2[0]
-        assert torch.equal(item, item2)
-        
     def test_lazy_dataset_tuple_return(self, image_paths):
         # Test with loader returning tuple
         ds = LazyDataset(dummy_loader_tuple, image_paths, cache="cpu")

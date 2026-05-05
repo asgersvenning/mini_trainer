@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python >=3.12,<3.15
-  - pytorch
+  - pytorch >=2.11
   - torchvision
   - torchaudio
   - matplotlib
@@ -12,6 +12,5 @@ dependencies:
   - micromamba install setuptools"<=81.0.0" # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
   - tensorboard
   - pandas
-  - zarr
   - scipy
   - pyarrow

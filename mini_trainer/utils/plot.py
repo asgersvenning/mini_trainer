@@ -7,11 +7,11 @@ from matplotlib import pyplot as plt
 from matplotlib.backends import backend_agg
 from matplotlib.colors import LogNorm
 from PIL.Image import fromarray
-from scipy.special import betainc
 from torch import nn
 from torchvision.transforms.functional import resize
 
 from mini_trainer.classifier import last_layer_weights
+from mini_trainer.utils.generic import cosine_to_zscore
 
 
 def named_confusion_matrix(
@@ -195,7 +195,7 @@ def _generate_heatmap_rgb_array(
     min_val_display: float | None,
     cmap_name: str,
     percent: bool
-) -> tuple[np.ndarray | None, LogNorm | None, float, float]:
+):
     """Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info.
     """
     masked_data = np.ma.masked_invalid(display_mat.astype(float)) # Handle NaNs
@@ -352,7 +352,7 @@ def _generate_colorbar_rgb_array(
     if img_rgb.shape[0] != target_height_pixels:
         img_rgb = resize(
             torch.tensor(img_rgb).permute(2, 0, 1), 
-            (target_height_pixels, round(target_height_pixels / img_rgb.shape[0] * img_rgb.shape[1]))
+            [target_height_pixels, int(round(target_height_pixels / img_rgb.shape[0] * img_rgb.shape[1]))]
         ).permute(1, 2, 0).numpy()
 
     plt.close(fig_cbar)
@@ -368,7 +368,7 @@ def plot_heatmap(
     percent : bool=True,
     min_val_display : float | None=None,
     colorbar : bool=True
-) -> np.ndarray | None:
+):
     """Plots a high-resolution confusion matrix using NumPy and Matplotlib.
 
     Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
@@ -416,31 +416,6 @@ def plot_heatmap(
     return final_rgb_image
 
 
-def class_distance(classification_weights : torch.Tensor, probability : bool=True):
-    """Compute the pairwise class-weight distance.
-    
-    Compute the pairwise distance between the rows
-    in the last-layer weight matrix.
-    If `probability=True` as CDF assuming that these
-    are approximately iid. draws from a MVN => distance
-    distribution is Chi-square.
-    """
-    classification_weights = classification_weights.cpu().clone().detach()
-    classification_weights -= classification_weights.mean(dim=0, keepdim=True)
-    classification_weights /= classification_weights.std(dim=0, unbiased=True, keepdim=True)
-    class_dmat = torch.cdist(classification_weights, classification_weights).float()
-    if not probability:
-        return class_dmat
-    class_dmat_cdf = (
-        torch.distributions.Chi2(classification_weights.shape[1]).cdf(class_dmat ** 2 / 2)
-    )
-    if not isinstance(class_dmat_cdf, torch.Tensor):
-        raise RuntimeError(
-            f"Unexpected CDF output type {type(class_dmat_cdf)} produced from class distance matrix."
-       )
-    return class_dmat_cdf
-
-
 def plot_model_class_distance(model : nn.Module, **kwargs):
     """Plot the pairwise class distance.
     
@@ -449,15 +424,11 @@ def plot_model_class_distance(model : nn.Module, **kwargs):
     have unit norm.
     """
     W = last_layer_weights(model)
-    W = W.detach().cpu().clone().float()
-    # cdm = class_distance(W, True)
-    # cdm.fill_diagonal_(torch.nan)
-    
-    D = (1 - torch.corrcoef(W)) / 2
-    _, E = W.shape
-    a = (E - 1) / 2
-    Q = 1 - betainc(a, a, D)
-    
-    Q.fill_diagonal_(torch.nan)
-    Q.clamp_(0.0, 1.0)
-    return plot_heatmap(Q, **kwargs)
+    W = W.detach().clone().float()
+    WN = W.norm(2, 1, True)
+    Z = cosine_to_zscore((W @ W.T) / (WN @ WN.T), W.shape[1])
+
+    return plot_heatmap(
+        Z.fill_diagonal_(torch.nan).clamp_(0.0, 1.0).cpu(), 
+        **kwargs
+    )

@@ -49,44 +49,23 @@ def debug_augmentation(
     return True
 
 
-@torch.jit.script
-def iinfo_maxval_static(dtype : torch.dtype): # noqa: D103
-    if dtype == torch.uint8:
-        return 255
-    elif dtype == torch.uint16:
-        return 65535
-    elif dtype == torch.uint32:
-        return 4294967295
-    elif dtype == torch.int8:
-        return 127
-    elif dtype == torch.int16:
-        return 32767
-    elif dtype == torch.int32:
-        return 2147483647
-    raise ValueError(f'Unsupported integer max-value for {dtype}.')
-
-
-@torch.jit.script
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def salt_and_pepper(img : torch.Tensor, proportion : tuple[float, float]=(0, 0.5), probability : float=1):
     """Functional salt and pepper augmentation implementation.
     """
-    if torch.rand((1, )).item() > probability:
-        return img
-    p = torch.rand((1, )).item() * (proportion[1] - proportion[0]) + proportion[0]
-    if p == 0:
-        return img
+    apply_aug = torch.rand([], device=img.device) < probability
+    p = torch.rand([], device=img.device) * (proportion[1] - proportion[0]) + proportion[0]
     if len(img.shape) <= 3:
         r = torch.rand((img.shape[-2], img.shape[-1]), dtype=torch.float16, device=img.device)
     else:
         r = torch.rand((img.shape[0], 1, img.shape[-2], img.shape[-1]), dtype=torch.float16, device=img.device)
+    max_val = 1 if img.is_floating_point() else torch.iinfo(img.dtype).max
     m = r < p
-    if m.sum().item() == 0:
-        return img
     s = r < (p / 2)
-    img = img.clone()
-    img.masked_fill_(m & s, 0)
-    img.masked_fill_(m & ~s, 1 if img.is_floating_point() else iinfo_maxval_static(img.dtype))
-    return img
+    noisy_img = img.clone()
+    noisy_img.masked_fill_(m & s, 0)
+    noisy_img.masked_fill_(m & ~s, max_val)
+    return torch.where(apply_aug, noisy_img, img)
 
 
 class SaltAndPepper(torch.nn.Module):

@@ -109,10 +109,10 @@ class TensorboardLogger(_Logger):
                 self.buffer_scalar(tag, v, self._idx + i)
         super().update(name, values)
 
-    def add_figure(self, name : str, figure : plt.Figure | str, epoch : int):
+    def add_figure(self, name : str, figure : plt.Figure | np.ndarray | str, epoch : int): # pyright: ignore[reportPrivateImportUsage]
         """Add figure to tensorboard."""
         tag = self._make_scalar_hierarchical_tag(name)
-        if isinstance(figure, plt.Figure):
+        if isinstance(figure, plt.Figure): # pyright: ignore[reportPrivateImportUsage]
             self.writer.add_figure(tag, figure, epoch, close=False)
         else:
             if isinstance(figure, np.ndarray):

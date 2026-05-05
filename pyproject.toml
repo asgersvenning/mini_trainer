@@ -1,12 +1,8 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
-name = "mini-trainer"
-version = "0.0.1"
+name = "mini_trainer"
+version = "0.1.0"
 dependencies = [
-  "torch",
+  "torch>=2.11",
   "torchvision",
   "matplotlib",
   "tqdm",
@@ -17,6 +13,8 @@ dependencies = [
   "scipy",
   "pyarrow",
   "pyyaml>=6.0.3",
+  "numpy>=2.4.0",
+  "pycirclize>=1.10.1",
 ]
 requires-python = ">=3.12"
 authors = [
@@ -32,17 +30,23 @@ license-files = ["LICENSE"]
 keywords = ["classification", "computer vision", "deep learning", "pytorch"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "Programming Language :: Python"
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 
 [project.optional-dependencies]
 notebook = [
-    "ipykernel",
-    "ipywidgets",
-    "pyremotedata"
+  "ipykernel",
+  "ipywidgets",
+  "pyremotedata"
 ]
 bioclip = [
-    "open_clip_torch"
+  "open_clip_torch"
+]
+transformers = [
+  "transformers"
 ]
 
 [project.urls]
@@ -81,6 +85,12 @@ wrap-descriptions = 0
 dev = [
     "ruff>=0.14.5",
     "pytest>=8.0.0",
-    "pytest-cov>=5.0.0",
-    "zarr>=3.1.5",
+    "pytest-cov>=5.0.0"
 ]
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""

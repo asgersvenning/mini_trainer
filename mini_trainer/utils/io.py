@@ -7,8 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from queue import Queue
-from tempfile import gettempdir
-from threading import Semaphore, Thread
+from threading import Thread
 from typing import Any, TypeVar, cast
 
 import numpy as np
@@ -344,7 +343,6 @@ class LazyDataset(torch.utils.data.Dataset):
     
     Includes caching options:
         * None : No caching.
-        * "disk" : Disk cache via `zarr`.
         * "cpu" : Cache in RAM as CPU tensor.
         * "cuda" : Cache in VRAM as CUDA tensor.
         * "guess" : Select a caching strategy via heuristic.
@@ -357,9 +355,6 @@ class LazyDataset(torch.utils.data.Dataset):
         ):
         self.func = func
         self.items = items
-        self._zarr_root = None
-        self.cache_dir = None
-        # one of None (no caching), disk (precompute .npy files), cpu (preload cpu tensor)
         self._cache_mode = CACHE_MODE(cache)
         self._init_cache()
 
@@ -384,9 +379,7 @@ class LazyDataset(torch.utils.data.Dataset):
                 print("On-the-fly data loading enabled (no cache).")
                 return
             case CACHE_MODE.DISK:
-                cache_dir = os.path.join(gettempdir(), ".mini_trainer")
-                self.cache_path = os.path.join(cache_dir, f"{self._get_cache_hash()}.zarr")
-                self._cache_disk_zarr()
+                raise NotImplementedError("Disk caching is obsolete and has been removed.")
             case CACHE_MODE.CPU:
                 self._cache_ram()
             case CACHE_MODE.CUDA:
@@ -400,156 +393,8 @@ class LazyDataset(torch.utils.data.Dataset):
             case _:
                 raise ValueError(
                     f'Invalid cache mode "{self._cache_mode}". '
-                    'Choose from [None, "disk", "cpu"].'
+                    'Choose from [None, "cpu", "cuda"].'
                 )
-
-    def _cache_disk_zarr(self):
-        try:
-            import zarr
-            from zarr.storage import LocalStore
-        except ImportError as e:
-            e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
-            raise
-        print(f"Using Zarr disk cache at: {self.cache_path}")
-        if os.path.exists(self.cache_path):
-            print("Found existing Zarr cache.")
-            # We need to know if the original data was a single array or a tuple
-            store = LocalStore(self.cache_path, read_only=True)
-            root = zarr.open(store, mode='r')
-            self._disk_cache_is_single_array = 'data_0' in root and 'data_1' not in root
-            store.close()
-            return
-
-        os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-        print("Building Zarr disk cache...")
-
-        # Process the first item to determine shapes and dtypes for Zarr arrays
-        if not self.items: 
-            return
-        
-        first_item_processed = _normalize_to_tuple(self.func(self.items[0]))
-        self._disk_cache_is_single_array = len(first_item_processed) == 1
-        
-        store = LocalStore(self.cache_path, read_only=False)
-        root = zarr.open(store, mode="w", zarr_format=3)
-        
-        # Create a Zarr array for each component of the data
-        zarr_arrays : list[zarr.Array] = []
-        shard_size = 1024
-        for i, component in enumerate(first_item_processed):
-            if isinstance(component, torch.Tensor):
-                component = component.detach().cpu().numpy()
-            if not isinstance(component, np.ndarray):
-                raise TypeError(f"For 'disk' cache, `func` must return NumPy arrays. Got {type(component)}.")
-            
-            arr = root.create_array( # type: ignore
-                name=f'data_{i}',
-                shape=(len(self), *component.shape),
-                chunks=(1, *component.shape),  # Crucial for fast random access by item,
-                shards=(shard_size, *component.shape),
-                dtype=component.dtype,
-                compressors=zarr.codecs.BloscCodec(cname="zstd", clevel=3, shuffle=zarr.codecs.BloscShuffle.bitshuffle) # type: ignore
-            )
-            if not isinstance(arr, zarr.Array): # type: ignore
-                raise RuntimeError(f"Created `zarr.Array` is {arr}?")
-            zarr_arrays.append(arr)
-
-        # We need two pools: one for CPU-bound producers, one for I/O-bound writers
-        producer_workers = max(1, min(64, ((os.cpu_count() or 0) - 1) or 1)) # Can be high
-        writer_workers = max(1, min(8, ((os.cpu_count() or 0) // 2) or 1)) # Lower, I/O-limited
-        
-        results_queue = Queue(maxsize=shard_size * 2)
-        producer_pool = ThreadPoolExecutor(max_workers=producer_workers, thread_name_prefix="producer")
-        writer_pool = ThreadPoolExecutor(max_workers=writer_workers, thread_name_prefix="writer")
-        writer_semaphore = Semaphore(writer_workers + 4)
-
-        def producer_task(idx_item):
-            idx, item = idx_item
-            data = _normalize_to_tuple(self.func(item))
-            data_np = tuple(d.detach().cpu().numpy() if isinstance(d, torch.Tensor) else d for d in data)
-            results_queue.put((idx, data_np))
-
-        def writer_task(indices, components):
-            try:
-                shard_start, shard_end = indices[0], indices[-1] + 1
-                for i, chunk in enumerate(components):
-                    zarr_arrays[i][shard_start : shard_end, ...] = np.stack(chunk)
-                    # np.stack(chunk, out=)
-            finally:
-                writer_semaphore.release()
-
-        def assembler_task():
-            # This thread is now extremely fast. It only manages buffers and delegates.
-            buffer = {}
-            items_assembled = 0
-            total_items = len(self)
-            
-            with TQDM(total=total_items, desc="Writing to Zarr...") as pbar:
-                while items_assembled < total_items:
-                    idx, data = results_queue.get()
-                    buffer[idx] = data
-                    pbar.set_postfix_str(f'QS: {results_queue.qsize()}, BS: {len(buffer)}')
-
-                    shard_idx = idx // shard_size
-                    shard_start = shard_idx * shard_size
-                    shard_end = min(shard_start + shard_size, total_items)
-                    
-                    # Check if the buffer is ready 
-                    if (
-                        (len(buffer) >= shard_size or (total_items - 1) in buffer) and 
-                        all(i in buffer for i in range(shard_start, shard_end))
-                    ):
-                        indices = range(shard_start, shard_end)
-                        shard_buf = [buffer.pop(i) for i in indices]
-                        components = [[e[c] for e in shard_buf] for c in range(len(zarr_arrays))]
-                        del shard_buf
-                        
-                        # Delegate the slow write operation to the writer pool
-                        writer_semaphore.acquire()
-                        writer_pool.submit(writer_task, indices, components)
-                        
-                        num_in_shard = len(indices)
-                        pbar.update(num_in_shard)
-                        items_assembled += num_in_shard
-
-        assembler = Thread(target=assembler_task, daemon=True)
-        assembler.start()
-
-        with producer_pool as pool:
-            pool.map(producer_task, enumerate(self.items))
-                
-        assembler.join()
-        print("All shards prepared successfully. Writing the final shards in queue...")
-        writer_pool.shutdown()
-
-        store.close()
-        print("Zarr disk cache built successfully.")
-
-    def _load_from_zarr(self, i: int):
-        if self._zarr_root is None:
-            try:
-                import zarr
-                from zarr.storage import LocalStore
-            except ImportError as e:
-                e.add_note("Caching to disk requires 'zarr' (`pip install zarr`)!")
-                raise
-            store = LocalStore(self.cache_path, read_only=True)
-            self._zarr_root = cast(zarr.Group, zarr.open(store, mode='r', zarr_format=3))
-            assert isinstance(self._zarr_root, zarr.Group)
-
-        data_parts = []
-        j = 0
-        while f'data_{j}' in self._zarr_root:
-            arr = self._zarr_root[f'data_{j}']
-            assert isinstance(arr, zarr.Array) # type: ignore
-            data_parts.append(
-                torch.from_numpy(arr[i])
-            )
-            j += 1
-        
-        if self._disk_cache_is_single_array:
-            return data_parts[0]
-        return tuple(data_parts)
 
     def _cache_ram(self, desc : str="Writing to CPU RAM cache..."):
         if not self.items:
@@ -677,11 +522,11 @@ class LazyDataset(torch.utils.data.Dataset):
                     return torch.stack(elements)
                 return [torch.stack(values) for values in zip(*elements)]
             case CACHE_MODE.DISK:
-                return self._load_from_zarr(i)
+                raise NotImplementedError("Disk caching is obsolete and has been removed.")
             case CACHE_MODE.CPU | CACHE_MODE.CUDA:
                 data = self._ram_cache[i]
                 return data[0] if self._ram_was_single_tensor else data
             case _:
                 raise RuntimeError(
-                    f'Invalid caching mode found {self._cache_mode}, expected one of None, "disk", "cpu" or "cuda".'
+                    f'Invalid caching mode found {self._cache_mode}, expected one of None, "cpu" or "cuda".'
                 )

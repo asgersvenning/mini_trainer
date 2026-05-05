@@ -3,11 +3,12 @@ import os
 import time
 import warnings
 from collections.abc import Callable
+from typing import Literal
 
 import torch
 import torch.nn as nn
 from torch import autocast
-from torch.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -36,7 +37,7 @@ def train_one_epoch(
         logger : MultiLogger,
         preprocess : Callable=lambda x : x,
         augmentation : Callable=lambda x : x,
-        regularizer : Callable[[nn.Module], torch.Tensor]=lambda _: 0.,
+        regularizer : Callable[[nn.Module], torch.Tensor | Literal[0]]=lambda _: 0,
         clip_grad_norm : float | None=5,
         device : torch.types.Device=torch.device("cpu"),
         dtype : torch.dtype=torch.float32,
@@ -78,7 +79,7 @@ def train_one_epoch(
         if len(batch.shape) != 4:
             raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
         batch, target = batch.to(device), target.to(device)
-        with autocast(device_type=device.type, dtype=dtype), SupervisionContext(target), EmbeddingContext():
+        with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
             loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
             # TODO: Add optional contrastive path
@@ -178,7 +179,7 @@ def evaluate(
     for i, (batch, target) in enumerate(pbar):
         with torch.inference_mode():
             batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
-            with autocast(device_type=device.type, dtype=dtype):
+            with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
             logger.consume(

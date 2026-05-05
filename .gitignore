@@ -20,6 +20,7 @@
 # Unwanted temporary files
 **events.out.tfevents*
 **/__pycache__/**
+/tmp*
 /tmp/**
 **.pyspy
 

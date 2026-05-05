@@ -1,18 +1,6 @@
-import pytest
 import torch
 
-from mini_trainer.utils.augmentation import SaltAndPepper, iinfo_maxval_static, salt_and_pepper
-
-
-def test_iinfo_maxval_static():
-    assert iinfo_maxval_static(torch.uint8) == 255
-    assert iinfo_maxval_static(torch.int8) == 127
-    assert iinfo_maxval_static(torch.int16) == 32767
-    
-    assert iinfo_maxval_static(torch.int32) == 2147483647
-    
-    with pytest.raises((ValueError, torch.jit.Error)):
-        iinfo_maxval_static(torch.float32)
+from mini_trainer.utils.augmentation import SaltAndPepper, salt_and_pepper
 
 
 def test_debug_augmentation(tmp_path):
