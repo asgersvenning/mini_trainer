@@ -20,28 +20,26 @@ from mini_trainer.utils.data import auto_find_images, get_metadata
 from mini_trainer.utils.logging import BaseResultCollector, RawResultCollector
 
 
-def main( # noqa: D417
-        input : str,
-        weights : str,
-        output : str=".",
-        name: str | None=None,
-        threshold : float=0,
-        data_index : str | None=None,
-        class_spec : str | None=None,
-        subsample : int | None=None,
-        device : str="cuda:0",
-        dtype : str="float16",
-        builder : type[BaseBuilder]=BaseBuilder,
-        collector_cls : type[BaseResultCollector]=BaseResultCollector,
-        spec_model_dataloader_kwargs : dict[str, Any]={},
-        model_builder_kwargs : dict[str, Any]={},
-        dataloader_builder_kwargs : dict[str, Any]={
-            "batch_size" : 16
-        },
-        augmentation_builder_kwargs : dict[str, Any]={},
-        criterion_builder_kwargs : dict[str, Any]={},
-        collector_cls_kwargs : dict[str, Any]={}
-    ):
+def main(  # noqa: D417
+    input: str,
+    weights: str,
+    output: str = ".",
+    name: str | None = None,
+    threshold: float = 0,
+    data_index: str | None = None,
+    class_spec: str | None = None,
+    subsample: int | None = None,
+    device: str = "cuda:0",
+    dtype: str = "float16",
+    builder: type[BaseBuilder] = BaseBuilder,
+    collector_cls: type[BaseResultCollector] = BaseResultCollector,
+    spec_model_dataloader_kwargs: dict[str, Any] = {},
+    model_builder_kwargs: dict[str, Any] = {},
+    dataloader_builder_kwargs: dict[str, Any] = {"batch_size": 16},
+    augmentation_builder_kwargs: dict[str, Any] = {},
+    criterion_builder_kwargs: dict[str, Any] = {},
+    collector_cls_kwargs: dict[str, Any] = {},
+):
     """Predict with a classifier.
 
     Args:
@@ -57,18 +55,18 @@ def main( # noqa: D417
         data_index: File containing metadata describing test set from training run to run inference on.
         subsample: Subsampling multiplier (2 = 50%, 3 = 33.3%, etc.).
         device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
-        dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``). 
-            The model parameters are always stored in float32 with training AMP. 
+        dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``).
+            The model parameters are always stored in float32 with training AMP.
             Default is ``'float16'``.
-        builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``. 
-            This object is responsible for instantiating the model, dataloader, augmentation, 
+        builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``.
+            This object is responsible for instantiating the model, dataloader, augmentation,
             optimizer, scaler, EMA, criterion (loss function) and learning rate scheduler.
         **kwargs:
             Additional arguments are passed to the various builder methods.
             See ``mini_trainer.builders.BaseBuilder`` for details.
     """
     orig_args = locals()
-    # Prepare state    
+    # Prepare state
     if name is None:
         name = "train"
     name = increment_name_dir(name, output)
@@ -79,13 +77,10 @@ def main( # noqa: D417
         try:
             os.makedirs(output_dir, exist_ok=False)
         except OSError as e:
-            e.add_note(
-                f'Training output directory already exists: {output_dir}. '
-                'Perhaps a run of with the `{name=}` already exists?'
-            )
+            e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{{name=}}` already exists?")
 
-    device : torch.device = torch.device(device)
-    dtype : torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+    device: torch.device = torch.device(device)
+    dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
     # Dump resolved configuration using locals and normalized values
     dump_resolved_config(
@@ -99,53 +94,38 @@ def main( # noqa: D417
             "dtype": dtype,
             "name": name,
         },
+        verbose=collector_cls_kwargs.get("verbose", False),
     )
 
     # Prepare model
     if class_spec is None:
         class_spec = {}
     else:
-        with open(class_spec, "r") as f:
+        with open(class_spec) as f:
             class_spec = json.load(f)
-    
+
     model_dtype = torch.float32
     nn_model, model_preprocess = builder.build_model(
-        weights=weights,
-        device=device,
-        dtype=model_dtype,
-        strict=False,
-        **{
-            **class_spec,
-            **model_builder_kwargs
-        }
+        weights=weights, device=device, dtype=model_dtype, strict=False, **{**class_spec, **model_builder_kwargs}
     )
+    nn_model.eval()
     metadata = classification_module(nn_model).metadata.copy()
-    
+
     # Prepare dataloader
     labels = None
     if data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
-        images : list[str] = [
-            p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"
-        ]
-        labels : list[int] | list[list[int]] = [
-            p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"
-        ]
+        images: list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
+        labels: list[int] | list[list[int]] = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **metadata)
     if subsample is not None and subsample > 1:
         labels, images = labels[::subsample], images[::subsample]
-    
-    loader = builder.build_inference_dataloader(
-        images=images,
-        device=device,
-        dtype=dtype,
-        **{**metadata, **dataloader_builder_kwargs}
-    )
+
+    loader = builder.build_inference_dataloader(images=images, device=device, dtype=dtype, **{**metadata, **dataloader_builder_kwargs})
     if not isinstance(loader, torch.utils.data.DataLoader):
         raise TypeError(
-            'Expected `dataloader_builder` to return an objects'
-            f'inheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}.'
+            f"Expected `dataloader_builder` to return an objectsinheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}."
         )
 
     # (could be used for test-time-augmentation at a later stage)
@@ -156,47 +136,49 @@ def main( # noqa: D417
     #         'Expected `augmentation_builder` to return an objects'
     #         f'inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}.'
     #     )
-    
+
     collector = collector_cls(model=nn_model, **collector_cls_kwargs)
-    
+
     idx = 0
     for batch in TQDM(loader, desc="Running inference", unit="batch"):
-        with torch.inference_mode():
-            batch = model_preprocess(batch.to(device))
-            with torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), EmbeddingContext():  # noqa: E501
-                if not isinstance(collector, RawResultCollector):
-                    predictions = predict(nn_model, batch)
+        with (
+            torch.inference_mode(),
+            torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32 and device.type == "cuda"),
+            EmbeddingContext(),
+        ):
+            batch = model_preprocess(batch.to(device))  # noqa: E501
+            if not isinstance(collector, RawResultCollector):
+                predictions = predict(nn_model, batch)
+            else:
+                predictions = nn_model(batch)
+                if isinstance(predictions, torch.Tensor):
+                    predictions = predictions.to(dtype=dtype)
                 else:
-                    predictions = nn_model(batch)
-                    if isinstance(predictions, torch.Tensor):
-                        predictions = predictions.to(dtype=dtype)
-                    else:
-                        predictions = [p.to(dtype=dtype) for p in predictions]
-                idxs = slice(idx, idx + len(batch))
-                idx += len(batch)
-                collector.collect(
-                    paths=images[idxs], 
-                    predictions=predictions,
-                    labels=None if labels is None else labels[idxs],
-                )
+                    predictions = [p.to(dtype=dtype) for p in predictions]
+            idxs = slice(idx, idx + len(batch))
+            idx += len(batch)
+            collector.collect(
+                paths=images[idxs],
+                predictions=predictions,
+                labels=None if labels is None else labels[idxs],
+            )
     del loader, nn_model
 
     collector.save(os.path.join(output, name), threshold=threshold)
     # collector.evaluate(os.path.join(output, name))
-            
 
-def cli(description="Classify images with a trained model", **extra_kwargs): # noqa: D103
-    parser = ArgumentParser(
-        prog="predict",
-        description=description,
-        formatter_class=Formatter
-    )
+
+def cli(description="Classify images with a trained model", **extra_kwargs):  # noqa: D103
+    parser = ArgumentParser(prog="predict", description=description, formatter_class=Formatter)
 
     # Optional YAML config support
     cfg_args = parser.add_argument_group("Config [optional]")
     cfg_args.add_argument(
-        "--config", type=str, default=None, required=False,
-        help='Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags.'
+        "--config",
+        type=str,
+        default=None,
+        required=False,
+        help="Path to a YAML config file; values act as defaults and are overridden by explicit CLI flags.",
     )
 
     if extra_kwargs:
@@ -208,101 +190,128 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
                     args = [args]
                 else:
                     args = list(args)
-            args.insert(0, f'--{argname}')
+            args.insert(0, f"--{argname}")
             parser.add_argument(*args, **kwargs)
 
     input_args = parser.add_argument_group("Input [mandatory]")
     input_args.add_argument(
-        "-i", "--input", type=str, 
-        default=None, required=False,
-        help='Path to a directory containing a subdirectory for each class,\n'
-        'where the name of each subdirectory should correspond to the name of the class.'
+        "-i",
+        "--input",
+        type=str,
+        default=None,
+        required=False,
+        help="Path to a directory containing a subdirectory for each class,\n"
+        "where the name of each subdirectory should correspond to the name of the class.",
     )
     mod_args = parser.add_argument_group("Model [optional]")
     mod_args.add_argument(
-        "-w", "--weights", type=str, dest="weights",
-        default=None, required=False,
-        help="Model weights used to initialize model before training."
+        "-w",
+        "--weights",
+        type=str,
+        dest="weights",
+        default=None,
+        required=False,
+        help="Model weights used to initialize model before training.",
     )
     out_args = parser.add_argument_group("Output [optional]")
     out_args.add_argument(
-        "-o", "--output", type=str, 
-        default=".", required=False,
-        help='Root directory for all created files and directories.\n'
-        'Default is current working directory (".").'
+        "-o",
+        "--output",
+        type=str,
+        default=".",
+        required=False,
+        help='Root directory for all created files and directories.\nDefault is current working directory (".").',
     )
     out_args.add_argument(
-        "-n", "--name", type=str, 
-        default="predict", required=False,
-        help='Name of the output predictions.\n'
-        'Default is "predict".'
+        "-n", "--name", type=str, default="predict", required=False, help='Name of the output predictions.\nDefault is "predict".'
     )
     inf_args = parser.add_argument_group("Inference [optional]")
     inf_args.add_argument(
-        "-t", "--threshold", type=float,
-        default=None, required=False,
-        help='Confidence threshold for predictions.\n'
-        'Used for mini_metrics csv.\n'
-        'Default is 0 (always predict).'
+        "-t",
+        "--threshold",
+        type=float,
+        default=None,
+        required=False,
+        help="Confidence threshold for predictions.\nUsed for mini_metrics csv.\nDefault is 0 (always predict).",
     )
     inf_args.add_argument(
-        "-r", "--raw", action="store_true",
-        default=False, required=False,
-        help='If True the raw unnormalized logits will be stored alongside the labels without any further processing. '
-        'Default=False.'
+        "-r",
+        "--raw",
+        action="store_true",
+        default=False,
+        required=False,
+        help="If True the raw unnormalized logits will be stored alongside the labels without any further processing. Default=False.",
     )
     inf_args.add_argument(
-        "-D", "--data_index", type=str,
-        default=None, required=False,
+        "-D",
+        "--data_index",
+        type=str,
+        default=None,
+        required=False,
         help='JSON file containing three arrays with keys "path", "split" and "class".\n'
         'The arrays should all have equal lengths and can be considered "columns" in a table.\n'
         'The "split" column should contain values "train", "validation" or other,\n'
-        'and the "class" column should contain the the class *names* (not indices) for each file/path.'
+        'and the "class" column should contain the the class *names* (not indices) for each file/path.',
     )
     mod_args.add_argument(
-        "-C", "--class_spec", type=str, default=None, required=False,
-        help='Path to a JSON file containing the class name to index mapping and other\n'
-        'important information for constructing models and dataloaders.\n'
-        'If it doesn\'t exist, one will be created based on the directories found under `output` if it is set.'
+        "-C",
+        "--class_spec",
+        type=str,
+        default=None,
+        required=False,
+        help="Path to a JSON file containing the class name to index mapping and other\n"
+        "important information for constructing models and dataloaders.\n"
+        "If it doesn't exist, one will be created based on the directories found under `output` if it is set.",
     )
     inf_args.add_argument(
-        "--batch_size", type=int, dest="dataloader_builder_kwargs.batch_size",
-        default=None, required=False,
-        help='Number of images used in each mini-batch for training/validation (default=16).'
+        "--batch_size",
+        type=int,
+        dest="dataloader_builder_kwargs.batch_size",
+        default=None,
+        required=False,
+        help="Number of images used in each mini-batch for training/validation (default=16).",
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
-        "--subsample", type=int,
-        default=None, required=False,
-        help='Subsample the data for training and eval (useful for testing). Default is None (no subsampling).'
+        "--subsample",
+        type=int,
+        default=None,
+        required=False,
+        help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling).",
+    )
+    cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda:0").')
+    cfg_args.add_argument(
+        "--dtype",
+        type=str,
+        default=None,
+        required=False,
+        help="PyTorch data type used for storing images for training/validation (default=float16).\n"
+        "The model is always stored in float32, and training is done with autocasting.",
     )
     cfg_args.add_argument(
-        "--device", type=str, 
-        default=None, required=False,
-        help='Device used for training (default="cuda:0").'
+        "--num_workers",
+        type=int,
+        dest="dataloader_builder_kwargs.num_workers",
+        default=None,
+        required=False,
+        help="Number of workers used for the dataloaders. Default is between 0 and 32 based on the number of CPU cores on your machine.",
     )
     cfg_args.add_argument(
-        "--dtype", type=str, 
-        default=None, required=False,
-        help='PyTorch data type used for storing images for training/validation (default=float16).\n' 
-        'The model is always stored in float32, and training is done with autocasting.'
+        "--seed",
+        type=int,
+        default=None,
+        required=False,
+        help="Set the initial seed for the RNG in the core Python library `random`.\n"
+        "This is particularly important for reproducible train/validation splits.",
     )
     cfg_args.add_argument(
-        "--num_workers", type=int, dest="dataloader_builder_kwargs.num_workers",
-        default=None, required=False,
-        help='Number of workers used for the dataloaders. '
-        'Default is between 0 and 32 based on the number of CPU cores on your machine.'
-    )
-    cfg_args.add_argument(
-        "--seed", type=int, 
-        default=None, required=False,
-        help='Set the initial seed for the RNG in the core Python library `random`.\n'
-        'This is particularly important for reproducible train/validation splits.'
-    )
-    cfg_args.add_argument(
-        "-v", "--verbose", action="store_true", dest="collector_cls_kwargs.verbose",
-        default=None, required=False,
-        help='Print training statistics in the terminal.'
+        "-v",
+        "--verbose",
+        action="store_true",
+        dest="collector_cls_kwargs.verbose",
+        default=None,
+        required=False,
+        help="Print training statistics in the terminal.",
     )
     cli_args = vars(parser.parse_args())
 
@@ -310,22 +319,22 @@ def cli(description="Classify images with a trained model", **extra_kwargs): # n
         cli_args["collector_cls"] = RawResultCollector
 
     # Build the three layers
-    defaults_full = defaults_from_function(main) # Defaults defined in the function signature
-    config_full = load_yaml_config(cli_args.pop("config")) # Arguments passed from config (empty if no config)
-    cli_full = restructure_cli_args(cli_args) # Manual CLI arguments
+    defaults_full = defaults_from_function(main)  # Defaults defined in the function signature
+    config_full = load_yaml_config(cli_args.pop("config"))  # Arguments passed from config (empty if no config)
+    cli_full = restructure_cli_args(cli_args)  # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)
 
     # Validate required arguments
     if args.get("input") is None:
         raise SystemExit("error: the following arguments are required: --input (via CLI or config)")
-    
+
     return args
 
 
-def run(): # noqa: D103
+def run():  # noqa: D103
     main(**cli())
 
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
     run()

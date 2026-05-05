@@ -3,7 +3,7 @@ import sys
 
 
 def run_notebook(notebook_path):
-    with open(notebook_path, "r", encoding="utf-8") as nb_file:
+    with open(notebook_path, encoding="utf-8") as nb_file:
         notebook = json.load(nb_file)
     
     # Collect all code cell sources into a single string.

@@ -6,55 +6,40 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pp
 from tqdm import tqdm
 
-KCOLUMNS = (
-    "speciesKey",
-    "genusKey",
-    "familyKey",
-    "orderKey",
-    "classKey",
-    "phylumKey",
-    "kingdomKey"
-)
+KCOLUMNS = ("speciesKey", "genusKey", "familyKey", "orderKey", "classKey", "phylumKey", "kingdomKey")
 
-COLUMNS = (
-    "filename",
-    "set",
-    *KCOLUMNS
-)
+COLUMNS = ("filename", "set", *KCOLUMNS)
 
 
-def nrow(path : str):
+def nrow(path: str):
     return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
 
 
-def iter_parquet_batches(path : str, columns=COLUMNS):
-    """Iterate lazily over batches in ``gbifxdl`` parquet.
-    """
+def iter_parquet_batches(path: str, columns=COLUMNS):
+    """Iterate lazily over batches in ``gbifxdl`` parquet."""
     # 1. Ensure "set" is loaded so we can filter by it
     read_columns = list(columns)
     if "set" not in read_columns:
         read_columns.append("set")
-        
+
     for batch in pp.ParquetFile(path).iter_batches(columns=read_columns):
         filtered = batch.filter(
-            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$") # type: ignore
+            pc.match_substring_regex(pc.field("set"), pattern="^\\d+$")  # type: ignore
         ).select(
-            list(columns) # 2. Select ONLY the originally requested columns
+            list(columns)  # 2. Select ONLY the originally requested columns
         )
         if filtered.num_rows > 0:
             yield filtered
 
 
-def iter_parquet(path : str, columns=COLUMNS):
-    """Iterate lazily over individual rows in ``gbifxdl`` parquet.
-    """
+def iter_parquet(path: str, columns=COLUMNS):
+    """Iterate lazily over individual rows in ``gbifxdl`` parquet."""
     for batch in iter_parquet_batches(path, columns=columns):
         yield from batch.to_pylist()
 
 
-def set2split(set : int):
-    """Map: 0=test, 1=validation, *=train.
-    """
+def set2split(set: int):
+    """Map: 0=test, 1=validation, *=train."""
     match set:
         case 0:
             return "test"
@@ -64,26 +49,23 @@ def set2split(set : int):
             return "train"
 
 
-def path_from_class(file : str, gid : int, dir : str):
-    """Compose full path from basename, class, and root directory.
-    """
+def path_from_class(file: str, gid: int, dir: str):
+    """Compose full path from basename, class, and root directory."""
     return os.path.join(dir, "images", str(gid), file)
 
 
-def get_keys(row : dict[str, Any]):
-    """Get class values from ``gbifxdl` row.
-    """
+def get_keys(row: dict[str, Any]):
+    """Get class values from ``gbifxdl` row."""
     return [str(int(row[k].strip())) for k in KCOLUMNS]
 
 
-def combine_dicts(dicts : Iterable[dict]):
-    """Combine dictionaries with shared keys by stacking values in lists.
-    """
+def combine_dicts(dicts: Iterable[dict]):
+    """Combine dictionaries with shared keys by stacking values in lists."""
     if not isinstance(dicts, (list, tuple)):
         dicts = list(dicts)
     if len(dicts) == 0:
         return dict()
-    retval = {k : [] for k in dicts[0].keys()}
+    retval = {k: [] for k in dicts[0].keys()}
     for d in dicts:
         for k, v in d.items():
             retval[k].append(v)
@@ -91,16 +73,16 @@ def combine_dicts(dicts : Iterable[dict]):
 
 
 # def get_metadata_from_parquet(
-#         path : str, 
+#         path : str,
 #         cls2idx : dict[str, int | dict[str, int]],
 #         **kwargs
 #     ) -> dict[Literal['split', 'class', 'path', 'label'], list[str | int]]:
 #     """This functions retrieves the metadata index for use with minitrainer.
-    
+
 #     Args:
 #         path: Path to parquet created by ``gbifxdl``.
 #         cls2idx: A dictionary with mappings from GBIF taxon (probably species) IDs to indexes used for DL training.
-#             Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above, 
+#             Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above,
 #             where the key denotes the taxonomic level, such that ``"0"`` is species, ``"1"`` is genus and so forth.
 #         kwargs: unused.
 #     """
@@ -120,10 +102,11 @@ def combine_dicts(dicts : Iterable[dict]):
 #             cls : int = cls2idx[keys[0]]
 #             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
 #             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
-#     
+#
 #     return combine_dicts(
 #         map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path)))
 #     )
+
 
 def get_metadata_from_parquet(
     path: str,
@@ -161,7 +144,7 @@ def get_metadata_from_parquet(
         except Exception:
             return -1
 
-    path_str = path if len(path) < (25 + 3) else ("..." + path[-min(25, len(path)):])
+    path_str = path if len(path) < (25 + 3) else ("..." + path[-min(25, len(path)) :])
     with tqdm(
         total=nrow(path),
         desc=f"Parsing metadata from {path_str}",
@@ -205,9 +188,7 @@ def get_metadata_from_parquet(
                 for level in range(len(cls2idx)):
                     lm = cls2idx.get(str(level))
                     if not isinstance(lm, dict):
-                        raise TypeError(
-                            f"Expected hierarchical cls2idx['{level}'] to be dict[str,int], got {type(lm)}"
-                        )
+                        raise TypeError(f"Expected hierarchical cls2idx['{level}'] to be dict[str,int], got {type(lm)}")
                     level_maps.append(lm)
 
                 key_lists = [batch.column(idx[KCOLUMNS[level]]).to_pylist() for level in range(len(level_maps))]
@@ -245,26 +226,15 @@ def get_metadata_from_parquet(
     }
 
 
-def parquet_to_class_spec(path : str):
-    """Create flat class specification from ``gbifxdl`` parquet.
-    """
-    clss = set([row["speciesKey"].strip() for row in iter_parquet(path, ("speciesKey", ))])
-    return {
-        "cls2idx" : {cls : i for i, cls in enumerate(clss)},
-        "num_classes" : len(clss)
-    }
+def parquet_to_class_spec(path: str):
+    """Create flat class specification from ``gbifxdl`` parquet."""
+    clss = set([row["speciesKey"].strip() for row in iter_parquet(path, ("speciesKey",))])
+    return {"cls2idx": {cls: i for i, cls in enumerate(clss)}, "num_classes": len(clss)}
 
 
-def parquet_to_class_spec_hierarchical(path : str, levels : int=3):
-    """Create hierarchical class specification from ``gbifxdl`` parquet.
-    """
-    combs = {
-        v[0] : v 
-        for v in sorted(
-            set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), 
-            key=lambda x : x[::-1]
-        )
-    }
+def parquet_to_class_spec_hierarchical(path: str, levels: int = 3):
+    """Create hierarchical class specification from ``gbifxdl`` parquet."""
+    combs = {v[0]: v for v in sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x: x[::-1])}
     cls2idx = dict()
     for level in range(levels):
         clss = set()
@@ -277,8 +247,4 @@ def parquet_to_class_spec_hierarchical(path : str, levels : int=3):
             clss.add(cls)
         cls2idx[str(level)] = this_cls2idx
     num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
-    return {
-        "cls2idx" : cls2idx,
-        "labels" : combs,
-        "num_classes" : num_classes
-    }
+    return {"cls2idx": cls2idx, "labels": combs, "num_classes": num_classes}

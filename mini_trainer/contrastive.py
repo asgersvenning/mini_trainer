@@ -13,11 +13,10 @@ class SupConLoss(nn.modules.loss._Loss):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR.
     """
+
     def __init__(  # noqa: D107
-            self, 
-            temperature : float=0.07, 
-            base_temperature : float=0.07
-        ):
+        self, temperature: float = 0.07, base_temperature: float = 0.07
+    ):
         super().__init__()
         self.temperature = temperature
         self.base_temperature = base_temperature
@@ -43,13 +42,10 @@ class SupConLoss(nn.modules.loss._Loss):
             features = features.unsqueeze(1)
         assert features is not None
         labels = SupervisionContext.get()
-        device = (torch.device('cuda')
-                  if features.is_cuda
-                  else torch.device('cpu'))
+        device = torch.device("cuda") if features.is_cuda else torch.device("cpu")
 
         if len(features.shape) < 3:
-            raise ValueError('`features` needs to be [bsz, n_views, ...],'
-                             'at least 3 dimensions are required')
+            raise ValueError("`features` needs to be [bsz, n_views, ...],at least 3 dimensions are required")
         if len(features.shape) > 3:
             features = features.view(features.shape[0], features.shape[1], -1)
 
@@ -59,17 +55,14 @@ class SupConLoss(nn.modules.loss._Loss):
         else:
             labels = labels.contiguous().view(-1, 1)
             if labels.shape[0] != batch_size:
-                raise ValueError('Num of labels does not match num of features')
+                raise ValueError("Num of labels does not match num of features")
             mask = torch.eq(labels, labels.T).float().to(device)
 
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
 
         # compute logits
-        anchor_dot_contrast = torch.div(
-            contrast_feature @ contrast_feature.T,
-            self.temperature
-        )
+        anchor_dot_contrast = torch.div(contrast_feature @ contrast_feature.T, self.temperature)
         # for numerical stability
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
@@ -77,12 +70,7 @@ class SupConLoss(nn.modules.loss._Loss):
         # tile mask
         mask = mask.repeat(contrast_count, contrast_count)
         # mask-out self-contrast cases
-        logits_mask = torch.scatter(
-            torch.ones_like(mask),
-            1,
-            torch.arange(batch_size * contrast_count).view(-1, 1).to(device),
-            0
-        )
+        logits_mask = torch.scatter(torch.ones_like(mask), 1, torch.arange(batch_size * contrast_count).view(-1, 1).to(device), 0)
         mask = mask * logits_mask
 
         # # compute log_prob
@@ -92,17 +80,17 @@ class SupConLoss(nn.modules.loss._Loss):
 
         # compute mean of log-likelihood over positive
         # modified to handle edge cases when there is no positive pair
-        # for an anchor point. 
-        # Edge case e.g.:- 
+        # for an anchor point.
+        # Edge case e.g.:-
         # features of shape: [4,1,...]
         # labels:            [0,1,1,2]
-        # loss before mean:  [nan, ..., ..., nan] 
+        # loss before mean:  [nan, ..., ..., nan]
         mask_pos_pairs = mask.sum(1)
         mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
 
         # loss
-        loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
+        loss = -(self.temperature / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(contrast_count, batch_size).mean()
 
         return loss

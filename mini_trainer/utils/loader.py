@@ -15,14 +15,9 @@ from mini_trainer.utils.io import (
 )
 
 
-def get_dataloader( # noqa: D103
-        dataset : torch.utils.data.Dataset,
-        mode : str,
-        batch_size : int,
-        num_workers : int,
-        pin_memory : bool,
-        device : torch.device
-    ):
+def get_dataloader(  # noqa: D103
+    dataset: torch.utils.data.Dataset, mode: str, batch_size: int, num_workers: int, pin_memory: bool, device: torch.device
+):
     assert isinstance(mode, str)
     if mode.strip().lower() == "train":
         shuffle = drop_last = True
@@ -30,71 +25,60 @@ def get_dataloader( # noqa: D103
         shuffle = drop_last = False
     sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
     sampler = BatchSampler(sampler, batch_size=batch_size, drop_last=drop_last)
-    
+
     return DataLoader(
         dataset,
         batch_sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
-        persistent_workers=num_workers > 0
+        persistent_workers=num_workers > 0,
     )
 
 
-def get_dataset_dataloader( # noqa: D103
-        *metadata : dict,
-        resize_size : int | tuple[int, int],
-        modes : tuple[str, ...]=("train", "val"),
-        batch_size : int=16, 
-        num_workers : int | None=None,
-        subsample : int | None=None,
-        resample : bool | str=False, # Enable with: "ilog1p",
-        device : torch.device | str=torch.device("cpu"), 
-        dtype : torch.dtype=torch.float32,
-        cache : CACHE_MODE | str | int | None=None,
-        multilabel : bool=False,
-        hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
-    ):
+def get_dataset_dataloader(  # noqa: D103
+    *metadata: dict,
+    resize_size: int | tuple[int, int],
+    modes: tuple[str, ...] = ("train", "val"),
+    batch_size: int = 16,
+    num_workers: int | None = None,
+    subsample: int | None = None,
+    resample: bool | str = False,  # Enable with: "ilog1p",
+    device: torch.device | str = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+    cache: CACHE_MODE | str | int | None = None,
+    multilabel: bool = False,
+    hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
-    if not (
-        isinstance(resize_size, (tuple, list)) and
-        len(resize_size) == 2 and
-        all(map(lambda x : isinstance(x, int), resize_size))
-    ):
-        raise TypeError(
-            f'Invalid resize size passed, found {resize_size}, '
-            'but expected an integer or a tuple of two integers.'
-        )
+    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x: isinstance(x, int), resize_size))):
+        raise TypeError(f"Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers.")
     if isinstance(device, str):
         device = torch.device(device)
 
     if len(metadata) != len(modes):
-        raise ValueError(
-            f'Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!'
-        )
-        
+        raise ValueError(f"Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!")
+
     print(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
-        metadata = tuple([{k : v[::subsample] for k, v in md.items()} for md in metadata])
-    
+        metadata = tuple([{k: v[::subsample] for k, v in md.items()} for md in metadata])
+
     dataset_shape = list((sum(map(len, metadata)), *resize_size, 3))
     cache = CACHE_MODE(cache)
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)
-    
+
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
-    
-    def label_to_tensor(label : int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor):
+
+    def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor):
         if isinstance(label, (int, tuple, list)):
             return torch.tensor(label, dtype=torch.long)
         if isinstance(label, np.ndarray):
             return torch.from_numpy(label).clone().long()
         return label.long()
-    
-    def proc_path_label(
-            path_label : tuple[str, int | list[int] | np.ndarray | torch.Tensor]
-        ):
+
+    def proc_path_label(path_label: tuple[str, int | list[int] | np.ndarray | torch.Tensor]):
         path, label = path_label
         label = label_to_tensor(label)
         if not multilabel and label.numel() > 1:
@@ -107,7 +91,7 @@ def get_dataset_dataloader( # noqa: D103
         if hook is not None:
             image = hook(image)
         return image, label
-    
+
     datasets = []
     for mode, data in zip(modes, metadata):
         items = list(zip(data["path"], data["class"]))
@@ -123,13 +107,9 @@ def get_dataset_dataloader( # noqa: D103
             if isinstance(resample, str):
                 resample_kwargs["transform"] = resample
             items = Reindexed(items, [cc.get(k, 0) for k in labs], inflation=2, **resample_kwargs)
-        dset = LazyDataset(
-            func=proc_path_label, 
-            items=items,
-            cache=cache
-        ) 
+        dset = LazyDataset(func=proc_path_label, items=items, cache=cache)
         datasets.append(dset)
-    
+
     if num_workers is None:
         num_workers = (os.cpu_count() or 0) - 4
         num_workers -= num_workers % 2
@@ -139,51 +119,37 @@ def get_dataset_dataloader( # noqa: D103
         num_workers = 0
 
     pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
-    loaders = [
-        get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device)
-        for mode, dataset in zip(modes, datasets)
-    ]
+    loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
 
     return datasets, loaders
 
 
-def get_inference_dataloader( # noqa: D103
-        images : list[str],
-        resize_size : int | tuple[int, int],
-        batch_size : int=16, 
-        num_workers : int | None=None,
-        subsample : int | None=None,
-        device : torch.device | str=torch.device("cpu"), 
-        dtype : torch.dtype=torch.float32,
-        hook : Callable[[torch.Tensor], torch.Tensor] | None=None,
-        **kwargs
-    ):
+def get_inference_dataloader(  # noqa: D103
+    images: list[str],
+    resize_size: int | tuple[int, int],
+    batch_size: int = 16,
+    num_workers: int | None = None,
+    subsample: int | None = None,
+    device: torch.device | str = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+    hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    **kwargs,
+):
     if isinstance(resize_size, int):
         resize_size = (resize_size, resize_size)
-    if not (
-        isinstance(resize_size, (tuple, list)) and 
-        len(resize_size) == 2 and 
-        all(map(lambda x : isinstance(x, int), resize_size))
-    ):
-        raise TypeError(
-            f'Invalid resize size passed, found {resize_size}, '
-            'but expected an integer or a tuple of two integers'
-        )
+    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x: isinstance(x, int), resize_size))):
+        raise TypeError(f"Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers")
     if isinstance(device, str):
         device = torch.device(device)
-        
+
     if subsample is not None and subsample > 1:
         images = images[::subsample]
-    
+
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
     if hook is not None:
-        reader = lambda x : hook(reader(x)) # noqa: E731
-    
-    dataset = LazyDataset(
-        func=reader, 
-        items=images,
-        cache=CACHE_MODE.NONE
-    )
+        reader = lambda x: hook(reader(x))  # noqa: E731
+
+    dataset = LazyDataset(func=reader, items=images, cache=CACHE_MODE.NONE)
 
     if num_workers is None:
         num_workers = (os.cpu_count() or 0) - 4

@@ -19,7 +19,7 @@ def test_write_csv_from_dict(tmp_path):
     p = tmp_path / "test.csv"
     write_csv_from_dict(d, str(p))
     
-    with open(p, "r") as f:
+    with open(p) as f:
         reader = csv.reader(f)
         rows = list(reader)
         assert rows[0] == ["a", "b"]
@@ -29,7 +29,7 @@ def test_write_csv_from_dict(tmp_path):
     # Append
     d2 = {"a": [5], "b": [6]}
     write_csv_from_dict(d2, str(p))
-    with open(p, "r") as f:
+    with open(p) as f:
         reader = csv.reader(f)
         rows = list(reader)
         assert len(rows) == 4

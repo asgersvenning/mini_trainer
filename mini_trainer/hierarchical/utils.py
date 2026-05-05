@@ -7,30 +7,26 @@ from mini_trainer.utils.generic import get_prior_method
 
 
 def leaf_to_parents(h):
-    """Construct the path from leaf-to-root for a specific leaf.
-    """
+    """Construct the path from leaf-to-root for a specific leaf."""
     l2p = []
     p2c = None
     for lvl in h:
-        c2p = {e : i for i, p in enumerate(lvl) for e in p}
+        c2p = {e: i for i, p in enumerate(lvl) for e in p}
         if p2c is not None:
-            c2p = {c : v for k, v in c2p.items() for c in p2c[k]}
+            c2p = {c: v for k, v in c2p.items() for c in p2c[k]}
         p2c = dict()
         for p, c in c2p.items():
             if c not in p2c:
                 p2c[c] = []
             p2c[c].append(p)
-        l2p.append({k : v for k, v in sorted(c2p.items())})
+        l2p.append({k: v for k, v in sorted(c2p.items())})
     return l2p
 
 
-def create_hierarchy(
-        combinations : Iterable[list[str]],
-        class_to_idx : list[dict[str, int]]
-    ) -> list[list[list[int]]]:
+def create_hierarchy(combinations: Iterable[list[str]], class_to_idx: list[dict[str, int]]) -> list[list[list[int]]]:
     """Creates a hierarchy from the paths and class handles.
-    
-    The hierarchy is constructed based on the nodes found in the dataset. 
+
+    The hierarchy is constructed based on the nodes found in the dataset.
     TODO: The hierarchy should be constructed once and saved in a structured file.
 
     Arguments:
@@ -38,9 +34,9 @@ def create_hierarchy(
         class_to_idx: A mapping from classes to indexes.
 
     Returns:
-        A list for each level of the hierarchy. 
-            Each list contains a list for each node containing the indices of the children of that node. 
-            Level 0 is the leaf level, and is not included. 
+        A list for each level of the hierarchy.
+            Each list contains a list for each node containing the indices of the children of that node.
+            Level 0 is the leaf level, and is not included.
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
     hierarchy = [[set() for _ in range(n)] for n in n_classes[1:]]  # Create empty lists for each level
@@ -55,8 +51,8 @@ def create_hierarchy(
         if processed_leaves[indices[0]] == 0:  # If the leaf has not been processed yet
             processed_leaves[indices[0]] = 1
         else:
-            continue # Skip this leaf
-        
+            continue  # Skip this leaf
+
         # Iterate over the indices and add them to the hierarchy
         for i in range(len(indices) - 1):
             # Get the parent and child indices
@@ -87,8 +83,7 @@ def create_mask_col(indices, height, zero=-100, **kwargs):
 
 
 def mask_islogarithmic(masks):
-    """Check if a mask is contains "logarithmic" zeros and ones.
-    """
+    """Check if a mask is contains "logarithmic" zeros and ones."""
     if isinstance(masks, list):
         response = [mask_islogarithmic(mask) for mask in masks]
         all_true = all(response)
@@ -105,7 +100,7 @@ def mask_hierarchy(hierarchy, zero=-100, **kwargs):
 
     Arguments:
         hierarchy (list): list of lists of lists of indices.
-            The first level of the list corresponds to the levels of the hierarchy, 
+            The first level of the list corresponds to the levels of the hierarchy,
             and each level contains a list of lists of indices for each node.
         zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
         **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
@@ -124,13 +119,13 @@ def mask_hierarchy(hierarchy, zero=-100, **kwargs):
     return [torch.hstack(level) for level in masks]
 
 
-def shape_resize(shape : torch.Size | list[int], dim : int, value : int): # noqa: D103
+def shape_resize(shape: torch.Size | list[int], dim: int, value: int):  # noqa: D103
     shape = list(shape)
     shape[dim] = value
     return shape
 
 
-def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : int=1):
+def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int = 1):
     """Aggregates the elements of the ``input`` tensor with an index along a dimension using logsumexp.
 
     ```
@@ -155,12 +150,12 @@ def batched_scatter_logsumexp(input : torch.Tensor, index : torch.Tensor, dim : 
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
 
 
-def prior_from_labels(labels : list[int | list[int]], cls2idx : dict, method : str="adjust", **kwargs):
+def prior_from_labels(labels: list[int | list[int]], cls2idx: dict, method: str = "adjust", **kwargs):
     if isinstance(labels[0], int):
         raise ValueError("Expected hierarchical labels, but got flat.")
     ncls = [len(cls2idx[str(lvl)]) for lvl in range(len(cls2idx))]
     nlvls = len(ncls)
-    counts = {lvl : Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
-    counts = {k : [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
+    counts = {lvl: Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
+    counts = {k: [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
     method = get_prior_method(method)
     return [method(counts[lvl], **kwargs) for lvl in range(nlvls)]

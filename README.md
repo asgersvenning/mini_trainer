@@ -3,6 +3,7 @@
 [![Python version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/asgersvenning/mini_trainer/actions/workflows/ci.yml/badge.svg)](https://github.com/asgersvenning/mini_trainer/actions)
 [![codecov](https://codecov.io/github/asgersvenning/mini_trainer/graph/badge.svg?token=3BCL6NH5GC)](https://codecov.io/github/asgersvenning/mini_trainer)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ---
 
@@ -16,10 +17,27 @@ All code in `mini_trainer` should follow the following core principles:
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
 
 # Installation
-As we currently aren't distributing the `mini_trainer` module on PyPi or conda-forge, the installation unfortunately requires two steps:
-```sh
-[conda/mamba/micromamba] install -f conda.yaml
-pip install -e .
+
+We recommend using `uv` for package and environment management.
+
+> [!NOTE]
+> See [Install uv](https://docs.astral.sh/uv/getting-started/installation/) for instructions.
+
+## PyPi
+
+```bash
+# install via pip (uv)
+[uv] pip install mini_trainer
+# or add to your existing project
+uv add mini_trainer
+```
+
+## Local Installation
+
+```bash
+git clone ssh://git@github.com:asgersvenning/mini_trainer.git
+cd mini_trainer
+uv sync
 ```
 
 ## Acknowledgements

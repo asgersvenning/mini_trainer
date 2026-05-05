@@ -34,7 +34,7 @@ def is_taxalist(content : str | list[str]):
 
 
 def labels_from_json(file : str):
-    with open(file, "r") as f:
+    with open(file) as f:
         data = json.load(f)
     if "label" in data:
         labels = list(data["label"].values())
@@ -68,7 +68,7 @@ def labels_from_json(file : str):
 
 
 def labels_from_csv(file : str):
-    with open(file, "r") as f:
+    with open(file) as f:
         reader = csv.reader(f)
         headers = next(reader)
         data = {k : [] for k in headers}
@@ -92,7 +92,7 @@ def labels_from_csv(file : str):
 
 
 def labels_from_txt(file : str):
-    with open(file, "r") as f:
+    with open(file) as f:
         content = [f for f in map(str.strip, f.readlines()) if f]
     if len(content) == 0:
         raise RuntimeError(f'Empty file {file}')

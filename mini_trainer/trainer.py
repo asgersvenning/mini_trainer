@@ -26,22 +26,22 @@ from mini_trainer.utils.logging import MultiLogger
 
 
 def train_one_epoch(
-        model : nn.Module, 
-        model_ema : EMATeacher,
-        criterion : _Loss, 
-        optimizer : Optimizer, 
-        scaler : GradScaler,
-        lr_scheduler : LRScheduler,
-        data_loader : DataLoader, 
-        epoch : int, 
-        logger : MultiLogger,
-        preprocess : Callable=lambda x : x,
-        augmentation : Callable=lambda x : x,
-        regularizer : Callable[[nn.Module], torch.Tensor | Literal[0]]=lambda _: 0,
-        clip_grad_norm : float | None=5,
-        device : torch.types.Device=torch.device("cpu"),
-        dtype : torch.dtype=torch.float32,
-    ):
+    model: nn.Module,
+    model_ema: EMATeacher,
+    criterion: _Loss,
+    optimizer: Optimizer,
+    scaler: GradScaler,
+    lr_scheduler: LRScheduler,
+    data_loader: DataLoader,
+    epoch: int,
+    logger: MultiLogger,
+    preprocess: Callable = lambda x: x,
+    augmentation: Callable = lambda x: x,
+    regularizer: Callable[[nn.Module], torch.Tensor | Literal[0]] = lambda _: 0,
+    clip_grad_norm: float | None = 5,
+    device: torch.types.Device = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+):
     """Run one training epoch.
 
     Args:
@@ -77,19 +77,15 @@ def train_one_epoch(
     for i, (batch, target) in enumerate(pbar):
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
-            raise RuntimeError(f'Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.')
+            raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
         batch, target = batch.to(device), target.to(device)
         with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
-            loss : list[torch.Tensor] | torch.Tensor = criterion(logits, target)
+            loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
             # TODO: Add optional contrastive path
             # ctr_loss = contrastive_criterion()
             # If EMA is disabled ``distill_loss`` is ``0.0``
-            distill_loss = model_ema.teach(
-                step=step,
-                input=preprocess(batch),
-                student=logits
-            )
+            distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits)
             reg = regularizer(model)
 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
@@ -100,7 +96,7 @@ def train_one_epoch(
             if nan_errs < 5:
                 continue
             else:
-                raise RuntimeError('Interrupted training due to persistent nan\'s detected in the loss.')
+                raise RuntimeError("Interrupted training due to persistent nan's detected in the loss.")
         else:
             nan_errs = 0
         scaler.scale(sum(loss) + reg + distill_loss).backward()
@@ -115,21 +111,21 @@ def train_one_epoch(
         # See: https://discuss.pytorch.org/t/optimizer-step-before-lr-scheduler-step-error-using-gradscaler/92930/7
         _scale = scaler.get_scale()
         scaler.update()
-        _any_opt_stepped = (_scale <= scaler.get_scale())
+        _any_opt_stepped = _scale <= scaler.get_scale()
         if _any_opt_stepped:
             model_ema.update_parameters(step, model)
             lr_scheduler.step()
-        
+
         logger.consume(
             index=i,
-            batch=batch, 
-            target=target, 
-            prediction=logits, 
-            loss=loss, 
-            optimizer=optimizer, 
+            batch=batch,
+            target=target,
+            prediction=logits,
+            loss=loss,
+            optimizer=optimizer,
             start_time=start_time,
             distillation_loss=distill_loss if isinstance(distill_loss, float) else float(distill_loss.detach().item()),
-            regularization=reg if isinstance(reg, float) else float(reg.detach().item())
+            regularization=reg if isinstance(reg, float) else float(reg.detach().item()),
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
@@ -144,15 +140,15 @@ def train_one_epoch(
 
 
 def evaluate(
-        model : nn.Module, 
-        criterion : _Loss, 
-        data_loader : DataLoader, 
-        epoch : int,
-        logger : MultiLogger,
-        preprocess : Callable=lambda x : x,
-        device : torch.types.Device=torch.device("cpu"),
-        dtype : torch.dtype=torch.float32
-    ):
+    model: nn.Module,
+    criterion: _Loss,
+    data_loader: DataLoader,
+    epoch: int,
+    logger: MultiLogger,
+    preprocess: Callable = lambda x: x,
+    device: torch.types.Device = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+):
     """Evaluate the model for one validation epoch.
 
     Args:
@@ -182,20 +178,12 @@ def evaluate(
             with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32):
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
-            logger.consume(
-                index=i, 
-                batch=batch, 
-                target=target, 
-                prediction=output, 
-                loss=loss, 
-                optimizer=None, 
-                start_time=start_time
-            )
+            logger.consume(index=i, batch=batch, target=target, prediction=output, loss=loss, optimizer=None, start_time=start_time)
         pbar.set_description_str(logger.status(), i % 25 == 0)
         num_processed_samples += len(batch)
         start_time = time.time()
     logger.stop_timing()
-    
+
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
@@ -210,37 +198,37 @@ def evaluate(
             "Try adjusting the batch size and / or the world size. "
             "Setting the world size to 1 is always a safe bet."
         )
-    
+
     if logger.verbose:
         print(logger.summary_string())
     logger.figures(model)
-    
-    model.train(training_state) # Restore model state
-    
+
+    model.train(training_state)  # Restore model state
+
     return float(logger.canonical_scalar)
 
 
 def train(
-        model : nn.Module, 
-        model_ema : EMATeacher,
-        train_loader : DataLoader, 
-        val_loader : DataLoader,
-        criterion : _Loss, 
-        optimizer : Optimizer, 
-        scaler : GradScaler,
-        lr_scheduler : LRScheduler,
-        logger : MultiLogger,
-        epochs : int, 
-        start_epoch : int = 0,
-        preprocess : Callable=lambda x : x,
-        augmentation : Callable=lambda x : x,
-        regularizer : Callable[[nn.Module], torch.Tensor]=lambda _: 0.,
-        device : torch.types.Device=torch.device("cpu"),
-        dtype : torch.dtype=torch.float32,
-        output_dir : str | None=None,
-        weight_store_rate : int | None=None,
-        **kwargs
-    ):
+    model: nn.Module,
+    model_ema: EMATeacher,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    criterion: _Loss,
+    optimizer: Optimizer,
+    scaler: GradScaler,
+    lr_scheduler: LRScheduler,
+    logger: MultiLogger,
+    epochs: int,
+    start_epoch: int = 0,
+    preprocess: Callable = lambda x: x,
+    augmentation: Callable = lambda x: x,
+    regularizer: Callable[[nn.Module], torch.Tensor] = lambda _: 0.0,
+    device: torch.types.Device = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+    output_dir: str | None = None,
+    weight_store_rate: int | None = None,
+    **kwargs,
+):
     """Full training loop across epochs with periodic evaluation and checkpointing.
 
     Args:
@@ -269,15 +257,27 @@ def train(
         print("Start training")
     start_time = time.time()
 
-    eval_model : nn.Module = getattr(model_ema, "module", model)
+    eval_model: nn.Module = getattr(model_ema, "module", model)
 
     best_eval_metric = -float("inf")
     best_epoch = -1
     for epoch in range(start_epoch, epochs):
         train_one_epoch(
-            model, model_ema, criterion, optimizer, scaler, lr_scheduler, 
-            train_loader, epoch, logger, preprocess, augmentation, regularizer, 
-            device=device, dtype=dtype, **kwargs
+            model,
+            model_ema,
+            criterion,
+            optimizer,
+            scaler,
+            lr_scheduler,
+            train_loader,
+            epoch,
+            logger,
+            preprocess,
+            augmentation,
+            regularizer,
+            device=device,
+            dtype=dtype,
+            **kwargs,
         )
         eval_metric = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         is_best_eval = (best_eval_metric := max(best_eval_metric, eval_metric)) == eval_metric

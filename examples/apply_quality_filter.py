@@ -91,7 +91,7 @@ data = ds.dataset(src, format="parquet")
 if not isinstance(data, ds.Dataset):
     raise RuntimeError("...")
 
-with open(select_index, "r") as f:
+with open(select_index) as f:
     selected = [line.strip() for line in f.readlines()]
 
 selected_uuid = set([s.split("/")[1].split(".")[0] for s in selected])

@@ -11,8 +11,8 @@ import torch
 
 def _nullify(d: dict[str, Any]):
     """Recursively replaces all values in a dictionary with None.
-    
-    Recurses on nested dictionaries. 
+
+    Recurses on nested dictionaries.
     """
     for k, v in list(d.items()):
         if isinstance(v, dict):
@@ -23,8 +23,7 @@ def _nullify(d: dict[str, Any]):
 
 
 def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
-    """Recursively drop keys with value ``None`` and empty dicts.
-    """
+    """Recursively drop keys with value ``None`` and empty dicts."""
     out: dict[str, Any] = {}
     for k, v in d.items():
         if isinstance(v, dict):
@@ -65,6 +64,7 @@ def dump_resolved_config(
     fn: Any,
     local_vars: dict[str, Any],
     overrides: dict[str, Any] | None = None,
+    verbose: bool = False,
 ) -> None:
     """Dump a YAML (or JSON fallback) config derived from function parameters.
 
@@ -73,6 +73,7 @@ def dump_resolved_config(
         fn: Function whose signature determines which locals are captured.
         local_vars: The locals() mapping from the function at the capture point.
         overrides: Optional mapping to override selected keys (e.g., resolved paths).
+        verbose: Whether to print the config to stdout. Default is False.
     """
     params = inspect.signature(fn).parameters
     cfg: dict[str, Any] = {}
@@ -91,7 +92,8 @@ def dump_resolved_config(
     # Remove empty arguments
     cfg = _drop_none(cfg)
 
-    print(cfg)
+    if verbose:
+        print(cfg)
 
     if output_dir is None:
         return
@@ -100,18 +102,18 @@ def dump_resolved_config(
     os.makedirs(output_dir, exist_ok=True)
     try:
         import yaml
+
         path_yaml = os.path.join(output_dir, "config.yaml")
         with open(path_yaml, "w", encoding="utf-8") as f:
             yaml.safe_dump(cfg, f, sort_keys=False)
         return
     except Exception as e:
         import json
+
         path_json = os.path.join(output_dir, "config.json")
         with open(path_json, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
-        raise SystemExit(
-            f"YAML dump failed ({e!s}). Wrote JSON fallback at: {path_json}"
-        )
+        raise SystemExit(f"YAML dump failed ({e!s}). Wrote JSON fallback at: {path_json}")
 
 
 def save_yaml_template(path: str) -> str:
@@ -122,12 +124,10 @@ def save_yaml_template(path: str) -> str:
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover - optional dep
-        raise RuntimeError(
-            "PyYAML is required for YAML config support. Install with 'pip install pyyaml'"
-        ) from e
+        raise RuntimeError("PyYAML is required for YAML config support. Install with 'pip install pyyaml'") from e
 
     cfg = _stringify_types(defaults_from_function(getattr(importlib.import_module("mini_trainer.train"), "main")))
-    
+
     path = os.path.abspath(path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -135,7 +135,7 @@ def save_yaml_template(path: str) -> str:
     return path
 
 
-def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
+def load_yaml_config(path: str | None, resume: bool = False) -> dict[str, Any]:
     """Load a YAML config file into a dict of keyword arguments.
 
     Supports optional "builder" as an import path string.
@@ -145,11 +145,9 @@ def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
     try:
         import yaml  # type: ignore
     except Exception as e:  # pragma: no cover - optional dep
-        raise RuntimeError(
-            "PyYAML is required for YAML config support. Install with 'pip install pyyaml'"
-        ) from e
+        raise RuntimeError("PyYAML is required for YAML config support. Install with 'pip install pyyaml'") from e
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         raise TypeError(f"Top-level YAML in {path!r} must be a mapping/object.")
@@ -178,7 +176,7 @@ def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
 
     out = _resolve_any(data)
     if not isinstance(out, dict):
-        warnings.warn(f'! OBS: CONFIG SKIPPED !\nConfig not properly deserialized: {out}')
+        warnings.warn(f"! OBS: CONFIG SKIPPED !\nConfig not properly deserialized: {out}")
         return {}
     if resume:
         dir = os.path.dirname(os.path.abspath(path))
@@ -187,9 +185,7 @@ def load_yaml_config(path: str | None, resume : bool=False) -> dict[str, Any]:
         if os.path.exists(weight_dir) and os.path.exists(last_checkpoint):
             out["checkpoint"] = str(last_checkpoint)
         else:
-            raise FileNotFoundError(
-                f'Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.'
-            )
+            raise FileNotFoundError(f"Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.")
     return out
 
 
@@ -212,8 +208,7 @@ def defaults_from_function(fn: Any) -> dict[str, Any]:
 
 
 def merge_dicts(*dicts: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge multiple dictionaries left-to-right. Later dicts win.
-    """
+    """Recursively merge multiple dictionaries left-to-right. Later dicts win."""
     out: dict[str, Any] = {}
     for d in dicts:
         for k, v in d.items():
@@ -232,9 +227,9 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
     - (A) dot(s) (".") in the key specify nested values (e.g. ``{"A.B.C" : 1}`` -> ``{"A" : {"B" : {"C" : 1}}}``)
     """
     out = {}
-    
+
     # Helpers for setting nested values
-    def _inset(d : dict, loc : list[str], value : Any):
+    def _inset(d: dict, loc: list[str], value: Any):
         for k in loc[:-1]:
             d.setdefault(k, {})
             d = d[k]
@@ -244,5 +239,5 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
         if v is None:
             continue
         _inset(out, k.split("."), v)
-    
+
     return out

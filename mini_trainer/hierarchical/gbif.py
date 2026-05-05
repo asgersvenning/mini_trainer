@@ -12,49 +12,40 @@ from diskcache import Cache
 
 from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
-GBIF_SPECIES_API_ENDPOINT = 'https://api.gbif.org/v1/species/'
-TAXONOMY_KEYS = (
-    "species",
-    "genus",
-    "family",
-    "order",
-    "class",
-    "phylum",
-    "kingdom"
-)
-cache = Cache(os.path.expanduser('~/.cache/nrs'))
+GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
+TAXONOMY_KEYS = ("species", "genus", "family", "order", "class", "phylum", "kingdom")
+cache = Cache(os.path.expanduser("~/.cache/nrs"))
 
 
-@cache.memoize(expire=7 * 86400) # One week
-def retrive_request(req : str):
-    """Retrieve a composed HTTPS request.
-    """
+@cache.memoize(expire=7 * 86400)  # One week
+def retrive_request(req: str):
+    """Retrieve a composed HTTPS request."""
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
     with urlopen(req) as resp:
         if resp.status != 200:
-            raise RuntimeError(f'Unable to resolve request, received status {resp.status} from {req}.')
+            raise RuntimeError(f"Unable to resolve request, received status {resp.status} from {req}.")
         return json.load(resp)
 
 
 @dataclass(kw_only=True)
 class GBIFTaxa:
-    """Convenience container for GBIF taxa.
-    """
-    species_name : str | None
-    species_id : int | None
-    genus_name : str | None
-    genus_id : int | None
-    family_name : str | None
-    family_id : int | None
-    order_name : str | None
-    order_id : int | None
-    class_name : str | None
-    class_id : int | None
-    phylum_name : str | None
-    phylum_id : int | None
-    kingdom_name : str | None
-    kingdom_id : int | None
+    """Convenience container for GBIF taxa."""
+
+    species_name: str | None
+    species_id: int | None
+    genus_name: str | None
+    genus_id: int | None
+    family_name: str | None
+    family_id: int | None
+    order_name: str | None
+    order_id: int | None
+    class_name: str | None
+    class_id: int | None
+    phylum_name: str | None
+    phylum_id: int | None
+    kingdom_name: str | None
+    kingdom_id: int | None
 
     @classmethod
     def from_kwargs(cls, **kwargs):
@@ -65,7 +56,7 @@ class GBIFTaxa:
                 proc[rank] = value
             else:
                 id, name = value
-                idk, namek = f'{rank}_id', f'{rank}_name'
+                idk, namek = f"{rank}_id", f"{rank}_name"
                 if idk not in proc:
                     proc[idk] = id
                 if namek not in proc:
@@ -87,18 +78,18 @@ class GBIFTaxa:
     @property
     def ranks(self):
         default = ["species", "genus", "family", "order", "class", "phylum", "kingdom"]
-        
-        def _full_rank(rank : str):
+
+        def _full_rank(rank: str):
             name = getattr(self, rank + "_name")
             id = getattr(self, rank + "_id")
             return name is not None and id is not None
-        
+
         return list(filter(_full_rank, default))
-    
+
     @property
     def names(self) -> list[str]:
         return [getattr(self, rank + "_name") for rank in self.ranks]
-    
+
     @property
     def ids(self) -> list[int]:
         return [getattr(self, rank + "_id") for rank in self.ranks]
@@ -106,11 +97,11 @@ class GBIFTaxa:
     @property
     def rank(self):
         return self.ranks[0]
-    
+
     @property
     def id(self) -> int:
         return getattr(self, self.rank + "_id")
-    
+
     @property
     def name(self) -> str:
         return getattr(self, self.rank + "_name")
@@ -120,44 +111,40 @@ class GBIFTaxa:
 
     def __repr__(self):
         ranks = self.ranks
-        fmt = "\n  ".join([f'{r.title():>7}: {{{r}}}' for r in ranks])
-        fmt = f'GBIFTaxa(\n  {fmt}\n)'
-        data = {
-            level : f'{getattr(self, level + "_name")} [{getattr(self, level + "_id")}]'
-            for level in ranks
-        }
+        fmt = "\n  ".join([f"{r.title():>7}: {{{r}}}" for r in ranks])
+        fmt = f"GBIFTaxa(\n  {fmt}\n)"
+        data = {level: f"{getattr(self, level + '_name')} [{getattr(self, level + '_id')}]" for level in ranks}
         return fmt.format(**data)
 
 
-def resolve_id(id : str | int):
+def resolve_id(id: str | int):
     """Resolves a GBIF id to the accepted GBIF id and scientific name for all taxonomic levels.
-    
-    * `[species, genus, family, order, class, phylum, kingdom]` 
-    
+
+    * `[species, genus, family, order, class, phylum, kingdom]`
+
     Args:
         id: GBIF species ID.
-    
+
     Returns:
-        (species taxonomy): 
-        The taxonomy of the species given by ``id`` as a dictionary: 
+        (species taxonomy):
+        The taxonomy of the species given by ``id`` as a dictionary:
         [str] <"taxa_level">: [tuple[int, str]] (<"Accepted GBIF id">, <"Accepted scientific name">)
     """
-    req = f'{GBIF_SPECIES_API_ENDPOINT}{id}'
+    req = f"{GBIF_SPECIES_API_ENDPOINT}{id}"
     data = retrive_request(req)
     try:
-        clean_data = OrderedDict([(key, (str(data[f'{key}Key']), str(data[key]))) for key in TAXONOMY_KEYS])
+        clean_data = OrderedDict([(key, (str(data[f"{key}Key"]), str(data[key]))) for key in TAXONOMY_KEYS])
     except KeyError as e:
         e.add_note(f"Missing keys in: {data}")
         raise
     return clean_data
 
 
-SPACE_PATTERN = re.compile(r'\s[x×]\s|[\s_]+')
+SPACE_PATTERN = re.compile(r"\s[x×]\s|[\s_]+")
 
 
-def parse_name(name : str | None, user_author : str | None=None):
-    """Parse taxa name and author from scientific name-string.
-    """
+def parse_name(name: str | None, user_author: str | None = None):
+    """Parse taxa name and author from scientific name-string."""
     if name is None:
         return name, user_author
     name = re.sub(SPACE_PATTERN, " ", name)
@@ -172,28 +159,21 @@ def parse_name(name : str | None, user_author : str | None=None):
 
 
 def name_to_id(
-        name : str, 
-        author : str | None=None, 
-        rank_contains : str | None=None, 
-        threshold : int=0,
-        attempt : int=0,
-        max_attempts : int=10
-    ) -> tuple[int, str, int]:
+    name: str, author: str | None = None, rank_contains: str | None = None, threshold: int = 0, attempt: int = 0, max_attempts: int = 10
+) -> tuple[int, str, int]:
     """Convert taxa name to GBIF ID.
-    
+
     Returns:
         (key, rank, confidence): Returns the matched GBIF `usageKey` and `rank`, and the matching confidence.
     """
     attempt += 1
     if attempt > max_attempts:
-        raise RuntimeError(
-            f'Unable to convert {name} ({author=}, {rank_contains=}) at {threshold=} to GBIF id in {max_attempts=}'
-        )
+        raise RuntimeError(f"Unable to convert {name} ({author=}, {rank_contains=}) at {threshold=} to GBIF id in {max_attempts=}")
     name, _ = parse_name(name, author)
     try:
-        req = f'{GBIF_SPECIES_API_ENDPOINT}match?name={quote(name)}'
+        req = f"{GBIF_SPECIES_API_ENDPOINT}match?name={quote(name)}"
         if author is not None:
-            req = f'{req}&authorship={quote(author)}'
+            req = f"{req}&authorship={quote(author)}"
         data = retrive_request(req)
         id, rank, conf = (data.get(k, None) for k in ["usageKey", "rank", "confidence"])
         if rank == "GENUS" and conf >= threshold:
@@ -202,26 +182,26 @@ def name_to_id(
                 rank_contains=rank_contains,
                 threshold=threshold,
                 attempt=attempt,
-                max_attempts=max_attempts
+                max_attempts=max_attempts,
             )
         if (
-            not (isinstance(id, int) and isinstance(rank, str) and isinstance(conf, int)) or 
-            (rank_contains is not None and rank_contains not in rank) or 
-            conf < threshold
+            not (isinstance(id, int) and isinstance(rank, str) and isinstance(conf, int))
+            or (rank_contains is not None and rank_contains not in rank)
+            or conf < threshold
         ):
-            raise RuntimeError(f'Unable to properly resolve {name} using "{req}" got {id=} {rank=} {conf=}:\n{data}') 
+            raise RuntimeError(f'Unable to properly resolve {name} using "{req}" got {id=} {rank=} {conf=}:\n{data}')
         return id, rank, conf
     except Exception as e:
         if "Unable to convert" in str(e):
             raise
-        req = f'{GBIF_SPECIES_API_ENDPOINT}search?nameType=SCIENTIFIC&q={quote(name)}'
+        req = f"{GBIF_SPECIES_API_ENDPOINT}search?nameType=SCIENTIFIC&q={quote(name)}"
         data = retrive_request(req)["results"]
         if len(data) == 0 or (new_name := parse_name(data[0].get("scientificName", None))[0]) is None:
-            raise RuntimeError(f'Request {req}, returned empty, partial or malformed data: {data}') from e
+            raise RuntimeError(f"Request {req}, returned empty, partial or malformed data: {data}") from e
         if (
-            name == new_name and 
-            (id := data[0]["speciesKey"]) and 
-            (rank_contains is not None and rank_contains in (rank := data[0].get("rank", "UNKNOWN")))
+            name == new_name
+            and (id := data[0]["speciesKey"])
+            and (rank_contains is not None and rank_contains in (rank := data[0].get("rank", "UNKNOWN")))
         ):
             if isinstance(id, str):
                 id = id.strip()
@@ -230,29 +210,23 @@ def name_to_id(
             assert isinstance(id, int)
             assert isinstance(rank, str)
             return id, rank, threshold
-        return name_to_id(
-            name=new_name, 
-            rank_contains=rank_contains, 
-            threshold=threshold, 
-            attempt=attempt, 
-            max_attempts=max_attempts
-        )
+        return name_to_id(name=new_name, rank_contains=rank_contains, threshold=threshold, attempt=attempt, max_attempts=max_attempts)
 
 
 @multithread_vectorize(desc="Translating names...")
-def id_to_name(id : str | int):
+def id_to_name(id: str | int):
     if isinstance(id, str):
         id = id.strip()
         if not id.isdigit():
-            raise ValueError(f'{id} must be a digit.')
+            raise ValueError(f"{id} must be a digit.")
         id = int(id)
-    req = f'{GBIF_SPECIES_API_ENDPOINT}{id}/name'
+    req = f"{GBIF_SPECIES_API_ENDPOINT}{id}/name"
     data = retrive_request(req)
     return data["scientificName"]
 
 
 @multithread_vectorize(desc="Resolving taxa...")
-def resolve_name_or_id(name_or_id : str | int): # noqa: D103
+def resolve_name_or_id(name_or_id: str | int):  # noqa: D103
     name_or_id = name_or_id.strip()
     if isinstance(name_or_id, int) or name_or_id.isdigit():
         return resolve_id(name_or_id)
@@ -260,42 +234,40 @@ def resolve_name_or_id(name_or_id : str | int): # noqa: D103
     return resolve_id(id)
 
 
-def create_taxonomy( # noqa: D103
-        names_or_ids : list[str],
-        levels : str | int | tuple[str | int, ...] | list[str | int]="family"
-    ):
+def create_taxonomy(  # noqa: D103
+    names_or_ids: list[str], levels: str | int | tuple[str | int, ...] | list[str | int] = "family"
+):
     # _levels = len(TAXONOMY_KEYS) - 1
     if isinstance(levels, str):
         _levels = TAXONOMY_KEYS.index(levels.strip().lower())
     elif isinstance(levels, (tuple, list)):
-        _levels = [
-            level if isinstance(level, int) else TAXONOMY_KEYS.index(level.strip().lower())
-            for level in levels
-        ]
+        _levels = [level if isinstance(level, int) else TAXONOMY_KEYS.index(level.strip().lower()) for level in levels]
     elif isinstance(levels, int):
         _levels = levels - 1
     else:
-        raise TypeError(f'Unexpected type for {levels=} ({type(levels)}).')
+        raise TypeError(f"Unexpected type for {levels=} ({type(levels)}).")
     _levels = list(range(_levels + 1)) if isinstance(_levels, int) else _levels
     level_strs = [TAXONOMY_KEYS[lvl] for lvl in sorted(_levels)]
     taxs = resolve_name_or_id(names_or_ids)
-    return OrderedDict([
-        (orig, filter_ordered_dict(tax, level_strs))
-        for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x : [v[1] for v in x[1].values()])
-    ])
+    return OrderedDict(
+        [
+            (orig, filter_ordered_dict(tax, level_strs))
+            for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x: [v[1] for v in x[1].values()])
+        ]
+    )
 
 
-def labels_from_taxonomy(tax : OrderedDict[str, OrderedDict[str, tuple[str, ...]]]): # noqa: D103
+def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[str, tuple[str, ...]]]):  # noqa: D103
     return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])
 
 
-def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]): # noqa: D103
+def cls2idx_from_labels(labels: OrderedDict[str, tuple[str, ...]]):  # noqa: D103
     nlvl = set([len(lab) for lab in labels.values()])
     if len(nlvl) != 1:
-        raise RuntimeError('Varying hierarchy levels found in image directory structure:', list(sorted(nlvl)))
+        raise RuntimeError("Varying hierarchy levels found in image directory structure:", list(sorted(nlvl)))
     nlvl = list(nlvl)[0]
-    cls2idx : dict[str, dict[str, int]] = {str(lvl) : dict() for lvl in range(nlvl)}
-    classes = {str(lvl) : set() for lvl in range(nlvl)}
+    cls2idx: dict[str, dict[str, int]] = {str(lvl): dict() for lvl in range(nlvl)}
+    classes = {str(lvl): set() for lvl in range(nlvl)}
     for lab in labels.values():
         for lvl, cls in enumerate(lab):
             if cls in classes[str(lvl)]:
@@ -305,15 +277,15 @@ def cls2idx_from_labels(labels : OrderedDict[str, tuple[str, ...]]): # noqa: D10
     return cls2idx
 
 
-def _keys_str_int(d : dict):
+def _keys_str_int(d: dict):
     return all([isinstance(k, str) and k.isdigit() for k in d.keys()])
 
 
-def _values_int(d : dict):
+def _values_int(d: dict):
     return all([isinstance(v, int) for v in d.values()])
 
 
-def is_taxonomical_cls2idx(cls2idx): # noqa: D103
+def is_taxonomical_cls2idx(cls2idx):  # noqa: D103
     if not isinstance(cls2idx, dict):
         return False
     if len(cls2idx) == 0:
@@ -321,4 +293,3 @@ def is_taxonomical_cls2idx(cls2idx): # noqa: D103
     if not _keys_str_int(cls2idx):
         return False
     return all([isinstance(v, dict) and _keys_str_int(v) and _values_int(v) for v in cls2idx.values()])
-    

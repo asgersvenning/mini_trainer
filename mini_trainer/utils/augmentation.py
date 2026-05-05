@@ -10,13 +10,12 @@ from mini_trainer.utils import make_convert_dtype
 
 
 def debug_augmentation(
-        augmentation : Callable[[torch.Tensor], torch.Tensor],
-        dataset : torch.utils.data.Dataset,
-        output_dir : str | None=None,
-        strict : bool=True
-    ):
-    """Helper to debug augmentation pipeline.
-    """
+    augmentation: Callable[[torch.Tensor], torch.Tensor],
+    dataset: torch.utils.data.Dataset,
+    output_dir: str | None = None,
+    strict: bool = True,
+):
+    """Helper to debug augmentation pipeline."""
     if output_dir is None:
         return
     convert2fp32 = make_convert_dtype(torch.float32)
@@ -25,11 +24,11 @@ def debug_augmentation(
         fig, axs = plt.subplots(3, n, figsize=(10, 5))
 
         for j, i in enumerate(sample(range(len(dataset)), n)):
-            example_image : torch.Tensor = dataset[i][0].clone().cpu()
-            
-            axs[j, 0].imshow(example_image.permute(1,2,0))
-            axs[j, 1].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
-            axs[j, 2].imshow(convert2fp32(augmentation(example_image).permute(1,2,0)))
+            example_image: torch.Tensor = dataset[i][0].clone().cpu()
+
+            axs[j, 0].imshow(example_image.permute(1, 2, 0))
+            axs[j, 1].imshow(convert2fp32(augmentation(example_image).permute(1, 2, 0)))
+            axs[j, 2].imshow(convert2fp32(augmentation(example_image).permute(1, 2, 0)))
             for ax in axs[j, :]:
                 ax.axis("off")
 
@@ -50,9 +49,8 @@ def debug_augmentation(
 
 
 @torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
-def salt_and_pepper(img : torch.Tensor, proportion : tuple[float, float]=(0, 0.5), probability : float=1):
-    """Functional salt and pepper augmentation implementation.
-    """
+def salt_and_pepper(img: torch.Tensor, proportion: tuple[float, float] = (0, 0.5), probability: float = 1):
+    """Functional salt and pepper augmentation implementation."""
     apply_aug = torch.rand([], device=img.device) < probability
     p = torch.rand([], device=img.device) * (proportion[1] - proportion[0]) + proportion[0]
     if len(img.shape) <= 3:
@@ -69,9 +67,9 @@ def salt_and_pepper(img : torch.Tensor, proportion : tuple[float, float]=(0, 0.5
 
 
 class SaltAndPepper(torch.nn.Module):
-    """Salt and pepper augmentation module.
-    """
-    def __init__(self, proportion : tuple[float, float]=(0.05, 0.33), probability : float=0.5): # noqa: D107
+    """Salt and pepper augmentation module."""
+
+    def __init__(self, proportion: tuple[float, float] = (0.05, 0.33), probability: float = 0.5):  # noqa: D107
         super().__init__()
         self.proportion = proportion
         self.probability = probability

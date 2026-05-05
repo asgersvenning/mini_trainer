@@ -1,7 +1,6 @@
 # Forward-compatibility with Muon optimizer (will be in PyTorch later)
 # From: https://github.com/pytorch/pytorch/blob/main/torch/optim/_muon.py
-"""Implementation of the Muon optimizer.
-"""
+"""Implementation of the Muon optimizer."""
 
 import math
 from collections.abc import Callable, MutableMapping, Sequence
@@ -14,7 +13,7 @@ from torch.optim import AdamW
 from torch.optim.optimizer import Optimizer, ParamsT, _disable_dynamo_if_unsupported, _params_doc
 
 
-def _to_scalar(x : float | torch.Tensor):
+def _to_scalar(x: float | torch.Tensor):
     r"""This function converts a hyperparameter to a 0-dimension (scalar) tensor
     if it is a nonzero-dimensions 1-element tensor. If it is not a tensor, it is
     kept as is.
@@ -44,9 +43,7 @@ DEFAULT_C = 2.0315
 DEFAULT_NS_STEPS = 5
 
 
-def _zeropower_via_newtonschulz(
-    grad: Tensor, ns_coefficients: tuple[float, float, float], ns_steps: int, eps: float
-) -> Tensor:
+def _zeropower_via_newtonschulz(grad: Tensor, ns_coefficients: tuple[float, float, float], ns_steps: int, eps: float) -> Tensor:
     """Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
     quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
     of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
@@ -59,9 +56,7 @@ def _zeropower_via_newtonschulz(
     with suggestions by @jxbz, @leloykun, and @YouJiacheng.
     """
     if ns_steps >= 100:
-        raise ValueError(
-            "Number of steps must be less than 100 for computational efficiency"
-        )
+        raise ValueError("Number of steps must be less than 100 for computational efficiency")
     if len(grad.shape) != 2:
         raise ValueError("Input tensor gradient must be a 2D matrix")
     if len(ns_coefficients) != 3:
@@ -75,9 +70,7 @@ def _zeropower_via_newtonschulz(
     # Perform the NS iterations
     for _ in range(ns_steps):
         gram_matrix = ortho_grad @ ortho_grad.T
-        gram_update = torch.addmm(
-            gram_matrix, gram_matrix, gram_matrix, beta=b, alpha=c
-        )
+        gram_update = torch.addmm(gram_matrix, gram_matrix, gram_matrix, beta=b, alpha=c)
         ortho_grad = torch.addmm(ortho_grad, gram_update, ortho_grad, beta=a)
 
     if grad.size(0) > grad.size(1):
@@ -85,11 +78,8 @@ def _zeropower_via_newtonschulz(
     return ortho_grad
 
 
-def _adjust_lr(
-    lr: float, adjust_lr_fn: str | None, param_shape: torch.Size
-) -> float:
-    """Default learning rate adjustment used by Muon.
-    """
+def _adjust_lr(lr: float, adjust_lr_fn: str | None, param_shape: torch.Size) -> float:
+    """Default learning rate adjustment used by Muon."""
     A, B = param_shape[:2]
 
     if adjust_lr_fn is None or adjust_lr_fn == "original":
@@ -101,8 +91,8 @@ def _adjust_lr(
     return lr * adjusted_ratio
 
 
-class Muon(Optimizer): # noqa: D101
-    def __init__( # noqa: D107
+class Muon(Optimizer):  # noqa: D101
+    def __init__(  # noqa: D107
         self,
         params: ParamsT,
         lr: float = 1e-3,
@@ -126,9 +116,7 @@ class Muon(Optimizer): # noqa: D101
             "original",
             "match_rms_adamw",
         ]:
-            raise ValueError(
-                f"Adjust learning rate function {adjust_lr_fn} is not supported"
-            )
+            raise ValueError(f"Adjust learning rate function {adjust_lr_fn} is not supported")
 
         defaults = {
             "lr": lr,
@@ -145,9 +133,7 @@ class Muon(Optimizer): # noqa: D101
         for group in self.param_groups:
             for p in group["params"]:
                 if p.ndim != 2:
-                    raise ValueError(
-                        f"Muon only supports 2D parameters whereas we found a parameter with size: {p.size()}"
-                    )
+                    raise ValueError(f"Muon only supports 2D parameters whereas we found a parameter with size: {p.size()}")
 
     def _init_group(
         self,
@@ -171,17 +157,14 @@ class Muon(Optimizer): # noqa: D101
             state = self.state[p]
 
             if "momentum_buffer" not in state:
-                state["momentum_buffer"] = torch.zeros_like(
-                    p.grad, memory_format=torch.preserve_format
-                )
+                state["momentum_buffer"] = torch.zeros_like(p.grad, memory_format=torch.preserve_format)
             muon_momentum_bufs.append(state["momentum_buffer"])
 
         return False  # has_complex
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step.
-        """
+        """Performs a single optimization step."""
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -274,7 +257,7 @@ Muon.__doc__ = (
 
     For further details regarding the algorithm we refer to `Muon: An optimizer for hidden layers in neural networks`_
     and `Muon is Scalable for LLM Training`_.
-    """ # noqa: E501
+    """  # noqa: E501
     + rf"""
     Args:
         {_params_doc}. Note that Muon is an optimizer for 2D parameters of neural network hidden layers. Other
@@ -383,21 +366,10 @@ def muon(
 # - ND parameters (e.g. 1D parameters, such as biases) -> AdamW
 # (Force AdamW by using "nomuon" in parameter group name)
 class MuonAuxAdamW(Optimizer):
-    def __init__(self, params : ParamsT, **kwargs):
+    def __init__(self, params: ParamsT, **kwargs):
         self._init = True
-        self.opt_args = {
-            "muon" : {
-                "adjust_lr_fn" : "match_rms_adamw",
-                "momentum" : 0.95
-            },
-            "adamw" : {
-                "betas" : (0.9, 0.999)
-            }
-        }
-        self.opt_cls = {
-            "muon" : Muon,
-            "adamw" : AdamW
-        }
+        self.opt_args = {"muon": {"adjust_lr_fn": "match_rms_adamw", "momentum": 0.95}, "adamw": {"betas": (0.9, 0.999)}}
+        self.opt_cls = {"muon": Muon, "adamw": AdamW}
         super().__init__(params=params, defaults=kwargs)
         orig_groups = list(self.param_groups)
         self.param_groups = []
@@ -416,22 +388,22 @@ class MuonAuxAdamW(Optimizer):
     def _refresh_param_groups(self):
         self.param_groups = list(chain.from_iterable(getattr(self, opt).param_groups for opt in self.optimizers))
 
-    def zero_grad(self, set_to_none : bool=True):
+    def zero_grad(self, set_to_none: bool = True):
         for opt in self.optimizers:
             getattr(self, opt).zero_grad(set_to_none=set_to_none)
 
-    def step(self, closure : Callable[[], float | Tensor] | None=None):
+    def step(self, closure: Callable[[], float | Tensor] | None = None):
         loss = closure() if closure is not None else None
         for opt in self.optimizers:
             getattr(self, opt).step()
         return loss
 
-    def add_param_group(self, param_group : dict[str, Any]) -> None:
+    def add_param_group(self, param_group: dict[str, Any]) -> None:
         if self._init:
             return super().add_param_group(param_group=param_group)
         # Force AdamW for parameter groups with "nomuon" in name
         if "nomuon" in param_group["name"]:
-            grps = {"adamw" : param_group}
+            grps = {"adamw": param_group}
         else:
             params: Sequence[Tensor] = param_group.pop("params", [])
             if not isinstance(params, Sequence) or len(params) == 0:
@@ -441,16 +413,17 @@ class MuonAuxAdamW(Optimizer):
             def _opt_check(opt):
                 match opt:
                     case "muon":
-                        return lambda x : x.ndim == 2
+                        return lambda x: x.ndim == 2
                     case "adamw":
-                        return lambda x : x.ndim != 2
+                        return lambda x: x.ndim != 2
                     case _:
                         raise NotImplementedError("Only Muon and AdamW are accepted optimizers for `MuonAuxAdamW`")
-            grps = {opt : {"params" : list(filter(_opt_check(opt), params)), **base} for opt in ["muon", "adamw"]}
+
+            grps = {opt: {"params": list(filter(_opt_check(opt), params)), **base} for opt in ["muon", "adamw"]}
         for name, grp in grps.items():
             if len(grp["params"]) == 0:
                 continue
-            opt : Optimizer | None = getattr(self, name, None)
+            opt: Optimizer | None = getattr(self, name, None)
             if opt is None:
                 setattr(self, name, self.opt_cls[name]([grp], **{**self.opt_args[name], **self.defaults}))
             else:
@@ -458,7 +431,7 @@ class MuonAuxAdamW(Optimizer):
         self._refresh_param_groups()
 
     def state_dict(self) -> dict[str, Any]:
-        return {opt : getattr(self, opt).state_dict() for opt in self.optimizers}
+        return {opt: getattr(self, opt).state_dict() for opt in self.optimizers}
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         for k, v in state_dict.items():

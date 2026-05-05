@@ -15,6 +15,7 @@ dependencies = [
   "pyyaml>=6.0.3",
   "numpy>=2.4.0",
   "pycirclize>=1.10.1",
+  "biopython>=1.80",
 ]
 requires-python = ">=3.12"
 authors = [
@@ -48,6 +49,9 @@ bioclip = [
 transformers = [
   "transformers"
 ]
+wandb = [
+  "wandb"
+]
 
 [project.urls]
 Repository = "https://github.com/asgersvenning/mini_trainer"
@@ -61,14 +65,10 @@ mt_hpredict = "mini_trainer.hierarchical.predict:run"
 
 [tool.ruff]
 target-version = "py312"
-line-length = 120
+line-length = 140
 
 [tool.ruff.lint]
-# Enable core checks, imports, pyupgrade, and pydocstyle
-select = ["E", "F", "I", "UP", "D"]
-# Prefer multi-line docstring summaries (D213); ignore D200 (summary must be on first line)
-ignore = ["D100", "D102", "D105", "D200", "E203", "D205", "E231", "E252", "E261", "UP015", "D415"]
-preview = true
+select = ["E", "F", "UP", "I"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -94,3 +94,6 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

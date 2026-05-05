@@ -5,13 +5,8 @@ from mini_trainer.hierarchical.gbif import resolve_id
 from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
 
 
-def rank_error(
-        predictions : list[str | int] | list[tuple[str | int, ...]], 
-        labels : list[int | str],
-        progress : bool=False
-    ):
-    """Computes the rank error (LCA distance) between predictions and labels.
-    """
+def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], labels: list[int | str], progress: bool = False):
+    """Computes the rank error (LCA distance) between predictions and labels."""
     ranks = []
     elements = zip(predictions, labels)
     if progress:
@@ -29,13 +24,12 @@ def rank_error(
 
 
 def confusion_matrices(
-        predictions : list[str | int] | list[tuple[str | int, ...]], 
-        labels : list[int | str], 
-        levels : int=len(DEFAULT_HIERARCHY_LEVELS),
-        progress : bool=False
-    ):
-    """TODO.
-    """
+    predictions: list[str | int] | list[tuple[str | int, ...]],
+    labels: list[int | str],
+    levels: int = len(DEFAULT_HIERARCHY_LEVELS),
+    progress: bool = False,
+):
+    """TODO."""
     # cf_mats = []
     pred_long, lab_long = [[[] for _ in range(levels)] for _ in range(2)]
     elements = zip(predictions, labels)
