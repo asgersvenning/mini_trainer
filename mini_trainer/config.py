@@ -7,6 +7,7 @@ from copy import deepcopy
 from typing import Any
 
 import torch
+import yaml
 
 
 def _nullify(d: dict[str, Any]):
@@ -101,8 +102,6 @@ def dump_resolved_config(
     # Write YAML preferred, JSON fallback (then exit)
     os.makedirs(output_dir, exist_ok=True)
     try:
-        import yaml
-
         path_yaml = os.path.join(output_dir, "config.yaml")
         with open(path_yaml, "w", encoding="utf-8") as f:
             yaml.safe_dump(cfg, f, sort_keys=False)
@@ -121,11 +120,6 @@ def save_yaml_template(path: str) -> str:
 
     Returns the absolute path written.
     """
-    try:
-        import yaml  # type: ignore
-    except Exception as e:  # pragma: no cover - optional dep
-        raise RuntimeError("PyYAML is required for YAML config support. Install with 'pip install pyyaml'") from e
-
     cfg = _stringify_types(defaults_from_function(getattr(importlib.import_module("mini_trainer.train"), "main")))
 
     path = os.path.abspath(path)
@@ -142,10 +136,6 @@ def load_yaml_config(path: str | None, resume: bool = False) -> dict[str, Any]:
     """
     if path is None:
         return {}
-    try:
-        import yaml  # type: ignore
-    except Exception as e:  # pragma: no cover - optional dep
-        raise RuntimeError("PyYAML is required for YAML config support. Install with 'pip install pyyaml'") from e
 
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
@@ -241,3 +231,20 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
         _inset(out, k.split("."), v)
 
     return out
+
+
+def configure_loggers(use_tensorboard: bool = False, use_wandb: bool = False):
+    if not use_tensorboard and not use_wandb:
+        return []
+    from mini_trainer.utils.logging import MetricLogger
+
+    loggers = [MetricLogger]
+    if use_tensorboard:
+        from mini_trainer.utils.tensorboard import TensorboardLogger
+
+        loggers.append(TensorboardLogger)
+    if use_wandb:
+        from mini_trainer.utils.wandb import WandbLogger
+
+        loggers.append(WandbLogger)
+    return loggers

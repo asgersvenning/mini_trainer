@@ -2,9 +2,11 @@ import json
 import math
 import os
 import time
+import warnings
 from collections import defaultdict, deque
 from collections.abc import Callable
 from itertools import chain, repeat
+from tempfile import NamedTemporaryFile
 from threading import RLock
 from types import GeneratorType
 from typing import Any, TextIO, TypeVar
@@ -1276,7 +1278,7 @@ class MultiLogger:
                 figs[f"Soft confusion matrix/lvl{lvl}"] = plot_heatmap(cm)
         return figs
 
-    def add_figure(self, name: str, figure: Figure | np.ndarray | torch.Tensor):
+    def add_figure(self, name: str, figure: Figure | np.ndarray | torch.Tensor | str):
         for logger in self.loggers:
             logger.add_figure(name=name, figure=figure, epoch=self._epoch)
         if isinstance(figure, Figure):
@@ -1292,6 +1294,8 @@ class MultiLogger:
             self.add_figure("Class distance matrix", cdm_fig)
             try:
                 pd_fig = plot_probabilistic_dendrogram(model)
-                self.add_figure("Probabilistic dendrogram", pd_fig)
+                with NamedTemporaryFile(suffix=".svg") as tmp_file:
+                    pd_fig.savefig(tmp_file.name, bbox_inches='tight')
+                    self.add_figure("Probabilistic dendrogram", tmp_file.name)
             except Exception as e:
-                print(f"Warning: Failed to plot probabilistic dendrogram: {e}")
+                warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)

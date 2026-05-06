@@ -17,7 +17,8 @@ from scipy.spatial.distance import squareform
 from torch import nn
 from torchvision.transforms.functional import resize
 
-from mini_trainer.classifier import last_layer_weights
+from mini_trainer.classifier import classification_module, last_layer_weights
+from mini_trainer.utils.gbif import resolve_name_or_id
 from mini_trainer.utils.generic import cosine_to_zscore
 
 
@@ -395,12 +396,22 @@ def plot_heatmap(
 
 
 @torch.no_grad()
-def class_distance(model: nn.Module):
+def class_similarity(model: nn.Module, cdf: bool = False):
     W = last_layer_weights(model)
     W = W.detach().clone().float()
     WN = W.norm(2, 1, True)
     Z = cosine_to_zscore((W @ W.T) / (WN @ WN.T), W.shape[1])
-    return Z.fill_diagonal_(torch.nan).clamp_(0.0, 1.0).cpu()
+    if cdf:
+        Z = torch.distributions.Normal(0, 1).cdf(Z).fill_diagonal_(1.0)
+    return Z
+
+
+@torch.no_grad()
+def class_distance(model: nn.Module, eps : float | None=None):
+    sim = class_similarity(model, cdf=True)
+    if eps is None:
+        eps = torch.finfo(sim.dtype).eps
+    return (-sim.clamp_(min=eps, max=1.0).log_()).clamp_min_(0)
 
 
 def plot_class_distance_matrix(model: nn.Module, **kwargs):
@@ -410,7 +421,7 @@ def plot_class_distance_matrix(model: nn.Module, **kwargs):
     in the last-layer weight matrix, assuming that these
     have unit norm.
     """
-    return plot_heatmap(class_distance(model), **kwargs)
+    return plot_heatmap(1 - class_similarity(model, cdf=True).cpu(), **kwargs)
 
 
 def linkage_to_newick(Z: np.ndarray, labels: list[str] | tuple[str]) -> str:
@@ -455,18 +466,24 @@ def sanitize(x):
 
 def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05, apriori_groups: list[str] | dict[str, str] | None = None):
     """Plot the probabilistic dendrogram for a model's class centers."""
-    from mini_trainer.classifier import classification_module
-
     meta = classification_module(model).metadata
     idx2cls = meta.get("idx2cls", {})
     if not idx2cls:
         cls2idx = meta.get("cls2idx", {})
+        if isinstance(cls2idx.get("0", None), dict):
+            cls2idx = cls2idx["0"]
         idx2cls = {v: k for k, v in cls2idx.items()}
+    if isinstance(idx2cls.get("0", None), dict):
+        idx2cls = idx2cls["0"]
 
-    class_names = [idx2cls[i] for i in range(len(idx2cls))]
+    class_names = [str(idx2cls.get(i, idx2cls.get(str(i), i))) for i in range(len(idx2cls))]
+    try:
+        # Attempt to coerce to scientific names
+        class_names = [res["species"][1] for res in resolve_name_or_id(class_names)]
+    except Exception:
+        pass
 
-    W = class_distance(model).numpy()
-    np.fill_diagonal(W, 0)
+    W = class_distance(model).cpu().numpy()
     condensed_dist = squareform(W)
     Z = linkage(condensed_dist, method="ward")
 

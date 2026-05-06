@@ -10,11 +10,11 @@ from torch import nn
 
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.classifier import classification_module
-from mini_trainer.hierarchical.gbif import cls2idx_from_labels, create_taxonomy, id_to_name, labels_from_taxonomy
 from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
 from mini_trainer.hierarchical.model import HierarchicalClassifier, HierarchicalPrediction
 from mini_trainer.utils import write_csv_from_dict
 from mini_trainer.utils.data import find_images
+from mini_trainer.utils.gbif import cls2idx_from_labels, create_taxonomy, id_to_name, labels_from_taxonomy
 from mini_trainer.utils.logging import BaseResultCollector
 from mini_trainer.utils.loss import EMLACrossEntropy
 from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical

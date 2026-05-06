@@ -1,4 +1,5 @@
 import os
+import warnings
 from collections import defaultdict
 
 import numpy as np
@@ -90,13 +91,31 @@ class TensorboardLogger(_Logger):
                 self.buffer_scalar(tag, v, self._idx + i)
         super().update(name, values)
 
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):  # pyright: ignore[reportPrivateImportUsage]
-        """Add figure to tensorboard."""
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):
         tag = self._make_scalar_hierarchical_tag(name)
-        if isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
+
+        if isinstance(figure, str):
+            if figure.lower().endswith(".svg") and os.path.isfile(figure):
+                try:
+                    with open(figure, encoding="utf-8") as f:
+                        figure = f.read()
+                except OSError:
+                    return
+                    
+            if "<svg" in figure[:500].lower():
+                self.writer.add_text(tag, f"```xml\n{figure}\n```", epoch)
+                return
+                
+            try:
+                figure = plt.imread(figure)
+            except Exception as e:
+                warnings.warn(f"Warning: Failed to load image path '{figure}': {e}", UserWarning)
+                return
+
+        if isinstance(figure, plt.Figure):
             self.writer.add_figure(tag, figure, epoch, close=False)
-        else:
-            if isinstance(figure, np.ndarray):
+        elif isinstance(figure, np.ndarray):
+            if figure.shape[-1] in [1, 3, 4]:
                 figure = np.permute_dims(figure, (2, 0, 1))
             self.writer.add_image(tag, figure, epoch)
 

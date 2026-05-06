@@ -40,6 +40,27 @@ cd mini_trainer
 uv sync
 ```
 
+## Weights & Biases Integration
+
+`mini_trainer` supports logging your training runs, including metrics, confusion matrices, and the probabilistic dendrogram, directly to [Weights & Biases](https://wandb.ai). 
+
+Because we strive for a minimal core, `wandb` is an optional dependency. To use it:
+
+1. **Install with wandb support**:
+   ```bash
+   uv sync --extra wandb
+   # or if using pip directly: pip install "mini_trainer[wandb]"
+   ```
+2. **Login to your wandb account**:
+   ```bash
+   uv run wandb login
+   ```
+3. **Train with the `--wandb` flag**:
+   Simply append the `--wandb` flag to your training command.
+   ```bash
+   uv run mt_train -i path/to/dataset --wandb
+   ```
+
 ## Acknowledgements
 This repository repository draws inspiration from https://github.com/pytorch/vision/tree/main/references/classification.
 

@@ -1,5 +1,10 @@
+import json
+import os
+import socket
+
 import numpy as np
 import torch
+import yaml
 from matplotlib import pyplot as plt
 
 try:
@@ -31,9 +36,36 @@ class WandbLogger(_Logger):
         self.name = name
         self.tag = tag or "main"
 
+        output_dir = None
+        if output is not None and name is not None:
+            output_dir = os.path.join(output, name)
+
+        config = None
+        dataset = None
+        machine = socket.gethostname()
+
+        if output_dir is not None:
+            config_path_yaml = os.path.join(output_dir, "config.yaml")
+            config_path_json = os.path.join(output_dir, "config.json")
+            if os.path.exists(config_path_yaml):
+                with open(config_path_yaml, encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+            elif os.path.exists(config_path_json):
+                with open(config_path_json, encoding="utf-8") as f:
+                    config = json.load(f)
+
+            if config and "input" in config:
+                dataset = os.path.basename(config["input"])
+
         # Initialize wandb run if not already initialized
         if wandb.run is None:
-            wandb.init(project=project, name=name, dir=output)
+            tags = []
+            if machine:
+                tags.append(machine)
+            if dataset:
+                tags.append(os.path.join(os.path.basename(os.getcwd()), dataset))
+            tags.append(os.getcwd())
+            wandb.init(project=project, name=name, dir=output, config=config, tags=tags if tags else None)
 
         self._idx = 0
         self._statistics: dict[str, _Statistic] = dict()
@@ -69,24 +101,69 @@ class WandbLogger(_Logger):
         super().update(name, values)
 
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):  # pyright: ignore[reportPrivateImportUsage]
-        """Add figure to wandb."""
+        """Add figure to wandb, with robust native SVG support."""
         if wandb.run is None:
             return
 
         tag = self._make_scalar_hierarchical_tag(name)
+        step_idx = min(self._idx, len(self.global_steps) - 1)
+        global_step = self.global_steps[step_idx] if len(self.global_steps) > 0 else 0
+
+        # W&B strictly requires monotonically increasing steps
+        if getattr(wandb.run, "step", 0) > global_step:
+            global_step = wandb.run.step
+
+        # 1. Robust SVG Detection
+        is_svg = False
+        svg_content = ""
+        
+        if isinstance(figure, str):
+            # Case A: File Path
+            if figure.lower().endswith(".svg") and os.path.isfile(figure):
+                try:
+                    with open(figure, encoding="utf-8") as f:
+                        svg_content = f.read()
+                    is_svg = True
+                except OSError as e:
+                    print(f"Warning: Failed to read SVG file {figure}: {e}")
+                    
+            # Case B: Raw String (Check only the first 500 chars to save memory)
+            elif "<svg" in figure[:500].lower():
+                svg_content = figure
+                is_svg = True
+
+        # 2. Render SVG
+        if is_svg:
+            # Wrapper handles Dark Mode visibility and allows scrolling if massive
+            html_payload = (
+                '<div style="background-color: white; width: 100%; overflow: auto; padding: 10px;">'
+                f'{svg_content}'
+                '</div>'
+            )
+            wandb.log({tag: wandb.Html(html_payload), "epoch": epoch}, step=global_step)
+            return
+
+        # 3. Render Standard Formats
         if isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
-            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=self.global_steps[self._idx])
+            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
+        elif isinstance(figure, np.ndarray):
+            # Ensure it's correctly shaped for image (H, W, C)
+            if figure.shape[0] in [1, 3, 4] and figure.shape[2] not in [1, 3, 4]:
+                figure = np.transpose(figure, (1, 2, 0))
+            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
         else:
-            if isinstance(figure, np.ndarray):
-                # Ensure it's correctly shaped for image (H, W, C)
-                if figure.shape[0] in [1, 3, 4] and figure.shape[2] not in [1, 3, 4]:
-                    figure = np.transpose(figure, (1, 2, 0))
-            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=self.global_steps[self._idx])
+            # Fallback for standard image paths (e.g., "plot.png")
+            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
 
     def step(self):
         """Step wandb logger."""
         if wandb.run is not None and self._current_step_logs:
             global_step = self.global_steps[self._idx]
+
+            # W&B strictly requires monotonically increasing steps
+            if getattr(wandb.run, "step", 0) > global_step:
+                global_step = wandb.run.step
+
             wandb.log(self._current_step_logs, step=global_step)
             self._current_step_logs = {}
 

@@ -10,6 +10,7 @@ import torchvision
 from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder, EMATeacher
 from mini_trainer.config import (
+    configure_loggers,
     defaults_from_function,
     dump_resolved_config,
     load_yaml_config,
@@ -577,20 +578,9 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
             args["model_builder_kwargs"]["model_type"], "fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full", args["epochs"]
         )
 
-    if use_tensorboard or use_wandb:
-        from mini_trainer.utils.logging import MetricLogger
-
-        loggers = [MetricLogger]
-        if use_tensorboard:
-            from mini_trainer.utils.tensorboard import TensorboardLogger
-
-            loggers.append(TensorboardLogger)
-        if use_wandb:
-            from mini_trainer.utils.wandb import WandbLogger
-
-            loggers.append(WandbLogger)
-
-        args["logger_builder_kwargs"]["logger_cls"] = loggers
+    args["logger_builder_kwargs"]["logger_cls"] = (
+        configure_loggers(use_tensorboard=use_tensorboard, use_wandb=use_wandb) or args["logger_builder_kwargs"]["logger_cls"]
+    )
 
     return args
 

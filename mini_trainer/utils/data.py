@@ -65,7 +65,7 @@ def create_metadata(
         # If no labels are supplied we just assume that the images are put into
         # folders named after the class
         if isinstance(cls2idx.get("0", None), dict):
-            from mini_trainer.hierarchical.gbif import create_taxonomy, is_taxonomical_cls2idx, labels_from_taxonomy
+            from mini_trainer.utils.gbif import create_taxonomy, is_taxonomical_cls2idx, labels_from_taxonomy
 
             if not is_taxonomical_cls2idx(cls2idx):
                 raise ValueError("Hierarchical class index passed without labels and is not taxonomical.")
@@ -119,7 +119,14 @@ def get_metadata(
             'Please provide a JSON with the following keys: "path", "class" or "label", "split".'
         )
     with open(path, "rb") as f:
-        metadata = {k: np.array(v) for k, v in json.load(f).items()}
+        data = json.load(f)
+        if "path" in data:
+            base_dir = os.path.dirname(path) or "." 
+            data["path"] = [
+                os.path.relpath(os.path.join(base_dir, p)) 
+                for p in data["path"]
+            ]
+        metadata = {k: np.array(v) for k, v in data.items()}
     if check_integrity:
         integrity_mask = np.array(is_image(metadata["path"]))
         metadata = {k: v[integrity_mask] for k, v in metadata.items()}

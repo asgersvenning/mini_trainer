@@ -5,6 +5,7 @@ import torchvision.transforms as tt
 from torch.utils.data import DataLoader, TensorDataset
 
 from mini_trainer.builders import BaseBuilder
+from mini_trainer.config import configure_loggers
 from mini_trainer.train import main
 
 
@@ -67,7 +68,7 @@ def test_integration_train_cpu(tmp_path):
         "builder": MockBuilder,
         "model_builder_kwargs": {"model_type": "shufflenet_v2_x0_5", "pretrained": False},
         # Be verbose to see output if needed
-        "logger_builder_kwargs": {"verbose": True},
+        "logger_builder_kwargs": {"verbose": True, "logger_cls": configure_loggers(use_tensorboard=True)},
         # Disable EMA explicitly
         "ema": False,
         "seed": 42,

@@ -16,13 +16,19 @@ def test_wandb_logger_not_installed():
 def test_wandb_logger_init():
     mock_wandb = MagicMock()
     mock_wandb.run = None
-    with patch.object(wandb_module, "wandb", mock_wandb):
+    with (
+        patch.object(wandb_module, "wandb", mock_wandb), 
+        patch("socket.gethostname", return_value="dummy_host"),
+        patch("os.getcwd", return_value="CWD")
+    ):
         WandbLogger(steps=[0, 1], output="dummy_dir", name="test", project="test_proj")
-        mock_wandb.init.assert_called_once_with(project="test_proj", name="test", dir="dummy_dir")
+        mock_wandb.init.assert_called_once_with(
+            project="test_proj", name="test", dir="dummy_dir", config=None, tags=["dummy_host", "CWD"]
+        )
 
-        # Test initialization with steps=None
-        with pytest.raises(TypeError):
-            WandbLogger(steps=None, output=None)
+    # Test initialization with steps=None
+    with pytest.raises(TypeError):
+        WandbLogger(steps=None, output=None)
 
 
 def test_wandb_logger_add_stat():
@@ -36,6 +42,8 @@ def test_wandb_logger_add_stat():
 
 def test_wandb_logger_update_and_step():
     mock_wandb = MagicMock()
+    mock_wandb.run = MagicMock()
+    mock_wandb.run.step = 0
     with patch.object(wandb_module, "wandb", mock_wandb):
         logger = WandbLogger(steps=[0, 10], output=None)
         logger.add_stat("loss", BaseStatistic)
@@ -53,6 +61,8 @@ def test_wandb_logger_add_figure():
     import matplotlib.pyplot as plt
 
     mock_wandb = MagicMock()
+    mock_wandb.run = MagicMock()
+    mock_wandb.run.step = 0
     with patch.object(wandb_module, "wandb", mock_wandb):
         logger = WandbLogger(steps=[0, 10], output=None)
         fig = plt.figure()
