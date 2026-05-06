@@ -9,6 +9,8 @@ from typing import Any
 import torch
 import yaml
 
+from mini_trainer.utils.logging import _Logger
+
 
 def _nullify(d: dict[str, Any]):
     """Recursively replaces all values in a dictionary with None.
@@ -234,11 +236,9 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def configure_loggers(use_tensorboard: bool = False, use_wandb: bool = False):
-    if not use_tensorboard and not use_wandb:
-        return []
     from mini_trainer.utils.logging import MetricLogger
 
-    loggers = [MetricLogger]
+    loggers : list[type[_Logger]] = [MetricLogger]
     if use_tensorboard:
         from mini_trainer.utils.tensorboard import TensorboardLogger
 

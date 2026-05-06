@@ -141,27 +141,28 @@ def main(  # noqa: D417
 
     idx = 0
     for batch in TQDM(loader, desc="Running inference", unit="batch"):
-        with (
-            torch.inference_mode(),
-            torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32 and device.type == "cuda"),
-            EmbeddingContext(),
-        ):
-            batch = model_preprocess(batch.to(device))  # noqa: E501
-            if not isinstance(collector, RawResultCollector):
-                predictions = predict(nn_model, batch)
-            else:
-                predictions = nn_model(batch)
-                if isinstance(predictions, torch.Tensor):
-                    predictions = predictions.to(dtype=dtype)
+        with torch.inference_mode():
+            batch = model_preprocess(batch)
+            batch = batch.to(device, non_blocking=True)
+            with (
+                torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32 and device.type == "cuda"),
+                EmbeddingContext(),
+            ):
+                if not isinstance(collector, RawResultCollector):
+                    predictions = predict(nn_model, batch)
                 else:
-                    predictions = [p.to(dtype=dtype) for p in predictions]
-            idxs = slice(idx, idx + len(batch))
-            idx += len(batch)
-            collector.collect(
-                paths=images[idxs],
-                predictions=predictions,
-                labels=None if labels is None else labels[idxs],
-            )
+                    predictions = nn_model(batch)
+                    if isinstance(predictions, torch.Tensor):
+                        predictions = predictions.to(dtype=dtype)
+                    else:
+                        predictions = [p.to(dtype=dtype) for p in predictions]
+                idxs = slice(idx, idx + len(batch))
+                idx += len(batch)
+                collector.collect(
+                    paths=images[idxs],
+                    predictions=predictions,
+                    labels=None if labels is None else labels[idxs],
+                )
     del loader, nn_model
 
     collector.save(os.path.join(output, name), threshold=threshold)
@@ -320,7 +321,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
 
     # Build the three layers
     defaults_full = defaults_from_function(main)  # Defaults defined in the function signature
-    config_full = load_yaml_config(cli_args.pop("config"))  # Arguments passed from config (empty if no config)
+    config_full = {k : v for k, v in load_yaml_config(cli_args.pop("config")).items() if k in defaults_full}  # Arguments passed from config (empty if no config)
     cli_full = restructure_cli_args(cli_args)  # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)

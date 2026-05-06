@@ -11,4 +11,4 @@ def import_class(path: str) -> type:
     obj = importlib.import_module(module_name)
     for part in qualname.split("."):
         obj = getattr(obj, part)
-    return obj
+    return obj # type: ignore

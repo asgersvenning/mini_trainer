@@ -208,6 +208,11 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         self.register_buffer("_linear_weight", torch.empty(0), persistent=False)
         self.register_buffer("_linear_bias", torch.empty(0), persistent=False)
 
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs) -> None:
+        retval = super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
+        self._dirty_cache.clear()
+        return retval
+
     def set_active_features(self, indices: list[int] | torch.Tensor | np.ndarray | None = None):
         """Mask a selection of output features (classes).
 
@@ -360,13 +365,15 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             setattr(architecture, f"_{k}", v)
         if state is not None:
             try:
-                architecture.load_state_dict(state, strict=strict)
+                load_result = architecture.load_state_dict(state, strict=strict)
             except RuntimeError as e:
                 if "Missing key(s)" in str(e) and "_extra_state" in str(e):
-                    architecture.load_state_dict(state, strict=False)
-                    warnings.warn(f"{architecture_class} loaded with `strict=False`, proceed with caution!", UserWarning)
+                    load_result = architecture.load_state_dict(state, strict=False)
+                    warnings.warn(f"{architecture_class} loaded with `strict=False`, proceed with caution!\n{e}", UserWarning)
                 else:
                     raise
+            if load_result.missing_keys:
+                warnings.warn(f'Missing keys when loading {architecture_class}[{cls.__name__}]: {load_result.missing_keys}')
 
         architecture.to(device)
         return architecture

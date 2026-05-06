@@ -150,12 +150,12 @@ def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c
 
 
-def prior_from_labels(labels: list[int | list[int]], cls2idx: dict, method: str = "adjust", **kwargs):
+def prior_from_labels(labels: list[list[int]] | list[int], cls2idx: dict, method: str = "adjust", **kwargs):
     if isinstance(labels[0], int):
         raise ValueError("Expected hierarchical labels, but got flat.")
     ncls = [len(cls2idx[str(lvl)]) for lvl in range(len(cls2idx))]
     nlvls = len(ncls)
     counts = {lvl: Counter([lab[lvl] for lab in labels]) for lvl in range(nlvls)}
     counts = {k: [v.get(i, 0) for i in range(ncls[int(k)])] for k, v in counts.items()}
-    method = get_prior_method(method)
-    return [method(counts[lvl], **kwargs) for lvl in range(nlvls)]
+    func = get_prior_method(method)
+    return [func(counts[lvl], **kwargs) for lvl in range(nlvls)]

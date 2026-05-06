@@ -577,10 +577,8 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         args["name"] = "{}_{}_e{}".format(
             args["model_builder_kwargs"]["model_type"], "fine_tune" if args["model_builder_kwargs"]["fine_tune"] else "full", args["epochs"]
         )
-
-    args["logger_builder_kwargs"]["logger_cls"] = (
-        configure_loggers(use_tensorboard=use_tensorboard, use_wandb=use_wandb) or args["logger_builder_kwargs"]["logger_cls"]
-    )
+  
+    args["logger_builder_kwargs"]["logger_cls"] = configure_loggers(use_tensorboard=use_tensorboard, use_wandb=use_wandb)
 
     return args
 

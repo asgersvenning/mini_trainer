@@ -1,15 +1,17 @@
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import ParamSpec, TypeVar
+from typing import Any, cast
 
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.classifier import BasePrediction, Classifier, EmbeddingContext, PredictionItem, SupervisionContext
+from mini_trainer.classifier import BasePrediction, Classifier, EmbeddingContext, PredictionItem
+from mini_trainer.hierarchical.autoregressive import AutoregressiveMixin
+from mini_trainer.hierarchical.transformer import BaseDecoder, XADecoder
 from mini_trainer.hierarchical.utils import batched_scatter_logsumexp, prior_from_labels
 from mini_trainer.utils.generic import cosine_to_zscore
+from mini_trainer.utils.imports import class_path, import_class
 
 
 class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
@@ -167,7 +169,7 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
         if self._dirty_cache[f"_weight_bias_{i}"] or self.training:
             if self._dirty_cache["_masks"]:
                 _ = self.masks
-            layer: nn.Linear = self.layers[i]
+            layer = cast(nn.Linear, self.layers[i])
             weight, bias = layer.weight, layer.bias
             filter = getattr(self, f"_filter_{i}")
             if filter is not None:
@@ -211,76 +213,19 @@ class IndependentClassifier(ConditionalClassifier):  # noqa: D101 TODO
         return self.marginals(embeddings)
 
 
-P = ParamSpec("P")
-R = TypeVar("R")
+class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):  
+    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):  
+        if isinstance(decoder_cls, str):
+            decoder_cls = import_class(decoder_cls)
+        super().__init__(*args, decoder_cls=class_path(decoder_cls), decoder_kwargs=decoder_kwargs, **kwargs)
+        
+        self.sequence_length = len(self.layers) + 1
+        self._init_autoregressive_components(decoder_cls, decoder_kwargs)
 
-
-def register_generator(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        setattr(func, "__register_name__", name)
-        return func
-
-    return decorator
-
-
-class L2Norm(nn.Module):
-    """Module equivalent of `F.normalize(x, 2, 1)` i.e. normalize to unit vectors."""
-
-    def __init__(self, dim: int = 1, eps: float = 1e-12):  # noqa: D107
-        super().__init__()
-        self.dim = dim
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.normalize(x, p=2, dim=self.dim, eps=self.eps)
-
-
-class AutoregressiveClassifier(IndependentClassifier):  # noqa: D101 TODO
-    def __init__(self, *args, **kwargs):  # noqa: D107
-        super().__init__(*args, **kwargs)
-        self.sequence_length = len(self.layers) + 1  # total = layers + <BOS>
-        self.positional = nn.Embedding(num_embeddings=self.sequence_length, embedding_dim=self.preclassification_size)
-        self.BOS = nn.Embedding(num_embeddings=1, embedding_dim=self.preclassification_size)
-        self.decoder = nn.TransformerDecoder(
-            decoder_layer=nn.TransformerDecoderLayer(
-                d_model=self.preclassification_size,
-                nhead=8,  # TODO: Should not be hardcoded
-                dim_feedforward=self.preclassification_size,
-                dropout=0.1,
-                norm_first=True,
-                bias=False,
-            ),
-            num_layers=2,  # TODO: Should not be hardcoded
-            norm=L2Norm() if self.normalized else None,
-        )
-        self._generators: dict[str, Callable[..., torch.Tensor]] = {}
-        for method in (getattr(self, attr) for attr in dir(self)):
-            name = getattr(method, "__register_name__", None)
-            if name is not None:
-                self._generators[name] = method
-
-    def embedding(self, i: int) -> torch.Tensor:
-        return self._weight_bias(i)[0]
+    def embedding(self, i: int) -> torch.Tensor: return self._weight_bias(i)[0]
 
     @property
-    def embeddings(self):
-        return [self.embedding(i) for i in range(len(self.layers))]
-
-    def _prepare_generate(self, x: torch.Tensor):
-        # Image embedding context
-        context = self.preclassification(x)
-        if EmbeddingContext.active():
-            EmbeddingContext.set(context)
-
-        # Prepare variables and state
-        batch_size = context.shape[0]
-        device = context.device
-
-        mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
-        BOS: torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
-        POS = self.positional.weight.unsqueeze(1)
-
-        return context, BOS, POS, mask
+    def embeddings(self): return [self.embedding(i) for i in range(len(self.layers))]
 
     def _classify_one(self, sequence: torch.Tensor | list[torch.Tensor], token_index: int, vocab_index: int):
         w, b = self._weight_bias(vocab_index)
@@ -289,245 +234,100 @@ class AutoregressiveClassifier(IndependentClassifier):  # noqa: D101 TODO
     def classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
         return [self._classify_one(sequence, -(i + 1), i) for i in range(len(self.layers))]
 
-    @register_generator("geometric")
-    def _geometric_generate(self, x: torch.Tensor):
-        context, BOS, POS, mask = self._prepare_generate(x)
+    # --- Abstract Generator Implementations ---
+    def _get_step_logits(self, sequence: torch.Tensor, step: int) -> torch.Tensor:
+        seq_i, emb_i = step + 1, self.sequence_length - step - 2
+        return self._classify_one(sequence, seq_i, emb_i)
 
-        decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-        for seq_i in range(1, self.sequence_length):
-            sequence = self.decoder.forward(tgt=decision + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-            decision[seq_i] = F.normalize(sequence[seq_i])
-
-        return sequence
-
-    @register_generator("soft")
-    def _soft_generate(self, x: torch.Tensor):
-        context, BOS, POS, mask = self._prepare_generate(x)
-
-        decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-        for seq_i in range(1, self.sequence_length):
-            emb_i = self.sequence_length - (seq_i + 1)
-            sequence = self.decoder.forward(tgt=decision + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-            next_probabilities = self._classify_one(sequence, seq_i, emb_i).softmax(dim=1)
-            decision[seq_i] = F.normalize(next_probabilities @ self.embedding(emb_i), 2, 1)
-
-        return sequence
-
-    @register_generator("greedy")
-    def _greedy_generate(self, x: torch.Tensor):
-        context, BOS, POS, mask = self._prepare_generate(x)
-
-        decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-        for seq_i in range(1, self.sequence_length):
-            emb_i = self.sequence_length - (seq_i + 1)
-            sequence = self.decoder.forward(tgt=decision + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-            top1 = self._classify_one(sequence, seq_i, emb_i).argmax(dim=1)
-            decision[seq_i] = self.embedding(emb_i)[top1]
-
-        return sequence
-
-    @register_generator("supervised")
-    def _supervised_generate(self, x: torch.Tensor, y: torch.Tensor | list[list[int]]):
-        if not isinstance(y, torch.Tensor):
-            y = torch.tensor(y, dtype=torch.long, device=x.device, requires_grad=False)
-
-        context, BOS, POS, mask = self._prepare_generate(x)
-
-        sequence = [self.embedding(j)[y[:, j]] for j in range(self.sequence_length - 1)]
-        sequence.append(BOS)
-        sequence = torch.stack(sequence[::-1], dim=0)
-
-        return self.decoder.forward(tgt=sequence + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-
-    @register_generator("beam search")
-    def _beam_generate(self, x: torch.Tensor, beam_width: int = 32) -> torch.Tensor:
-        if beam_width < 1:
-            raise ValueError(f"beam_width must be >= 1, got {beam_width}")
-
-        context, BOS, POS, mask = self._prepare_generate(x)
-
-        batch_size = x.shape[0]
-        d_model = BOS.shape[1]
-
-        decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-        decision = decision.unsqueeze(2)  # [seq, batch, beam=1, dim]
-
-        beam_scores = torch.zeros(batch_size, 1, device=x.device)
-
-        for seq_i in range(1, self.sequence_length):
-            emb_i = self.sequence_length - (seq_i + 1)
-            current_beam_width = decision.shape[2]
-
-            decision_flat = decision.reshape(self.sequence_length, batch_size * current_beam_width, d_model)
-            context_flat = (
-                context.unsqueeze(1)
-                .expand(batch_size, current_beam_width, context.shape[-1])
-                .reshape(batch_size * current_beam_width, context.shape[-1])
-            )
-
-            sequence = self.decoder.forward(tgt=decision_flat + POS, memory=context_flat.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-
-            log_probs = self._classify_one(sequence, seq_i, emb_i).log_softmax(dim=1)
-            vocab_size = log_probs.shape[1]
-
-            log_probs = log_probs.reshape(batch_size, current_beam_width, vocab_size)
-            candidate_scores = (beam_scores.unsqueeze(-1) + log_probs).reshape(batch_size, current_beam_width * vocab_size)
-
-            next_beam_width = min(beam_width, current_beam_width * vocab_size)
-            top_scores, top_indices = candidate_scores.topk(next_beam_width, dim=1)
-
-            parent_beam = top_indices // vocab_size
-            token_index = top_indices % vocab_size
-
-            gather_decision = parent_beam.view(1, batch_size, next_beam_width, 1).expand(
-                self.sequence_length, batch_size, next_beam_width, d_model
-            )
-            decision = decision.gather(dim=2, index=gather_decision)
-
-            decision[seq_i] = self.embedding(emb_i)[token_index]
-            beam_scores = top_scores
-
-        best_beam = beam_scores.argmax(dim=1)
-        best_index = best_beam.view(1, batch_size, 1, 1).expand(self.sequence_length, batch_size, 1, d_model)
-
-        return self.decoder.forward(
-            tgt=decision.gather(dim=2, index=best_index).squeeze(2) + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True
-        )
-
-    def generator(self, method: str) -> Callable[..., torch.Tensor]:
-        if len(method.strip()) == 0:
-            raise ValueError("Generator method must contain at least 1 non-space character.")
-
-        query = method.casefold()
-        matches: list[str] = []
-
-        for name, generator in self._generators.items():
-            folded = name.casefold()
-            if folded == query:
-                return generator
-            if folded.startswith(query):
-                matches.append(name)
-
-        match len(matches):
-            case 0:
-                raise ValueError(
-                    f'Generator "{method}" is not a registered method of {type(self).__name__}. Valid options are {list(self._generators)}'
-                )
-            case 1:
-                return self._generators[matches[0]]
+    def _get_step_decision(self, sequence: torch.Tensor, logits: torch.Tensor, step: int, mode: str) -> torch.Tensor:
+        seq_i, emb_i = step + 1, self.sequence_length - step - 2
+        match mode:
+            case "geometric":
+                return F.normalize(sequence[seq_i])
+            case "soft":
+                return F.normalize(logits.softmax(dim=1) @ self.embedding(emb_i), 2, 1)
+            case "greedy":
+                return self.embedding(emb_i)[logits.argmax(dim=1)]
             case _:
-                raise ValueError(
-                    f'Generator "{method}" is ambiguous for {type(self).__name__}; '
-                    f"it matches {matches}. Valid options are {list(self._generators)}"
-                )
+                raise NotImplementedError(f'`{type(self).__name__}._get_step_decision()` is not implemented for "{mode}".')
 
-    def generate(self, x: torch.Tensor, method: str, **kwargs):
-        return self.generator(method)(x=x, **kwargs)
+    def _get_token_embedding(self, token_indices: torch.Tensor, step: int) -> torch.Tensor:
+        return self.embedding(self.sequence_length - step - 2)[token_indices]
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor | list[list[int]] | None = None):
-        if y is None:
-            # Check if a label is passed around parent module via context manager
-            y = SupervisionContext.get()
-
-        if y is None or torch.rand(1).item() > 0.5:
-            sequence = self.generate(x=x, method="soft")
-        else:
-            sequence = self.generate(x=x, y=y, method="supervised")
-
-        return self.classify(sequence)
-
-    @torch.no_grad()
-    def predict(self, x: torch.Tensor, method: str = "beam", topk: int = 1, **kwargs):
-        logits = self.classify(self.generate(x=x, method=method, **kwargs))
-        return HierarchicalPrediction(logits, topk=topk, **self._preprocess_metadata(**kwargs))
+    def _get_supervised_embeddings(self, y: torch.Tensor, batch_size: int, device: torch.device) -> list[torch.Tensor]:
+        return [self.embedding(j)[y[:, j]] for j in range(self.sequence_length - 1)]
 
 
 # Differs from the one above in that we don't carry explicit independent embeddings for each layer
-class AutoregressiveClassifierV2(HierarchicalClassifier):  # noqa: D101 TODO
-    def __init__(self, *args, **kwargs):  # noqa: D107
-        super().__init__(*args, **kwargs)
-        self.sequence_length = self.num_masks + 1 + 1  # total = masks + leaf + <BOS>
-        self.positional = nn.Embedding(num_embeddings=self.sequence_length, embedding_dim=self.preclassification_size)
-        self.BOS = nn.Embedding(num_embeddings=1, embedding_dim=self.preclassification_size)
-        self.decoder = nn.TransformerDecoder(
-            decoder_layer=nn.TransformerDecoderLayer(
-                d_model=self.preclassification_size,
-                nhead=8,  # TODO: Should not be hardcoded
-                dim_feedforward=self.preclassification_size,
-                dropout=0.1,
-                norm_first=True,
-            ),
-            num_layers=2,  # TODO: Should not be hardcoded
-        )
+class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):  
+    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):  
+        cls_path = class_path(cast(type[BaseDecoder], import_class(decoder_cls))) if isinstance(decoder_cls, str) else class_path(decoder_cls)
+        super().__init__(*args, decoder_cls=cls_path, decoder_kwargs=decoder_kwargs, **kwargs)
+        
+        self.sequence_length = self.num_masks + 1 + 1
+        self._init_autoregressive_components(decoder_cls, decoder_kwargs)
 
     @property
-    def embeddings(self):
-        return self._weight_bias()[0]
+    def embeddings(self): return self._weight_bias()[0]
 
     def _classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
-        if isinstance(sequence, torch.Tensor):
-            sequence = [e for e in sequence]
-        M = []
-        w, b = self._weight_bias()
+        if isinstance(sequence, torch.Tensor): sequence = [e for e in sequence]
+        M, (w, b) = [], self._weight_bias()
         for i, x in list(enumerate(sequence[::-1])):
             L = cosine_to_zscore(F.linear(F.normalize(x, 2, 1), w), self.preclassification_size) + b
             M.append(self.hierarchy(L)[i])
         return M
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor | list[int] | None = None):
-        if y is None:
-            # Check if a label is passed around parent module via context manager
-            y = SupervisionContext.get()
-
-        # Image embedding context
-        context = self.preclassification(x)
-        if EmbeddingContext.active():
-            EmbeddingContext.set(context)
-
-        # Prepare variables and state
-        batch_size, dtype, device = context.shape[0], context.dtype, context.device
-        mask = nn.Transformer.generate_square_subsequent_mask(self.sequence_length, device=device)
-        BOS: torch.Tensor = self.BOS(torch.zeros((batch_size,), dtype=torch.long, device=device))
-        POS = self.positional.weight.unsqueeze(1)
-
-        if y is None or torch.rand((1,)).item() > 0.5:
-            decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-            for i in range(self.sequence_length - 1):
-                sequence: torch.Tensor = self.decoder(tgt=decision + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-                logits = cosine_to_zscore(F.normalize(sequence[i], 2, 1) @ self.embeddings.T, self.preclassification_size)
-                mi = self.num_masks - 1 - i
-                if mi > 0:
-                    logits = self.hierarchy(logits)[mi]
-                    con = self.mask(mi)
-                    for mj in range(mi + 1):
-                        con = con[self.mask(mi - mj)]
-                    logits = (
-                        logits.gather(1, con.unsqueeze(0).expand(logits.size(0), -1))
-                        - con.bincount(minlength=logits.size(1)).to(dtype).log()[con]
-                    )
-                decision[i + 1] = logits.softmax(dim=1) @ self.embeddings
-        else:
-            sequence: list[torch.Tensor] = []
-            for i in range(self.sequence_length - 1):
-                if i == 0:
-                    emb = self.embeddings[y[:, 0]]
-                else:
-                    idx = y[:, i]
-                    con = self.mask(0)
-                    for j in range(1, i):
-                        con = self.mask(j)[con]
-                    a, b = torch.nonzero((idx == con.unsqueeze(1)).T, as_tuple=True)
-                    lidx = b.tensor_split((a.diff() != 0).nonzero(as_tuple=True)[0].cpu() + 1)
-                    dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype, requires_grad=False)
-                    for j, k in enumerate(lidx):
-                        dist[j][k] = 1 / len(k)
-                    emb = dist @ self.embeddings
-                sequence.append(emb)
-            sequence.append(BOS)
-            sequence = torch.stack(sequence[::-1], dim=0)
-            sequence: torch.Tensor = self.decoder(tgt=sequence + POS, memory=context.unsqueeze(0), tgt_mask=mask, tgt_is_causal=True)
-
+    def classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
+        sequence = [e for e in sequence] if isinstance(sequence, torch.Tensor) else sequence
         return self._classify(sequence[1:])
+
+    # --- Abstract Generator Implementations ---
+    def _get_step_logits(self, sequence: torch.Tensor, step: int) -> torch.Tensor:
+        return cosine_to_zscore(F.normalize(sequence[step], 2, 1) @ self.embeddings.T, self.preclassification_size)
+
+    def _get_step_decision(self, sequence: torch.Tensor, logits: torch.Tensor, step: int, mode: str) -> torch.Tensor:
+        mi = self.num_masks - 1 - step
+        if mi > 0:
+            logits = self.hierarchy(logits)[mi]
+            con = self.mask(mi)
+            for mj in range(mi + 1):
+                con = con[self.mask(mi - mj)]
+            logits = (
+                logits.gather(1, con.unsqueeze(0).expand(logits.size(0), -1))
+                - con.bincount(minlength=logits.size(1)).to(logits.dtype).log()[con]
+            )
+            
+        match mode:
+            case "geometric":
+                return F.normalize(sequence[step])
+            case "soft":
+                return F.normalize(logits.softmax(dim=1) @ self.embeddings, 2, 1)
+            case "greedy":
+                return self.embeddings[logits.argmax(dim=1)]
+            case _:
+                raise NotImplementedError(f'`{type(self).__name__}._get_step_decision()` is not implemented for "{mode}".')
+
+    def _get_token_embedding(self, token_indices: torch.Tensor, step: int) -> torch.Tensor:
+        return self.embeddings[token_indices]
+
+    def _get_supervised_embeddings(self, y: torch.Tensor, batch_size: int, device: torch.device) -> list[torch.Tensor]:
+        dtype = self.embeddings.dtype
+        sequence = []
+        for i in range(self.sequence_length - 1):
+            if i == 0:
+                emb = self.embeddings[y[:, 0]]
+            else:
+                idx = y[:, i]
+                con = self.mask(0)
+                for j in range(1, i): con = self.mask(j)[con]
+                a, b = torch.nonzero((idx == con.unsqueeze(1)).T, as_tuple=True)
+                lidx = b.tensor_split((a.diff() != 0).nonzero(as_tuple=True)[0].cpu() + 1)
+                dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype, requires_grad=False)
+                for j, k in enumerate(lidx): dist[j][k] = 1 / len(k)
+                emb = dist @ self.embeddings
+            sequence.append(emb)
+        return sequence
 
 
 @dataclass
