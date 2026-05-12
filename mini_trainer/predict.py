@@ -321,7 +321,9 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
 
     # Build the three layers
     defaults_full = defaults_from_function(main)  # Defaults defined in the function signature
-    config_full = {k : v for k, v in load_yaml_config(cli_args.pop("config")).items() if k in defaults_full}  # Arguments passed from config (empty if no config)
+    config_full = {
+        k: v for k, v in load_yaml_config(cli_args.pop("config")).items() if k in defaults_full
+    }  # Arguments passed from config (empty if no config)
     cli_full = restructure_cli_args(cli_args)  # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)

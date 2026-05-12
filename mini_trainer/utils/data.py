@@ -121,11 +121,8 @@ def get_metadata(
     with open(path, "rb") as f:
         data = json.load(f)
         if "path" in data:
-            base_dir = os.path.dirname(path) or "." 
-            data["path"] = [
-                os.path.relpath(os.path.join(base_dir, p)) 
-                for p in data["path"]
-            ]
+            base_dir = os.path.dirname(path) or "."
+            data["path"] = [os.path.relpath(os.path.join(base_dir, p)) for p in data["path"]]
         metadata = {k: np.array(v) for k, v in data.items()}
     if check_integrity:
         integrity_mask = np.array(is_image(metadata["path"]))

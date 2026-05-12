@@ -213,19 +213,22 @@ class IndependentClassifier(ConditionalClassifier):  # noqa: D101 TODO
         return self.marginals(embeddings)
 
 
-class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):  
-    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):  
+class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):
+    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):
         if isinstance(decoder_cls, str):
-            decoder_cls = import_class(decoder_cls)
-        super().__init__(*args, decoder_cls=class_path(decoder_cls), decoder_kwargs=decoder_kwargs, **kwargs)
-        
+            decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
+        cls_path = class_path(decoder_cls)
+        super().__init__(*args, decoder_cls=cls_path, decoder_kwargs=decoder_kwargs, **kwargs)
+
         self.sequence_length = len(self.layers) + 1
         self._init_autoregressive_components(decoder_cls, decoder_kwargs)
 
-    def embedding(self, i: int) -> torch.Tensor: return self._weight_bias(i)[0]
+    def embedding(self, i: int) -> torch.Tensor:
+        return self._weight_bias(i)[0]
 
     @property
-    def embeddings(self): return [self.embedding(i) for i in range(len(self.layers))]
+    def embeddings(self):
+        return [self.embedding(i) for i in range(len(self.layers))]
 
     def _classify_one(self, sequence: torch.Tensor | list[torch.Tensor], token_index: int, vocab_index: int):
         w, b = self._weight_bias(vocab_index)
@@ -259,19 +262,23 @@ class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):
 
 
 # Differs from the one above in that we don't carry explicit independent embeddings for each layer
-class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):  
-    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):  
-        cls_path = class_path(cast(type[BaseDecoder], import_class(decoder_cls))) if isinstance(decoder_cls, str) else class_path(decoder_cls)
+class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):
+    def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):
+        if isinstance(decoder_cls, str):
+            decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
+        cls_path = class_path(decoder_cls)
         super().__init__(*args, decoder_cls=cls_path, decoder_kwargs=decoder_kwargs, **kwargs)
-        
+
         self.sequence_length = self.num_masks + 1 + 1
         self._init_autoregressive_components(decoder_cls, decoder_kwargs)
 
     @property
-    def embeddings(self): return self._weight_bias()[0]
+    def embeddings(self):
+        return self._weight_bias()[0]
 
     def _classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
-        if isinstance(sequence, torch.Tensor): sequence = [e for e in sequence]
+        if isinstance(sequence, torch.Tensor):
+            sequence = [e for e in sequence]
         M, (w, b) = [], self._weight_bias()
         for i, x in list(enumerate(sequence[::-1])):
             L = cosine_to_zscore(F.linear(F.normalize(x, 2, 1), w), self.preclassification_size) + b
@@ -297,7 +304,7 @@ class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):
                 logits.gather(1, con.unsqueeze(0).expand(logits.size(0), -1))
                 - con.bincount(minlength=logits.size(1)).to(logits.dtype).log()[con]
             )
-            
+
         match mode:
             case "geometric":
                 return F.normalize(sequence[step])
@@ -320,11 +327,13 @@ class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):
             else:
                 idx = y[:, i]
                 con = self.mask(0)
-                for j in range(1, i): con = self.mask(j)[con]
+                for j in range(1, i):
+                    con = self.mask(j)[con]
                 a, b = torch.nonzero((idx == con.unsqueeze(1)).T, as_tuple=True)
                 lidx = b.tensor_split((a.diff() != 0).nonzero(as_tuple=True)[0].cpu() + 1)
                 dist = torch.zeros((batch_size, len(self.mask(0))), device=device, dtype=dtype, requires_grad=False)
-                for j, k in enumerate(lidx): dist[j][k] = 1 / len(k)
+                for j, k in enumerate(lidx):
+                    dist[j][k] = 1 / len(k)
                 emb = dist @ self.embeddings
             sequence.append(emb)
         return sequence

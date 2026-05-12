@@ -238,7 +238,7 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
 def configure_loggers(use_tensorboard: bool = False, use_wandb: bool = False):
     from mini_trainer.utils.logging import MetricLogger
 
-    loggers : list[type[_Logger]] = [MetricLogger]
+    loggers: list[type[_Logger]] = [MetricLogger]
     if use_tensorboard:
         from mini_trainer.utils.tensorboard import TensorboardLogger
 

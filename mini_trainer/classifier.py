@@ -373,7 +373,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 else:
                     raise
             if load_result.missing_keys:
-                warnings.warn(f'Missing keys when loading {architecture_class}[{cls.__name__}]: {load_result.missing_keys}')
+                warnings.warn(f"Missing keys when loading {architecture_class}[{cls.__name__}]: {load_result.missing_keys}")
 
         architecture.to(device)
         return architecture

@@ -101,11 +101,11 @@ class TensorboardLogger(_Logger):
                         figure = f.read()
                 except OSError:
                     return
-                    
+
             if "<svg" in figure[:500].lower():
                 self.writer.add_text(tag, f"```xml\n{figure}\n```", epoch)
                 return
-                
+
             try:
                 figure = plt.imread(figure)
             except Exception as e:

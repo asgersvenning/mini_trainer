@@ -116,7 +116,7 @@ class WandbLogger(_Logger):
         # 1. Robust SVG Detection
         is_svg = False
         svg_content = ""
-        
+
         if isinstance(figure, str):
             # Case A: File Path
             if figure.lower().endswith(".svg") and os.path.isfile(figure):
@@ -126,7 +126,7 @@ class WandbLogger(_Logger):
                     is_svg = True
                 except OSError as e:
                     print(f"Warning: Failed to read SVG file {figure}: {e}")
-                    
+
             # Case B: Raw String (Check only the first 500 chars to save memory)
             elif "<svg" in figure[:500].lower():
                 svg_content = figure
@@ -135,11 +135,7 @@ class WandbLogger(_Logger):
         # 2. Render SVG
         if is_svg:
             # Wrapper handles Dark Mode visibility and allows scrolling if massive
-            html_payload = (
-                '<div style="background-color: white; width: 100%; overflow: auto; padding: 10px;">'
-                f'{svg_content}'
-                '</div>'
-            )
+            html_payload = f'<div style="background-color: white; width: 100%; overflow: auto; padding: 10px;">{svg_content}</div>'
             wandb.log({tag: wandb.Html(html_payload), "epoch": epoch}, step=global_step)
             return
 

@@ -11,6 +11,7 @@ from mini_trainer.utils.imports import import_class
 P = ParamSpec("P")
 R = TypeVar("R")
 
+
 def register_generator(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         setattr(func, "__register_name__", name)
@@ -18,20 +19,24 @@ def register_generator(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
 
     return decorator
 
+
 class AutoregressiveMixin(nn.Module, ABC):
     """
-    Intermediary abstract mixin unifying transformer-based generation, 
+    Intermediary abstract mixin unifying transformer-based generation,
     setup, and prediction logic across different classifier hierarchies.
     """
-    sequence_length : int
-    preclassification_size : int
-    
+
+    sequence_length: int
+    preclassification_size: int
+
     # --- Structural Abstractions ---
     @abstractmethod
-    def preclassification(self, x: torch.Tensor) -> torch.Tensor: pass
-    
+    def preclassification(self, x: torch.Tensor) -> torch.Tensor:
+        pass
+
     @abstractmethod
-    def classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]: pass
+    def classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
+        pass
 
     # --- Generation Abstractions ---
     @abstractmethod
@@ -58,14 +63,14 @@ class AutoregressiveMixin(nn.Module, ABC):
     def _init_autoregressive_components(self, decoder_cls: type | str, decoder_kwargs: dict[str, Any] | None = None):
         if isinstance(decoder_cls, str):
             decoder_cls = import_class(decoder_cls)
-            
+
         self.positional = nn.Embedding(num_embeddings=self.sequence_length, embedding_dim=self.preclassification_size)
         self.BOS = nn.Embedding(num_embeddings=1, embedding_dim=self.preclassification_size)
-        
+
         decoder_kwargs = decoder_kwargs or {}
         decoder_kwargs["d_model"] = self.preclassification_size
         self.decoder = decoder_cls(**decoder_kwargs)
-        
+
         self._generators: dict[str, Callable[..., torch.Tensor]] = {}
         for method_name in dir(self):
             method = getattr(self, method_name)
@@ -89,35 +94,38 @@ class AutoregressiveMixin(nn.Module, ABC):
     def _standard_generate(self, x: torch.Tensor, mode: str):
         context, BOS, POS = self._prepare_generate(x)
         decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-        
+
         for step in range(self.sequence_length - 1):
             sequence = self.decoder(tgt=decision + POS, memory=context.unsqueeze(0), tgt_is_causal=True)
             logits = self._get_step_logits(sequence, step)
             decision[step + 1] = self._get_step_decision(sequence, logits, step, mode=mode)
-            
+
         return sequence
 
     @register_generator("geometric")
-    def _geometric_generate(self, x: torch.Tensor): return self._standard_generate(x, "geometric")
+    def _geometric_generate(self, x: torch.Tensor):
+        return self._standard_generate(x, "geometric")
 
     @register_generator("soft")
-    def _soft_generate(self, x: torch.Tensor): return self._standard_generate(x, "soft")
+    def _soft_generate(self, x: torch.Tensor):
+        return self._standard_generate(x, "soft")
 
     @register_generator("greedy")
-    def _greedy_generate(self, x: torch.Tensor): return self._standard_generate(x, "greedy")
+    def _greedy_generate(self, x: torch.Tensor):
+        return self._standard_generate(x, "greedy")
 
     @register_generator("supervised")
     def _supervised_generate(self, x: torch.Tensor, y: Any):
         context, BOS, POS = self._prepare_generate(x)
         batch_size, device = context.shape[0], context.device
-        
+
         if not isinstance(y, torch.Tensor):
             y = torch.tensor(y, dtype=torch.long, device=device, requires_grad=False)
-            
+
         sequence_embs = self._get_supervised_embeddings(y, batch_size, device)
         sequence_embs.append(BOS)
         sequence_tgt = torch.stack(sequence_embs[::-1], dim=0)
-        
+
         return self.decoder(tgt=sequence_tgt + POS, memory=context.unsqueeze(0), tgt_is_causal=True)
 
     @register_generator("beam search")
@@ -135,7 +143,11 @@ class AutoregressiveMixin(nn.Module, ABC):
         for step in range(self.sequence_length - 1):
             current_beam_width = decision.shape[2]
             decision_flat = decision.reshape(self.sequence_length, batch_size * current_beam_width, d_model)
-            context_flat = context.unsqueeze(1).expand(batch_size, current_beam_width, context.shape[-1]).reshape(batch_size * current_beam_width, context.shape[-1])
+            context_flat = (
+                context.unsqueeze(1)
+                .expand(batch_size, current_beam_width, context.shape[-1])
+                .reshape(batch_size * current_beam_width, context.shape[-1])
+            )
 
             sequence = self.decoder(tgt=decision_flat + POS, memory=context_flat.unsqueeze(0), tgt_is_causal=True)
 
@@ -151,7 +163,9 @@ class AutoregressiveMixin(nn.Module, ABC):
             parent_beam = top_indices // vocab_size
             token_index = top_indices % vocab_size
 
-            gather_decision = parent_beam.view(1, batch_size, next_beam_width, 1).expand(self.sequence_length, batch_size, next_beam_width, d_model)
+            gather_decision = parent_beam.view(1, batch_size, next_beam_width, 1).expand(
+                self.sequence_length, batch_size, next_beam_width, d_model
+            )
             decision = decision.gather(dim=2, index=gather_decision)
 
             decision[step + 1] = self._get_token_embedding(token_index, step)
@@ -193,7 +207,7 @@ class AutoregressiveMixin(nn.Module, ABC):
     def generate(self, x: torch.Tensor, method: str, **kwargs):
         return self.generator(method)(x=x, **kwargs)
 
-    def forward(self, x: torch.Tensor, y: Any = None, method : str="beam"):
+    def forward(self, x: torch.Tensor, y: Any = None, method: str = "beam"):
         if y is None:
             y = SupervisionContext.get()
         if self.training:

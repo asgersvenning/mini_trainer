@@ -1295,7 +1295,7 @@ class MultiLogger:
             try:
                 pd_fig = plot_probabilistic_dendrogram(model)
                 with NamedTemporaryFile(suffix=".svg") as tmp_file:
-                    pd_fig.savefig(tmp_file.name, bbox_inches='tight')
+                    pd_fig.savefig(tmp_file.name, bbox_inches="tight")
                     self.add_figure("Probabilistic dendrogram", tmp_file.name)
             except Exception as e:
                 warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)

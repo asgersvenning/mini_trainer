@@ -407,7 +407,7 @@ def class_similarity(model: nn.Module, cdf: bool = False):
 
 
 @torch.no_grad()
-def class_distance(model: nn.Module, eps : float | None=None):
+def class_distance(model: nn.Module, eps: float | None = None):
     sim = class_similarity(model, cdf=True)
     if eps is None:
         eps = torch.finfo(sim.dtype).eps
