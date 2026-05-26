@@ -629,6 +629,7 @@ def backbone(model: nn.Module):
 
     If you wish to omit the forward pass of the classification module, use `bypass_submodule` instead (see `predict`).
     """
+    model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
     head_name = getattr(model, "_backbone_output_name", None)
     if head_name is None:
         try:
@@ -651,6 +652,7 @@ def backbone(model: nn.Module):
 
 def classification_module(model: nn.Module):
     """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`."""
+    model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
     backbone_name = getattr(model, "_backbone_output_name", None)
     if backbone_name is None:
         for name, module in model.named_modules():
