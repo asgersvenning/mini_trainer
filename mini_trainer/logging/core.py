@@ -536,11 +536,12 @@ class SmoothedValue(_Statistic):
 
     def synchronize_between_processes(self):
         """Warning: does not synchronize the deque!"""
-        t = reduce_across_processes([self.count, self.total, self.min])
+        min_val = self.min if self.min is not None else 0.0
+        t = reduce_across_processes([self.count, self.total, min_val])
         t = t.tolist()
         self.count = int(t[0])
         self.total = float(t[1])
-        self.min = float(t[2])
+        self.min = float(t[2]) if self.count > 0 else None
 
     @property
     def median(self):
@@ -1161,13 +1162,21 @@ class MultiLogger:
         self.step()
 
     def status(self):
-        stats = " | ".join([f"{name}: {str(self.loggers[0].statistics[name])}" for name in self.statistics[: min(4, len(self.statistics))]])
+        if not self.loggers:
+            stats_str = ""
+        else:
+            stats_list = [
+                f"{name}: {str(self.loggers[0].statistics[name])}"
+                for name in self.statistics[: min(4, len(self.statistics))]
+            ]
+            stats = " | ".join(stats_list)
+            stats_str = f" | {stats}"
         epoch = self._epoch
         if epoch is None:
             epoch = "?"
         else:
             epoch += 1
-        return f"E{epoch}/{self.total_epochs} ({self._step / self.total_steps:.1%} {self.eta}) | {stats}"
+        return f"E{epoch}/{self.total_epochs} ({self._step / self.total_steps:.1%} {self.eta}){stats_str}"
 
     # def _last_epoch_values(self, stat : str):
     #     values = []
@@ -1182,6 +1191,8 @@ class MultiLogger:
     #     return values
     def _last_epoch_value(self, stat: str):
         # Assume that the first logger is "canonical"
+        if not self.loggers:
+            return 0.0
         return self.loggers[0].statistics[stat].mean
 
     def summary(self, stats: list[str] | None = None):
@@ -1297,6 +1308,11 @@ class MultiLogger:
             logger.add_figure(name=name, figure=figure, epoch=self._epoch)
         if isinstance(figure, Figure):
             plt.close(figure)
+
+    def synchronize_between_processes(self):
+        for logger in self.loggers:
+            if hasattr(logger, "synchronize_between_processes"):
+                logger.synchronize_between_processes()
 
     def figures(self, model: nn.Module | None):
         cm_figs = self.confusion_matrix()

@@ -21,9 +21,10 @@ from mini_trainer.data import debug_augmentation
 from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
-from mini_trainer.utils import increment_name_dir, save_on_master
-
-
+from mini_trainer.utils import ddp_train_wrapper, increment_name_dir, save_on_master
+ 
+ 
+@ddp_train_wrapper
 def main(  # noqa: D417
     input: str,
     output: str | None = None,
@@ -76,7 +77,7 @@ def main(  # noqa: D417
             If the file does not exist, it will be created based on subdirectories
             found under `output` if it is set. Default is 'class_index.json'.
         epochs: Number of training epochs. Default is 15.
-        size: Size of the input image (width/height). Default is 256.
+            size: Size of the input image (width/height). Default is 256.
         name: Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is ``None``.
         device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
@@ -102,7 +103,16 @@ def main(  # noqa: D417
     if checkpoint is None:
         if name is None:
             name = "train"
-        name = increment_name_dir(name, output)
+        from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
+        if is_dist_avail_and_initialized():
+            import torch.distributed as dist
+            if get_rank() == 0:
+                name = increment_name_dir(name, output)
+            name_list = [name]
+            dist.broadcast_object_list(name_list, src=0)
+            name = name_list[0]
+        else:
+            name = increment_name_dir(name, output)
     else:
         if name is None:
             raise NotImplementedError(
@@ -113,19 +123,11 @@ def main(  # noqa: D417
     input = os.path.abspath(input)
     output_dir = None if output is None else os.path.abspath(os.path.join(output, name))
     if output_dir is not None:
-        try:
-            os.makedirs(output_dir, exist_ok=False)
-        except OSError as e:
-            e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{name=}` already exists?")
+        os.makedirs(output_dir, exist_ok=True)
 
     weight_output_dir = None if output_dir is None else os.path.abspath(os.path.join(output_dir, "weights"))
     if weight_output_dir is not None:
-        try:
-            os.makedirs(weight_output_dir, exist_ok=False)
-        except OSError as e:
-            e.add_note(
-                f"Training weight directory already exists: {weight_output_dir}. Perhaps a run of with the `{name=}` already exists?"
-            )
+        os.makedirs(weight_output_dir, exist_ok=True)
 
     device: torch.device = torch.device(device)
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())

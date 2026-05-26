@@ -1,7 +1,9 @@
 from ._concurrent import (
+    ddp_train_wrapper,
     first_arg_base_types,
     get_rank,
     get_world_size,
+    init_distributed,
     init_distributed_mode,
     is_dist_avail_and_initialized,
     is_main_process,
@@ -34,9 +36,11 @@ from ._core import (
 
 __all__ = [
     # _concurrent
+    "ddp_train_wrapper",
     "first_arg_base_types",
     "get_rank",
     "get_world_size",
+    "init_distributed",
     "init_distributed_mode",
     "is_dist_avail_and_initialized",
     "is_main_process",

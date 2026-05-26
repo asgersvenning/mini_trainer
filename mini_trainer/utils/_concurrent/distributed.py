@@ -1,3 +1,4 @@
+import functools
 import os
 
 import torch
@@ -47,6 +48,80 @@ def save_on_master(*args, **kwargs):  # noqa: D103
         torch.save(*args, **kwargs)
 
 
+def init_distributed(device=None):
+    """Initialize distributed training process group."""
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    elif "SLURM_PROCID" in os.environ:
+        rank = int(os.environ["SLURM_PROCID"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        local_rank = rank % num_gpus if num_gpus > 0 else 0
+    else:
+        return None
+
+    use_cuda = torch.cuda.is_available()
+    if device is not None and "cpu" in str(device).lower():
+        use_cuda = False
+
+    if use_cuda:
+        num_gpus = torch.cuda.device_count()
+        if num_gpus > 0:
+            gpu_idx = local_rank % num_gpus
+            torch.cuda.set_device(gpu_idx)
+            if world_size > num_gpus:
+                backend = "gloo"
+            else:
+                backend = "nccl"
+        else:
+            backend = "gloo"
+    else:
+        backend = "gloo"
+
+    dist.init_process_group(
+        backend=backend,
+        init_method="env://",
+        world_size=world_size,
+        rank=rank,
+    )
+    dist.barrier()
+    setup_for_distributed(rank == 0)
+    return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
+
+
+def ddp_train_wrapper(main_fn):
+    """Decorator/wrapper for main training entry point to enable DDP."""
+    @functools.wraps(main_fn)
+    def wrapped(*args, **kwargs):
+        device = kwargs.get("device", None)
+        ddp_info = init_distributed(device=device)
+        if ddp_info is not None:
+            # Override device argument for this rank if targeting GPU
+            device_str = kwargs.get("device", "cuda:0")
+            if "cpu" not in str(device_str).lower():
+                if torch.cuda.is_available():
+                    num_gpus = torch.cuda.device_count()
+                    gpu_idx = ddp_info["local_rank"] % num_gpus
+                    kwargs["device"] = f"cuda:{gpu_idx}"
+                else:
+                    kwargs["device"] = "cpu"
+
+            # Disable logging on non-zero ranks
+            if ddp_info["rank"] > 0:
+                from mini_trainer.logging.core import MetricLogger
+                logger_kwargs = kwargs.setdefault("logger_builder_kwargs", {})
+                logger_kwargs["logger_cls"] = [MetricLogger]
+                logger_kwargs["verbose"] = False
+        try:
+            return main_fn(*args, **kwargs)
+        finally:
+            if ddp_info is not None:
+                dist.destroy_process_group()
+    return wrapped
+
+
 def init_distributed_mode(args):  # noqa: D103
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         args.rank = int(os.environ["RANK"])
@@ -77,7 +152,8 @@ def reduce_across_processes(val):  # noqa: D103
         # nothing to sync, but we still convert to tensor for consistency with the distributed case.
         return torch.tensor(val)
 
-    t = torch.tensor(val, device="cuda")
+    device = torch.device(f"cuda:{torch.cuda.current_device()}") if torch.cuda.is_available() else torch.device("cpu")
+    t = torch.tensor(val, device=device)
     dist.barrier()
     dist.all_reduce(t)
     return t

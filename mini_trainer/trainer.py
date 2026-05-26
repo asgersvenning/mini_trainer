@@ -70,6 +70,9 @@ def train_one_epoch(
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
     model.train()
+    if hasattr(data_loader.batch_sampler, "sampler") and hasattr(data_loader.batch_sampler.sampler, "set_epoch"):
+        data_loader.batch_sampler.sampler.set_epoch(epoch)
+
     n_batches = len(data_loader)
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
@@ -118,7 +121,8 @@ def train_one_epoch(
         scaler.update()
         _any_opt_stepped = _scale <= scaler.get_scale()
         if _any_opt_stepped:
-            model_ema.update_parameters(step, model)
+            raw_model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
+            model_ema.update_parameters(step, raw_model)
             lr_scheduler.step()
 
         logger.consume(
@@ -135,6 +139,7 @@ def train_one_epoch(
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
     logger.stop_timing()
+    logger.synchronize_between_processes()
 
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
@@ -188,6 +193,7 @@ def evaluate(
         num_processed_samples += len(batch)
         start_time = time.time()
     logger.stop_timing()
+    logger.synchronize_between_processes()
 
     # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
@@ -264,6 +270,15 @@ def train(
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
+    if is_dist_avail_and_initialized():
+        from torch.nn.parallel import DistributedDataParallel as DDP
+        if "cpu" in str(device).lower():
+            device_ids = None
+        else:
+            device_idx = device.index if (isinstance(device, torch.device) and device.index is not None) else torch.cuda.current_device()
+            device_ids = [device_idx]
+        model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
+
     best_eval_metric = -float("inf")
     best_epoch = -1
     for epoch in range(start_epoch, epochs):
@@ -289,8 +304,9 @@ def train(
         if is_best_eval:
             best_epoch = epoch
         if output_dir is not None:
+            raw_model = model.module if hasattr(model, "module") else model
             checkpoint = {
-                "model": model.state_dict(),
+                "model": raw_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "lr_scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,

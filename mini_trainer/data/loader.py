@@ -23,8 +23,15 @@ def get_dataloader(  # noqa: D103
         shuffle = drop_last = True
     else:
         shuffle = drop_last = False
-    sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
-    sampler = BatchSampler(sampler, batch_size=batch_size, drop_last=drop_last)
+
+    from mini_trainer.utils import is_dist_avail_and_initialized
+    if is_dist_avail_and_initialized():
+        from torch.utils.data.distributed import DistributedSampler
+        base_sampler = DistributedSampler(dataset, shuffle=shuffle)
+    else:
+        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+
+    sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
 
     return DataLoader(
         dataset,
