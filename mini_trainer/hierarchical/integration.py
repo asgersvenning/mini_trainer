@@ -17,8 +17,8 @@ from mini_trainer.utils.data import find_images
 from mini_trainer.utils.gbif import cls2idx_from_labels, create_taxonomy, id_to_name, labels_from_taxonomy
 from mini_trainer.utils.logging import BaseResultCollector
 from mini_trainer.utils.loss import EMLACrossEntropy
+from mini_trainer.utils.metrics import named_confusion_matrix
 from mini_trainer.utils.parquet import parquet_to_class_spec_hierarchical
-from mini_trainer.utils.plot import named_confusion_matrix
 
 
 def _freeze(d: dict[str, dict[str, int]]):
@@ -55,7 +55,7 @@ def parse_class_spec(
     path: str | None = None,
     dir: str | None = None,
     levels: int | None = None,
-    label_fn: Callable[[str], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
+    label_fn: Callable[[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
     **kwargs,
 ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | int]:
     """Construct class specification:

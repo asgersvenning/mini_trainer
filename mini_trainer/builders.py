@@ -315,9 +315,11 @@ class BaseBuilder:
 
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
 
+    @staticmethod
     def build_scaler(device: torch.types.Device, init_scale: float = 2**14, growth_interval: int = 100, **kwargs):
         return GradScaler(device=device, init_scale=init_scale, growth_interval=growth_interval, **kwargs)
 
+    @staticmethod
     def build_ema(
         enable: bool,
         model: torch.nn.Module,

@@ -1,9 +1,9 @@
 """Apply quality control model to gbifxdl parquet.
 The model has been trained to infer if a given image contains
-an image of an adult moth at a good resolution, 
+an image of an adult moth at a good resolution,
 or one of a number of other "classes".
 
-Script included for reference on how quality filtering was done, 
+Script included for reference on how quality filtering was done,
 but is NOT intended to actually be run.
 """
 
@@ -52,17 +52,8 @@ for proposed in init_selected:
         non_selected.append(proposed)
 
 summary_str = "\n".join(
-    f"{lab:<20}: {{:>10}}" for lab in [
-        "Total images", 
-        "Passed QC", 
-        "Enough per-class", 
-        "Removed", 
-        "Total classes", 
-        "Retained classes"
-    ]
-).format(
-    len(lines) - 1, len(init_selected), len(selected), len(non_selected), len(init_class_counts), len(class_counts)
-)
+    f"{lab:<20}: {{:>10}}" for lab in ["Total images", "Passed QC", "Enough per-class", "Removed", "Total classes", "Retained classes"]
+).format(len(lines) - 1, len(init_selected), len(selected), len(non_selected), len(init_class_counts), len(class_counts))
 print(summary_str)
 
 with open("quality/selected_images.txt", "w") as f:
@@ -97,17 +88,13 @@ with open(select_index) as f:
 selected_uuid = set([s.split("/")[1].split(".")[0] for s in selected])
 
 scanner = ds.Scanner.from_dataset(
-    data,
-    filter=cp.is_in(
-        cp.list_element(cp.split_pattern(cp.field("filename"), ".", max_splits=1), 0),
-        pyarrow.array(selected_uuid)
-    )
+    data, filter=cp.is_in(cp.list_element(cp.split_pattern(cp.field("filename"), ".", max_splits=1), 0), pyarrow.array(selected_uuid))
 )
 
 with (
-    ParquetWriter(dst, scanner.dataset_schema, compression="ZSTD") as writer, 
-    tqdm(total=scanner.count_rows(), desc="Writing parquet...") as pbar
-    ):
+    ParquetWriter(dst, scanner.dataset_schema, compression="ZSTD") as writer,
+    tqdm(total=scanner.count_rows(), desc="Writing parquet...") as pbar,
+):
     for batch in scanner.scan_batches():
         batch = batch.record_batch
         writer.write_batch(batch)

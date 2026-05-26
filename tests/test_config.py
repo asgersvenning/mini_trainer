@@ -40,24 +40,15 @@ def test_stringify_types():
         "none": None,
         "object": MyClass(),
     }
-    
-    # Note: Sets are unordered, so convert to sorted list for comparison if needed, 
-    # but _stringify_types returns a set for a set input (if it's not converted recursively).
-    # Wait, looking at code: 
-    # if isinstance(obj, (list, tuple, set)):
-    #     seq = [_stringify_types(v) for v in obj]
-    #     return type(obj)(seq) if not isinstance(obj, set) else seq
-    # So a set returns a list? "else seq". Yes.
-    
+
     result = _stringify_types(obj)
-    
+
     assert result["device"] == "cpu"
     assert result["dtype"] == "float32"
     assert "test_stringify_types.<locals>.MyClass" in result["type"]
     assert result["list"] == [1, 2]
     assert result["tuple"] == (3, 4)
-    # The set is converted to a list
-    assert sorted(result["set"]) == [5, 6] 
+    assert sorted(result["set"]) == [5, 6]  # The set is converted to an unordered list
     assert result["str"] == "test"
     assert result["int"] == 1
     assert result["float"] == 1.0
@@ -75,7 +66,7 @@ def test_defaults_from_function():
     assert defaults["b"] == "test"
     assert defaults["c"] is None
     assert defaults["d"] == [1, 2]
-    
+
     # Verify deepcopy
     defaults["d"].append(3)
     assert defaults_from_function(func)["d"] == [1, 2]

@@ -6,16 +6,10 @@ dependencies = [
   "torchvision",
   "matplotlib",
   "tqdm",
-  "diskcache",
-  "psutil",
-  "setuptools<=81.0.0", # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
-  "tensorboard",
-  "scipy",
-  "pyarrow",
   "pyyaml>=6.0.3",
   "numpy>=2.4.0",
-  "pycirclize>=1.10.1",
-  "biopython>=1.80",
+  "diskcache",
+  "psutil",
 ]
 requires-python = ">=3.12"
 authors = [
@@ -37,21 +31,6 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 
-[project.optional-dependencies]
-notebook = [
-  "ipykernel",
-  "ipywidgets",
-  "pyremotedata"
-]
-bioclip = [
-  "open_clip_torch"
-]
-transformers = [
-  "transformers"
-]
-wandb = [
-  "wandb"
-]
 
 [project.urls]
 Repository = "https://github.com/asgersvenning/mini_trainer"
@@ -86,6 +65,72 @@ dev = [
     "ruff>=0.14.5",
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0"
+]
+
+[project.optional-dependencies]
+recommended = [
+  "tensorboard",
+  "setuptools<=81.0.0", # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
+  "scipy",
+  "pyarrow",
+  "pycirclize>=1.10.1",
+  "biopython>=1.80",
+  "wandb",
+]
+minimal = []
+notebook = [
+  "ipykernel",
+  "ipywidgets",
+  "pyremotedata"
+]
+bioclip = [
+  "open_clip_torch"
+]
+transformers = [
+  "transformers"
+]
+cpu = ["torch>=2.11", "torchvision"]
+cu126 = ["torch>=2.11", "torchvision"]
+cu130 = ["torch>=2.11", "torchvision"]
+cu132 = ["torch>=2.11", "torchvision"]
+
+[tool.uv]
+conflicts = [
+    [ { extra = "cpu" }, { extra = "cu126" }, { extra = "cu130" }, { extra = "cu132" }]
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu130", extra = "cu130" },
+  { index = "pytorch-cu132", extra = "cu132" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu126", extra = "cu126" },
+  { index = "pytorch-cu130", extra = "cu130" },
+  { index = "pytorch-cu132", extra = "cu132" },
 ]
 
 [build-system]

@@ -14,28 +14,27 @@ jobs:
         python-version: ["3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@v6
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/0.5.21/install.sh | sh
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: |
-          uv sync --all-extras
+        run: uv sync --extra recommended --extra cpu
 
-      - name: Lint and format with ruff
-        run: |
-          uv run ruff check mini_trainer tests --ignore E501
+      - name: Lint with ruff
+        run: uv run ruff check mini_trainer tests
+
+      - name: Check formatting with ruff
+        run: uv run ruff format --check mini_trainer tests
 
       - name: Test with pytest
-        run: |
-          uv run pytest --cov=mini_trainer --cov-report=xml --cov-report=term
+        run: uv run pytest --cov=mini_trainer --cov-report=xml --cov-report=term
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5

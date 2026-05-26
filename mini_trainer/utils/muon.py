@@ -435,5 +435,7 @@ class MuonAuxAdamW(Optimizer):
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         for k, v in state_dict.items():
-            getattr(self, k).load_state_dict(v)
+            opt = getattr(self, k, None)
+            if opt is not None:
+                opt.load_state_dict(v)
         self._refresh_param_groups()

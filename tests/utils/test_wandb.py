@@ -17,14 +17,12 @@ def test_wandb_logger_init():
     mock_wandb = MagicMock()
     mock_wandb.run = None
     with (
-        patch.object(wandb_module, "wandb", mock_wandb), 
+        patch.object(wandb_module, "wandb", mock_wandb),
         patch("socket.gethostname", return_value="dummy_host"),
-        patch("os.getcwd", return_value="CWD")
+        patch("os.getcwd", return_value="CWD"),
     ):
         WandbLogger(steps=[0, 1], output="dummy_dir", name="test", project="test_proj")
-        mock_wandb.init.assert_called_once_with(
-            project="test_proj", name="test", dir="dummy_dir", config=None, tags=["dummy_host", "CWD"]
-        )
+        mock_wandb.init.assert_called_once_with(project="test_proj", name="test", dir="dummy_dir", config=None, tags=["dummy_host", "CWD"])
 
     # Test initialization with steps=None
     with pytest.raises(TypeError):

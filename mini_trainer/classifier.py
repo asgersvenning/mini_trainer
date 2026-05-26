@@ -674,9 +674,26 @@ def predict(model: nn.Module, x: torch.Tensor, topk: int = 1, **kwargs):
 def backbone(model: nn.Module):
     """This method is suitable for accessing the backbone parameters/modules, but not for inference or forward pass.
 
-    If you wish to omit the forward pass of the classification module is `bypass_submodule` instead (see `predict`).
+    If you wish to omit the forward pass of the classification module, use `bypass_submodule` instead (see `predict`).
     """
-    return nn.Sequential(*list(model.children())[:-1], nn.Flatten(start_dim=1, end_dim=-1))
+    head_name = getattr(model, "_backbone_output_name", None)
+    if head_name is None:
+        try:
+            classification_module(model)
+            head_name = getattr(model, "_backbone_output_name", None)
+        except Exception:
+            pass
+
+    children = []
+    for name, child in model.named_children():
+        if head_name and name == head_name:
+            continue
+        children.append(child)
+
+    if head_name is None or len(children) == len(list(model.children())):
+        children = list(model.children())[:-1]
+
+    return nn.Sequential(*children, nn.Flatten(start_dim=1, end_dim=-1))
 
 
 def classification_module(model: nn.Module):

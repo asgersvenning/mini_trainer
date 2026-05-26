@@ -5,7 +5,7 @@ import sys
 def run_notebook(notebook_path):
     with open(notebook_path, encoding="utf-8") as nb_file:
         notebook = json.load(nb_file)
-    
+
     # Collect all code cell sources into a single string.
     full_code = ""
     for cell in notebook.get("cells", []):
@@ -21,7 +21,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <notebook.ipynb>")
         sys.exit(1)
-    
+
     notebook_file = sys.argv[1]
     code_to_run = run_notebook(notebook_file)
     # Execute the combined notebook code under __main__ context.

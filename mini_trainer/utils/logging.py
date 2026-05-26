@@ -20,12 +20,11 @@ from torch import nn
 
 from mini_trainer.classifier import Prediction, classification_module
 from mini_trainer.utils import float_signif_decimal, reduce_across_processes, write_csv_from_dict
+from mini_trainer.utils.metrics import named_confusion_matrix, raw_confusion_matrix
 from mini_trainer.utils.plot import (
-    named_confusion_matrix,
     plot_class_distance_matrix,
     plot_heatmap,
     plot_probabilistic_dendrogram,
-    raw_confusion_matrix,
 )
 
 
@@ -877,7 +876,9 @@ class MultiLogger:
         self._current_loggers: list[_Logger] = []
         self._soft_confusion_matrix: dict[str, torch.Tensor] = dict()
         for cls, kwargs, stat_factory in zip(
-            self.logger_cls, chain(self.logger_cls_extra_kwargs, repeat(dict())), chain(self.logger_cls_stat_factory, repeat(BaseStatistic))
+            self.logger_cls,
+            chain(self.logger_cls_extra_kwargs, repeat(dict())),
+            chain(self.logger_cls_stat_factory, repeat(BaseStatistic)),
         ):
             this_logger = cls(steps=self.steps, tag=type, name=self.name, output=self.output, **kwargs)
             for stat in self.statistics:

@@ -20,17 +20,17 @@ def test_Timer():
     t.stop()
     assert not t.running
     assert t.total >= 0.0
-    
+
     # Test errors
     with pytest.raises(RuntimeError):
-        t.stop() # already stopped
-        
+        t.stop()  # already stopped
+
     t.start()
     with pytest.raises(RuntimeError):
-        t.start() # already running
+        t.start()  # already running
     with pytest.raises(RuntimeError):
-        _ = t.total # total is invalid while running? -> Code says: raise RuntimeError("Attempting to grab total of a running timer!")
-        
+        _ = t.total  # total is invalid while running? -> Code says: raise RuntimeError("Attempting to grab total of a running timer!")
+
     assert "Timer[Running]" in str(t)
     t.stop()
     assert "Timer[Stopped]" in str(t)
@@ -49,8 +49,8 @@ def test_accuracy():
     target = torch.tensor([1, 0])
     acc1 = accuracy(output, target, topk=(1,))
     assert acc1[0] == 100.0
-    
-    output = torch.tensor([[0.9, 0.1], [0.2, 0.8]]) # Wrong
+
+    output = torch.tensor([[0.9, 0.1], [0.2, 0.8]])  # Wrong
     acc1 = accuracy(output, target, topk=(1,))
     assert acc1[0] == 0.0
 
@@ -61,7 +61,7 @@ def test_compute_aligned_steps():
     assert len(steps) == 10
     assert steps[0] == 0
     assert steps[-1] == 9
-    
+
     # Validation usually has fewer steps or different freq
     # Origin 5, Target 10
     steps = compute_aligned_steps(10, 5, 1, 0)
@@ -83,9 +83,9 @@ def test_SmoothedValue():
     assert sv.value == 2.0
     assert sv.avg == 1.5
     assert sv.global_avg == 1.5
-    
-    sv.update(3.0) # deque [2.0, 3.0]
+
+    sv.update(3.0)  # deque [2.0, 3.0]
     assert sv.value == 3.0
     assert sv.avg == 2.5
     # Global avg is over all history
-    assert sv.global_avg == 6.0 / 3.0 # 2.0
+    assert sv.global_avg == 6.0 / 3.0  # 2.0

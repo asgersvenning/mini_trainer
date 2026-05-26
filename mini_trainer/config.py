@@ -157,13 +157,15 @@ def load_yaml_config(path: str | None, resume: bool = False) -> dict[str, Any]:
         if isinstance(obj, set):
             return {rv for v in obj if (rv := _resolve_any(v)) is not None}
         if isinstance(obj, str) and dotted_path.match(obj):
+            extensions = [".json", ".yaml", ".yml", ".pt", ".pth", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".h5", ".hdf5"]
+            if any(obj.endswith(ext) for ext in extensions):
+                return obj
             mod, _, attr = obj.rpartition(".")
             try:
                 module = importlib.import_module(mod)
                 return getattr(module, attr)
-            except Exception as e:
-                warnings.warn(f"Config deserialization: could not import '{obj}': {e}")
-                return None
+            except Exception:
+                return obj
         return obj
 
     out = _resolve_any(data)

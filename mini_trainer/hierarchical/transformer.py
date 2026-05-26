@@ -41,12 +41,8 @@ class BaseDecoder(nn.Module, ABC):
 
     @abstractmethod
     def forward(
-            self, 
-            tgt: torch.Tensor, 
-            memory: torch.Tensor, 
-            tgt_mask: torch.Tensor | None = None, 
-            tgt_is_causal: bool = True
-        ) -> torch.Tensor:
+        self, tgt: torch.Tensor, memory: torch.Tensor, tgt_mask: torch.Tensor | None = None, tgt_is_causal: bool = True
+    ) -> torch.Tensor:
         """
         Standard forward pass for training or stateless generation.
         Expected shapes (assuming batch_first=False for compatibility):

@@ -64,7 +64,7 @@ def get_dataset_dataloader(  # noqa: D103
     if subsample is not None and subsample > 1:
         metadata = tuple([{k: v[::subsample] for k, v in md.items()} for md in metadata])
 
-    dataset_shape = list((sum(map(len, metadata)), *resize_size, 3))
+    dataset_shape = list((sum(len(md["path"]) for md in metadata), *resize_size, 3))
     cache = CACHE_MODE(cache)
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)

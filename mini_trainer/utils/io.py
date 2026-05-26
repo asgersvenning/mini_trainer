@@ -108,9 +108,8 @@ def make_read_and_resize_fn(
     """Factory to create function to read and resize image from path."""
     if isinstance(dtype, str):
         _dtype = getattr(torch, dtype, None)
-        if not isinstance(dtype, torch.dtype):
+        if not isinstance(_dtype, torch.dtype):
             raise ValueError(f'Unknown dtype "{dtype}"')
-        assert isinstance(_dtype, torch.dtype)
         dtype = _dtype
     converter = make_convert_dtype(dtype)
     interp = _pil_to_torch_interp(interpolation)

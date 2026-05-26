@@ -10,7 +10,6 @@ from Bio.Phylo.BaseTree import BranchColor
 from matplotlib import pyplot as plt
 from matplotlib.backends import backend_agg
 from matplotlib.colors import LogNorm
-from PIL.Image import fromarray
 from pycirclize import Circos
 from scipy.cluster.hierarchy import ClusterNode, fcluster, linkage, to_tree
 from scipy.spatial.distance import squareform
@@ -20,103 +19,6 @@ from torchvision.transforms.functional import resize
 from mini_trainer.classifier import classification_module, last_layer_weights
 from mini_trainer.utils.gbif import resolve_name_or_id
 from mini_trainer.utils.generic import cosine_to_zscore
-
-
-def named_confusion_matrix(
-    results: dict[str, list[str]],
-    cls2idx: dict[str, int],
-    keys: tuple[str, str] = ("preds", "labels"),
-    verbose: bool = False,
-    plot_conf_mat: bool | str = False,
-):
-    """Compute dense label-prediction-count dictionary confusion matrix from results.
-
-    Also computes per-class, micro and macro accuracy.
-    """
-    # Build confusion matrix and compute accuracies
-    classes = [k for k, v in sorted(cls2idx.items(), key=lambda x: x[1])]
-
-    # Initialize confusion matrix and counters
-    conf_mat = {lab: {pred: 0 for pred in classes} for lab in classes}
-    total_correct = 0
-    total_samples = 0
-    per_class_total = {cls: 0 for cls in classes}
-    per_class_correct = {cls: 0 for cls in classes}
-
-    # Populate confusion matrix and count correct predictions
-    for prediction, label in zip(results[keys[0]], results[keys[1]]):
-        if label not in classes:
-            continue
-        conf_mat[label][prediction] += 1
-        total_samples += 1
-        per_class_total[label] += 1
-        if label.lower().strip() == prediction.lower().strip():
-            total_correct += 1
-            per_class_correct[label] += 1
-
-    if plot_conf_mat:
-        conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-        arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
-        if isinstance(plot_conf_mat, bool):
-            plot_conf_mat = "confusion_matrix.png"
-        fromarray(arr).save(plot_conf_mat)
-
-    # Print the confusion matrix (numbers only, aligned)
-    if verbose:
-        max_cf_n = max(val for d in conf_mat.values() for val in d.values())
-        width = len(str(max_cf_n))
-        for lab in classes:
-            row_str = "|".join(
-                "{:>{width}d}".format(conf_mat[lab][pred], width=width) if conf_mat[lab][pred] != 0 else " " * width for pred in classes
-            )
-            print(row_str)
-
-    # Compute and print per-class accuracies
-    if verbose:
-        print("\nPer-class Accuracies:")
-    macro_acc = 0.0
-    num_class_with_any = 0
-    for cls in classes:
-        if per_class_total[cls] > 0:
-            acc = per_class_correct[cls] / per_class_total[cls]
-            num_class_with_any += 1
-        else:
-            acc = 0.0
-        macro_acc += acc
-        if verbose:
-            print(f"{cls:_<{max(map(len, classes))}}{acc:_>9.1%} ({per_class_correct[cls]}/{per_class_total[cls]})")
-    macro_acc /= num_class_with_any or 1
-
-    # Micro accuracy: overall correct predictions / total predictions
-    micro_acc = total_correct / total_samples if total_samples > 0 else 0.0
-
-    if verbose:
-        print(f"\nMicro Accuracy: {micro_acc:.2%} ({total_correct}/{total_samples})")
-        print(f"Macro Accuracy: {macro_acc:.2%}")
-
-    return {"hits": per_class_correct, "totals": per_class_total, "micro": micro_acc, "macro": macro_acc, "conf_mat": conf_mat}
-
-
-def raw_confusion_matrix(
-    labels: list[int] | torch.Tensor | np.ndarray, predictions: list[int] | torch.Tensor | np.ndarray, n_classes: int | None = None
-):
-    """Compute dense confusion matrix array from sparse label-prediction pairs."""
-    labels = np.asarray(labels).ravel().astype(np.int64)
-    predictions = np.asarray(predictions).ravel().astype(np.int64)
-    if n_classes is None:
-        n_classes = int(max(max(labels), max(predictions))) + 1
-
-    indices = n_classes * labels + predictions
-    cm = np.bincount(indices, minlength=n_classes * n_classes)
-    cm = cm.reshape((n_classes, n_classes)).astype(np.float64)
-
-    row_sums = cm.sum(axis=1, keepdims=True)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        cm_norm = cm / row_sums
-        cm_norm[~np.isfinite(cm_norm)] = 0.0  # set inf and NaN to zero
-
-    return cm_norm
-
 
 # --- Constants ---
 MIN_DISPLAY_DIM_HEATMAP = 500
