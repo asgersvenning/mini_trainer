@@ -20,7 +20,6 @@ All code in `mini_trainer` should follow the following core principles:
 
 We recommend using `uv` for package and environment management.
 
-> [!NOTE]
 > See [Install uv](https://docs.astral.sh/uv/getting-started/installation/) for instructions.
 
 ## PyPi
