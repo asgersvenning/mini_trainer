@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 
-from mini_trainer.utils.io import (
+from mini_trainer.data.io import (
     CACHE_MODE,
     LazyDataset,
     Reindexed,

@@ -1,6 +1,6 @@
 import torch
 
-from mini_trainer.utils.loss import EvenCrossEntropyLoss, class_weight_distribution_regularization, kl_distill_ema
+from mini_trainer.training.loss import EvenCrossEntropyLoss, class_weight_distribution_regularization, kl_distill_ema
 
 
 def test_EvenCrossEntropyLoss():

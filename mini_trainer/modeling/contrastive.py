@@ -6,7 +6,7 @@ From: https://github.com/HobbitLong/SupContrast/blob/master/losses.py
 import torch
 import torch.nn as nn
 
-from mini_trainer.classifier import EmbeddingContext, SupervisionContext
+from .classifier import EmbeddingContext, SupervisionContext
 
 
 class SupConLoss(nn.modules.loss._Loss):

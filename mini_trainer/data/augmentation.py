@@ -23,12 +23,20 @@ def debug_augmentation(
         n = min(3, len(dataset))
         fig, axs = plt.subplots(3, n, figsize=(10, 5))
 
+        def prep_for_imshow(img_tensor):
+            img_tensor = convert2fp32(img_tensor.permute(1, 2, 0))
+            min_v = img_tensor.min()
+            max_v = img_tensor.max()
+            if max_v > min_v:
+                return (img_tensor - min_v) / (max_v - min_v)
+            return torch.clamp(img_tensor, 0.0, 1.0)
+
         for j, i in enumerate(sample(range(len(dataset)), n)):
             example_image: torch.Tensor = dataset[i][0].clone().cpu()
 
-            axs[j, 0].imshow(example_image.permute(1, 2, 0))
-            axs[j, 1].imshow(convert2fp32(augmentation(example_image).permute(1, 2, 0)))
-            axs[j, 2].imshow(convert2fp32(augmentation(example_image).permute(1, 2, 0)))
+            axs[j, 0].imshow(prep_for_imshow(example_image))
+            axs[j, 1].imshow(prep_for_imshow(augmentation(example_image)))
+            axs[j, 2].imshow(prep_for_imshow(augmentation(example_image)))
             for ax in axs[j, :]:
                 ax.axis("off")
 

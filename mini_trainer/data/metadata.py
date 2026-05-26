@@ -7,8 +7,14 @@ from typing import cast
 
 import numpy as np
 
-from mini_trainer.utils.io import is_image
-from mini_trainer.utils.parquet import get_metadata_from_parquet, parquet_to_class_spec
+from mini_trainer.data import is_image
+from mini_trainer.integrations import (
+    create_taxonomy,
+    get_metadata_from_parquet,
+    is_taxonomical_cls2idx,
+    labels_from_taxonomy,
+    parquet_to_class_spec,
+)
 
 
 def find_images(root: str):
@@ -65,8 +71,6 @@ def create_metadata(
         # If no labels are supplied we just assume that the images are put into
         # folders named after the class
         if isinstance(cls2idx.get("0", None), dict):
-            from mini_trainer.utils.gbif import create_taxonomy, is_taxonomical_cls2idx, labels_from_taxonomy
-
             if not is_taxonomical_cls2idx(cls2idx):
                 raise ValueError("Hierarchical class index passed without labels and is not taxonomical.")
             dirs = [

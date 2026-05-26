@@ -18,13 +18,15 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from torch import nn
 
-from mini_trainer.classifier import Prediction, classification_module
-from mini_trainer.utils import float_signif_decimal, reduce_across_processes, write_csv_from_dict
-from mini_trainer.utils.metrics import named_confusion_matrix, raw_confusion_matrix
-from mini_trainer.utils.plot import (
+from mini_trainer.modeling import Prediction, classification_module
+from mini_trainer.training.metrics import named_confusion_matrix, raw_confusion_matrix
+from mini_trainer.utils._concurrent.distributed import reduce_across_processes
+from mini_trainer.utils._core.fs import write_csv_from_dict
+from mini_trainer.utils._core.math import float_signif_decimal
+from mini_trainer.visualization.dendrogram import plot_probabilistic_dendrogram
+from mini_trainer.visualization.plot import (
     plot_class_distance_matrix,
     plot_heatmap,
-    plot_probabilistic_dendrogram,
 )
 
 
@@ -460,6 +462,16 @@ class _Logger:
         **`step`**: Function to indicate that the current iteration has completed.
     """
 
+    def __init__(
+        self,
+        steps: int | None = None,
+        tag: type | str | None = None,
+        name: str | None = None,
+        output: str | None = None,
+        **kwargs,
+    ):
+        raise NotImplementedError()
+
     def __str__(self):
         raise NotImplementedError()
 
@@ -786,29 +798,29 @@ class MultiLogger:
         self.output_dir = None if self.output is None else os.path.join(self.output, self.name, "logs")
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
-        self.clear_store_on_update = clear_store_on_update
+        self.clear_store_on_update: bool = clear_store_on_update
 
-        self.logger_cls = logger_cls
-        self.logger_cls_extra_kwargs = logger_cls_extra_kwargs
-        self.logger_cls_stat_factory = logger_cls_stat_factory
-        self.verbose = verbose
+        self.logger_cls: list[type[_Logger]] = logger_cls
+        self.logger_cls_extra_kwargs: list[dict[str, Any]] = logger_cls_extra_kwargs
+        self.logger_cls_stat_factory: list[Callable[[], _Statistic]] = logger_cls_stat_factory
+        self.verbose: bool = verbose
 
         # Get aligned steps (mainly for use with tensorboard)
         self.train_steps, self.val_steps = self.compute_steps(self.total_epochs, len(train_loader), len(val_loader))
-        self.total_steps = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
+        self.total_steps: int = sum(map(len, self.train_steps)) + sum(map(len, self.val_steps))
 
         # Initialize dynamic attributes
         self._type_timing: defaultdict[str, Timer] = defaultdict(Timer)
-        self._last_save = time.time()
-        self._step = 0
-        self._start_time = None
-        self.eta = None
-        self._current_loggers = None
-        self._epoch = None
-        self._type = None
-        self._batch_size = None
-        self._idx = None
-        self._n_classes = None
+        self._last_save: float = time.time()
+        self._step: int = 0
+        self._start_time: float | None = None
+        self.eta: ETA | None = None
+        self._current_loggers: Any = None
+        self._epoch: int | None = None
+        self._type: str | None = None
+        self._batch_size: int | None = None
+        self._idx: int | None = None
+        self._n_classes: int | None = None
         self._soft_confusion_matrix: dict[str, torch.Tensor] = dict()
         self._finished = False
 
@@ -827,7 +839,8 @@ class MultiLogger:
     def is_train(self):
         return isinstance(self._type, str) and self._type.lower().strip().startswith("train")
 
-    def compute_steps(self, epochs: int, train_steps: int, val_steps: int):
+    def compute_steps(self, epochs: int, train_steps: int, val_steps: int) -> tuple[list[list[int]], list[list[int]]]:
+        """Compute aligned steps for train and validation."""
         return [list(range(e * train_steps, (e + 1) * train_steps)) for e in range(epochs)], [
             compute_aligned_steps(train_steps, val_steps, epochs, e) for e in range(epochs)
         ]

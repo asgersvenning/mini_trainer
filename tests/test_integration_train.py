@@ -45,6 +45,24 @@ class MockBuilder(BaseBuilder):
         return lambda x: torch.tensor(0.0)
 
 
+class TinyMockModel(torch.nn.Module):
+    """A tiny mock model for fast unit testing."""
+
+    default_transform = tt.Compose([])
+
+    def __init__(self):
+        super().__init__()
+        self.features = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 4, kernel_size=3, padding=1),
+            torch.nn.AdaptiveAvgPool2d((1, 1)),
+            torch.nn.Flatten(),
+        )
+        self.fc = torch.nn.Linear(4, 2)
+
+    def forward(self, x):
+        return self.fc(self.features(x))
+
+
 def test_integration_train_cpu(tmp_path):
     # Setup paths
     input_dir = str(tmp_path / "data")
@@ -66,7 +84,7 @@ def test_integration_train_cpu(tmp_path):
         "dtype": "float32",
         "name": "test_run",
         "builder": MockBuilder,
-        "model_builder_kwargs": {"model_type": "shufflenet_v2_x0_5", "pretrained": False},
+        "model_builder_kwargs": {"model_type": TinyMockModel(), "pretrained": False},
         # Be verbose to see output if needed
         "logger_builder_kwargs": {"verbose": True, "logger_cls": configure_loggers(use_tensorboard=True)},
         # Disable EMA explicitly
@@ -101,4 +119,19 @@ def test_integration_train_cpu(tmp_path):
     # Optional: Load best.pt if it exists (it should if validation ran)
     # Note: best.pt is only saved if validation happens.
     # MockBuilder returns val_loader, so validation should run.
-    assert os.path.exists(os.path.join(weights_dir, "best.pt"))
+    best_weights_path = os.path.join(weights_dir, "best.pt")
+    assert os.path.exists(best_weights_path)
+
+    # Test autoloading from a single .pt weights file without passing model_type or other args
+    from mini_trainer.modeling.classifier import Classifier, classification_module
+
+    loaded_model, loaded_preprocess = Classifier.build(weights=best_weights_path)
+    cls_mod = classification_module(loaded_model)
+    assert isinstance(cls_mod, Classifier)
+    assert cls_mod.metadata["backbone_output_name"] == "fc"
+    assert cls_mod.metadata["backbone_class"] == "tests.test_integration_train:TinyMockModel"
+    assert loaded_preprocess is not None
+    # Test that the custom preprocessing function runs
+    dummy_input = torch.randn(3, 5, 5)
+    processed = loaded_preprocess(dummy_input)
+    assert processed.shape == (3, 5, 5)

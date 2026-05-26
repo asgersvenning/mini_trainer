@@ -3,6 +3,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable
 from typing import Any, TypeVar, TypeVarTuple
 
+import numpy as np
 import torch
 from torchvision.transforms.v2 import ToDtype
 
@@ -11,6 +12,13 @@ TERMINAL_WIDTH, _ = shutil.get_terminal_size()
 X = TypeVar("X")
 R = TypeVar("R")
 Ks = TypeVarTuple("Ks")
+
+
+def make_empty_ndarray(s: int) -> np.typing.NDArray[np.float64]:
+    """Create a 1-dimensional array filled with ``np.nan``."""
+    arr = np.empty((s,))
+    arr[:] = np.nan
+    return arr
 
 
 def filter_ordered_dict(od: OrderedDict[X, R], keys: tuple[*Ks]):  # noqa: UP047

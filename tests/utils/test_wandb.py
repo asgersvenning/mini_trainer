@@ -2,9 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import mini_trainer.utils.wandb as wandb_module
-from mini_trainer.utils.logging import BaseStatistic
-from mini_trainer.utils.wandb import WandbLogger
+import mini_trainer.logging.wandb as wandb_module
+from mini_trainer.logging import BaseStatistic, WandbLogger
 
 
 def test_wandb_logger_not_installed():

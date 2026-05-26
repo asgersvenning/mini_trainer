@@ -5,8 +5,8 @@ from typing import Any, ParamSpec, TypeVar
 import torch
 import torch.nn as nn
 
-from mini_trainer.classifier import EmbeddingContext, SupervisionContext
-from mini_trainer.utils.imports import import_class
+from mini_trainer.modeling import EmbeddingContext, SupervisionContext
+from mini_trainer.utils import import_class
 
 P = ParamSpec("P")
 R = TypeVar("R")

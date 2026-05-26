@@ -3,11 +3,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import torch
 
-from mini_trainer.utils.metrics import raw_confusion_matrix
-from mini_trainer.utils.plot import (
+from mini_trainer.training.metrics import raw_confusion_matrix
+from mini_trainer.visualization.dendrogram import plot_probabilistic_dendrogram
+from mini_trainer.visualization.plot import (
     _aggregate_matrix_max,
     _get_scaled_matrix_for_display,
-    plot_probabilistic_dendrogram,
 )
 
 
@@ -68,8 +68,8 @@ def test_plot_probabilistic_dendrogram():
     dummy = dummy + dummy.T  # Make it symmetric
     dummy.fill_diagonal_(0)  # Make diagonal zero
 
-    with patch("mini_trainer.utils.plot.classification_module", return_value=mock_model_module):
-        with patch("mini_trainer.utils.plot.class_distance", return_value=dummy):
+    with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
+        with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
             fig = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None
 
@@ -85,8 +85,8 @@ def test_plot_probabilistic_dendrogram():
         }
     }
 
-    with patch("mini_trainer.utils.plot.classification_module", return_value=mock_model_module):
-        with patch("mini_trainer.utils.plot.class_distance", return_value=dummy):
+    with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
+        with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
             fig = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None
 
@@ -100,7 +100,7 @@ def test_plot_probabilistic_dendrogram():
         }
     }
 
-    with patch("mini_trainer.utils.plot.classification_module", return_value=mock_model_module):
-        with patch("mini_trainer.utils.plot.class_distance", return_value=dummy):
+    with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
+        with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
             fig = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None

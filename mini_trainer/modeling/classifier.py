@@ -11,9 +11,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch._prims_common import DeviceLikeType
 
-from mini_trainer.utils import dtype_to_string, string_to_dtype
-from mini_trainer.utils.generic import cosine_to_zscore, prior_from_labels
-from mini_trainer.utils.imports import class_path, import_class
+from mini_trainer.utils import class_path, dtype_to_string, import_class, string_to_dtype
+
+from .backbone import get_model
+from .generic import cosine_to_zscore, prior_from_labels
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
@@ -22,70 +23,7 @@ except Exception:  # fallback for older installs
 
 from functools import lru_cache
 
-from mini_trainer.utils.model import get_model
-
-
-class SupervisionContext:
-    """Used for passing a target to the classification module."""
-
-    _target: torch.Tensor | None = None
-
-    @classmethod
-    def set(cls, target):
-        cls._target = target
-
-    @classmethod
-    def get(cls):
-        return cls._target
-
-    @classmethod
-    def clear(cls):
-        cls._target = None
-
-    def __init__(self, target):  # noqa: D107
-        self.target = target
-
-    def __enter__(self):
-        SupervisionContext.set(self.target)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        SupervisionContext.clear()
-
-
-class EmbeddingContext:
-    """Used for passing embeddings from the classification module to the criterion (or elsewhere)."""
-
-    _embeddings: torch.Tensor | None = None
-    _active: bool = False
-
-    @classmethod
-    def set(cls, embeddings):
-        cls._embeddings = embeddings
-
-    @classmethod
-    def get(cls):
-        return cls._embeddings
-
-    @classmethod
-    def clear(cls):
-        cls._embeddings = None
-        cls._active = False
-
-    @classmethod
-    def activate(cls):
-        if cls._active:
-            raise RuntimeError("EmbeddingContext is already active")
-        cls._active = True
-
-    @classmethod
-    def active(cls):
-        return cls._active
-
-    def __enter__(self):
-        self.activate()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        EmbeddingContext.clear()
+from .context import EmbeddingContext
 
 
 class Classifier(nn.Module):  # noqa: D101 TODO
@@ -381,12 +319,13 @@ class Classifier(nn.Module):  # noqa: D101 TODO
     @classmethod
     def build(
         cls,
-        model_type: str | None = None,
+        model_type: str | nn.Module | None = None,
         weights: str | OrderedDict[str, torch.Tensor | Any] | None = None,
         num_classes: list[int] | int | None = None,
         device: DeviceLikeType = torch.device("cpu"),
         dtype: torch.dtype | None = None,
         preprocess_dtype: torch.dtype | None = None,
+        transform: Any = None,
         **kwargs,
     ):
         if not isinstance(device, torch.device):
@@ -421,9 +360,22 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                     raise RuntimeError("Unable to infer missing model type from supplied weights.")
             else:
                 assert isinstance(stored_model_type, str)
-                if stored_model_type != model_type and model_type is not None:
-                    warnings.warn(f'Manually specified model type "{model_type}" overridden to "{stored_model_type}"!', UserWarning)
-                model_type = stored_model_type
+                if model_type is None:
+                    model_type = stored_model_type
+                elif isinstance(model_type, str):
+                    if stored_model_type != model_type:
+                        warnings.warn(
+                            f'Manually specified model type "{model_type}" overridden to "{stored_model_type}"!',
+                            UserWarning,
+                        )
+                        model_type = stored_model_type
+                else:
+                    model_type_str = class_path(model_type)
+                    if stored_model_type != model_type_str:
+                        warnings.warn(
+                            f'Manually specified model type "{model_type_str}" does not match stored model type "{stored_model_type}"!',
+                            UserWarning,
+                        )
             stored_head_name = cfg.pop("backbone_output_name", None)
             assert stored_head_name is None or isinstance(stored_head_name, str)
             stored_version = cfg.pop("mini_trainer_version", None)
@@ -438,7 +390,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if dtype is None:
             dtype = torch.float32
         preprocess_dtype = preprocess_dtype or dtype
-        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype)
+        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype, transform=transform)
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         if stored_head_name is not None and stored_head_name != head_name:
@@ -493,7 +445,8 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 warnings.warn(f"Model configuration option {k} overriden by value stored in config: {kwargs[k]} ==> {v}", UserWarning)
                 kwargs[k] = v
         # Rebuild (and load) integrated backbone and classifier
-        model = cls.load(model_type, head_name, architecture, state, device, dtype, **kwargs)
+        model_type_str = model_type if isinstance(model_type, str) else class_path(model_type)
+        model = cls.load(model_type_str, head_name, architecture, state, device, dtype, **kwargs)
         return model, model_preprocess
 
 
@@ -714,32 +667,3 @@ def classification_module(model: nn.Module):
 
 def last_layer_weights(model: nn.Module):
     return classification_module(model).linear.weight
-
-
-def set_classification_mask(model: nn.Module, indices: list[int] | torch.Tensor | np.ndarray | None = None):
-    """Mask a selection of output features (classes).
-
-    Args:
-        model: A model created with `mini_trainer.classifier.Classifier.build()`.
-        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
-    """
-    classification_module(model).set_active_features(indices)
-
-
-@contextmanager
-def mask_classifier(model: nn.Module, indices: list[int] | torch.Tensor | np.ndarray | None = None):
-    """Mask a selection of output features (classes).
-
-    Args:
-        model: A model created with `mini_trainer.classifier.Classifier.build()`.
-        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
-    """
-    classifier = classification_module(model)
-    orig_indices = classifier.active_indices
-
-    classifier.set_active_features(indices)
-
-    try:
-        yield
-    finally:
-        classifier.set_active_features(orig_indices)

@@ -1,4 +1,4 @@
-from mini_trainer.utils.parquet import KCOLUMNS, combine_dicts, get_keys, set2split
+from mini_trainer.integrations.parquet import KCOLUMNS, combine_dicts, get_keys, set2split
 
 
 def test_set2split():

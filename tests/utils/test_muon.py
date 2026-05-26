@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from mini_trainer.utils.muon import Muon, _adjust_lr, _to_scalar, _zeropower_via_newtonschulz
+from mini_trainer.training.muon import Muon, _adjust_lr, _to_scalar, _zeropower_via_newtonschulz
 
 
 def test_to_scalar():

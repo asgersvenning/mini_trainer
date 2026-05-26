@@ -2,7 +2,7 @@ from itertools import chain
 
 from mini_trainer import TQDM
 from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
-from mini_trainer.utils.gbif import resolve_id
+from mini_trainer.utils.integrations.gbif import resolve_id
 
 
 def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], labels: list[int | str], progress: bool = False):

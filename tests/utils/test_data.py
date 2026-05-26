@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from mini_trainer.utils.data import find_images, get_metadata, parse_class_spec
+from mini_trainer.data import find_images, get_metadata, parse_class_spec
 
 
 def test_find_images(tmp_path):

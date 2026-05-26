@@ -3,7 +3,7 @@ from collections.abc import Iterable
 
 import torch
 
-from mini_trainer.utils.generic import get_prior_method
+from mini_trainer.modeling import get_prior_method
 
 
 def leaf_to_parents(h):

@@ -13,14 +13,19 @@ from torch import nn
 from torch.amp import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn
 
-from mini_trainer.classifier import Classifier, backbone, last_layer_weights
+from mini_trainer.data import (
+    SaltAndPepper,
+    create_metadata,
+    get_dataset_dataloader,
+    get_inference_dataloader,
+    get_metadata,
+    parse_class_spec,
+)
+from mini_trainer.logging import MultiLogger
+from mini_trainer.modeling import Classifier, backbone, last_layer_weights
+from mini_trainer.modeling.ema import EMATeacher, ema_lambda_per_update
+from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_regularization
 from mini_trainer.utils import cosine_schedule_with_warmup
-from mini_trainer.utils.augmentation import SaltAndPepper
-from mini_trainer.utils.data import create_metadata, get_metadata, parse_class_spec
-from mini_trainer.utils.ema import EMATeacher, ema_lambda_per_update
-from mini_trainer.utils.loader import get_dataset_dataloader, get_inference_dataloader
-from mini_trainer.utils.logging import MultiLogger
-from mini_trainer.utils.loss import EMLACrossEntropy, class_weight_distribution_regularization
 
 
 class BaseBuilder:

@@ -12,7 +12,7 @@ try:
 except ImportError:
     wandb = None
 
-from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
+from .core import BaseStatistic, _Logger, _Statistic
 
 
 class WandbLogger(_Logger):
@@ -28,7 +28,10 @@ class WandbLogger(_Logger):
     ):
         """Wandb logger."""
         if wandb is None:
-            raise ImportError("wandb is not installed. Please install it using `uv add wandb`.")
+            raise ImportError(
+                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended], "
+                "`uv sync --extra recommended`, or `uv add wandb`."
+            )
         if steps is None:
             raise TypeError(f"Initializing {WandbLogger} with `steps=None` is invalid.")
 

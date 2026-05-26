@@ -3,7 +3,7 @@ import time
 import pytest
 import torch
 
-from mini_trainer.utils.logging import ETA, SmoothedValue, Timer, accuracy, compute_aligned_steps, format_duration
+from mini_trainer.logging.core import ETA, SmoothedValue, Timer, accuracy, compute_aligned_steps, format_duration
 
 
 def test_format_duration():

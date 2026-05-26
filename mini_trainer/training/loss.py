@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import CrossEntropyLoss
 
-from mini_trainer.utils.generic import cosine_to_zscore
+from mini_trainer.modeling.generic import cosine_to_zscore
 
 
 class EvenCrossEntropyLoss(CrossEntropyLoss):

@@ -6,12 +6,11 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.classifier import BasePrediction, Classifier, EmbeddingContext, PredictionItem
 from mini_trainer.hierarchical.autoregressive import AutoregressiveMixin
 from mini_trainer.hierarchical.transformer import BaseDecoder, XADecoder
 from mini_trainer.hierarchical.utils import batched_scatter_logsumexp, prior_from_labels
-from mini_trainer.utils.generic import cosine_to_zscore
-from mini_trainer.utils.imports import class_path, import_class
+from mini_trainer.modeling import BasePrediction, Classifier, EmbeddingContext, PredictionItem, cosine_to_zscore
+from mini_trainer.utils import class_path, import_class
 
 
 class HierarchicalClassifier(Classifier):  # noqa: D101 TODO

@@ -17,10 +17,11 @@ from mini_trainer.config import (
     merge_dicts,
     restructure_cli_args,
 )
+from mini_trainer.data import debug_augmentation
+from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
-from mini_trainer.utils import average_checkpoints, increment_name_dir, save_on_master
-from mini_trainer.utils.augmentation import debug_augmentation
-from mini_trainer.utils.muon import MuonAuxAdamW
+from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.utils import increment_name_dir, save_on_master
 
 
 def main(  # noqa: D417

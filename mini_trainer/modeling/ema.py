@@ -1,7 +1,7 @@
 import torch
 from torch.optim.swa_utils import AveragedModel
 
-from mini_trainer.utils.loss import kl_distill_ema
+from mini_trainer.training.loss import kl_distill_ema
 
 
 def ema_lambda_per_update(half_life_steps: int | float, update_interval: int) -> float:  # noqa: D103

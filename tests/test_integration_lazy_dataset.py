@@ -5,7 +5,7 @@ import pytest
 import torch
 from PIL import Image
 
-from mini_trainer.utils.io import LazyDataset
+from mini_trainer.data import LazyDataset
 
 
 def create_dummy_images(root_dir, n=10, size=(32, 32)):

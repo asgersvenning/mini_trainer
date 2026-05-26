@@ -9,7 +9,7 @@ from typing import Any
 import torch
 import yaml
 
-from mini_trainer.utils.logging import _Logger
+from mini_trainer.logging import _Logger
 
 
 def _nullify(d: dict[str, Any]):
@@ -238,15 +238,15 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def configure_loggers(use_tensorboard: bool = False, use_wandb: bool = False):
-    from mini_trainer.utils.logging import MetricLogger
+    from mini_trainer.logging import MetricLogger
 
     loggers: list[type[_Logger]] = [MetricLogger]
     if use_tensorboard:
-        from mini_trainer.utils.tensorboard import TensorboardLogger
+        from mini_trainer.logging import TensorboardLogger
 
         loggers.append(TensorboardLogger)
     if use_wandb:
-        from mini_trainer.utils.wandb import WandbLogger
+        from mini_trainer.logging import WandbLogger
 
         loggers.append(WandbLogger)
     return loggers

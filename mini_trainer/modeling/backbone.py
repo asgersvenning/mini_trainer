@@ -1,14 +1,14 @@
 import os
 import warnings
 from functools import partial
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torchvision
 from torch import nn
 from torchvision.io import ImageReadMode, decode_image
 
-from mini_trainer.utils import make_convert_dtype
+from mini_trainer.utils._core.misc import make_convert_dtype
 
 _UNSUPPORTED_MODELS = [
     "squeezenet1_0",
@@ -46,7 +46,8 @@ def preprocess(item, transform, func=None):
         image = item
     else:
         raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
-    image = transform(image)
+    if transform is not None:
+        image = transform(image)
     if func:
         image = func(image)
     return image
@@ -123,6 +124,7 @@ class BackboneModel(nn.Module):
 
 def get_bioclip2_encoder(version: str = "bioclip-2"):
     try:
+        # pyrefly: ignore [missing-import]
         import open_clip
     except ImportError as e:
         e.add_note(
@@ -145,30 +147,51 @@ def get_model(
     model_args: dict = {},
     classifier_name: str | list[str] = ["classifier", "fc", "heads", "head"],
     preprocess_dtype: torch.dtype | None = None,
+    transform: Any = None,
 ):
     """Get torchvision model and preprocessing function by name."""
-    default_transform = None
+    default_transform = transform
     if isinstance(backbone_model, str):
         if "bioclip" in backbone_model.lower().strip():
             encoder, _, bioclip_preprocess, tokenizer = get_bioclip2_encoder(backbone_model.lower().strip())
             encoder.compile(mode="reduce-overhead")
-            default_transform = torchvision.transforms.transforms.Compose(
-                [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
-            )
+            if default_transform is None:
+                default_transform = torchvision.transforms.transforms.Compose(
+                    [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
+                )
             backbone_model = BackboneModel(encoder=encoder, encoder_method="encode_image")
+        elif "." in backbone_model:
+            from mini_trainer.utils import import_class
+            cls = import_class(backbone_model)
+            backbone_model = cls(**model_args)
         else:
             if backbone_model in _UNSUPPORTED_MODELS:
                 raise ValueError(f"The model {backbone_model} is not supported.")
             default_weights = torchvision.models.get_model_weights(backbone_model).DEFAULT
-            try:
-                default_transform = default_weights.transforms(antialias=True)
-            except TypeError as e:
-                if "unexpected keyword argument 'antialias'" not in str(e):
-                    raise
-                default_transform = default_weights.transforms()
+            if default_transform is None:
+                try:
+                    default_transform = default_weights.transforms(antialias=True)
+                except TypeError as e:
+                    if "unexpected keyword argument 'antialias'" not in str(e):
+                        raise
+                    default_transform = default_weights.transforms()
             backbone_model = torchvision.models.get_model(backbone_model, weights=default_weights, **model_args)
     if not isinstance(backbone_model, nn.Module):
         raise ValueError("backbone_model must be a string or a torch.nn.Module")
+
+    if default_transform is None:
+        for attr in ("transforms", "default_transform", "preprocess_transform", "transform"):
+            if hasattr(backbone_model, attr):
+                val = getattr(backbone_model, attr)
+                if callable(val):
+                    try:
+                        default_transform = val()
+                    except Exception:
+                        default_transform = val
+                else:
+                    default_transform = val
+                break
+
     backbone_classifier_name = None
     if isinstance(classifier_name, str):
         classifier_name = [classifier_name]

@@ -7,7 +7,6 @@ import torch
 
 from mini_trainer import TQDM, Formatter
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.classifier import EmbeddingContext, classification_module, predict
 from mini_trainer.config import (
     defaults_from_function,
     dump_resolved_config,
@@ -15,9 +14,10 @@ from mini_trainer.config import (
     merge_dicts,
     restructure_cli_args,
 )
+from mini_trainer.data import auto_find_images, get_metadata
+from mini_trainer.logging import BaseResultCollector, RawResultCollector
+from mini_trainer.modeling import EmbeddingContext, classification_module, predict
 from mini_trainer.utils import increment_name_dir
-from mini_trainer.utils.data import auto_find_images, get_metadata
-from mini_trainer.utils.logging import BaseResultCollector, RawResultCollector
 
 
 def main(  # noqa: D417

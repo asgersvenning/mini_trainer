@@ -4,7 +4,7 @@ import tempfile
 import pytest
 import torch
 
-from mini_trainer.utils.io import (
+from mini_trainer.data.io import (
     CACHE_MODE,
     _normalize_to_tuple,
     generate_indices,

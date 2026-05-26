@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from PIL.Image import fromarray
 
-from mini_trainer.utils.plot import plot_heatmap
+from mini_trainer.visualization import plot_heatmap
 
 
 def named_confusion_matrix(

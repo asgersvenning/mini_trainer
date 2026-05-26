@@ -7,15 +7,10 @@ import torch
 from matplotlib import pyplot as plt
 from torch.utils.tensorboard.writer import SummaryWriter
 
-from mini_trainer.utils import increment_name_dir
-from mini_trainer.utils.logging import BaseStatistic, _Logger, _Statistic
+from mini_trainer.utils import make_empty_ndarray
+from mini_trainer.utils._core.fs import increment_name_dir
 
-
-def make_empty_array(s: int) -> np.typing.NDArray[np.float64]:
-    """Create a 1-dimensional array filled with ``np.nan``."""
-    arr = np.empty((s,))
-    arr[:] = np.nan
-    return arr
+from .core import BaseStatistic, _Logger, _Statistic
 
 
 class TensorboardLogger(_Logger):
@@ -62,7 +57,7 @@ class TensorboardLogger(_Logger):
         return "/".join([name, *self.tag])
 
     def clear_buffer(self):
-        self._buffer = defaultdict(lambda: (make_empty_array(self.flush_rate), make_empty_array(self.flush_rate)))
+        self._buffer = defaultdict(lambda: (make_empty_ndarray(self.flush_rate), make_empty_ndarray(self.flush_rate)))
 
     def buffer_scalar(self, tag: str, value: int | float, step: int):
         """Buffer incoming values before writing to tensorboard file(s)."""
