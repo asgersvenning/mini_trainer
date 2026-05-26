@@ -1165,10 +1165,7 @@ class MultiLogger:
         if not self.loggers:
             stats_str = ""
         else:
-            stats_list = [
-                f"{name}: {str(self.loggers[0].statistics[name])}"
-                for name in self.statistics[: min(4, len(self.statistics))]
-            ]
+            stats_list = [f"{name}: {str(self.loggers[0].statistics[name])}" for name in self.statistics[: min(4, len(self.statistics))]]
             stats = " | ".join(stats_list)
             stats_str = f" | {stats}"
         epoch = self._epoch

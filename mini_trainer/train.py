@@ -22,8 +22,8 @@ from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.utils import ddp_train_wrapper, increment_name_dir, save_on_master
- 
- 
+
+
 @ddp_train_wrapper
 def main(  # noqa: D417
     input: str,
@@ -104,8 +104,10 @@ def main(  # noqa: D417
         if name is None:
             name = "train"
         from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
+
         if is_dist_avail_and_initialized():
             import torch.distributed as dist
+
             if get_rank() == 0:
                 name = increment_name_dir(name, output)
             name_list = [name]

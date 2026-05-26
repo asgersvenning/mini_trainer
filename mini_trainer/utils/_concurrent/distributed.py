@@ -93,6 +93,7 @@ def init_distributed(device=None):
 
 def ddp_train_wrapper(main_fn):
     """Decorator/wrapper for main training entry point to enable DDP."""
+
     @functools.wraps(main_fn)
     def wrapped(*args, **kwargs):
         device = kwargs.get("device", None)
@@ -111,6 +112,7 @@ def ddp_train_wrapper(main_fn):
             # Disable logging on non-zero ranks
             if ddp_info["rank"] > 0:
                 from mini_trainer.logging.core import MetricLogger
+
                 logger_kwargs = kwargs.setdefault("logger_builder_kwargs", {})
                 logger_kwargs["logger_cls"] = [MetricLogger]
                 logger_kwargs["verbose"] = False
@@ -119,6 +121,7 @@ def ddp_train_wrapper(main_fn):
         finally:
             if ddp_info is not None:
                 dist.destroy_process_group()
+
     return wrapped
 
 

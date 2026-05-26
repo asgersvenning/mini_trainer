@@ -272,6 +272,7 @@ def train(
 
     if is_dist_avail_and_initialized():
         from torch.nn.parallel import DistributedDataParallel as DDP
+
         if "cpu" in str(device).lower():
             device_ids = None
         else:
