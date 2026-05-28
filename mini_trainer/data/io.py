@@ -408,8 +408,11 @@ class LazyDataset(torch.utils.data.Dataset):
 
         def _fetch_one(idx_item):
             idx, item = idx_item
-            data = self.func(item)
-            fetched_queue.put((idx, data))
+            try:
+                data = self.func(item)
+                fetched_queue.put((idx, data))
+            except Exception as e:
+                fetched_queue.put((idx, e))
 
         def _contiguous_write(idx: list[int], data: list[torch.Tensor] | list[list[torch.Tensor]]) -> None:
             """Write data to indexes.
@@ -449,22 +452,26 @@ class LazyDataset(torch.utils.data.Dataset):
         write_thread = Thread(target=_write, daemon=True)
         write_thread.start()
 
-        fetch_pool.map(_fetch_one, enumerate(self.items))
+        try:
+            fetch_pool.map(_fetch_one, enumerate(self.items))
 
-        nxt_idx = 0
-        for _ in range(len(self)):
-            idx, data = fetched_queue.get()
-            if idx == nxt_idx:
-                insert_queue.put((idx, data))
-                nxt_idx += 1
-                while nxt_idx in insert_buffer:
-                    insert_queue.put((nxt_idx, insert_buffer.pop(nxt_idx)))
+            nxt_idx = 0
+            for _ in range(len(self)):
+                idx, data = fetched_queue.get()
+                if isinstance(data, Exception):
+                    raise data
+                if idx == nxt_idx:
+                    insert_queue.put((idx, data))
                     nxt_idx += 1
-            else:
-                insert_buffer[idx] = data
+                    while nxt_idx in insert_buffer:
+                        insert_queue.put((nxt_idx, insert_buffer.pop(nxt_idx)))
+                        nxt_idx += 1
+                else:
+                    insert_buffer[idx] = data
 
-        write_thread.join()
-        fetch_pool.shutdown()
+            write_thread.join()
+        finally:
+            fetch_pool.shutdown(wait=False)
 
         self._ram_cache = torch.utils.data.TensorDataset(*[t for t in stacked_tensors])
 

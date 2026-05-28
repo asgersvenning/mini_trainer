@@ -26,6 +26,12 @@ def dummy_loader(path):
     return torch.from_numpy(np.array(img)).permute(2, 0, 1)
 
 
+def failing_loader(path):
+    if "fail" in path:
+        raise ValueError("Simulated read failure")
+    return torch.randn(3, 32, 32)
+
+
 def dummy_loader_tuple(path):
     img = Image.open(path).convert("RGB")
     t_img = torch.from_numpy(np.array(img)).permute(2, 0, 1)
@@ -95,3 +101,8 @@ class TestLazyDatasetIntegration:
         item = unpickled[0]
         assert isinstance(item, tuple)
         assert len(item) == 2
+
+    def test_lazy_dataset_caching_exception_propagation(self):
+        paths = ["ok1.png", "fail.png", "ok2.png"]
+        with pytest.raises(ValueError, match="Simulated read failure"):
+            LazyDataset(failing_loader, paths, cache="cpu")

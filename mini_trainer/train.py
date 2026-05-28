@@ -21,7 +21,7 @@ from mini_trainer.data import debug_augmentation
 from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
-from mini_trainer.utils import ddp_train_wrapper, increment_name_dir, save_on_master
+from mini_trainer.utils import ddp_train_wrapper, increment_name_dir, main_process_first, save_on_master
 
 
 @ddp_train_wrapper
@@ -159,14 +159,13 @@ def main(  # noqa: D417
             class_spec = None
         else:
             class_spec = os.path.join(output_dir, "class_spec.json")
-    class_spec = builder.class_spec(path=class_spec, dir=input, **spec_model_dataloader_kwargs)
-    # Add image size to class spec as it is needed to instantiate both the model and dataloader
-    class_spec["resize_size"] = size
 
-    # Prepare dataloader
-    train_labels, train_loader, val_loader = builder.build_dataloader(
-        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
-    )
+    with main_process_first():
+        class_spec = builder.class_spec(path=class_spec, dir=input, **spec_model_dataloader_kwargs)
+        class_spec["resize_size"] = size
+        train_labels, train_loader, val_loader = builder.build_dataloader(
+            input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
+        )
     if not isinstance(train_loader, torch.utils.data.DataLoader):
         raise TypeError(
             "Expected `dataloader_builder` to return an objects"

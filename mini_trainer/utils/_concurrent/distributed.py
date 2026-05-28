@@ -1,5 +1,6 @@
 import functools
 import os
+from contextlib import contextmanager
 
 import torch
 from torch import distributed as dist
@@ -165,3 +166,19 @@ def reduce_across_processes(val):  # noqa: D103
     dist.barrier()
     dist.all_reduce(t)
     return t
+
+
+@contextmanager
+def main_process_first():
+    """Context manager to execute the wrapped block on the main process first, then other processes."""
+    if is_dist_avail_and_initialized():
+        if is_main_process():
+            try:
+                yield
+            finally:
+                dist.barrier()
+        else:
+            dist.barrier()
+            yield
+    else:
+        yield
