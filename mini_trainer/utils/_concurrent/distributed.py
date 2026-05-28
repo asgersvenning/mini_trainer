@@ -98,6 +98,7 @@ def ddp_train_wrapper(main_fn):
     def wrapped(*args, **kwargs):
         device = kwargs.get("device", None)
         ddp_info = init_distributed(device=device)
+        kwargs["ddp_info"] = ddp_info
         tgt_fn = main_fn
         if ddp_info is not None:
             tgt_fn = torch.distributed.elastic.multiprocessing.errors.record(main_fn)
@@ -120,7 +121,7 @@ def ddp_train_wrapper(main_fn):
                 logger_kwargs["verbose"] = False
                 kwargs["output"] = None
         try:
-            return tgt_fn(*args, ddp_info=ddp_info, **kwargs)
+            return tgt_fn(*args, **kwargs)
         finally:
             if ddp_info is not None:
                 dist.destroy_process_group()
