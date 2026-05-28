@@ -33,6 +33,7 @@ class WandbLogger(_Logger):
         if wandb is _Unimported:
             try:
                 import wandb as _wandb
+
                 wandb = _wandb
             except ImportError:
                 wandb = None

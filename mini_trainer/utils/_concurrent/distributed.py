@@ -183,14 +183,11 @@ def ddp_train_wrapper(main_fn):
                 logger_kwargs = bound.arguments.setdefault("logger_builder_kwargs", {})
                 logger_kwargs["logger_cls"] = [MetricLogger]
                 logger_kwargs["verbose"] = False
-        try:
-            return tgt_fn(*bound.args, **bound.kwargs)
-        except Exception:
-            # Do not call destroy_process_group on failure to avoid deadlocks
-            raise
-        else:
-            if ddp_info is not None:
-                dist.destroy_process_group()
+
+        result = tgt_fn(*bound.args, **bound.kwargs)
+        if ddp_info is not None:
+            dist.destroy_process_group()
+        return result
 
     return wrapped
 

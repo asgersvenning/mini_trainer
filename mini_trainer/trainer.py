@@ -90,8 +90,6 @@ def train_one_epoch(
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
-        if i % 10 == 0 or i == 0 or i == n_batches - 1:
-            log.debug(f"epoch {epoch} batch {i}/{n_batches} fetched successfully.")
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")

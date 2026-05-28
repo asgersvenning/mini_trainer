@@ -171,9 +171,7 @@ def main(  # noqa: D417
     train_labels, train_loader, val_loader = builder.build_dataloader(
         input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
     )
-    log.debug(
-        f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}"
-    )
+    log.debug(f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
 
     if not isinstance(train_loader, torch.utils.data.DataLoader):
         raise TypeError(
@@ -321,7 +319,7 @@ def main(  # noqa: D417
             save_on_master(nn_model_ema.module.state_dict(), last_weight_dst)
         else:
             save_on_master(nn_model.state_dict(), last_weight_dst)
-        print(f"Final weights saved at: {last_weight_dst}")
+        log.info(f"Final weights saved at: {last_weight_dst}")
 
 
 def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103

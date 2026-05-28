@@ -32,6 +32,7 @@ class TensorboardLogger(_Logger):
         self.output = output
         self.name = name
         from torch.utils.tensorboard.writer import SummaryWriter
+
         self.writer = SummaryWriter(log_dir=os.path.join(output, "tensorboard", name), flush_secs=30)
 
         self.tag = tag or "main"
