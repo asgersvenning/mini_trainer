@@ -115,10 +115,7 @@ def init_distributed(device=None):
         if num_gpus > 0:
             gpu_idx = local_rank % num_gpus
             torch.cuda.set_device(gpu_idx)
-            if world_size > num_gpus:
-                backend = "gloo"
-            else:
-                backend = "nccl"
+            backend = "nccl"
         else:
             backend = "gloo"
     else:
@@ -156,6 +153,7 @@ def sync_run_name(name: str, output: str | None) -> str:
 
 def ddp_train_wrapper(main_fn):
     """Decorator/wrapper for main training entry point to enable DDP."""
+
     @functools.wraps(main_fn)
     def wrapped(*args, **kwargs):
         sig = inspect.signature(main_fn)
@@ -197,37 +195,12 @@ def ddp_train_wrapper(main_fn):
     return wrapped
 
 
-def init_distributed_mode(args):  # noqa: D103
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ["WORLD_SIZE"])
-        args.gpu = int(os.environ["LOCAL_RANK"])
-    elif "SLURM_PROCID" in os.environ:
-        args.rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.rank % torch.cuda.device_count()
-    elif hasattr(args, "rank"):
-        pass
-    else:
-        print("Not using distributed mode")
-        args.distributed = False
-        return
-
-    args.distributed = True
-
-    torch.cuda.set_device(args.gpu)
-    args.dist_backend = "nccl"
-    print(f"| distributed init (rank {args.rank}): {args.dist_url}", flush=True)
-    dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
-    dist.barrier()
-    setup_for_distributed(args.rank == 0)
-
-
 def reduce_across_processes(val):  # noqa: D103
     if not is_dist_avail_and_initialized():
         # nothing to sync, but we still convert to tensor for consistency with the distributed case.
         return torch.tensor(val)
 
-    device = torch.device(f"cuda:{torch.cuda.current_device()}") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     t = torch.tensor(val, device=device)
     dist.barrier()
     dist.all_reduce(t)
