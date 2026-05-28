@@ -21,7 +21,7 @@ from mini_trainer.data import debug_augmentation
 from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
-from mini_trainer.utils import ddp_train_wrapper, increment_name_dir, main_process_first, save_on_master
+from mini_trainer.utils import ddp_train_wrapper, get_rank, main_process_first, save_on_master, sync_run_name, trace_print
 
 
 @ddp_train_wrapper
@@ -104,18 +104,8 @@ def main(  # noqa: D417
     if checkpoint is None:
         if name is None:
             name = "train"
-        from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
 
-        if is_dist_avail_and_initialized():
-            import torch.distributed as dist
-
-            if get_rank() == 0:
-                name = increment_name_dir(name, output)
-            name_list = [name]
-            dist.broadcast_object_list(name_list, src=0)
-            name = name_list[0]
-        else:
-            name = increment_name_dir(name, output)
+        name = sync_run_name(name, output)
     else:
         if name is None:
             raise NotImplementedError(
@@ -135,6 +125,8 @@ def main(  # noqa: D417
     device: torch.device = torch.device(device)
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
+    verbose = logger_builder_kwargs.get("verbose", False)
+
     # Dump resolved configuration using locals and normalized values
     dump_resolved_config(
         output_dir=output_dir,
@@ -147,7 +139,7 @@ def main(  # noqa: D417
             "dtype": dtype,
             "name": name,
         },
-        verbose=logger_builder_kwargs.get("verbose", False),
+        verbose=verbose,
     )
 
     start_epoch: int = 0
@@ -160,12 +152,18 @@ def main(  # noqa: D417
         else:
             class_spec = os.path.join(output_dir, "class_spec.json")
 
-    with main_process_first():
+    trace_print(f"[Rank {get_rank()}] Building dataloaders...", verbose=verbose)
+    with main_process_first(verbose=verbose):
         class_spec = builder.class_spec(path=class_spec, dir=input, **spec_model_dataloader_kwargs)
         class_spec["resize_size"] = size
         train_labels, train_loader, val_loader = builder.build_dataloader(
             input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
         )
+    trace_print(
+        f"[Rank {get_rank()}] Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}",
+        verbose=verbose,
+    )
+
     if not isinstance(train_loader, torch.utils.data.DataLoader):
         raise TypeError(
             "Expected `dataloader_builder` to return an objects"
@@ -184,6 +182,7 @@ def main(  # noqa: D417
     # performance by following the pattern given in:
     # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244,
     # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
+    trace_print(f"[Rank {get_rank()}] Building model...", verbose=verbose)
     model_dtype = torch.float32
     nn_model, model_preprocess = builder.build_model(
         device=device,
@@ -271,11 +270,13 @@ def main(  # noqa: D417
         start_epoch = start_epoch + 1
 
     # Instantiate logger
+    logger_output = None if get_rank() > 0 else output
     logger = builder.build_logger(
-        train_loader=train_loader, val_loader=val_loader, epochs=epochs, output=output, name=name, **logger_builder_kwargs
+        train_loader=train_loader, val_loader=val_loader, epochs=epochs, output=logger_output, name=name, **logger_builder_kwargs
     )
 
     # Run training
+    trace_print(f"[Rank {get_rank()}] Calling train() function...", verbose=verbose)
     train(
         model=nn_model,
         model_ema=nn_model_ema,

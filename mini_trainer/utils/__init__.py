@@ -12,7 +12,9 @@ from ._concurrent import (
     reduce_across_processes,
     save_on_master,
     setup_for_distributed,
+    sync_run_name,
     thread_map,
+    trace_print,
 )
 from ._core import (
     MISSING_VALUE,
@@ -50,7 +52,9 @@ __all__ = [
     "reduce_across_processes",
     "save_on_master",
     "setup_for_distributed",
+    "sync_run_name",
     "thread_map",
+    "trace_print",
     # _core
     "MISSING_VALUE",
     "TERMINAL_WIDTH",

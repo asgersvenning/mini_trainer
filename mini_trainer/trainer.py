@@ -20,9 +20,11 @@ from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
+    get_rank,
     is_dist_avail_and_initialized,
     reduce_across_processes,
     save_on_master,
+    trace_print,
 )
 
 # from mini_trainer.contrastive import SupConLoss
@@ -69,11 +71,16 @@ def train_one_epoch(
     Raises:
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
+    trace_print(
+        f"[Rank {get_rank()}] train_one_epoch starting for epoch {epoch}. Model training mode = {model.training}",
+        verbose=logger.verbose,
+    )
     model.train()
     if hasattr(data_loader.batch_sampler, "sampler") and hasattr(data_loader.batch_sampler.sampler, "set_epoch"):
         data_loader.batch_sampler.sampler.set_epoch(epoch)
 
     n_batches = len(data_loader)
+    trace_print(f"[Rank {get_rank()}] Datasets loader size: {n_batches} batches.", verbose=logger.verbose)
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
     logger.start_timing()
@@ -83,6 +90,8 @@ def train_one_epoch(
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
+        if i % 10 == 0 or i == 0 or i == n_batches - 1:
+            trace_print(f"[Rank {get_rank()}] epoch {epoch} batch {i}/{n_batches} fetched successfully.", verbose=logger.verbose)
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
@@ -138,8 +147,10 @@ def train_one_epoch(
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
+    trace_print(f"[Rank {get_rank()}] train_one_epoch loop finished. Synchronizing loggers...", verbose=logger.verbose)
     logger.stop_timing()
     logger.synchronize_between_processes()
+    trace_print(f"[Rank {get_rank()}] Logger synchronization complete.", verbose=logger.verbose)
 
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
@@ -270,6 +281,7 @@ def train(
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
+    trace_print(f"[Rank {get_rank()}] Inside trainer.py:train. Model DDP wrap starting...", verbose=logger.verbose)
     if is_dist_avail_and_initialized():
         from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -279,6 +291,7 @@ def train(
             device_idx = device.index if (isinstance(device, torch.device) and device.index is not None) else torch.cuda.current_device()
             device_ids = [device_idx]
         model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
+    trace_print(f"[Rank {get_rank()}] DDP wrap completed.", verbose=logger.verbose)
 
     best_eval_metric = -float("inf")
     best_epoch = -1

@@ -19,7 +19,7 @@ from mini_trainer.integrations import (
 
 def find_images(root: str):
     """Find all images within root."""
-    paths = glob(os.path.join(root, "**"), recursive=True)
+    paths = sorted(glob(os.path.join(root, "**"), recursive=True))
     check = is_image(paths)
     return [p for p, f in zip(paths, check) if f]
 

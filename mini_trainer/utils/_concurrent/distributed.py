@@ -7,6 +7,23 @@ from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
 
+def trace_print(*args, verbose=True, **kwargs):
+    """A print function that prints on all ranks during DDP debugging."""
+    if not verbose:
+        return
+    import sys
+    msg = " ".join(map(str, args)) + "\n"
+    out = sys.__stdout__ or sys.stdout
+    if out is not None:
+        try:
+            out.write(msg)
+            out.flush()
+        except Exception:
+            print(*args, **kwargs)
+    else:
+        print(*args, **kwargs)
+
+
 def setup_for_distributed(is_master):
     """This function disables printing when not in master process."""
     import builtins as __builtin__
@@ -93,38 +110,61 @@ def init_distributed(device=None):
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
+def sync_run_name(name: str, output: str | None) -> str:
+    """Synchronize the name of the run across all processes under DDP."""
+    from mini_trainer.utils._core import increment_name_dir
+
+    if is_dist_avail_and_initialized():
+        rank = get_rank()
+        if rank == 0:
+            name = increment_name_dir(name, output)
+        name_list = [name]
+        dist.broadcast_object_list(name_list, src=0)
+        name = name_list[0]
+    else:
+        name = increment_name_dir(name, output)
+    return name
+
+
 def ddp_train_wrapper(main_fn):
     """Decorator/wrapper for main training entry point to enable DDP."""
+    import inspect
 
     @functools.wraps(main_fn)
     def wrapped(*args, **kwargs):
-        device = kwargs.get("device", None)
-        ddp_info = init_distributed(device=device)
-        kwargs["ddp_info"] = ddp_info
+        sig = inspect.signature(main_fn)
+        bound = sig.bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        device_str = bound.arguments.get("device", "cuda:0")
+
+        ddp_info = init_distributed(device=device_str)
+        bound.arguments["ddp_info"] = ddp_info
+
         tgt_fn = main_fn
         if ddp_info is not None:
             tgt_fn = record(main_fn)
             # Override device argument for this rank if targeting GPU
-            device_str = kwargs.get("device", "cuda:0")
             if "cpu" not in str(device_str).lower():
                 if torch.cuda.is_available():
                     num_gpus = torch.cuda.device_count()
                     gpu_idx = ddp_info["local_rank"] % num_gpus
-                    kwargs["device"] = f"cuda:{gpu_idx}"
+                    bound.arguments["device"] = f"cuda:{gpu_idx}"
                 else:
-                    kwargs["device"] = "cpu"
+                    bound.arguments["device"] = "cpu"
 
             # Disable logging on non-zero ranks
             if ddp_info["rank"] > 0:
                 from mini_trainer.logging.core import MetricLogger
 
-                logger_kwargs = kwargs.setdefault("logger_builder_kwargs", {})
+                logger_kwargs = bound.arguments.setdefault("logger_builder_kwargs", {})
                 logger_kwargs["logger_cls"] = [MetricLogger]
                 logger_kwargs["verbose"] = False
-                kwargs["output"] = None
         try:
-            return tgt_fn(*args, **kwargs)
-        finally:
+            return tgt_fn(*bound.args, **bound.kwargs)
+        except Exception:
+            # Do not call destroy_process_group on failure to avoid deadlocks
+            raise
+        else:
             if ddp_info is not None:
                 dist.destroy_process_group()
 
@@ -169,16 +209,23 @@ def reduce_across_processes(val):  # noqa: D103
 
 
 @contextmanager
-def main_process_first():
+def main_process_first(verbose=True):
     """Context manager to execute the wrapped block on the main process first, then other processes."""
+    rank = get_rank()
     if is_dist_avail_and_initialized():
         if is_main_process():
+            trace_print(f"[Rank {rank}] Entered main_process_first (master). Executing block...", verbose=verbose)
             try:
                 yield
             finally:
+                trace_print(f"[Rank {rank}] Master block completed. Reaching barrier...", verbose=verbose)
                 dist.barrier()
+                trace_print(f"[Rank {rank}] Barrier released on master.", verbose=verbose)
         else:
+            trace_print(f"[Rank {rank}] Worker waiting at barrier...", verbose=verbose)
             dist.barrier()
+            trace_print(f"[Rank {rank}] Worker barrier released. Executing block...", verbose=verbose)
             yield
+            trace_print(f"[Rank {rank}] Worker block completed.", verbose=verbose)
     else:
         yield

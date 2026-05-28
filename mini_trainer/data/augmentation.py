@@ -16,7 +16,7 @@ def debug_augmentation(
     strict: bool = True,
 ):
     """Helper to debug augmentation pipeline."""
-    if output_dir is None:
+    if output_dir is None or int(os.environ.get("RANK", 0)) > 0:
         return
     convert2fp32 = make_convert_dtype(torch.float32)
     try:

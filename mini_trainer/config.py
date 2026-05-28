@@ -95,10 +95,10 @@ def dump_resolved_config(
     # Remove empty arguments
     cfg = _drop_none(cfg)
 
-    if verbose:
+    if verbose and int(os.environ.get("RANK", 0)) == 0:
         print(cfg)
 
-    if output_dir is None:
+    if output_dir is None or int(os.environ.get("RANK", 0)) > 0:
         return
 
     # Write YAML preferred, JSON fallback (then exit)
