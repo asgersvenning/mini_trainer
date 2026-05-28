@@ -7,12 +7,14 @@ import torch
 import yaml
 from matplotlib import pyplot as plt
 
-try:
-    import wandb
-except ImportError:
-    wandb = None
-
 from .core import BaseStatistic, _Logger, _Statistic
+
+
+class _Unimported:
+    pass
+
+
+wandb = _Unimported
 
 
 class WandbLogger(_Logger):
@@ -27,9 +29,17 @@ class WandbLogger(_Logger):
         project: str | None = "mini_trainer",
     ):
         """Wandb logger."""
+        global wandb
+        if wandb is _Unimported:
+            try:
+                import wandb as _wandb
+                wandb = _wandb
+            except ImportError:
+                wandb = None
+
         if wandb is None:
             raise ImportError(
-                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended], "
+                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
                 "`uv sync --extra recommended`, or `uv add wandb`."
             )
         if steps is None:
