@@ -66,3 +66,32 @@ class TestLazyDatasetIntegration:
         item = ds[0]
         assert isinstance(item, (list, tuple))
         assert len(item) == 2
+
+    def test_lazy_dataset_picklable(self, image_paths):
+        import pickle
+
+        from mini_trainer.data.loader import get_dataset_dataloader
+
+        metadata = {
+            "path": image_paths,
+            "class": [0 if i % 2 == 0 else 1 for i in range(len(image_paths))],
+            "split": ["train" for _ in image_paths],
+        }
+
+        datasets, loaders = get_dataset_dataloader(
+            metadata,
+            resize_size=16,
+            modes=("train",),
+            batch_size=2,
+            num_workers=0,
+            cache=None,
+        )
+        ds = datasets[0]
+
+        pickled = pickle.dumps(ds)
+        unpickled = pickle.loads(pickled)
+
+        assert len(unpickled) == len(ds)
+        item = unpickled[0]
+        assert isinstance(item, tuple)
+        assert len(item) == 2

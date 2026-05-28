@@ -15,6 +15,49 @@ from mini_trainer.data.io import (
 )
 
 
+def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor) -> torch.Tensor:
+    """Convert label input to a LongTensor."""
+    if isinstance(label, (int, tuple, list)):
+        return torch.tensor(label, dtype=torch.long)
+    if isinstance(label, np.ndarray):
+        return torch.from_numpy(label).clone().long()
+    return label.long()
+
+
+class PathLabelProcessor:
+    """Processor to load images and preprocess labels, suitable for pickling in spawn context."""
+
+    def __init__(self, reader: Callable[[str], torch.Tensor], hook: Callable[[torch.Tensor], torch.Tensor] | None, multilabel: bool):
+        self.reader = reader
+        self.hook = hook
+        self.multilabel = multilabel
+
+    def __call__(self, path_label: tuple[str, int | list[int] | np.ndarray | torch.Tensor]):
+        path, label = path_label
+        label = label_to_tensor(label)
+        if not self.multilabel and label.numel() > 1:
+            label = label[0]
+        if not isinstance(label, torch.Tensor):
+            label = torch.tensor(label, dtype=torch.long)
+        else:
+            label = label.detach().cpu().clone().long()
+        image = self.reader(path)
+        if self.hook is not None:
+            image = self.hook(image)
+        return image, label
+
+
+class HookedReader:
+    """Reader wrapper to apply a hook, suitable for pickling in spawn context."""
+
+    def __init__(self, reader: Callable[[str], torch.Tensor], hook: Callable[[torch.Tensor], torch.Tensor]):
+        self.reader = reader
+        self.hook = hook
+
+    def __call__(self, x: str) -> torch.Tensor:
+        return self.hook(self.reader(x))
+
+
 def get_dataloader(  # noqa: D103
     dataset: torch.utils.data.Dataset, mode: str, batch_size: int, num_workers: int, pin_memory: bool, device: torch.device
 ):
@@ -42,6 +85,7 @@ def get_dataloader(  # noqa: D103
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
         persistent_workers=num_workers > 0,
+        multiprocessing_context="spawn" if num_workers > 0 else None,
     )
 
 
@@ -80,26 +124,7 @@ def get_dataset_dataloader(  # noqa: D103
 
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
 
-    def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor):
-        if isinstance(label, (int, tuple, list)):
-            return torch.tensor(label, dtype=torch.long)
-        if isinstance(label, np.ndarray):
-            return torch.from_numpy(label).clone().long()
-        return label.long()
-
-    def proc_path_label(path_label: tuple[str, int | list[int] | np.ndarray | torch.Tensor]):
-        path, label = path_label
-        label = label_to_tensor(label)
-        if not multilabel and label.numel() > 1:
-            label = label[0]
-        if not isinstance(label, torch.Tensor):
-            label = torch.tensor(label, dtype=torch.long)
-        else:
-            label = label.detach().cpu().clone().long()
-        image = reader(path)
-        if hook is not None:
-            image = hook(image)
-        return image, label
+    proc_path_label = PathLabelProcessor(reader, hook, multilabel)
 
     datasets = []
     for mode, data in zip(modes, metadata):
@@ -156,7 +181,7 @@ def get_inference_dataloader(  # noqa: D103
 
     reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
     if hook is not None:
-        reader = lambda x: hook(reader(x))  # noqa: E731
+        reader = HookedReader(reader, hook)
 
     dataset = LazyDataset(func=reader, items=images, cache=CACHE_MODE.NONE)
 

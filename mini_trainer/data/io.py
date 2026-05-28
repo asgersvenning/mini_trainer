@@ -102,6 +102,36 @@ def _pil_to_torch_interp(interp: int) -> InterpolationMode:
     return m.get(interp, InterpolationMode.BILINEAR)  # type: ignore
 
 
+class ReadAndResize:
+    """Callable class to read and resize images from paths."""
+
+    def __init__(
+        self,
+        size: tuple[int, int],
+        device: torch.device,
+        dtype: torch.dtype,
+        interpolation=Image.Resampling.NEAREST,
+        **kwargs,
+    ):
+        self.converter = make_convert_dtype(dtype)
+        self.interp = _pil_to_torch_interp(interpolation)
+        self.antialias = kwargs.get("antialias", True)
+        self.w, self.h = size
+        self.device = device
+        self.dtype = dtype
+
+    def __call__(self, path: str) -> torch.Tensor:
+        try:
+            img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False)  # uint8 [C,H,W]
+        except Exception as e:
+            e.add_note(f"Image path: {path}")
+            raise
+        img = TF.resize(img, size=[self.h, self.w], interpolation=self.interp, antialias=self.antialias)
+        if img.dtype != self.dtype:
+            img = self.converter(img)
+        return img.to(self.device)
+
+
 def make_read_and_resize_fn(
     size: tuple[int, int], device: torch.device, dtype: torch.dtype | str, interpolation=Image.Resampling.NEAREST, **kwargs
 ):
@@ -111,23 +141,7 @@ def make_read_and_resize_fn(
         if not isinstance(_dtype, torch.dtype):
             raise ValueError(f'Unknown dtype "{dtype}"')
         dtype = _dtype
-    converter = make_convert_dtype(dtype)
-    interp = _pil_to_torch_interp(interpolation)
-    antialias = kwargs.get("antialias", True)
-    w, h = size
-
-    def read_and_resize(path: str) -> torch.Tensor:
-        try:
-            img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False)  # uint8 [C,H,W]
-        except Exception as e:
-            e.add_note(f"Image path: {path}")
-            raise
-        img = TF.resize(img, size=[h, w], interpolation=interp, antialias=antialias)
-        if img.dtype != dtype:
-            img = converter(img)
-        return img.to(device)
-
-    return read_and_resize
+    return ReadAndResize(size, device, dtype, interpolation, **kwargs)
 
 
 def _normalize_to_tuple(data):
