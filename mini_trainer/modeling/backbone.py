@@ -8,6 +8,7 @@ import torchvision
 from torch import nn
 from torchvision.io import ImageReadMode, decode_image
 
+from mini_trainer.utils import import_class
 from mini_trainer.utils._core.misc import make_convert_dtype
 
 _UNSUPPORTED_MODELS = [
@@ -161,8 +162,6 @@ def get_model(
                 )
             backbone_model = BackboneModel(encoder=encoder, encoder_method="encode_image")
         elif "." in backbone_model:
-            from mini_trainer.utils import import_class
-
             cls = import_class(backbone_model)
             backbone_model = cls(**model_args)
         else:

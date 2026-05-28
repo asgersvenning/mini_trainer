@@ -1,7 +1,18 @@
 # noqa: D104
 from argparse import RawTextHelpFormatter
 
-from tqdm.auto import tqdm as TQDM  # noqa: F401
+from tqdm.auto import tqdm
+
+from mini_trainer.utils import get_rank
+
+
+class TQDM(tqdm):
+    """Wrapper around tqdm.auto.tqdm that automatically disables output on non-zero DDP ranks."""
+
+    def __new__(cls, *args, **kwargs):
+        if get_rank() > 0:
+            kwargs["disable"] = True
+        return super().__new__(cls, *args, **kwargs)
 
 
 class Formatter(RawTextHelpFormatter):  # noqa: D101

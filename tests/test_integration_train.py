@@ -5,7 +5,7 @@ import torchvision.transforms as tt
 from torch.utils.data import DataLoader, TensorDataset
 
 from mini_trainer.builders import BaseBuilder
-from mini_trainer.config import configure_loggers
+from mini_trainer.logging import configure_loggers
 from mini_trainer.train import main
 
 

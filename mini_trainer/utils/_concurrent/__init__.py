@@ -1,4 +1,5 @@
 from .distributed import (
+    broadcast_from_master,
     ddp_train_wrapper,
     get_rank,
     get_world_size,
@@ -10,12 +11,13 @@ from .distributed import (
     reduce_across_processes,
     save_on_master,
     setup_for_distributed,
+    setup_logging,
     sync_run_name,
-    trace_print,
 )
 from .threading import first_arg_base_types, multithread_vectorize, thread_map
 
 __all__ = [
+    "broadcast_from_master",
     "ddp_train_wrapper",
     "get_rank",
     "get_world_size",
@@ -27,8 +29,8 @@ __all__ = [
     "reduce_across_processes",
     "save_on_master",
     "setup_for_distributed",
+    "setup_logging",
     "sync_run_name",
-    "trace_print",
     "first_arg_base_types",
     "multithread_vectorize",
     "thread_map",

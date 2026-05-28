@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import Counter
 from collections.abc import Callable
@@ -5,6 +6,7 @@ from collections.abc import Callable
 import numpy as np
 import torch
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
 
 from mini_trainer.data.io import (
     CACHE_MODE,
@@ -13,6 +15,7 @@ from mini_trainer.data.io import (
     guess_cache_mode,
     make_read_and_resize_fn,
 )
+from mini_trainer.utils import is_dist_avail_and_initialized
 
 
 def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor) -> torch.Tensor:
@@ -67,11 +70,7 @@ def get_dataloader(  # noqa: D103
     else:
         shuffle = drop_last = False
 
-    from mini_trainer.utils import is_dist_avail_and_initialized
-
     if is_dist_avail_and_initialized():
-        from torch.utils.data.distributed import DistributedSampler
-
         base_sampler = DistributedSampler(dataset, shuffle=shuffle)
     else:
         base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
@@ -113,7 +112,8 @@ def get_dataset_dataloader(  # noqa: D103
     if len(metadata) != len(modes):
         raise ValueError(f"Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!")
 
-    print(f"Building datasets with image size {resize_size}")
+    log = logging.getLogger("mini_trainer")
+    log.info(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
         metadata = tuple([{k: v[::subsample] for k, v in md.items()} for md in metadata])
 

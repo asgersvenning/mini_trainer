@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import time
 import warnings
@@ -10,6 +11,7 @@ import torch.nn as nn
 from torch import autocast
 from torch.amp.grad_scaler import GradScaler
 from torch.nn.modules.loss import _Loss
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
@@ -20,16 +22,17 @@ from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
-    get_rank,
     is_dist_avail_and_initialized,
     reduce_across_processes,
     save_on_master,
-    trace_print,
 )
 
 # from mini_trainer.contrastive import SupConLoss
 
 # contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
+
+
+log = logging.getLogger("mini_trainer")
 
 
 def train_one_epoch(
@@ -71,16 +74,13 @@ def train_one_epoch(
     Raises:
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
-    trace_print(
-        f"[Rank {get_rank()}] train_one_epoch starting for epoch {epoch}. Model training mode = {model.training}",
-        verbose=logger.verbose,
-    )
+    log.debug(f"train_one_epoch starting for epoch {epoch}. Model training mode = {model.training}")
     model.train()
     if hasattr(data_loader.batch_sampler, "sampler") and hasattr(data_loader.batch_sampler.sampler, "set_epoch"):
         data_loader.batch_sampler.sampler.set_epoch(epoch)
 
     n_batches = len(data_loader)
-    trace_print(f"[Rank {get_rank()}] Datasets loader size: {n_batches} batches.", verbose=logger.verbose)
+    log.debug(f"Datasets loader size: {n_batches} batches.")
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
     logger.start_timing()
@@ -91,7 +91,7 @@ def train_one_epoch(
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
         if i % 10 == 0 or i == 0 or i == n_batches - 1:
-            trace_print(f"[Rank {get_rank()}] epoch {epoch} batch {i}/{n_batches} fetched successfully.", verbose=logger.verbose)
+            log.debug(f"epoch {epoch} batch {i}/{n_batches} fetched successfully.")
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
@@ -147,10 +147,10 @@ def train_one_epoch(
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
-    trace_print(f"[Rank {get_rank()}] train_one_epoch loop finished. Synchronizing loggers...", verbose=logger.verbose)
+    log.debug("train_one_epoch loop finished. Synchronizing loggers...")
     logger.stop_timing()
     logger.synchronize_between_processes()
-    trace_print(f"[Rank {get_rank()}] Logger synchronization complete.", verbose=logger.verbose)
+    log.debug("Logger synchronization complete.")
 
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
@@ -222,7 +222,7 @@ def evaluate(
         )
 
     if logger.verbose:
-        print(logger.summary_string())
+        log.info(logger.summary_string())
     logger.figures(model)
 
     model.train(training_state)  # Restore model state
@@ -275,23 +275,20 @@ def train(
         **kwargs: Forwarded to lower-level helpers.
     """
     # model = torch.compile(model)
-    if logger.verbose:
-        print("Start training")
+    log.info("Start training")
     start_time = time.time()
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
-    trace_print(f"[Rank {get_rank()}] Inside trainer.py:train. Model DDP wrap starting...", verbose=logger.verbose)
+    log.debug("Inside trainer.py:train. Model DDP wrap starting...")
     if is_dist_avail_and_initialized():
-        from torch.nn.parallel import DistributedDataParallel as DDP
-
         if "cpu" in str(device).lower():
             device_ids = None
         else:
             device_idx = device.index if (isinstance(device, torch.device) and device.index is not None) else torch.cuda.current_device()
             device_ids = [device_idx]
         model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
-    trace_print(f"[Rank {get_rank()}] DDP wrap completed.", verbose=logger.verbose)
+    log.debug("DDP wrap completed.")
 
     best_eval_metric = -float("inf")
     best_epoch = -1
@@ -338,6 +335,6 @@ def train(
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if logger.verbose:
-        print(f"Total time {total_time_str} | Best model found at epoch {best_epoch + 1}")
-        print(logger.timings(format=True, prefix="\n\t"))
+        log.info(f"Total time {total_time_str} | Best model found at epoch {best_epoch + 1}")
+        log.info(logger.timings(format=True, prefix="\n\t"))
     logger.finish()

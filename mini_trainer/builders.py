@@ -25,7 +25,10 @@ from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import Classifier, backbone, last_layer_weights
 from mini_trainer.modeling.ema import EMATeacher, ema_lambda_per_update
 from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_regularization
-from mini_trainer.utils import cosine_schedule_with_warmup
+from mini_trainer.utils import (
+    broadcast_from_master,
+    cosine_schedule_with_warmup,
+)
 
 
 class BaseBuilder:
@@ -115,18 +118,23 @@ class BaseBuilder:
         Returns:
             (train_label_cls, train_loader, validation_loader): The training and validation dataloaders.
         """
-        # Prepare datasets/dataloaders
-        if data_index is None:
-            metadata = create_metadata(directory=input_dir, cls2idx=cls2idx, labels=labels, train_proportion=train_proportion)
-            if output_dir is not None:
-                data_index = os.path.join(output_dir, "data_index.json")
+
+        def _resolve_metadata():
+            if data_index is None:
+                metadata = create_metadata(directory=input_dir, cls2idx=cls2idx, labels=labels, train_proportion=train_proportion)
+                index_path = (
+                    os.path.join(output_dir, "data_index.json")
+                    if output_dir is not None
+                    else NamedTemporaryFile(suffix="data_index.json", delete=False).name
+                )
+                if not os.path.exists(index_path):
+                    with open(index_path, "w") as f:
+                        json.dump(metadata, f)
             else:
-                data_index = NamedTemporaryFile(suffix="data_index.json", delete=False).name
-            if not os.path.exists(data_index):
-                with open(data_index, "w") as f:
-                    json.dump(metadata, f)
-        else:
-            metadata = get_metadata(data_index, cls2idx=cls2idx)
+                metadata = get_metadata(data_index, cls2idx=cls2idx)
+            return metadata
+
+        metadata = broadcast_from_master(_resolve_metadata)
         metasplits = metadata["split"].copy()
         metadata = [
             {k: [vi for vi, s in zip(v, metasplits) if s.startswith(split.strip().lower())] for k, v in metadata.items()}

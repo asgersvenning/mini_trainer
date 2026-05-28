@@ -1,33 +1,58 @@
+import builtins as __builtin__
 import functools
+import inspect
+import logging
 import os
+import sys
 from contextlib import contextmanager
 
 import torch
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
+from mini_trainer.utils._core import increment_name_dir
 
-def trace_print(*args, verbose=True, **kwargs):
-    """A print function that prints on all ranks during DDP debugging."""
-    if not verbose:
-        return
-    import sys
-    msg = " ".join(map(str, args)) + "\n"
-    out = sys.__stdout__ or sys.stdout
-    if out is not None:
-        try:
-            out.write(msg)
-            out.flush()
-        except Exception:
-            print(*args, **kwargs)
-    else:
-        print(*args, **kwargs)
+
+class DDPFilter(logging.Filter):
+    """Filter to ensure INFO and higher logs only run on Rank 0, but DEBUG runs on all ranks."""
+
+    def filter(self, record):
+        if record.levelno < logging.INFO:
+            return True
+        return get_rank() == 0
+
+
+class DDPFormatter(logging.Formatter):
+    """Formatter to automatically prepend [Rank X] in DDP mode."""
+
+    def format(self, record):
+        if is_dist_avail_and_initialized():
+            rank_str = f"[Rank {get_rank()}] "
+        else:
+            rank_str = ""
+        msg = super().format(record)
+        if rank_str and not msg.startswith("[Rank"):
+            msg = f"{rank_str}{msg}"
+        return msg
+
+
+def setup_logging(verbose: bool = False):
+    """Configure the 'mini_trainer' logger with a custom DDP filter and formatter."""
+    logger = logging.getLogger("mini_trainer")
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    logger.propagate = False
+
+    handler = logging.StreamHandler(sys.__stdout__ or sys.stdout)
+    handler.setFormatter(DDPFormatter("%(message)s"))
+    handler.addFilter(DDPFilter())
+    logger.addHandler(handler)
 
 
 def setup_for_distributed(is_master):
     """This function disables printing when not in master process."""
-    import builtins as __builtin__
-
     builtin_print = __builtin__.print
 
     def print(*args, **kwargs):
@@ -110,26 +135,27 @@ def init_distributed(device=None):
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
+def broadcast_from_master(fn, *args, **kwargs):
+    """Run ``fn(*args, **kwargs)`` on rank 0 and broadcast the result to all ranks.
+
+    If DDP is not active, simply calls ``fn`` directly.
+    """
+    if is_dist_avail_and_initialized():
+        result = [None]
+        if get_rank() == 0:
+            result[0] = fn(*args, **kwargs)
+        dist.broadcast_object_list(result, src=0)
+        return result[0]
+    return fn(*args, **kwargs)
+
+
 def sync_run_name(name: str, output: str | None) -> str:
     """Synchronize the name of the run across all processes under DDP."""
-    from mini_trainer.utils._core import increment_name_dir
-
-    if is_dist_avail_and_initialized():
-        rank = get_rank()
-        if rank == 0:
-            name = increment_name_dir(name, output)
-        name_list = [name]
-        dist.broadcast_object_list(name_list, src=0)
-        name = name_list[0]
-    else:
-        name = increment_name_dir(name, output)
-    return name
+    return broadcast_from_master(increment_name_dir, name, output)
 
 
 def ddp_train_wrapper(main_fn):
     """Decorator/wrapper for main training entry point to enable DDP."""
-    import inspect
-
     @functools.wraps(main_fn)
     def wrapped(*args, **kwargs):
         sig = inspect.signature(main_fn)
@@ -211,21 +237,21 @@ def reduce_across_processes(val):  # noqa: D103
 @contextmanager
 def main_process_first(verbose=True):
     """Context manager to execute the wrapped block on the main process first, then other processes."""
-    rank = get_rank()
+    logger = logging.getLogger("mini_trainer")
     if is_dist_avail_and_initialized():
         if is_main_process():
-            trace_print(f"[Rank {rank}] Entered main_process_first (master). Executing block...", verbose=verbose)
+            logger.debug("Entered main_process_first (master). Executing block...")
             try:
                 yield
             finally:
-                trace_print(f"[Rank {rank}] Master block completed. Reaching barrier...", verbose=verbose)
+                logger.debug("Master block completed. Reaching barrier...")
                 dist.barrier()
-                trace_print(f"[Rank {rank}] Barrier released on master.", verbose=verbose)
+                logger.debug("Barrier released on master.")
         else:
-            trace_print(f"[Rank {rank}] Worker waiting at barrier...", verbose=verbose)
+            logger.debug("Worker waiting at barrier...")
             dist.barrier()
-            trace_print(f"[Rank {rank}] Worker barrier released. Executing block...", verbose=verbose)
+            logger.debug("Worker barrier released. Executing block...")
             yield
-            trace_print(f"[Rank {rank}] Worker block completed.", verbose=verbose)
+            logger.debug("Worker block completed.")
     else:
         yield

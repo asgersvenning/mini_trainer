@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import json
 import os
 import re
 import warnings
@@ -8,8 +9,6 @@ from typing import Any
 
 import torch
 import yaml
-
-from mini_trainer.logging import _Logger
 
 
 def _nullify(d: dict[str, Any]):
@@ -109,8 +108,6 @@ def dump_resolved_config(
             yaml.safe_dump(cfg, f, sort_keys=False)
         return
     except Exception as e:
-        import json
-
         path_json = os.path.join(output_dir, "config.json")
         try:
             with open(path_json, "w", encoding="utf-8") as f:
@@ -238,18 +235,3 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
         _inset(out, k.split("."), v)
 
     return out
-
-
-def configure_loggers(use_tensorboard: bool = False, use_wandb: bool = False):
-    from mini_trainer.logging import MetricLogger
-
-    loggers: list[type[_Logger]] = [MetricLogger]
-    if use_tensorboard:
-        from mini_trainer.logging import TensorboardLogger
-
-        loggers.append(TensorboardLogger)
-    if use_wandb:
-        from mini_trainer.logging import WandbLogger
-
-        loggers.append(WandbLogger)
-    return loggers

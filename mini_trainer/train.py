@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 from argparse import ArgumentParser
@@ -10,7 +11,6 @@ import torchvision
 from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder, EMATeacher
 from mini_trainer.config import (
-    configure_loggers,
     defaults_from_function,
     dump_resolved_config,
     load_yaml_config,
@@ -18,10 +18,18 @@ from mini_trainer.config import (
     restructure_cli_args,
 )
 from mini_trainer.data import debug_augmentation
+from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
-from mini_trainer.utils import ddp_train_wrapper, get_rank, main_process_first, save_on_master, sync_run_name, trace_print
+from mini_trainer.utils import (
+    broadcast_from_master,
+    ddp_train_wrapper,
+    get_rank,
+    save_on_master,
+    setup_logging,
+    sync_run_name,
+)
 
 
 @ddp_train_wrapper
@@ -126,6 +134,8 @@ def main(  # noqa: D417
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
     verbose = logger_builder_kwargs.get("verbose", False)
+    setup_logging(verbose=verbose)
+    log = logging.getLogger("mini_trainer")
 
     # Dump resolved configuration using locals and normalized values
     dump_resolved_config(
@@ -152,16 +162,17 @@ def main(  # noqa: D417
         else:
             class_spec = os.path.join(output_dir, "class_spec.json")
 
-    trace_print(f"[Rank {get_rank()}] Building dataloaders...", verbose=verbose)
-    with main_process_first(verbose=verbose):
-        class_spec = builder.class_spec(path=class_spec, dir=input, **spec_model_dataloader_kwargs)
-        class_spec["resize_size"] = size
-        train_labels, train_loader, val_loader = builder.build_dataloader(
-            input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
-        )
-    trace_print(
-        f"[Rank {get_rank()}] Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}",
-        verbose=verbose,
+    log.debug("Building class spec...")
+    class_spec = broadcast_from_master(builder.class_spec, path=class_spec, dir=input, **spec_model_dataloader_kwargs)
+
+    class_spec["resize_size"] = size
+
+    log.debug("Building dataloaders...")
+    train_labels, train_loader, val_loader = builder.build_dataloader(
+        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
+    )
+    log.debug(
+        f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}"
     )
 
     if not isinstance(train_loader, torch.utils.data.DataLoader):
@@ -182,7 +193,7 @@ def main(  # noqa: D417
     # performance by following the pattern given in:
     # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244,
     # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
-    trace_print(f"[Rank {get_rank()}] Building model...", verbose=verbose)
+    log.debug("Building model...")
     model_dtype = torch.float32
     nn_model, model_preprocess = builder.build_model(
         device=device,
@@ -276,7 +287,7 @@ def main(  # noqa: D417
     )
 
     # Run training
-    trace_print(f"[Rank {get_rank()}] Calling train() function...", verbose=verbose)
+    log.debug("Calling train() function...")
     train(
         model=nn_model,
         model_ema=nn_model_ema,

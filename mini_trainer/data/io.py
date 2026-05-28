@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import math
 import operator
 import os
@@ -356,7 +357,8 @@ class LazyDataset(torch.utils.data.Dataset):
     def _init_cache(self):
         match self._cache_mode:
             case CACHE_MODE.NONE:
-                print("On-the-fly data loading enabled (no cache).")
+                log = logging.getLogger("mini_trainer")
+                log.info("On-the-fly data loading enabled (no cache).")
                 return
             case CACHE_MODE.DISK:
                 raise NotImplementedError("Disk caching is obsolete and has been removed.")

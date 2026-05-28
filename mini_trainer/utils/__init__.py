@@ -1,4 +1,5 @@
 from ._concurrent import (
+    broadcast_from_master,
     ddp_train_wrapper,
     first_arg_base_types,
     get_rank,
@@ -12,9 +13,9 @@ from ._concurrent import (
     reduce_across_processes,
     save_on_master,
     setup_for_distributed,
+    setup_logging,
     sync_run_name,
     thread_map,
-    trace_print,
 )
 from ._core import (
     MISSING_VALUE,
@@ -39,6 +40,7 @@ from ._core import (
 
 __all__ = [
     # _concurrent
+    "broadcast_from_master",
     "ddp_train_wrapper",
     "first_arg_base_types",
     "get_rank",
@@ -52,9 +54,9 @@ __all__ = [
     "reduce_across_processes",
     "save_on_master",
     "setup_for_distributed",
+    "setup_logging",
     "sync_run_name",
     "thread_map",
-    "trace_print",
     # _core
     "MISSING_VALUE",
     "TERMINAL_WIDTH",
