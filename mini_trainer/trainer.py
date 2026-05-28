@@ -47,9 +47,9 @@ def train_one_epoch(
     logger: MultiLogger,
     preprocess: Callable = lambda x: x,
     augmentation: Callable = lambda x: x,
-    regularizer: Callable[[nn.Module], torch.Tensor | Literal[0]] = lambda _: 0,
+    regularizer: Callable[[nn.Module], torch.Tensor | Literal[0]] = lambda x: 0,
     clip_grad_norm: float | None = 5,
-    device: torch.types.Device = torch.device("cpu"),
+    device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
 ):
     """Run one training epoch.
@@ -76,8 +76,7 @@ def train_one_epoch(
     """
     log.debug(f"train_one_epoch starting for epoch {epoch}. Model training mode = {model.training}")
     model.train()
-    if hasattr(data_loader.batch_sampler, "sampler") and hasattr(data_loader.batch_sampler.sampler, "set_epoch"):
-        data_loader.batch_sampler.sampler.set_epoch(epoch)
+    getattr(getattr(data_loader.batch_sampler, "sampler", lambda x: x), "set_epoch", lambda x: x)(epoch)
 
     n_batches = len(data_loader)
     log.debug(f"Datasets loader size: {n_batches} batches.")
@@ -140,8 +139,8 @@ def train_one_epoch(
             loss=loss,
             optimizer=optimizer,
             start_time=start_time,
-            distillation_loss=distill_loss if isinstance(distill_loss, float) else float(distill_loss.detach().item()),
-            regularization=reg if isinstance(reg, float) else float(reg.detach().item()),
+            distillation_loss=float(distill_loss.detach().item() if isinstance(distill_loss, torch.Tensor) else distill_loss),
+            regularization=float(reg.detach().item() if isinstance(reg, torch.Tensor) else reg),
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
@@ -165,7 +164,7 @@ def evaluate(
     epoch: int,
     logger: MultiLogger,
     preprocess: Callable = lambda x: x,
-    device: torch.types.Device = torch.device("cpu"),
+    device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
 ):
     """Evaluate the model for one validation epoch.
@@ -208,16 +207,16 @@ def evaluate(
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
         hasattr(data_loader.dataset, "__len__")
-        and len(data_loader.dataset) != num_processed_samples
+        and (dataset_len := len(data_loader.dataset)) != num_processed_samples # type: ignore
         and (not is_dist_avail_and_initialized() or torch.distributed.get_rank() == 0)
     ):
-        # See FIXME above
         warnings.warn(
-            f"It looks like the dataset has {len(data_loader.dataset)} samples, but {num_processed_samples} "
+            f"It looks like the dataset has {dataset_len} samples, but {num_processed_samples} "
             "samples were used for the validation, which might bias the results. "
             "Try adjusting the batch size and / or the world size. "
             "Setting the world size to 1 is always a safe bet."
-        )
+            "This behavior might be improved in the future."
+        ) # TODO: Fixme
 
     if logger.verbose:
         log.info(logger.summary_string())
@@ -225,7 +224,10 @@ def evaluate(
 
     model.train(training_state)  # Restore model state
 
-    return float(logger.canonical_scalar)
+    global_metric = logger.canonical_scalar
+    if global_metric is None:
+        return float('nan')
+    return float(global_metric)
 
 
 def train(
@@ -242,8 +244,8 @@ def train(
     start_epoch: int = 0,
     preprocess: Callable = lambda x: x,
     augmentation: Callable = lambda x: x,
-    regularizer: Callable[[nn.Module], torch.Tensor] = lambda _: 0.0,
-    device: torch.types.Device = torch.device("cpu"),
+    regularizer: Callable[[nn.Module], torch.Tensor | Literal[0]] = lambda x: 0,
+    device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     output_dir: str | None = None,
     weight_store_rate: int | None = None,
@@ -314,6 +316,7 @@ def train(
             best_epoch = epoch
         if output_dir is not None:
             raw_model = model.module if hasattr(model, "module") else model
+            assert isinstance(raw_model, nn.Module)
             checkpoint = {
                 "model": raw_model.state_dict(),
                 "optimizer": optimizer.state_dict(),

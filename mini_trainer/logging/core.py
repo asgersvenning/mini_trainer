@@ -48,10 +48,10 @@ class Timer:  # noqa: D101
         self._total = 0.0
 
     @property
-    def total(self) -> float:
+    def total(self) -> int:
         if self.running:
             raise RuntimeError("Attempting to grab total of a running timer!")
-        return self._total
+        return round(self._total)
 
     @property
     def running(self):
@@ -63,16 +63,20 @@ class Timer:  # noqa: D101
         self._last = time.time()
 
     def stop(self):
-        if not self.running:
+        if not self.running or self._last is None:
             raise RuntimeError("Attempting to stop timer which is not running.")
         self._total += time.time() - self._last
         self._last = None
 
     def __str__(self):
-        if self.running:
-            return f"Timer[Running]: {format_duration(self._total)} + {format_duration(time.time() - self._last)}"
-        else:
-            return f"Timer[Stopped]: {format_duration(self.total)}"
+        status = self.running
+        if status:
+            self.stop()
+        retval = f'Timer[{"Running" if status else "Stopped"}]: {format_duration(self.total)}'
+        if status:
+            self.start()
+        return retval
+
 
     def __repr__(self):
         return str(self)
@@ -816,7 +820,7 @@ class MultiLogger:
         self._step: int = 0
         self._start_time: float | None = None
         self.eta: ETA | None = None
-        self._current_loggers: Any = None
+        self._current_loggers: list[_Logger] | None = None
         self._epoch: int | None = None
         self._type: str | None = None
         self._batch_size: int | None = None
@@ -826,9 +830,11 @@ class MultiLogger:
         self._finished = False
 
     def start_timing(self):
+        assert self._type is not None
         self._type_timing[self._type].start()
 
     def stop_timing(self):
+        assert self._type is not None
         self._type_timing[self._type].stop()
 
     def timings(self, format: bool = True, title: str = "", prefix="\n", fmt: str = "{name} : {time}"):
@@ -887,8 +893,8 @@ class MultiLogger:
         self._epoch = epoch
         self._type = type
         self._reset_cuda_memory_stats()
-        self._current_loggers: list[_Logger] = []
-        self._soft_confusion_matrix: dict[str, torch.Tensor] = dict()
+        self._current_loggers = []
+        self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
         for cls, kwargs, stat_factory in zip(
             self.logger_cls,
             chain(self.logger_cls_extra_kwargs, repeat(dict())),
@@ -908,6 +914,7 @@ class MultiLogger:
         """
         if self._finished:
             raise RuntimeError("Attempted to step finished logger.")
+        assert self.eta is not None
         self.log_statistic(step=self._step)
         self._step += 1
         self.eta.step()
@@ -1035,7 +1042,7 @@ class MultiLogger:
         self._type = None
         self._reset_cuda_memory_stats()
         self._current_loggers: list[_Logger] = []
-        self._soft_confusion_matrix: dict[str, torch.Tensor] = dict()
+        self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
         self._finished = True
 
     def log_batch(self, batch):
@@ -1091,7 +1098,7 @@ class MultiLogger:
             self.log_statistic(loss=loss)
         else:
             self.log_statistic(loss=sum(loss).item())
-            for i, term in enumerate(loss):
+            for i, term in enumerate(iterable=loss):
                 if term.numel() != 1:
                     raise RuntimeError(f"Expected scalar loss term but found {loss.shape}.")
                 term = term.item()
