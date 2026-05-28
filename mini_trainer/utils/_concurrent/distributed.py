@@ -98,8 +98,9 @@ def ddp_train_wrapper(main_fn):
     def wrapped(*args, **kwargs):
         device = kwargs.get("device", None)
         ddp_info = init_distributed(device=device)
+        tgt_fn = main_fn
         if ddp_info is not None:
-            main_fn = torch.distributed.elastic.multiprocessing.errors.record(main_fn)
+            tgt_fn = torch.distributed.elastic.multiprocessing.errors.record(main_fn)
             # Override device argument for this rank if targeting GPU
             device_str = kwargs.get("device", "cuda:0")
             if "cpu" not in str(device_str).lower():
@@ -119,7 +120,7 @@ def ddp_train_wrapper(main_fn):
                 logger_kwargs["verbose"] = False
                 kwargs["output"] = None
         try:
-            return main_fn(*args, ddp_info=ddp_info, **kwargs)
+            return tgt_fn(*args, ddp_info=ddp_info, **kwargs)
         finally:
             if ddp_info is not None:
                 dist.destroy_process_group()
