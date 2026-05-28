@@ -112,9 +112,12 @@ def dump_resolved_config(
         import json
 
         path_json = os.path.join(output_dir, "config.json")
-        with open(path_json, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-        raise SystemExit(f"YAML dump failed ({e!s}). Wrote JSON fallback at: {path_json}")
+        try:
+            with open(path_json, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception as e2:
+            raise RuntimeError(f"Faild to dump config at {path_yaml} and {path_json}:\n{cfg}") from e2
+        raise RuntimeError(f"YAML dump failed at {path_yaml}. Wrote JSON fallback at: {path_json}") from e
 
 
 def save_yaml_template(path: str) -> str:
