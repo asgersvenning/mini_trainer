@@ -3,6 +3,7 @@ import os
 
 import torch
 from torch import distributed as dist
+from torch.distributed.elastic.multiprocessing.errors import record
 
 
 def setup_for_distributed(is_master):
@@ -101,7 +102,7 @@ def ddp_train_wrapper(main_fn):
         kwargs["ddp_info"] = ddp_info
         tgt_fn = main_fn
         if ddp_info is not None:
-            tgt_fn = torch.distributed.elastic.multiprocessing.errors.record(main_fn)
+            tgt_fn = record(main_fn)
             # Override device argument for this rank if targeting GPU
             device_str = kwargs.get("device", "cuda:0")
             if "cpu" not in str(device_str).lower():
