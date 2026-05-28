@@ -285,7 +285,6 @@ def main(  # noqa: D417
     )
 
     # Run training
-    log.debug("Calling train() function...")
     train(
         model=nn_model,
         model_ema=nn_model_ema,

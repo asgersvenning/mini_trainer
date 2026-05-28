@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from mini_trainer.utils import make_empty_ndarray
+from mini_trainer.utils import get_rank, is_dist_avail_and_initialized, make_empty_ndarray
 from mini_trainer.utils._core.fs import increment_name_dir
 
 from .core import BaseStatistic, _Logger, _Statistic
@@ -120,3 +120,7 @@ class TensorboardLogger(_Logger):
         self._idx += 1
         if (self._idx > 0 and self._idx % self.flush_rate == 0) or (self._idx + 1) >= len(self.global_steps):
             self.flush()
+
+    def synchronize_between_processes(self):
+        if is_dist_avail_and_initialized():
+            assert get_rank() == 0

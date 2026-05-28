@@ -7,6 +7,8 @@ import torch
 import yaml
 from matplotlib import pyplot as plt
 
+from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
+
 from .core import BaseStatistic, _Logger, _Statistic
 
 
@@ -178,3 +180,7 @@ class WandbLogger(_Logger):
             self._current_step_logs = {}
 
         self._idx += 1
+
+    def synchronize_between_processes(self):
+        if is_dist_avail_and_initialized():
+            assert get_rank() == 0
