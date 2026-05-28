@@ -503,6 +503,9 @@ class _Logger:
     @property
     def statistics(self) -> dict[str, _Statistic]:
         raise NotImplementedError()
+    
+    def synchronize_between_processes(self):
+        raise NotImplementedError()
 
 
 L = TypeVar("L", bound=_Logger)

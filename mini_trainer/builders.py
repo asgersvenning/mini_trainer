@@ -424,7 +424,7 @@ class BaseBuilder:
     def build_regularizer(strength: float = 1e-3, *args, **kwargs):
         strength = float(strength)
         if strength == 0.0:
-            return lambda _: 0.0
+            return lambda x: 0
 
         def func(model):
             llw = last_layer_weights(model)

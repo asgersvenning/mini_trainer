@@ -74,12 +74,11 @@ def train_one_epoch(
     Raises:
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
-    log.debug(f"train_one_epoch starting for epoch {epoch}. Model training mode = {model.training}")
+    log.debug(f"train_one_epoch starting for epoch {epoch}.")
     model.train()
     getattr(getattr(data_loader.batch_sampler, "sampler", lambda x: x), "set_epoch", lambda x: x)(epoch)
 
     n_batches = len(data_loader)
-    log.debug(f"Datasets loader size: {n_batches} batches.")
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
     logger.start_timing()
@@ -144,10 +143,8 @@ def train_one_epoch(
         )
         pbar.set_description_str(logger.status(), i % 25 == 0)
         start_time = time.time()
-    log.debug("train_one_epoch loop finished. Synchronizing loggers...")
     logger.stop_timing()
     logger.synchronize_between_processes()
-    log.debug("Logger synchronization complete.")
 
     # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
     # if model_ema:
@@ -210,7 +207,7 @@ def evaluate(
         and (dataset_len := len(data_loader.dataset)) != num_processed_samples # type: ignore
         and (not is_dist_avail_and_initialized() or torch.distributed.get_rank() == 0)
     ):
-        warnings.warn(
+        log.warning(
             f"It looks like the dataset has {dataset_len} samples, but {num_processed_samples} "
             "samples were used for the validation, which might bias the results. "
             "Try adjusting the batch size and / or the world size. "
@@ -280,15 +277,15 @@ def train(
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
-    log.debug("Inside trainer.py:train. Model DDP wrap starting...")
     if is_dist_avail_and_initialized():
+        log.debug("Model DDP wrap starting...")
         if "cpu" in str(device).lower():
             device_ids = None
         else:
             device_idx = device.index if (isinstance(device, torch.device) and device.index is not None) else torch.cuda.current_device()
             device_ids = [device_idx]
         model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
-    log.debug("DDP wrap completed.")
+        log.debug("DDP wrap completed.")
 
     best_eval_metric = -float("inf")
     best_epoch = -1

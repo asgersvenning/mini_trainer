@@ -165,7 +165,7 @@ def class_weight_distribution_regularization(W: torch.Tensor, sparse: bool = Tru
                 WN = W.norm(2, 1, True)
             W = W / WN
 
-        tril_idx = torch.tril_indices(*W.shape, -1)
+        tril_idx = torch.tril_indices(*W.shape, offset=-1)
         ztril = cosine_to_zscore(W @ W.T, W.shape[-1])[*tril_idx]
 
         return 2 * ztril[ztril > 0].sum() / tril_idx.shape[-1]
