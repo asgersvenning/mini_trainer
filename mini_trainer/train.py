@@ -136,7 +136,6 @@ def main(  # noqa: D417
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
     # Dump resolved configuration using locals and normalized values
-    print("DDP_INFO:", ddp_info)
     dump_resolved_config(
         output_dir=output_dir,
         fn=main,
