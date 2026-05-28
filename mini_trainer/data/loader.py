@@ -85,7 +85,6 @@ def get_dataloader(  # noqa: D103
         batch_sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        pin_memory_device=str(device) if pin_memory else "",
         persistent_workers=num_workers > 0,
         multiprocessing_context=mp_context,
     )
