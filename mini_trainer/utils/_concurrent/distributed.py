@@ -4,6 +4,7 @@ import inspect
 import logging
 import os
 import sys
+from collections.abc import Callable
 from contextlib import contextmanager
 
 import torch
@@ -110,12 +111,15 @@ def init_distributed(device=None):
     if device is not None and "cpu" in str(device).lower():
         use_cuda = False
 
+    pg_device = None
+
     if use_cuda:
         num_gpus = torch.cuda.device_count()
         if num_gpus > 0:
             gpu_idx = local_rank % num_gpus
             torch.cuda.set_device(gpu_idx)
             backend = "nccl"
+            pg_device = torch.device(f"cuda:{gpu_idx}")
         else:
             backend = "gloo"
     else:
@@ -126,19 +130,20 @@ def init_distributed(device=None):
         init_method="env://",
         world_size=world_size,
         rank=rank,
+        device_id=pg_device,
     )
     dist.barrier()
     setup_for_distributed(rank == 0)
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
-def broadcast_from_master(fn, *args, **kwargs):
+def broadcast_from_master[**P, Q](fn : Callable[P, Q], *args, **kwargs) -> Q:
     """Run ``fn(*args, **kwargs)`` on rank 0 and broadcast the result to all ranks.
 
     If DDP is not active, simply calls ``fn`` directly.
     """
     if is_dist_avail_and_initialized():
-        result = [None]
+        result : list = [None]
         if get_rank() == 0:
             result[0] = fn(*args, **kwargs)
         dist.broadcast_object_list(result, src=0)

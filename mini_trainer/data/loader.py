@@ -72,8 +72,11 @@ def get_dataloader(  # noqa: D103
 
     if is_dist_avail_and_initialized():
         base_sampler = DistributedSampler(dataset, shuffle=shuffle)
+        # Use spawn in DDP to avoid CUDA context inheritance crashes
+        mp_context = "spawn" if num_workers > 0 else None
     else:
-        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset) # type: ignore
+        mp_context = None
 
     sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
 
@@ -84,7 +87,7 @@ def get_dataloader(  # noqa: D103
         pin_memory=pin_memory,
         pin_memory_device=str(device) if pin_memory else "",
         persistent_workers=num_workers > 0,
-        multiprocessing_context="spawn" if num_workers > 0 else None,
+        multiprocessing_context=mp_context,
     )
 
 

@@ -224,7 +224,7 @@ STANDARD_TRANSFORMS: dict[str, Callable[[list[float]], list[float]] | None] = {
 }
 
 
-class Reindexed[T]:  # noqa: D101
+class Reindexed[T](Sequence):  # noqa: D101
     def __init__(  # noqa: D107
         self,
         items: list[T],
@@ -404,7 +404,7 @@ class LazyDataset(torch.utils.data.Dataset):
         max_workers = max(0, min(128, (((os.cpu_count() or 0) - 2) // 2) * 2 or 1))
         batch_size = min(256, 4 * max_workers)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue(max(32, batch_size * 4))
+        fetched_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor] | Exception]] = Queue(max(32, batch_size * 4))
         insert_buffer: dict[int, torch.Tensor | Sequence[torch.Tensor]] = dict()
         insert_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue()
 

@@ -27,10 +27,10 @@ def main(  # noqa: D417
     name: str | None = None,
     threshold: float = 0,
     data_index: str | None = None,
-    class_spec: str | None = None,
+    class_spec: str | dict | None = None,
     subsample: int | None = None,
-    device: str = "cuda:0",
-    dtype: str = "float16",
+    device: str | torch.device = "cuda:0",
+    dtype: str | torch.dtype = "float16",
     builder: type[BaseBuilder] = BaseBuilder,
     collector_cls: type[BaseResultCollector] = BaseResultCollector,
     spec_model_dataloader_kwargs: dict[str, Any] = {},
@@ -79,8 +79,11 @@ def main(  # noqa: D417
         except OSError as e:
             e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{{name=}}` already exists?")
 
-    device: torch.device = torch.device(device)
-    dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+    if isinstance(device, str):
+        device = torch.device(device)
+    if isinstance(dtype, str):
+        dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+        assert isinstance(dtype, torch.dtype)
 
     # Dump resolved configuration using locals and normalized values
     dump_resolved_config(
@@ -100,9 +103,10 @@ def main(  # noqa: D417
     # Prepare model
     if class_spec is None:
         class_spec = {}
-    else:
+    if isinstance(class_spec, str):
         with open(class_spec) as f:
             class_spec = json.load(f)
+        assert isinstance(class_spec, dict)
 
     model_dtype = torch.float32
     nn_model, model_preprocess = builder.build_model(
@@ -112,11 +116,11 @@ def main(  # noqa: D417
     metadata = classification_module(nn_model).metadata.copy()
 
     # Prepare dataloader
-    labels = None
+    labels : list[int] | list[list[int]] | None = None
     if data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
         images: list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
-        labels: list[int] | list[list[int]] = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
+        labels = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **metadata)
     if subsample is not None and subsample > 1:
@@ -160,8 +164,8 @@ def main(  # noqa: D417
                 idx += len(batch)
                 collector.collect(
                     paths=images[idxs],
-                    predictions=predictions,
-                    labels=None if labels is None else labels[idxs],
+                    predictions=predictions, # type: ignore
+                    labels=None if labels is None else labels[idxs], # type: ignore
                 )
     del loader, nn_model
 
