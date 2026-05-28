@@ -60,6 +60,7 @@ def main(  # noqa: D417
     regularizer_builder_kwargs: dict[str, Any] = {"strength": 0.1},
     lr_schedule_builder_kwargs: dict[str, Any] = {"warmup_epochs": 2.0},
     logger_builder_kwargs: dict[str, Any] = {"verbose": False},
+    ddp_info: dict | None = None,
 ):
     """Train a classifier.
 
