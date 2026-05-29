@@ -19,14 +19,12 @@ from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer.modeling import Prediction, classification_module
-from mini_trainer.training.metrics import named_confusion_matrix, raw_confusion_matrix
-from mini_trainer.utils._concurrent.distributed import reduce_across_processes
-from mini_trainer.utils._core.fs import write_csv_from_dict
-from mini_trainer.utils._core.math import float_signif_decimal
-from mini_trainer.visualization.dendrogram import plot_probabilistic_dendrogram
-from mini_trainer.visualization.plot import (
+from mini_trainer.training import named_confusion_matrix, raw_confusion_matrix
+from mini_trainer.utils import float_signif_decimal, get_rank, reduce_across_processes, write_csv_from_dict
+from mini_trainer.visualization import (
     plot_class_distance_matrix,
     plot_heatmap,
+    plot_probabilistic_dendrogram,
 )
 
 
@@ -72,11 +70,10 @@ class Timer:  # noqa: D101
         status = self.running
         if status:
             self.stop()
-        retval = f'Timer[{"Running" if status else "Stopped"}]: {format_duration(self.total)}'
+        retval = f"Timer[{'Running' if status else 'Stopped'}]: {format_duration(self.total)}"
         if status:
             self.start()
         return retval
-
 
     def __repr__(self):
         return str(self)
@@ -503,7 +500,7 @@ class _Logger:
     @property
     def statistics(self) -> dict[str, _Statistic]:
         raise NotImplementedError()
-    
+
     def synchronize_between_processes(self):
         raise NotImplementedError()
 
@@ -807,6 +804,9 @@ class MultiLogger:
         if self.output_dir is not None:
             os.makedirs(self.output_dir, exist_ok=True)
         self.clear_store_on_update: bool = clear_store_on_update
+
+        if get_rank() > 0:
+            logger_cls = [cls for cls in logger_cls if cls.__name__ != "TensorboardLogger"]
 
         self.logger_cls: list[type[_Logger]] = logger_cls
         self.logger_cls_extra_kwargs: list[dict[str, Any]] = logger_cls_extra_kwargs

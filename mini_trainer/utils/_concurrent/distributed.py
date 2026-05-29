@@ -9,8 +9,7 @@ import torch
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
-from mini_trainer.utils._core import increment_name_dir
-from mini_trainer.utils._core.logging import get_logger
+from mini_trainer import get_logger
 
 
 def setup_for_distributed(is_master):
@@ -98,23 +97,18 @@ def init_distributed(device=None):
     return {"rank": rank, "world_size": world_size, "local_rank": local_rank}
 
 
-def broadcast_from_master[**P, Q](fn : Callable[P, Q], *args, **kwargs) -> Q:
+def broadcast_from_master[**P, Q](fn: Callable[P, Q], *args, **kwargs) -> Q:
     """Run ``fn(*args, **kwargs)`` on rank 0 and broadcast the result to all ranks.
 
     If DDP is not active, simply calls ``fn`` directly.
     """
     if is_dist_avail_and_initialized():
-        result : list = [None]
+        result: list = [None]
         if get_rank() == 0:
             result[0] = fn(*args, **kwargs)
         dist.broadcast_object_list(result, src=0)
         return result[0]
     return fn(*args, **kwargs)
-
-
-def sync_run_name(name: str, output: str | None) -> str:
-    """Synchronize the name of the run across all processes under DDP."""
-    return broadcast_from_master(increment_name_dir, name, output)
 
 
 def ddp_train_wrapper(main_fn):
@@ -144,7 +138,7 @@ def ddp_train_wrapper(main_fn):
 
             # Disable logging on non-zero ranks
             if ddp_info["rank"] > 0:
-                from mini_trainer.logging.core import MetricLogger
+                from mini_trainer.logging import MetricLogger
 
                 logger_kwargs = bound.arguments.setdefault("logger_builder_kwargs", {})
                 logger_kwargs["logger_cls"] = [MetricLogger]

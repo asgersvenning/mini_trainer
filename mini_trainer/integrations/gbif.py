@@ -10,8 +10,7 @@ from urllib.request import urlopen
 
 from diskcache import Cache
 
-from mini_trainer.utils._concurrent.threading import multithread_vectorize
-from mini_trainer.utils._core.misc import filter_ordered_dict
+from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
 GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
 TAXONOMY_KEYS = ("species", "genus", "family", "order", "class", "phylum", "kingdom")

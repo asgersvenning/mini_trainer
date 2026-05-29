@@ -76,7 +76,7 @@ class TestLazyDatasetIntegration:
     def test_lazy_dataset_picklable(self, image_paths):
         import pickle
 
-        from mini_trainer.data.loader import get_dataset_dataloader
+        from mini_trainer.data import get_dataset_dataloader
 
         metadata = {
             "path": image_paths,

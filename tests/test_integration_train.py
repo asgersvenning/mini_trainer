@@ -123,7 +123,7 @@ def test_integration_train_cpu(tmp_path):
     assert os.path.exists(best_weights_path)
 
     # Test autoloading from a single .pt weights file without passing model_type or other args
-    from mini_trainer.modeling.classifier import Classifier, classification_module
+    from mini_trainer.modeling import Classifier, classification_module
 
     loaded_model, loaded_preprocess = Classifier.build(weights=best_weights_path)
     cls_mod = classification_module(loaded_model)

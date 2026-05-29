@@ -14,13 +14,13 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
+from mini_trainer import get_logger
 from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
     TQDM,
-    get_logger,
     is_dist_avail_and_initialized,
     reduce_across_processes,
     save_on_master,
@@ -29,9 +29,6 @@ from mini_trainer.utils import (
 # from mini_trainer.contrastive import SupConLoss
 
 # contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
-
-
-log = get_logger()
 
 
 def train_one_epoch(
@@ -73,6 +70,8 @@ def train_one_epoch(
     Raises:
         RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
     """
+    log = get_logger()
+
     log.debug(f"train_one_epoch starting for epoch {epoch}.")
     model.train()
     getattr(getattr(data_loader.batch_sampler, "sampler", lambda x: x), "set_epoch", lambda x: x)(epoch)
@@ -178,6 +177,8 @@ def evaluate(
     Returns:
         The most recent value of the canonical statistic recorded by the logger.
     """
+    log = get_logger()
+
     training_state = model.training
     model.eval()
     pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
@@ -203,7 +204,7 @@ def evaluate(
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
         hasattr(data_loader.dataset, "__len__")
-        and (dataset_len := len(data_loader.dataset)) != num_processed_samples # type: ignore
+        and (dataset_len := len(data_loader.dataset)) != num_processed_samples  # type: ignore
         and (not is_dist_avail_and_initialized() or torch.distributed.get_rank() == 0)
     ):
         log.warning(
@@ -212,7 +213,7 @@ def evaluate(
             "Try adjusting the batch size and / or the world size. "
             "Setting the world size to 1 is always a safe bet."
             "This behavior might be improved in the future."
-        ) # TODO: Fixme
+        )  # TODO: Fixme
 
     if logger.verbose:
         log.info(logger.summary_string())
@@ -222,7 +223,7 @@ def evaluate(
 
     global_metric = logger.canonical_scalar
     if global_metric is None:
-        return float('nan')
+        return float("nan")
     return float(global_metric)
 
 
@@ -270,6 +271,8 @@ def train(
         weight_store_rate: Store a snapshot every ``weight_store_rate`` epochs if set.
         **kwargs: Forwarded to lower-level helpers.
     """
+    log = get_logger()
+
     # model = torch.compile(model)
     log.info("Start training")
     start_time = time.time()

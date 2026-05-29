@@ -1,8 +1,7 @@
 from itertools import chain
 
-from mini_trainer.hierarchical.integration import DEFAULT_HIERARCHY_LEVELS
+from mini_trainer.integrations import resolve_id
 from mini_trainer.utils import TQDM
-from mini_trainer.utils.integrations.gbif import resolve_id
 
 
 def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], labels: list[int | str], progress: bool = False):
@@ -26,7 +25,7 @@ def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], label
 def confusion_matrices(
     predictions: list[str | int] | list[tuple[str | int, ...]],
     labels: list[int | str],
-    levels: int = len(DEFAULT_HIERARCHY_LEVELS),
+    levels: int,
     progress: bool = False,
 ):
     """TODO."""

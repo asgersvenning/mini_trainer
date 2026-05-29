@@ -18,7 +18,8 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
-from mini_trainer.utils import TQDM, get_logger, make_convert_dtype, memory_proportion, multithread_vectorize
+from mini_trainer import get_logger
+from mini_trainer.utils import TQDM, make_convert_dtype, memory_proportion, multithread_vectorize
 
 T = TypeVar("T")
 V = TypeVar("V")

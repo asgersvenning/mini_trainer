@@ -1,24 +1,6 @@
 import math
 from collections import Counter
 
-import torch
-
-
-def cosine_to_zscore(cosine: torch.Tensor, ndim: int):
-    r"""Converts a cosine (or inner product) between random unit vectors in D dimensions to z-score.
-
-            ::math::`Z(x) = \sqrt(D-2) * (cos^{-1}(-x) - \frac{\pi}{2})`
-
-    This function is a *very* good approximation for transforming the distribution
-    given by the inner product between random unit vectors in D dimensions
-    to the standard normal distribution - i.e. if the embeddings and weights are random
-    then the output logits here will follow a normal distribution.
-    """
-    z_var: float = 1 / (float(ndim) - 2) ** 0.5
-    z_mu = torch.pi / 2
-    z_rel = torch.acos(-cosine.clamp(-1 + 1e-7, 1 - 1e-7))
-    return (z_rel - z_mu) / z_var
-
 
 def prior_logit_adjustment(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> list[float]:
     """Computes dimension-independent biases based on Bayesian Logit Adjustment.

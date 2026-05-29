@@ -2,10 +2,9 @@ import math
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch.nn.modules.loss import CrossEntropyLoss
 
-from mini_trainer.modeling.generic import cosine_to_zscore
+from mini_trainer.utils import cosine_to_zscore
 
 
 class EvenCrossEntropyLoss(CrossEntropyLoss):
@@ -119,20 +118,6 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             adjustments = adjustments.to(logits.device)
 
         return super().forward(logits + (evenness * adjustments), targets)
-
-
-def kl_distill_ema(
-    logits: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
-    ema_logits: torch.Tensor | list[torch.Tensor] | tuple[torch.Tensor, ...],
-    T: float = 1.0,
-):
-    """Compute KL-divergence between online model-logits and EMA-model logits."""
-    if isinstance(logits, (list, tuple)) or isinstance(ema_logits, (list, tuple)):
-        return torch.stack([kl_distill_ema(lg, ema_lg, T=T) for lg, ema_lg in zip(logits, ema_logits)]).mean()
-    orig_dtype = logits.dtype
-    logits = (logits / T).float().log_softmax(-1)
-    ema_logits = (ema_logits / T).float().log_softmax(-1).detach()
-    return (F.kl_div(logits, ema_logits, log_target=True, reduction="batchmean") * T**2).to(dtype=orig_dtype)
 
 
 def class_weight_distribution_regularization(W: torch.Tensor, sparse: bool = True):

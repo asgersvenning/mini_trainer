@@ -1,8 +1,9 @@
-from mini_trainer.hierarchical.integration import HierarchicalBuilder, HierarchicalResultCollector
-from mini_trainer.hierarchical.train import head_name_to_cls
 from mini_trainer.logging import RawResultCollector
 from mini_trainer.predict import cli as mt_predict_cli
 from mini_trainer.predict import main as mt_predict
+
+from .integration import HierarchicalBuilder, HierarchicalResultCollector
+from .model import head_name_to_cls
 
 
 def cli(description: str = "Predict with a trained hierarchical model", **extra_kwargs):  # noqa: D103

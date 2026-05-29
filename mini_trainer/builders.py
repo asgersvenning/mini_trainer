@@ -22,8 +22,7 @@ from mini_trainer.data import (
     parse_class_spec,
 )
 from mini_trainer.logging import MultiLogger
-from mini_trainer.modeling import Classifier, backbone, last_layer_weights
-from mini_trainer.modeling.ema import EMATeacher, ema_lambda_per_update
+from mini_trainer.modeling import Classifier, EMATeacher, backbone, ema_lambda_per_update, last_layer_weights
 from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_regularization
 from mini_trainer.utils import (
     broadcast_from_master,

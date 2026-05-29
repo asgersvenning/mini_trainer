@@ -7,7 +7,6 @@ from typing import cast
 
 import numpy as np
 
-from mini_trainer.data import is_image
 from mini_trainer.integrations import (
     create_taxonomy,
     get_metadata_from_parquet,
@@ -15,6 +14,8 @@ from mini_trainer.integrations import (
     labels_from_taxonomy,
     parquet_to_class_spec,
 )
+
+from .io import is_image
 
 
 def find_images(root: str):

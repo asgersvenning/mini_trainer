@@ -10,8 +10,6 @@ from torch import nn
 
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.data import find_images
-from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
-from mini_trainer.hierarchical.model import HierarchicalClassifier, HierarchicalPrediction
 from mini_trainer.integrations import (
     cls2idx_from_labels,
     create_taxonomy,
@@ -21,9 +19,11 @@ from mini_trainer.integrations import (
 )
 from mini_trainer.logging import BaseResultCollector
 from mini_trainer.modeling import classification_module
-from mini_trainer.training.loss import EMLACrossEntropy
-from mini_trainer.training.metrics import named_confusion_matrix
+from mini_trainer.training import EMLACrossEntropy, named_confusion_matrix
 from mini_trainer.utils import write_csv_from_dict
+
+from .loss import MultiLevelWeightedCrossEntropyLoss
+from .model import HierarchicalClassifier, HierarchicalPrediction
 
 
 def _freeze(d: dict[str, dict[str, int]]):

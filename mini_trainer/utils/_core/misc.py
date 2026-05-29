@@ -8,6 +8,8 @@ import torch
 from torchvision.transforms.v2 import ToDtype
 from tqdm.auto import tqdm
 
+from mini_trainer.utils import get_rank
+
 TERMINAL_WIDTH, _ = shutil.get_terminal_size()
 
 X = TypeVar("X")
@@ -60,7 +62,6 @@ class TQDM(tqdm):
     """Wrapper around tqdm.auto.tqdm that automatically disables output on non-zero DDP ranks."""
 
     def __new__(cls, *args, **kwargs):
-        from mini_trainer.utils._concurrent.distributed import get_rank
         if get_rank() > 0:
             kwargs["disable"] = True
         return super().__new__(cls, *args, **kwargs)

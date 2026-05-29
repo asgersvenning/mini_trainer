@@ -7,7 +7,7 @@ import torch
 import yaml
 from matplotlib import pyplot as plt
 
-from mini_trainer.utils import get_logger, get_rank, is_dist_avail_and_initialized
+from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
 
 from .core import BaseStatistic, _Logger, _Statistic
 
@@ -81,7 +81,31 @@ class WandbLogger(_Logger):
             if dataset:
                 tags.append(os.path.join(os.path.basename(os.getcwd()), dataset))
             tags.append(os.getcwd())
-            wandb.init(project=project, name=name, dir=output, config=config, tags=tags if tags else None)
+
+            if is_dist_avail_and_initialized():
+                run_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:64]
+                settings = wandb.Settings(
+                    mode="shared",
+                    x_primary=(get_rank() == 0),
+                    x_label=f"rank_{get_rank()}",
+                )
+                wandb.init(
+                    project=project,
+                    name=name,
+                    id=run_id,
+                    dir=output,
+                    config=config,
+                    tags=tags if tags else None,
+                    settings=settings,
+                )
+            else:
+                wandb.init(
+                    project=project,
+                    name=name,
+                    dir=output,
+                    config=config,
+                    tags=tags if tags else None,
+                )
 
         self._idx = 0
         self._statistics: dict[str, _Statistic] = dict()
@@ -118,6 +142,8 @@ class WandbLogger(_Logger):
 
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):  # pyright: ignore[reportPrivateImportUsage]
         """Add figure to wandb, with robust native SVG support."""
+        if get_rank() > 0:
+            return
         if wandb.run is None:
             return
 
@@ -170,17 +196,17 @@ class WandbLogger(_Logger):
     def step(self):
         """Step wandb logger."""
         if wandb.run is not None and self._current_step_logs:
-            global_step = self.global_steps[self._idx]
+            if get_rank() == 0:
+                global_step = self.global_steps[self._idx]
 
-            # W&B strictly requires monotonically increasing steps
-            if getattr(wandb.run, "step", 0) > global_step:
-                global_step = wandb.run.step
+                # W&B strictly requires monotonically increasing steps
+                if getattr(wandb.run, "step", 0) > global_step:
+                    global_step = wandb.run.step
 
-            wandb.log(self._current_step_logs, step=global_step)
+                wandb.log(self._current_step_logs, step=global_step)
             self._current_step_logs = {}
 
         self._idx += 1
 
     def synchronize_between_processes(self):
-        if is_dist_avail_and_initialized():
-            assert get_rank() == 0
+        pass

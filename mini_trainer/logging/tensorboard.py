@@ -6,8 +6,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
-from mini_trainer.utils import get_rank, is_dist_avail_and_initialized, make_empty_ndarray
-from mini_trainer.utils._core.fs import increment_name_dir
+from mini_trainer.utils import get_rank, increment_name_dir, is_dist_avail_and_initialized, make_empty_ndarray
 
 from .core import BaseStatistic, _Logger, _Statistic
 

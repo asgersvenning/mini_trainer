@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torchvision
 
+from mini_trainer import get_logger
 from mini_trainer.builders import BaseBuilder, EMATeacher
 from mini_trainer.config import (
     Formatter,
@@ -24,11 +25,10 @@ from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
-    get_logger,
     get_rank,
+    increment_name_dir,
     save_on_master,
     setup_logging,
-    sync_run_name,
 )
 
 
@@ -113,7 +113,7 @@ def main(  # noqa: D417
         if name is None:
             name = "train"
 
-        name = sync_run_name(name, output)
+        name = broadcast_from_master(increment_name_dir, name, output)
     else:
         if name is None:
             raise NotImplementedError(

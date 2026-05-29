@@ -1,10 +1,9 @@
 import torch
 
-from mini_trainer.data.augmentation import SaltAndPepper, salt_and_pepper
+from mini_trainer.data import SaltAndPepper, debug_augmentation, salt_and_pepper
 
 
 def test_debug_augmentation(tmp_path):
-    from mini_trainer.data.augmentation import debug_augmentation
 
     # Mock dataset
     class MockDataset(torch.utils.data.Dataset):

@@ -1,34 +1,10 @@
-from mini_trainer.hierarchical.integration import HierarchicalBuilder
-from mini_trainer.hierarchical.model import (
-    AutoregressiveClassifier,
-    AutoregressiveClassifierV2,
-    ConditionalClassifier,
-    HierarchicalClassifier,
-    IndependentClassifier,
-)
 from mini_trainer.train import cli as mt_train_args
 from mini_trainer.train import main as mt_train
 
+from .integration import HierarchicalBuilder
+from .model import head_name_to_cls
+
 overrides = []
-
-HEAD_OPTIONS = {
-    "hierarchical": HierarchicalClassifier,
-    "conditional": ConditionalClassifier,
-    "independent": IndependentClassifier,
-    "autoregressive": AutoregressiveClassifier,
-    "v2.autoregressive": AutoregressiveClassifierV2,
-}
-
-
-def head_name_to_cls(name: str | type):  # noqa: D103
-    if isinstance(name, type):
-        return name
-    name = name.strip().lower()
-    try:
-        return HEAD_OPTIONS[name]
-    except KeyError as e:
-        e.add_note(f"Available options are: {list(HEAD_OPTIONS.keys())}")
-        raise
 
 
 def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103

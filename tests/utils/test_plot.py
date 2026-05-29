@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import torch
 
-from mini_trainer.training.metrics import raw_confusion_matrix
-from mini_trainer.visualization.dendrogram import plot_probabilistic_dendrogram
+from mini_trainer.training import raw_confusion_matrix
+from mini_trainer.visualization import plot_probabilistic_dendrogram
 from mini_trainer.visualization.plot import (
     _aggregate_matrix_max,
     _get_scaled_matrix_for_display,

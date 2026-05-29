@@ -7,14 +7,16 @@ import torch
 from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 
-from mini_trainer.data.io import (
+from mini_trainer import get_logger
+from mini_trainer.utils import is_dist_avail_and_initialized
+
+from .io import (
     CACHE_MODE,
     LazyDataset,
     Reindexed,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
-from mini_trainer.utils import get_logger, is_dist_avail_and_initialized
 
 
 def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor) -> torch.Tensor:
@@ -74,7 +76,7 @@ def get_dataloader(  # noqa: D103
         # Use spawn in DDP to avoid CUDA context inheritance crashes
         mp_context = "spawn" if num_workers > 0 else None
     else:
-        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset) # type: ignore
+        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)  # type: ignore
         mp_context = None
 
     sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)

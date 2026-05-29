@@ -14,7 +14,7 @@ from .classifier import (
 from .context import EmbeddingContext, SupervisionContext
 from .distance import class_distance, class_similarity
 from .ema import EMATeacher, ema_lambda_per_update
-from .generic import cosine_to_zscore, get_prior_method, prior_from_labels
+from .generic import get_prior_method, prior_from_labels
 from .mask import mask_classifier, set_classification_mask
 
 __all__ = [
@@ -25,7 +25,6 @@ __all__ = [
     "store_model_weights",
     "EMATeacher",
     "ema_lambda_per_update",
-    "cosine_to_zscore",
     "prior_from_labels",
     "get_prior_method",
     "BasePrediction",

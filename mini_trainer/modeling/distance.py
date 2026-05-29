@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 
+from mini_trainer.utils import cosine_to_zscore
+
 from .classifier import last_layer_weights
-from .generic import cosine_to_zscore
 
 
 @torch.no_grad()

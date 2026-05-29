@@ -1,6 +1,7 @@
 import torch
 
-from mini_trainer.training.loss import EvenCrossEntropyLoss, class_weight_distribution_regularization, kl_distill_ema
+from mini_trainer.training.loss import EvenCrossEntropyLoss, class_weight_distribution_regularization
+from mini_trainer.utils import kl_distill
 
 
 def test_EvenCrossEntropyLoss():
@@ -20,10 +21,10 @@ def test_EvenCrossEntropyLoss():
     assert torch.allclose(loss, expected)
 
 
-def test_kl_distill_ema():
+def test_kl_distill():
     logits = torch.randn(4, 10)
     ema_logits = torch.randn(4, 10)
-    loss = kl_distill_ema(logits, ema_logits, T=1.0)
+    loss = kl_distill(logits, ema_logits, T=1.0)
     assert loss >= 0
 
 

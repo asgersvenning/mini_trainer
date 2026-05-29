@@ -6,11 +6,12 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mini_trainer.hierarchical.autoregressive import AutoregressiveMixin
-from mini_trainer.hierarchical.transformer import BaseDecoder, XADecoder
-from mini_trainer.hierarchical.utils import batched_scatter_logsumexp, prior_from_labels
 from mini_trainer.modeling import BasePrediction, Classifier, EmbeddingContext, PredictionItem, cosine_to_zscore
 from mini_trainer.utils import class_path, import_class
+
+from .autoregressive import AutoregressiveMixin
+from .transformer import BaseDecoder, XADecoder
+from .utils import batched_scatter_logsumexp, prior_from_labels
 
 
 class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
@@ -408,3 +409,24 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
                 rp = rp.softmax(dim=-1)
             confidences.append(rp.gather(-1, idx))
         return torch.stack([torch.stack(v, dim=1) for v in zip(*confidences)])
+
+
+HEAD_OPTIONS = {
+    "hierarchical": HierarchicalClassifier,
+    "conditional": ConditionalClassifier,
+    "independent": IndependentClassifier,
+    "autoregressive": AutoregressiveClassifier,
+    "v2.autoregressive": AutoregressiveClassifierV2,
+}
+
+
+def head_name_to_cls(name: str | type):
+    """Map a head name string to the corresponding Classifier class."""
+    if isinstance(name, type):
+        return name
+    name = name.strip().lower()
+    try:
+        return HEAD_OPTIONS[name]
+    except KeyError as e:
+        e.add_note(f"Available options are: {list(HEAD_OPTIONS.keys())}")
+        raise

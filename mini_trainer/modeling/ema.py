@@ -1,7 +1,7 @@
 import torch
 from torch.optim.swa_utils import AveragedModel
 
-from mini_trainer.training.loss import kl_distill_ema
+from mini_trainer.utils import kl_distill
 
 
 def ema_lambda_per_update(half_life_steps: int | float, update_interval: int) -> float:  # noqa: D103
@@ -53,4 +53,4 @@ class EMATeacher(AveragedModel):  # noqa: D101 TODO
             self.eval()
             ema_logits = self(input)
             self.train(is_train)
-        return kl_distill_ema(student, ema_logits, T=self.temperature) * dr
+        return kl_distill(student, ema_logits, T=self.temperature) * dr

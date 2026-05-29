@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from itertools import chain
 from typing import cast
 
-from mini_trainer.utils.gbif import TAXONOMY_KEYS, create_taxonomy, labels_from_taxonomy
+from mini_trainer.integrations.gbif import TAXONOMY_KEYS, create_taxonomy, labels_from_taxonomy
 
 SCIENTIFICNAME_OR_NUMBER = re.compile(r"^(\d+|\w+(\s+\w+)?)$")
 

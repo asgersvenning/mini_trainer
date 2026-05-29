@@ -8,8 +8,7 @@ import torchvision
 from torch import nn
 from torchvision.io import ImageReadMode, decode_image
 
-from mini_trainer.utils import import_class
-from mini_trainer.utils._core.misc import make_convert_dtype
+from mini_trainer.utils import import_class, make_convert_dtype
 
 _UNSUPPORTED_MODELS = [
     "squeezenet1_0",
