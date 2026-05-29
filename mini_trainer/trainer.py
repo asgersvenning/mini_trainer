@@ -136,10 +136,11 @@ def train_one_epoch(
             loss=loss,
             optimizer=optimizer,
             start_time=start_time,
-            distillation_loss=float(distill_loss.detach().item() if isinstance(distill_loss, torch.Tensor) else distill_loss),
-            regularization=float(reg.detach().item() if isinstance(reg, torch.Tensor) else reg),
+            distillation_loss=distill_loss.detach() if isinstance(distill_loss, torch.Tensor) else distill_loss,
+            regularization=reg.detach() if isinstance(reg, torch.Tensor) else reg,
         )
-        pbar.set_description_str(logger.status(), i % 25 == 0)
+        if i % 25 == 0:
+            pbar.set_description_str(logger.status())
         start_time = time.time()
     logger.stop_timing()
     logger.synchronize_between_processes()
@@ -194,7 +195,8 @@ def evaluate(
                 output = model(preprocess(batch))
                 loss = criterion(output, target)
             logger.consume(index=i, batch=batch, target=target, prediction=output, loss=loss, optimizer=None, start_time=start_time)
-        pbar.set_description_str(logger.status(), i % 25 == 0)
+        if i % 25 == 0:
+            pbar.set_description_str(logger.status())
         num_processed_samples += len(batch)
         start_time = time.time()
     logger.stop_timing()
