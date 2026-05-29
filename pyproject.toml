@@ -161,9 +161,6 @@ layers = [
     "mini_trainer.modeling",
     "mini_trainer.utils"
 ]
-ignore_imports = [
-    "mini_trainer.training.metrics -> mini_trainer.visualization"
-]
 unmatched_ignore_imports_alerting = "error"
 
 [[tool.importlinter.contracts]]

@@ -358,12 +358,20 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
             )
         if save and not isinstance(outdir, str):
             raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
-        return named_confusion_matrix(
+        results = named_confusion_matrix(
             results=data,
             cls2idx=self.cls2idx,
             verbose=self.verbose,
-            plot_conf_mat=plot_conf_mat and save and os.path.join(outdir, f"{prefix}confusion_matrix.png"),
         )
+        if plot_conf_mat and save:
+            dst = os.path.join(outdir, f"{prefix}confusion_matrix.png")
+            classes = [k for k, v in sorted(self.cls2idx.items(), key=lambda x: x[1])]
+            conf_mat = results["conf_mat"]
+            conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
+            arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
+            from PIL.Image import fromarray
+            fromarray(arr).save(dst)
+        return results
 
     def evaluate(self, outdir: str | None = None, prefix: str = "", **kwargs):
         do_save = isinstance(outdir, str)

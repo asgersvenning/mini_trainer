@@ -1,9 +1,7 @@
 import numpy as np
 import torch
-from PIL.Image import fromarray
 
 from mini_trainer import get_logger
-from mini_trainer.visualization import plot_heatmap
 
 
 def named_confusion_matrix(
@@ -11,7 +9,6 @@ def named_confusion_matrix(
     cls2idx: dict[str, int],
     keys: tuple[str, str] = ("preds", "labels"),
     verbose: bool = False,
-    plot_conf_mat: bool | str = False,
 ):
     """Compute dense label-prediction-count dictionary confusion matrix from results.
 
@@ -37,13 +34,6 @@ def named_confusion_matrix(
         if label.lower().strip() == prediction.lower().strip():
             total_correct += 1
             per_class_correct[label] += 1
-
-    if plot_conf_mat:
-        conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-        arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
-        if isinstance(plot_conf_mat, bool):
-            plot_conf_mat = "confusion_matrix.png"
-        fromarray(arr).save(plot_conf_mat)
 
     # Print the confusion matrix (numbers only, aligned)
     if verbose:
