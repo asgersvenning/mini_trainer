@@ -77,10 +77,19 @@ class WandbLogger(_Logger):
         if wandb.run is None:
             tags = []
             if machine:
-                tags.append(machine)
+                tags.append(machine[:64])
             if dataset:
-                tags.append(os.path.join(os.path.basename(os.getcwd()), dataset))
-            tags.append(os.getcwd())
+                tag_val = os.path.join(os.path.basename(os.getcwd()), dataset)
+                if len(tag_val) > 64:
+                    tag_val = dataset
+                tags.append(tag_val[:64])
+            cwd_val = os.getcwd()
+            if cwd_val:
+                if len(cwd_val) > 64:
+                    cwd_val = os.path.basename(cwd_val)
+                tags.append(cwd_val[:64])
+
+            tags = [t for t in tags if t]
 
             if is_dist_avail_and_initialized():
                 run_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:64]
