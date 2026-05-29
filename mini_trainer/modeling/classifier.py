@@ -652,6 +652,9 @@ def backbone(model: nn.Module):
 
 def classification_module(model: nn.Module):
     """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`."""
+    # Unwrap torch.compile (OptimizedModule) and DDP wrappers
+    if hasattr(model, "_orig_mod"):
+        model = model._orig_mod
     model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
     backbone_name = getattr(model, "_backbone_output_name", None)
     if backbone_name is None:
