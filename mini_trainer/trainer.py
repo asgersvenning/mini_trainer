@@ -281,10 +281,6 @@ def train(
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
-    if compile:
-        log.info("Compiling model...")
-        model = torch.compile(model)
-
     if is_dist_avail_and_initialized():
         log.debug("Model DDP wrap starting...")
         if "cpu" in str(device).lower():
@@ -292,8 +288,16 @@ def train(
         else:
             device_idx = device.index if (isinstance(device, torch.device) and device.index is not None) else torch.cuda.current_device()
             device_ids = [device_idx]
-        model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
+        model = DDP(model, device_ids=device_ids, find_unused_parameters=True, gradient_as_bucket_view=True)
         log.debug("DDP wrap completed.")
+
+    if compile:
+        log.info("Compiling model...")
+        if is_dist_avail_and_initialized():
+            # Disable DDPOptimizer graph splitting — it deadlocks on models with
+            # find_unused_parameters or custom scatter ops, causing NCCL timeouts.
+            torch._dynamo.config.optimize_ddp = False
+        model = torch.compile(model)
 
     best_eval_metric = -float("inf")
     best_epoch = -1
