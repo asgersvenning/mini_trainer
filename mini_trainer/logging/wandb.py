@@ -176,7 +176,6 @@ class WandbLogger(_Logger):
             if getattr(wandb.run, "step", 0) > global_step:
                 global_step = wandb.run.step
 
-            get_logger().debug(f"W&B=wandb.log({self._current_step_logs}, step={global_step})")
             wandb.log(self._current_step_logs, step=global_step)
             self._current_step_logs = {}
 
