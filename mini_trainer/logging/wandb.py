@@ -7,7 +7,7 @@ import torch
 import yaml
 from matplotlib import pyplot as plt
 
-from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
+from mini_trainer.utils import get_logger, get_rank, is_dist_avail_and_initialized
 
 from .core import BaseStatistic, _Logger, _Statistic
 
@@ -176,6 +176,7 @@ class WandbLogger(_Logger):
             if getattr(wandb.run, "step", 0) > global_step:
                 global_step = wandb.run.step
 
+            get_logger().debug(f"W&B=wandb.log({self._current_step_logs}, step={global_step})")
             wandb.log(self._current_step_logs, step=global_step)
             self._current_step_logs = {}
 
