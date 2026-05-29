@@ -11,6 +11,8 @@ from typing import Any
 import torch
 import yaml
 
+from mini_trainer import get_logger
+
 
 def _nullify(d: dict[str, Any]):
     """Recursively replaces all values in a dictionary with None.
@@ -96,7 +98,7 @@ def dump_resolved_config(
     cfg = _drop_none(cfg)
 
     if verbose and int(os.environ.get("RANK", 0)) == 0:
-        print(cfg)
+        get_logger().info(cfg)
 
     if output_dir is None or int(os.environ.get("RANK", 0)) > 0:
         return

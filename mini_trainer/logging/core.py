@@ -18,6 +18,7 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from torch import nn
 
+from mini_trainer import get_logger
 from mini_trainer.modeling import Prediction, classification_module
 from mini_trainer.training import named_confusion_matrix, raw_confusion_matrix
 from mini_trainer.utils import float_signif_decimal, get_rank, reduce_across_processes, write_csv_from_dict
@@ -663,7 +664,7 @@ class BaseStatistic(_Statistic):  # noqa: D101
         return self._len
 
     def __getitem__(self, i):
-        print("WARNING: The behaviour of this is currently ill defined")  # TODO!
+        get_logger().warning("The behaviour of this is currently ill defined")  # TODO!
         return self.values[i]
 
     def __iter__(self):
@@ -1274,14 +1275,14 @@ class MultiLogger:
                     hits += 1
                     counts[what].extend(cls_idxs)
             if hits == 0:
-                print(f"WARNING: No labels or predictions found for {self._epoch}!")
+                get_logger().warning(f"No labels or predictions found for {self._epoch}!")
 
             # Create confusion matrix from counts
             cm = raw_confusion_matrix(*counts.values())
             m = cm.sum(axis=1) > 0
             cm = cm[m][:, m]
             if not bool(np.any(np.isfinite(cm))):
-                print(f"Confusion matrix has no valid values, produced from counts: {counts}")
+                get_logger().warning(f"Confusion matrix has no valid values, produced from counts: {counts}")
 
             cm_lab = "Confusion matrix"
             if lvl is not None:

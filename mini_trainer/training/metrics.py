@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from PIL.Image import fromarray
 
+from mini_trainer import get_logger
 from mini_trainer.visualization import plot_heatmap
 
 
@@ -48,17 +49,18 @@ def named_confusion_matrix(
     if verbose:
         max_cf_n = max(val for d in conf_mat.values() for val in d.values())
         width = len(str(max_cf_n))
+        cf_lines = []
         for lab in classes:
             row_str = "|".join(
                 "{:>{width}d}".format(conf_mat[lab][pred], width=width) if conf_mat[lab][pred] != 0 else " " * width for pred in classes
             )
-            print(row_str)
+            cf_lines.append(row_str)
+        get_logger().info("\n" + "\n".join(cf_lines))
 
     # Compute and print per-class accuracies
-    if verbose:
-        print("\nPer-class Accuracies:")
     macro_acc = 0.0
     num_class_with_any = 0
+    acc_lines = ["\nPer-class Accuracies:"]
     for cls in classes:
         if per_class_total[cls] > 0:
             acc = per_class_correct[cls] / per_class_total[cls]
@@ -67,15 +69,16 @@ def named_confusion_matrix(
             acc = 0.0
         macro_acc += acc
         if verbose:
-            print(f"{cls:_<{max(map(len, classes))}}{acc:_>9.1%} ({per_class_correct[cls]}/{per_class_total[cls]})")
+            acc_lines.append(f"{cls:_<{max(map(len, classes))}}{acc:_>9.1%} ({per_class_correct[cls]}/{per_class_total[cls]})")
     macro_acc /= num_class_with_any or 1
 
     # Micro accuracy: overall correct predictions / total predictions
     micro_acc = total_correct / total_samples if total_samples > 0 else 0.0
 
     if verbose:
-        print(f"\nMicro Accuracy: {micro_acc:.2%} ({total_correct}/{total_samples})")
-        print(f"Macro Accuracy: {macro_acc:.2%}")
+        acc_lines.append(f"\nMicro Accuracy: {micro_acc:.2%} ({total_correct}/{total_samples})")
+        acc_lines.append(f"Macro Accuracy: {macro_acc:.2%}")
+        get_logger().info("\n" + "\n".join(acc_lines))
 
     return {"hits": per_class_correct, "totals": per_class_total, "micro": micro_acc, "macro": macro_acc, "conf_mat": conf_mat}
 

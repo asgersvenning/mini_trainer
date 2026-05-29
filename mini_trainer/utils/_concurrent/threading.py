@@ -7,6 +7,8 @@ from typing import Annotated, Any, Concatenate, ParamSpec, TypeVar, cast, get_ar
 from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import thread_map as _thread_map
 
+from mini_trainer import get_logger
+
 X = TypeVar("X")  # input value
 R = TypeVar("R")  # return value
 P = ParamSpec("P")
@@ -61,8 +63,8 @@ def multithread_vectorize(leave: bool = False, min_items_to_multithread: int = 3
                     f"for the vectorized arguments, not: `{t}`"
                 )
             if t in (list, tuple):
-                print(
-                    "WARNING: Using `list` or `tuple` as the base-type with `multithread_vectorize` "
+                get_logger().warning(
+                    "Using `list` or `tuple` as the base-type with `multithread_vectorize` "
                     "is dangerous and might not work as you expect."
                 )
             collected_types.append(t)

@@ -9,6 +9,7 @@ from matplotlib.colors import LogNorm
 from torch import nn
 from torchvision.transforms.functional import resize
 
+from mini_trainer import get_logger
 from mini_trainer.modeling import class_similarity
 
 # --- Constants ---
@@ -116,7 +117,7 @@ def _generate_heatmap_rgb_array(display_mat: np.ndarray, min_val_display: float 
     try:
         normalized_values = norm(masked_data)
     except ValueError as e:  # Can happen if norm range is invalid
-        print(f"Warning: LogNorm failed ({e}). Returning empty image.")
+        get_logger().warning(f"LogNorm failed ({e}). Returning empty image.")
         # Fallback or re-raise, for now, dummy image
         h, w = display_mat.shape
         dummy_rgb = np.zeros((h, w, 3), dtype=np.uint8)

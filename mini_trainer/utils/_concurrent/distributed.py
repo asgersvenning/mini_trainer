@@ -136,14 +136,6 @@ def ddp_train_wrapper(main_fn):
                 else:
                     bound.arguments["device"] = "cpu"
 
-            # Disable logging on non-zero ranks
-            if ddp_info["rank"] > 0:
-                from mini_trainer.logging import MetricLogger
-
-                logger_kwargs = bound.arguments.setdefault("logger_builder_kwargs", {})
-                logger_kwargs["logger_cls"] = [MetricLogger]
-                logger_kwargs["verbose"] = False
-
         result = tgt_fn(*bound.args, **bound.kwargs)
         if ddp_info is not None:
             dist.destroy_process_group()

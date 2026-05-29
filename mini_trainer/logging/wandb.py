@@ -7,6 +7,7 @@ import torch
 import yaml
 from matplotlib import pyplot as plt
 
+from mini_trainer import get_logger
 from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
 
 from .core import BaseStatistic, _Logger, _Statistic
@@ -176,7 +177,7 @@ class WandbLogger(_Logger):
                         svg_content = f.read()
                     is_svg = True
                 except OSError as e:
-                    print(f"Warning: Failed to read SVG file {figure}: {e}")
+                    get_logger().warning(f"Failed to read SVG file {figure}: {e}")
 
             # Case B: Raw String (Check only the first 500 chars to save memory)
             elif "<svg" in figure[:500].lower():

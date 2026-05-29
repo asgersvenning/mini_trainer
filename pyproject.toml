@@ -162,7 +162,6 @@ layers = [
     "mini_trainer.utils"
 ]
 ignore_imports = [
-    "mini_trainer.utils._concurrent.distributed -> mini_trainer.logging",
     "mini_trainer.training.metrics -> mini_trainer.visualization"
 ]
 unmatched_ignore_imports_alerting = "error"
@@ -171,7 +170,4 @@ unmatched_ignore_imports_alerting = "error"
 name = "Acyclic Siblings"
 type = "acyclic_siblings"
 ancestors = ["mini_trainer"]
-ignore_imports = [
-    "mini_trainer.utils._concurrent.distributed -> mini_trainer.logging"
-]
 unmatched_ignore_imports_alerting = "error"
