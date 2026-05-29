@@ -1,5 +1,4 @@
 import hashlib
-import logging
 import math
 import operator
 import os
@@ -19,8 +18,7 @@ from torchvision.io import ImageReadMode, decode_image
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
-from mini_trainer import TQDM
-from mini_trainer.utils import make_convert_dtype, memory_proportion, multithread_vectorize
+from mini_trainer.utils import TQDM, get_logger, make_convert_dtype, memory_proportion, multithread_vectorize
 
 T = TypeVar("T")
 V = TypeVar("V")
@@ -357,7 +355,7 @@ class LazyDataset(torch.utils.data.Dataset):
     def _init_cache(self):
         match self._cache_mode:
             case CACHE_MODE.NONE:
-                log = logging.getLogger("mini_trainer")
+                log = get_logger()
                 log.info("On-the-fly data loading enabled (no cache).")
                 return
             case CACHE_MODE.DISK:

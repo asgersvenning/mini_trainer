@@ -10,7 +10,6 @@ from .distributed import (
     reduce_across_processes,
     save_on_master,
     setup_for_distributed,
-    setup_logging,
     sync_run_name,
 )
 from .threading import first_arg_base_types, multithread_vectorize, thread_map
@@ -27,7 +26,6 @@ __all__ = [
     "reduce_across_processes",
     "save_on_master",
     "setup_for_distributed",
-    "setup_logging",
     "sync_run_name",
     "first_arg_base_types",
     "multithread_vectorize",

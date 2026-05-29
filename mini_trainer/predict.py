@@ -5,9 +5,9 @@ from typing import Any
 
 import torch
 
-from mini_trainer import TQDM, Formatter
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.config import (
+    Formatter,
     defaults_from_function,
     dump_resolved_config,
     load_yaml_config,
@@ -17,7 +17,7 @@ from mini_trainer.config import (
 from mini_trainer.data import auto_find_images, get_metadata
 from mini_trainer.logging import BaseResultCollector, RawResultCollector
 from mini_trainer.modeling import EmbeddingContext, classification_module, predict
-from mini_trainer.utils import increment_name_dir
+from mini_trainer.utils import TQDM, increment_name_dir
 
 
 def main(  # noqa: D417

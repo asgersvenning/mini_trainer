@@ -1,4 +1,3 @@
-import logging
 import os
 from collections import Counter
 from collections.abc import Callable
@@ -15,7 +14,7 @@ from mini_trainer.data.io import (
     guess_cache_mode,
     make_read_and_resize_fn,
 )
-from mini_trainer.utils import is_dist_avail_and_initialized
+from mini_trainer.utils import get_logger, is_dist_avail_and_initialized
 
 
 def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor) -> torch.Tensor:
@@ -114,7 +113,7 @@ def get_dataset_dataloader(  # noqa: D103
     if len(metadata) != len(modes):
         raise ValueError(f"Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!")
 
-    log = logging.getLogger("mini_trainer")
+    log = get_logger()
     log.info(f"Building datasets with image size {resize_size}")
     if subsample is not None and subsample > 1:
         metadata = tuple([{k: v[::subsample] for k, v in md.items()} for md in metadata])

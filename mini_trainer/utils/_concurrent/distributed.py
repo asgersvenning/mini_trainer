@@ -1,9 +1,7 @@
 import builtins as __builtin__
 import functools
 import inspect
-import logging
 import os
-import sys
 from collections.abc import Callable
 from contextlib import contextmanager
 
@@ -12,44 +10,7 @@ from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
 from mini_trainer.utils._core import increment_name_dir
-
-
-class DDPFilter(logging.Filter):
-    """Filter to ensure INFO and higher logs only run on Rank 0, but DEBUG runs on all ranks."""
-
-    def filter(self, record):
-        if record.levelno < logging.INFO:
-            return True
-        return get_rank() == 0
-
-
-class DDPFormatter(logging.Formatter):
-    """Formatter to automatically prepend [Rank X] in DDP mode."""
-
-    def format(self, record):
-        if is_dist_avail_and_initialized():
-            rank_str = f"[Rank {get_rank()}] "
-        else:
-            rank_str = ""
-        msg = super().format(record)
-        if rank_str and not msg.startswith("[Rank"):
-            msg = f"{rank_str}{msg}"
-        return msg
-
-
-def setup_logging(verbose: bool = False):
-    """Configure the 'mini_trainer' logger with a custom DDP filter and formatter."""
-    logger = logging.getLogger("mini_trainer")
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-
-    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
-    logger.propagate = False
-
-    handler = logging.StreamHandler(sys.__stdout__ or sys.stdout)
-    handler.setFormatter(DDPFormatter("%(message)s"))
-    handler.addFilter(DDPFilter())
-    logger.addHandler(handler)
+from mini_trainer.utils._core.logging import get_logger
 
 
 def setup_for_distributed(is_master):
@@ -212,7 +173,7 @@ def reduce_across_processes(val):  # noqa: D103
 @contextmanager
 def main_process_first(verbose=True):
     """Context manager to execute the wrapped block on the main process first, then other processes."""
-    logger = logging.getLogger("mini_trainer")
+    logger = get_logger()
     if is_dist_avail_and_initialized():
         if is_main_process():
             logger.debug("Entered main_process_first (master). Executing block...")

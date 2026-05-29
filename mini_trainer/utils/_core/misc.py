@@ -6,6 +6,7 @@ from typing import Any, TypeVar, TypeVarTuple
 import numpy as np
 import torch
 from torchvision.transforms.v2 import ToDtype
+from tqdm.auto import tqdm
 
 TERMINAL_WIDTH, _ = shutil.get_terminal_size()
 
@@ -53,3 +54,13 @@ def recursive_dfs_attr(obj: Any, attr: str, predicate: Callable[[Any], bool] = l
             except TypeError:
                 pass  # non-iterable despite isinstance claiming so (rare, but safe)
     raise StopIteration(f"No attribute '{attr}' found passing predicate.")
+
+
+class TQDM(tqdm):
+    """Wrapper around tqdm.auto.tqdm that automatically disables output on non-zero DDP ranks."""
+
+    def __new__(cls, *args, **kwargs):
+        from mini_trainer.utils._concurrent.distributed import get_rank
+        if get_rank() > 0:
+            kwargs["disable"] = True
+        return super().__new__(cls, *args, **kwargs)

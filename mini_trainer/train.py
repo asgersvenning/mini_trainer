@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 from argparse import ArgumentParser
@@ -8,9 +7,9 @@ import numpy as np
 import torch
 import torchvision
 
-from mini_trainer import Formatter
 from mini_trainer.builders import BaseBuilder, EMATeacher
 from mini_trainer.config import (
+    Formatter,
     defaults_from_function,
     dump_resolved_config,
     load_yaml_config,
@@ -25,6 +24,7 @@ from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
+    get_logger,
     get_rank,
     save_on_master,
     setup_logging,
@@ -135,7 +135,7 @@ def main(  # noqa: D417
 
     verbose = logger_builder_kwargs.get("verbose", False)
     setup_logging(verbose=verbose)
-    log = logging.getLogger("mini_trainer")
+    log = get_logger()
 
     # Dump resolved configuration using locals and normalized values
     dump_resolved_config(

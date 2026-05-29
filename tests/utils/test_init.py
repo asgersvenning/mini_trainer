@@ -8,6 +8,7 @@ from mini_trainer.utils import (
     decimals,
     filter_ordered_dict,
     float_signif_decimal,
+    get_logger,
     increment_name_dir,
     recursive_dfs_attr,
     write_csv_from_dict,
@@ -108,3 +109,18 @@ def test_cosine_schedule_with_warmup():
         assert fn(i + 1) < fn(i)
         assert 0.0 < fn(i) < 1.0
     assert fn(10) == 0.0
+
+
+def test_get_logger():
+    # Calling get_logger() without args should detect caller module name
+    logger = get_logger()
+    assert logger.name.endswith(".test_init") or logger.name == "mini_trainer"
+
+    # Calling with a relative name
+    logger_rel = get_logger("my_submodule")
+    assert logger_rel.name == "mini_trainer.my_submodule"
+
+    # Calling with full name
+    logger_full = get_logger("mini_trainer.custom")
+    assert logger_full.name == "mini_trainer.custom"
+

@@ -1,8 +1,6 @@
 import datetime
-import logging
 import os
 import time
-import warnings
 from collections.abc import Callable
 from typing import Literal
 
@@ -16,12 +14,13 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
-from mini_trainer import TQDM
 from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
+    TQDM,
+    get_logger,
     is_dist_avail_and_initialized,
     reduce_across_processes,
     save_on_master,
@@ -32,7 +31,7 @@ from mini_trainer.utils import (
 # contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
 
 
-log = logging.getLogger("mini_trainer")
+log = get_logger()
 
 
 def train_one_epoch(

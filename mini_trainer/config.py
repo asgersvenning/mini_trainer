@@ -4,6 +4,7 @@ import json
 import os
 import re
 import warnings
+from argparse import RawTextHelpFormatter
 from copy import deepcopy
 from typing import Any
 
@@ -235,3 +236,14 @@ def restructure_cli_args(args: dict[str, Any]) -> dict[str, Any]:
         _inset(out, k.split("."), v)
 
     return out
+
+
+class Formatter(RawTextHelpFormatter):
+    """Argument parser formatter that changes option-style action invocations."""
+
+    def _format_action_invocation(self, action):
+        # for option-style args, join the option strings and drop the metavar entirely
+        if action.option_strings:
+            return ", ".join(action.option_strings)
+        # otherwise (positional args), fall back to the default
+        return super()._format_action_invocation(action)
