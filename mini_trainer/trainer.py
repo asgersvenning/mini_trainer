@@ -248,6 +248,7 @@ def train(
     dtype: torch.dtype = torch.float32,
     output_dir: str | None = None,
     weight_store_rate: int | None = None,
+    compile: bool = False,
     **kwargs,
 ):
     """Full training loop across epochs with periodic evaluation and checkpointing.
@@ -275,7 +276,6 @@ def train(
     """
     log = get_logger()
 
-    # model = torch.compile(model)
     log.info("Start training")
     start_time = time.time()
 
@@ -290,6 +290,10 @@ def train(
             device_ids = [device_idx]
         model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
         log.debug("DDP wrap completed.")
+
+    if compile:
+        log.info("Compiling model...")
+        model = torch.compile(model)
 
     best_eval_metric = -float("inf")
     best_epoch = -1

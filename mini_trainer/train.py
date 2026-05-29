@@ -44,6 +44,7 @@ def main(  # noqa: D417
     device: str = "cuda:0",
     dtype: str = "float16",
     ema: bool = False,
+    compile: bool = False,
     seed: int | None = None,
     builder: type[BaseBuilder] = BaseBuilder,
     spec_model_dataloader_kwargs: dict[str, Any] = {},
@@ -304,6 +305,7 @@ def main(  # noqa: D417
         dtype=dtype,
         output_dir=weight_output_dir,
         weight_store_rate=5,
+        compile=compile,
     )
 
     del train_loader
@@ -536,6 +538,13 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         "Mainly relevant for inefficiently stored training data or slow filesystems.",
     )
     cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda:0").')
+    cfg_args.add_argument(
+        "--compile",
+        action="store_true",
+        dest="compile",
+        required=False,
+        help="Compile the model using torch.compile for faster execution (default=False).",
+    )
     cfg_args.add_argument(
         "--dtype",
         type=str,
