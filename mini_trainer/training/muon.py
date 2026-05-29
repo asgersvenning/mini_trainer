@@ -375,6 +375,7 @@ class MuonAuxAdamW(Optimizer):
         self.param_groups = []
         self.muon = self.adamw = None
         self._init = False
+        self._step_count = 0
         for g in orig_groups:
             self.add_param_group(g)
 
@@ -384,6 +385,17 @@ class MuonAuxAdamW(Optimizer):
             yield "muon"
         if self.adamw is not None:
             yield "adamw"
+
+    @property
+    def state(self):
+        unified_state = {}
+        for opt in self.optimizers:
+            unified_state.update(getattr(self, opt).state)
+        return unified_state
+
+    @state.setter
+    def state(self, value):
+        pass
 
     def _refresh_param_groups(self):
         self.param_groups = list(chain.from_iterable(getattr(self, opt).param_groups for opt in self.optimizers))
@@ -396,6 +408,9 @@ class MuonAuxAdamW(Optimizer):
         loss = closure() if closure is not None else None
         for opt in self.optimizers:
             getattr(self, opt).step()
+
+        self._step_count += 1
+
         return loss
 
     def add_param_group(self, param_group: dict[str, Any]) -> None:
