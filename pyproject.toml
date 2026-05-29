@@ -47,7 +47,10 @@ target-version = "py312"
 line-length = 140
 
 [tool.ruff.lint]
-select = ["E", "F", "UP", "I"]
+select = ["E", "F", "UP", "I", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -64,7 +67,8 @@ wrap-descriptions = 0
 dev = [
     "ruff>=0.14.5",
     "pytest>=8.0.0",
-    "pytest-cov>=5.0.0"
+    "pytest-cov>=5.0.0",
+    "import-linter>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -142,3 +146,32 @@ module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.importlinter]
+root_package = "mini_trainer"
+include_external_packages = false
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Layers"
+type = "layers"
+layers = [
+    "mini_trainer.visualization",
+    "mini_trainer.training",
+    "mini_trainer.modeling",
+    "mini_trainer.utils"
+]
+ignore_imports = [
+    "mini_trainer.utils._concurrent.distributed -> mini_trainer.logging",
+    "mini_trainer.training.metrics -> mini_trainer.visualization"
+]
+unmatched_ignore_imports_alerting = "error"
+
+[[tool.importlinter.contracts]]
+name = "Acyclic Siblings"
+type = "acyclic_siblings"
+ancestors = ["mini_trainer"]
+ignore_imports = [
+    "mini_trainer.utils._concurrent.distributed -> mini_trainer.logging"
+]
+unmatched_ignore_imports_alerting = "error"

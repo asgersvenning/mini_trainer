@@ -1,7 +1,9 @@
 import os
 import time
+
 import torch
 import torch.distributed as dist
+
 
 def run_diagnostics() -> None:
     if not dist.is_initialized():
