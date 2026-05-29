@@ -2,9 +2,23 @@ import os
 from collections.abc import Iterable
 from typing import Any
 
-import pyarrow.compute as pc
-import pyarrow.parquet as pp
 from tqdm import tqdm
+
+_HAS_PYARROW = True
+try:
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pp
+except ImportError:
+    _HAS_PYARROW = False
+
+
+def _check_pyarrow():
+    if not _HAS_PYARROW:
+        raise ImportError(
+            "Parquet integration requires the optional dependency: pyarrow. "
+            "Install with `pip install mini_trainer[recommended]`."
+        )
+
 
 KCOLUMNS = ("speciesKey", "genusKey", "familyKey", "orderKey", "classKey", "phylumKey", "kingdomKey")
 
@@ -12,11 +26,13 @@ COLUMNS = ("filename", "set", *KCOLUMNS)
 
 
 def nrow(path: str):
+    _check_pyarrow()
     return sum(p.count_rows() for p in pp.ParquetDataset(path).fragments)
 
 
 def iter_parquet_batches(path: str, columns=COLUMNS):
     """Iterate lazily over batches in ``gbifxdl`` parquet."""
+    _check_pyarrow()
     # 1. Ensure "set" is loaded so we can filter by it
     read_columns = list(columns)
     if "set" not in read_columns:
