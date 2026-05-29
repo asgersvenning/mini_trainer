@@ -114,15 +114,17 @@ def train_one_epoch(
         scaler.unscale_(optimizer)
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
+
+        # 1. Record the step count before
+        opt_steps_before = optimizer._step_count
+
+        # 2. Step the scaler (this internally handles the Inf/NaN check)
         scaler.step(optimizer)
-        # We need to check if the GradScaler has detected NaN gradients, which will
-        # result in optimizer.step() being skipped, and the warning:
-        # "UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`"
-        # being thrown - even though these two calls are in the right order here.
-        # See: https://discuss.pytorch.org/t/optimizer-step-before-lr-scheduler-step-error-using-gradscaler/92930/7
-        _scale = scaler.get_scale()
         scaler.update()
-        _any_opt_stepped = _scale <= scaler.get_scale()
+
+        # 3. Check if the step count actually increased
+        _any_opt_stepped = optimizer._step_count > opt_steps_before
+
         if _any_opt_stepped:
             raw_model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
             model_ema.update_parameters(step, raw_model)
