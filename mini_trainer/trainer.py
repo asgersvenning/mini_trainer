@@ -281,6 +281,10 @@ def train(
 
     eval_model: nn.Module = getattr(model_ema, "module", model)
 
+    if compile:
+        log.info("Compiling model...")
+        model = torch.compile(model)
+
     if is_dist_avail_and_initialized():
         log.debug("Model DDP wrap starting...")
         if "cpu" in str(device).lower():
@@ -290,10 +294,6 @@ def train(
             device_ids = [device_idx]
         model = DDP(model, device_ids=device_ids, find_unused_parameters=True)
         log.debug("DDP wrap completed.")
-
-    if compile:
-        log.info("Compiling model...")
-        model = torch.compile(model)
 
     best_eval_metric = -float("inf")
     best_epoch = -1
