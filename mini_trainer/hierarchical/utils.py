@@ -125,7 +125,7 @@ def shape_resize(shape: torch.Size | list[int], dim: int, value: int):  # noqa: 
     return shape
 
 
-def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int = 1):
+def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int = 1, dim_size: int | None = None):
     """Aggregates the elements of the ``input`` tensor with an index along a dimension using logsumexp.
 
     ```
@@ -139,12 +139,15 @@ def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int
         input: Input tensor of size :math:`N x K`.
         index: Long-Tensor of size :math:`K` containing the elements along ``dim`` in ``input`` to aggregate.
         dim: Dimension to aggregate over (default=1).
+        dim_size: Custom output dimension size along dim (default=None, dynamically computed).
 
     Returns:
         output: Aggregated logsumexp of ``input`` of size :math:`N x max(index)+1`.
     """
+    if dim_size is None:
+        dim_size = int(index.max().item() + 1)
     # Scaffold tensor - same size as output
-    z = input.new_zeros(shape_resize(input.shape, dim=dim, value=index.max().item() + 1))
+    z = torch.zeros(shape_resize(input.shape, dim=dim, value=dim_size), dtype=input.dtype, device=input.device)
     index = index.expand_as(input)
     c = z.scatter_reduce(dim=dim, index=index, src=input, reduce="amax", include_self=False)
     return z.scatter_add(dim=dim, index=index, src=(input - c.gather(dim=dim, index=index)).exp()).log() + c

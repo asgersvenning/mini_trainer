@@ -89,6 +89,7 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
             masks = []
             filter = self.active_indices
             filters = [filter]
+            self._dim_sizes = []
             for i in range(self.num_masks):
                 mask = getattr(self, f"mask_{i}")
                 setattr(self, f"_filter_{i}", None if filter is None else filter.view_as(filter))
@@ -98,6 +99,7 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
                 setattr(self, f"_mask_{i}", mask.view_as(mask))
                 masks.append(mask)
                 filters.append(filter)
+                self._dim_sizes.append(int(mask.max().item() + 1))
             setattr(self, f"_filter_{self.num_masks}", None if filter is None else filter.view_as(filter))
             self._dirty_cache["_masks"] = False
         masks: list[torch.Tensor] = []
@@ -110,11 +112,16 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
             _ = self.masks
         return getattr(self, f"_mask_{idx}")
 
+    def mask_dim_size(self, idx: int) -> int:
+        if self._dirty_cache["_masks"]:
+            _ = self.masks
+        return self._dim_sizes[idx]
+
     def hierarchy(self, log_probs: torch.Tensor):
         ys = [log_probs]
         # Propagate the probabilities up the hierarchy using the masks
-        for mask in self.masks:
-            ys.append(batched_scatter_logsumexp(ys[-1], mask))
+        for i, mask in enumerate(self.masks):
+            ys.append(batched_scatter_logsumexp(ys[-1], mask, dim_size=self.mask_dim_size(i)))
         return ys
 
     def forward(self, x):
@@ -198,7 +205,7 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
         C: list[torch.Tensor] = [torch.empty(0) for _ in range(N)]
         C[-1] = M[-1]  # Top-level classes are not conditioned
         for i in reversed(range(N - 1)):
-            sibling_norm = batched_scatter_logsumexp(M[i], self.mask(i))
+            sibling_norm = batched_scatter_logsumexp(M[i], self.mask(i), dim_size=self.mask_dim_size(i))
             # Top-down condition : P_cond(x) = P(x) * P_cond(parent(x)) / P(siblings(x))
             # ==> log(P_cond(x)) = log(P(x)) + log(P_cond(parent(x))) - log(P(siblings(x)))
             C[i] = M[i] + (C[i + 1] - sibling_norm).gather(1, self.mask(i).expand_as(M[i]))
