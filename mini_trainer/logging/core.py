@@ -370,6 +370,7 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
             conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
             arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
             from PIL.Image import fromarray
+
             fromarray(arr).save(dst)
         return results
 
@@ -492,14 +493,14 @@ class _Logger:
     def add_stat(self, name: str, container: _Statistic):
         raise NotImplementedError()
 
-    def get(self, name: str):
+    def get(self, name: str) -> _Statistic:
         return self.statistics[name]
 
     def rename_stat(self, name: str, new: str):
         self.statistics[new] = self.statistics.pop(name)
 
     def update(self, name, values: float | int | list[float | int] | torch.Tensor | np.ndarray):
-        if isinstance(values, (torch.Tensor, np.ndarray)):
+        if isinstance(values, np.ndarray):
             values = values.tolist()
         self.get(name).update(values)
 
@@ -538,6 +539,16 @@ class SmoothedValue(_Statistic):
         return self.count
 
     def update(self, value, n=1):
+        if isinstance(value, torch.Tensor):
+            self.deque.append(value.detach())
+            self.total += value.detach() * n
+            self.count += n
+            if self.min is None:
+                self.min = value.detach()
+            else:
+                self.min = torch.minimum(self.min, value.detach())
+            return
+
         self.deque.append(value)
         if isinstance(value, (float, int)):
             if self.min is None or value < self.min:
@@ -554,7 +565,12 @@ class SmoothedValue(_Statistic):
     def synchronize_between_processes(self):
         """Warning: does not synchronize the deque!"""
         min_val = self.min if self.min is not None else 0.0
-        t = reduce_across_processes([self.count, self.total, min_val])
+        total_val = self.total
+        if isinstance(min_val, torch.Tensor):
+            min_val = min_val.item()
+        if isinstance(total_val, torch.Tensor):
+            total_val = total_val.item()
+        t = reduce_across_processes([self.count, total_val, min_val])
         t = t.tolist()
         self.count = int(t[0])
         self.total = float(t[1])
@@ -562,11 +578,19 @@ class SmoothedValue(_Statistic):
 
     @property
     def median(self):
+        if not self.deque:
+            return float("nan")
+        if isinstance(self.deque[0], torch.Tensor):
+            return torch.stack(list(self.deque)).median().item()
         d = torch.tensor(list(self.deque))
         return d.median().item()
 
     @property
     def avg(self):
+        if not self.deque:
+            return float("nan")
+        if isinstance(self.deque[0], torch.Tensor):
+            return torch.stack(list(self.deque)).mean().item()
         d = torch.tensor(list(self.deque), dtype=torch.float32)
         return d.mean().item()
 
@@ -574,7 +598,10 @@ class SmoothedValue(_Statistic):
     def global_avg(self):
         if self.count == 0:
             return float("nan")
-        return self.total / self.count
+        val = self.total / self.count
+        if isinstance(val, torch.Tensor):
+            return val.item()
+        return val
 
     @property
     def mean(self):
@@ -582,16 +609,26 @@ class SmoothedValue(_Statistic):
 
     @property
     def max(self):
+        if not self.deque:
+            return float("nan")
+        if isinstance(self.deque[0], torch.Tensor):
+            return torch.stack(list(self.deque)).max().item()
         return max(self.deque)
 
     @property
     def sum(self):
-        return self.total
+        val = self.total
+        if isinstance(val, torch.Tensor):
+            return val.item()
+        return val
 
     @property
     def value(self):
         if self.deque:
-            return self.deque[-1]
+            val = self.deque[-1]
+            if isinstance(val, torch.Tensor):
+                return val.item()
+            return val
         else:
             return float("nan")
 
@@ -690,9 +727,39 @@ class BaseStatistic(_Statistic):  # noqa: D101
         return self.values
 
     def update(self, value: float | int | list[int | float] | np.ndarray | torch.Tensor, **kwargs):
-        if isinstance(value, (torch.Tensor, np.ndarray)):
-            if sum(s > 1 for s in value.shape) <= 1:
-                value = value.flatten()
+        if isinstance(value, torch.Tensor):
+            value = value.detach()
+            with self.lock:
+                if value.numel() == 1:
+                    tmin = tmax = tsum = value
+                    n = 1
+                else:
+                    tmin = value.min()
+                    tmax = value.max()
+                    tsum = value.sum()
+                    n = value.numel()
+                if self.min is None:
+                    self.min = tmin
+                else:
+                    if isinstance(self.min, torch.Tensor) or isinstance(tmin, torch.Tensor):
+                        self.min = torch.minimum(torch.as_tensor(self.min, device=value.device), torch.as_tensor(tmin, device=value.device))
+                    else:
+                        self.min = min(self.min, tmin)
+                if self.max is None:
+                    self.max = tmax
+                else:
+                    if isinstance(self.max, torch.Tensor) or isinstance(tmax, torch.Tensor):
+                        self.max = torch.maximum(torch.as_tensor(self.max, device=value.device), torch.as_tensor(tmax, device=value.device))
+                    else:
+                        self.max = max(self.max, tmax)
+                if self.sum is None:
+                    self.sum = tsum
+                else:
+                    self.sum += tsum
+                self._len += n
+            return
+
+        if isinstance(value, np.ndarray):
             value = value.tolist()
             if not isinstance(value, (float, int, list)):
                 raise RuntimeError(f"Unable to update statistic ({self}) with heterogenous data or invalid type.")
@@ -701,13 +768,9 @@ class BaseStatistic(_Statistic):  # noqa: D101
             if isinstance(value, (float, int)):
                 tmin = tmax = tsum = value
                 n = 1
-                # Disable for now to avoid OOM
-                # self.values.append(float(value))
             else:
                 tmin, tmax, tsum = [fn(value) for fn in [min, max, sum]]
                 n = len(value)
-                # Disable for now to avoid OOM
-                # self.values.extend([float(v) for v in value])
             if self.min is None or tmin < self.min:
                 self.min = float(tmin)
             if self.max is None or tmax > self.max:
@@ -722,7 +785,10 @@ class BaseStatistic(_Statistic):  # noqa: D101
     def mean(self):
         if self.sum is None or len(self) == 0:
             return float("nan")
-        return self.sum / len(self)
+        val = self.sum / len(self)
+        if isinstance(val, torch.Tensor):
+            return val.item()
+        return val
 
     def __str__(self):
         with self.lock:
@@ -731,6 +797,12 @@ class BaseStatistic(_Statistic):  # noqa: D101
             m = self.mean  # noqa: E221
             mn = self.min
             mx = self.max
+        if isinstance(m, torch.Tensor):
+            m = m.item()
+        if isinstance(mn, torch.Tensor):
+            mn = mn.item()
+        if isinstance(mx, torch.Tensor):
+            mx = mx.item()
         digs = float_signif_decimal(min(filter(lambda x: math.isfinite(x) and x != 0, map(abs, [m, mn, mx])), default=1))
         self.digs.append(digs)
         digs = max(self.digs)
@@ -1073,7 +1145,7 @@ class MultiLogger:
                 self._n_classes = prediction.shape[1]
             if not self.is_train():
                 self.render_soft_confusion_matrix(target, prediction)
-            self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
+                self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
             if prediction.shape[1] >= 5:
                 acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
             else:
@@ -1086,7 +1158,7 @@ class MultiLogger:
                 self._n_classes = tp.shape[1]
                 if not self.is_train():
                     self.render_soft_confusion_matrix(tl, tp, level=lvl)
-                self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), level=lvl)
+                    self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), level=lvl)
                 if tp.shape[1] >= 5:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
                 else:
@@ -1110,15 +1182,13 @@ class MultiLogger:
         if isinstance(loss, (list, tuple)) and len(loss) == 1:
             loss = loss[0]
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
-            loss: float = loss.item()
-            self.log_statistic(loss=loss)
+            self.log_statistic(loss=loss.detach())
         else:
-            self.log_statistic(loss=sum(loss).item())
+            self.log_statistic(loss=sum(loss).detach())
             for i, term in enumerate(iterable=loss):
                 if term.numel() != 1:
                     raise RuntimeError(f"Expected scalar loss term but found {loss.shape}.")
-                term = term.item()
-                self.log_statistic(**{f"loss/lvl{i}": term})
+                self.log_statistic(**{f"loss/lvl{i}": term.detach()})
 
     def log_optim(self, optimizer: torch.optim.Optimizer | None):
         if optimizer is None:

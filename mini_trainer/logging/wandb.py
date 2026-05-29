@@ -138,7 +138,13 @@ class WandbLogger(_Logger):
 
     def update(self, name: str, values):
         """Add values to wandb log dict for the current step."""
-        if isinstance(values, (torch.Tensor, np.ndarray)):
+        if isinstance(values, torch.Tensor):
+            values = values.detach().cpu()
+            if values.numel() == 1:
+                values = values.item()
+            else:
+                values = values.tolist()
+        elif isinstance(values, np.ndarray):
             values = values.tolist()
         tag = self._make_scalar_hierarchical_tag(name)
 
