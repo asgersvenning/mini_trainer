@@ -1,4 +1,4 @@
-from .backbone import get_model
+from .architectures import get_model
 from .checkpoint import average_checkpoints, copy_bn_buffers, set_weight_decay, store_model_weights
 from .classifier import (
     BasePrediction,
