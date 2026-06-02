@@ -28,29 +28,32 @@ def test_list_supported_backbones():
         assert isinstance(b.availability, bool)
 
         # Test tuple sequence properties (ordering)
-        assert len(b) == 3
+        assert len(b) == 4
         assert b[0] == b.model
         assert b[1] == b.backend
         assert b[2] == b.availability
+        assert b[3] == b.blacklisted
 
         # Test unpacking (guaranteed ordering)
-        model, backend, availability = b
+        model, backend, availability, blacklisted = b
         assert model == b.model
         assert backend == b.backend
         assert availability == b.availability
+        assert blacklisted == b.blacklisted
 
         # Test asdict support
         d = b._asdict()
         assert d["model"] == b.model
         assert d["backend"] == b.backend
         assert d["availability"] == b.availability
+        assert d["blacklisted"] == b.blacklisted
 
     backends = {b.backend for b in backbones}
     assert "torchvision" in backends
 
 
 def test_torchvision_model():
-    model, classifier_name, preprocess_fn = get_model("resnet18")
+    model, classifier_name, preprocess_fn, embed_dim = get_model("resnet18")
     assert classifier_name == "fc"
 
     # Check that we can build a Classifier with it
@@ -62,16 +65,17 @@ def test_torchvision_model():
 
     assert outputs.shape == (2, 10)
     assert isinstance(outputs, torch.Tensor)
+    assert isinstance(embed_dim, int)
 
 
 def test_timm_model():
     # Explicit prefix
-    model, classifier_name, preprocess_fn = get_model("timm:resnet18", model_args={"pretrained": False})
+    model, classifier_name, preprocess_fn, embed_dim = get_model("timm:resnet18", model_args={"pretrained": False})
     # Timm resnet18 has classifier named 'fc'
     assert classifier_name == "fc"
 
-    # Auto-detection
-    model_auto, classifier_name_auto, _ = get_model("vit_tiny_patch16_224", model_args={"pretrained": False})
+    # Explicit prefix
+    model_auto, classifier_name_auto, _ = get_model("timm:vit_tiny_patch16_224", model_args={"pretrained": False})
     assert classifier_name_auto == "head"
 
     classifier_model, transform = Classifier.build(
@@ -84,12 +88,13 @@ def test_timm_model():
 
     assert outputs.shape == (2, 5)
     assert isinstance(outputs, torch.Tensor)
+    assert isinstance(embed_dim, int)
 
 
 def test_transformers_model():
     # Load vit model offline to avoid hitting the internet
     model_type = "google/vit-base-patch16-224"
-    model, classifier_name, preprocess_fn = get_model(
+    model, classifier_name, preprocess_fn, embed_dim = get_model(
         f"transformers:{model_type}", model_args={"pretrained": False, "local_files_only": True}
     )
     assert classifier_name == "classifier"
@@ -107,3 +112,4 @@ def test_transformers_model():
 
     assert outputs.shape == (2, 7)
     assert isinstance(outputs, torch.Tensor)
+    assert isinstance(embed_dim, int)

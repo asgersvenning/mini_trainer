@@ -1,27 +1,116 @@
+import json
 import os
 import warnings
+from collections.abc import Callable
 
 import torch
 from torch import nn
 from torchvision.io import ImageReadMode, decode_image
 
 
-def preprocess(item, transform, func=None):
-    """Hook torchvision preprocessing function with load image from file to tensor."""
-    if isinstance(item, str):
-        path = str(item)
-        if not os.path.exists(path):
-            raise FileNotFoundError("Unable to find image: " + path)
-        image = decode_image(path, ImageReadMode.RGB)
-    elif isinstance(item, torch.Tensor):
-        image = item
-    else:
-        raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
-    if transform is not None:
-        image = transform(image)
-    if func:
-        image = func(image)
-    return image
+def _read_blacklist():
+    json_path = os.path.join(os.path.dirname(__file__), "blacklist.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"torchvision": [], "timm": [], "transformers": [], "bioclip": []}
+
+
+BLACKLIST = _read_blacklist()
+
+
+def resolve_embedding_dim(
+    model: nn.Module, head_name: str, preprocess: Callable[[torch.Tensor], torch.Tensor], device: torch.device | None = None
+) -> int:
+    """
+    Attempts to resolve the embedding dimension using fast structural checks.
+    Falls back to a dummy forward pass only if all structural checks fail.
+    """
+
+    # timm standard
+    if hasattr(model, "num_features") and isinstance(model.num_features, int):
+        return model.num_features
+
+    # OpenCLIP / standard ViT attribute
+    if hasattr(model, "embed_dim") and isinstance(model.embed_dim, int):
+        return model.embed_dim
+
+    # torchvision VisionTransformer
+    if hasattr(model, "hidden_dim") and isinstance(model.hidden_dim, int):
+        return model.hidden_dim
+
+    head_module = getattr(model, head_name)
+
+    for m in head_module.modules():
+        if isinstance(m, nn.Linear):
+            return m.in_features
+        if isinstance(m, nn.Conv2d):
+            return m.in_channels
+
+    warnings.warn("Could not structurally infer embedding dimension. Falling back to dummy forward pass.")
+
+    return _infer_via_dummy_pass(model, preprocess, device)
+
+
+def _infer_via_dummy_pass(model: nn.Module, preprocess: Callable[[torch.Tensor], torch.Tensor], device: torch.device | None) -> int:
+    """The robust dummy pass fallback."""
+    if device is None:
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+
+    was_training = model.training
+    model.eval()
+    dummy_input = preprocess(torch.zeros(3, 224, 224, dtype=torch.uint8)).unsqueeze(0).to(device)
+
+    with torch.inference_mode():
+        try:
+            output = model(dummy_input)
+        except Exception as e:
+            model.train(was_training)
+            raise RuntimeError(f"Dummy pass failed. You may need to provide a specific `fallback_input_shape` for this model. Error: {e}")
+
+    model.train(was_training)
+
+    if isinstance(output, tuple):
+        output = output[0]
+    elif isinstance(output, dict):
+        output = next(iter(output.values()))
+
+    if output.ndim >= 2:
+        return output.shape[1]
+
+    raise ValueError(f"Unexpected output shape from dummy pass: {output.shape}")
+
+
+class Preprocess:
+    def __init__(self, transform=None, func=None):
+        """Hook torchvision preprocessing function with load image from file to tensor."""
+        self.transform = transform
+        self.func = func
+
+    def __call__(self, item):
+        if isinstance(item, str):
+            path = str(item)
+            if not os.path.exists(path):
+                raise FileNotFoundError("Unable to find image: " + path)
+            image = decode_image(path, ImageReadMode.RGB)
+        elif isinstance(item, torch.Tensor):
+            image = item
+        else:
+            raise TypeError(f"'item' must be of type `str` or `torch.Tensor`, not {type(item)}")
+        if self.transform is not None:
+            image = self.transform(image)
+        if self.func is not None:
+            image = self.func(image)
+        return image
+
+    def __repr__(self):
+        return f"{self.__class__.__name__} ({self.transform} + {self.func})"
 
 
 def module_output_dim(module: nn.Module):

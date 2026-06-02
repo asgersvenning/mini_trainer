@@ -391,7 +391,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if dtype is None:
             dtype = torch.float32
         preprocess_dtype = preprocess_dtype or dtype
-        architecture, head_name, model_preprocess = get_model(
+        architecture, head_name, model_preprocess, num_embeddings = get_model(
             model_type, model_args=model_args, preprocess_dtype=preprocess_dtype, transform=transform
         )
         if not isinstance(architecture, nn.Module):
@@ -402,16 +402,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 UserWarning,
             )
 
-        # Config heuristics
-        for name, m in reversed(list(getattr(architecture, head_name).named_modules())):
-            if isinstance(m, nn.Linear):
-                num_embeddings = m.in_features
-                break
-            if isinstance(m, nn.Conv2d):
-                num_embeddings = m.out_channels
-                break
-        if num_embeddings is None:
-            raise RuntimeError(f"Could not infer number of embeddings from {getattr(architecture, head_name)}")
         if state is not None:
             for key in list(state.keys()):
                 if isinstance(state[key], torch.Tensor):

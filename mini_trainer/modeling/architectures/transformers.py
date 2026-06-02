@@ -38,7 +38,9 @@ class TransformersBackboneWrapper(torch.nn.Module):
         return outputs.logits
 
 
-def get_transformers_model(model: str, default_transform: Any = None, **kwargs: Any) -> tuple[Any, Any]:
+def get_transformers_model(
+    model: str, default_transform: Any = None, pretrained: bool = True, **kwargs: Any,
+) -> tuple[Any, Any]:
     """Load Hugging Face transformers classification model and resolve its default transform."""
     try:
         from transformers import AutoImageProcessor, AutoModelForImageClassification
@@ -54,13 +56,12 @@ def get_transformers_model(model: str, default_transform: Any = None, **kwargs: 
         if key in kwargs:
             hub_kwargs[key] = kwargs[key]
 
-    pretrained = kwargs.pop("pretrained", True)
     if pretrained:
         hf_model = AutoModelForImageClassification.from_pretrained(model, **kwargs)
     else:
         from transformers import AutoConfig
 
-        config = AutoConfig.from_pretrained(model, **kwargs)
+        config = AutoConfig.from_pretrained(model, **hub_kwargs)
         hf_model = AutoModelForImageClassification.from_config(config)
 
     classifier_name = None

@@ -16,7 +16,7 @@ class TimmTransformWrapper:
         return self.transform(image)
 
 
-def get_timm_model(model: str, default_transform: Any = None, **kwargs: Any) -> tuple[Any, Any]:
+def get_timm_model(model: str, default_transform: Any = None, pretrained: bool = True, **kwargs: Any) -> tuple[Any, Any]:
     """Load timm model and resolve its default transform."""
     try:
         import timm
@@ -25,10 +25,7 @@ def get_timm_model(model: str, default_transform: Any = None, **kwargs: Any) -> 
         e.add_note("The `timm` module was not found in the current Python environment. Please install with `pip install timm`.")
         raise
 
-    if "pretrained" not in kwargs:
-        kwargs["pretrained"] = True
-
-    backbone_model = timm.create_model(model, **kwargs)
+    backbone_model = timm.create_model(model, pretrained=pretrained, **kwargs)
 
     if default_transform is None:
         config = resolve_model_data_config(backbone_model)

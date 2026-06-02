@@ -53,6 +53,8 @@ def debug_augmentation(
             raise
         warnings.warn(e_msg, UserWarning)
         return False
+    finally:
+        plt.close()
     return True
 
 
