@@ -1,4 +1,4 @@
-from .architectures import get_model
+from .architectures import BackboneInfo, get_model, list_supported_backbones
 from .checkpoint import average_checkpoints, copy_bn_buffers, set_weight_decay, store_model_weights
 from .classifier import (
     BasePrediction,
@@ -19,6 +19,8 @@ from .mask import mask_classifier, set_classification_mask
 
 __all__ = [
     "get_model",
+    "list_supported_backbones",
+    "BackboneInfo",
     "average_checkpoints",
     "copy_bn_buffers",
     "set_weight_decay",

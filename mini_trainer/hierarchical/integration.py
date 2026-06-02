@@ -319,7 +319,7 @@ class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
             raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
         if self._levels is None:
             raise RuntimeError("Hierarchical result collector was unable to detect number of levels in the class hierarchy!")
-        
+
         results = {}
         for level in range(self._levels):
             lvl_results = named_confusion_matrix(
@@ -333,13 +333,16 @@ class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
                 dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
                 classes = [k for k, v in sorted(self.cls2idx[str(level)].items(), key=lambda x: x[1])]
                 conf_mat = lvl_results["conf_mat"]
-                
+
                 import numpy as np
+
                 conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-                
+
                 from mini_trainer.visualization import plot_heatmap
+
                 arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
                 from PIL.Image import fromarray
+
                 fromarray(arr).save(dst)
 
         return results

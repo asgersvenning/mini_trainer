@@ -326,6 +326,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         dtype: torch.dtype | None = None,
         preprocess_dtype: torch.dtype | None = None,
         transform: Any = None,
+        model_args: dict = {},
         **kwargs,
     ):
         if not isinstance(device, torch.device):
@@ -390,7 +391,9 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if dtype is None:
             dtype = torch.float32
         preprocess_dtype = preprocess_dtype or dtype
-        architecture, head_name, model_preprocess = get_model(model_type, preprocess_dtype=preprocess_dtype, transform=transform)
+        architecture, head_name, model_preprocess = get_model(
+            model_type, model_args=model_args, preprocess_dtype=preprocess_dtype, transform=transform
+        )
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
         if stored_head_name is not None and stored_head_name != head_name:

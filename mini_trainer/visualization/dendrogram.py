@@ -54,7 +54,7 @@ def linkage_to_newick(Z: np.ndarray, labels: list[str] | tuple[str]) -> str:
         escaped_str = label_str.replace("'", "''")
         return f"'{escaped_str}'"
 
-    return build_newick(tree, "", tree.dist, list(map(escape_label, labels))) # type: ignore
+    return build_newick(tree, "", tree.dist, list(map(escape_label, labels)))  # type: ignore
 
 
 def hex_to_branchcolor(hex_str: str) -> "BranchColor":

@@ -93,6 +93,9 @@ bioclip = [
 transformers = [
   "transformers"
 ]
+timm = [
+  "timm"
+]
 cpu = ["torch>=2.11", "torchvision"]
 cu126 = ["torch>=2.11", "torchvision"]
 cu130 = ["torch>=2.11", "torchvision"]

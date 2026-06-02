@@ -64,8 +64,7 @@ def multithread_vectorize(leave: bool = False, min_items_to_multithread: int = 3
                 )
             if t in (list, tuple):
                 get_logger().warning(
-                    "Using `list` or `tuple` as the base-type with `multithread_vectorize` "
-                    "is dangerous and might not work as you expect."
+                    "Using `list` or `tuple` as the base-type with `multithread_vectorize` is dangerous and might not work as you expect."
                 )
             collected_types.append(t)
         base_types = tuple(collected_types)

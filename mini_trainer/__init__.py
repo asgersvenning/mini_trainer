@@ -18,4 +18,3 @@ def get_logger(name: str | None = None) -> std_logging.Logger:
         name = f"mini_trainer.{name}"
 
     return std_logging.getLogger(name)
-

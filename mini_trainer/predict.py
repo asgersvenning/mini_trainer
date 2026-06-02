@@ -116,7 +116,7 @@ def main(  # noqa: D417
     metadata = classification_module(nn_model).metadata.copy()
 
     # Prepare dataloader
-    labels : list[int] | list[list[int]] | None = None
+    labels: list[int] | list[list[int]] | None = None
     if data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
         images: list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
@@ -164,8 +164,8 @@ def main(  # noqa: D417
                 idx += len(batch)
                 collector.collect(
                     paths=images[idxs],
-                    predictions=predictions, # type: ignore
-                    labels=None if labels is None else labels[idxs], # type: ignore
+                    predictions=predictions,  # type: ignore
+                    labels=None if labels is None else labels[idxs],  # type: ignore
                 )
     del loader, nn_model
 
