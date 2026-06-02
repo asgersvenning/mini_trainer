@@ -146,6 +146,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+source-include = ["mini_trainer/modeling/architectures/blacklist.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
