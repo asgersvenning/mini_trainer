@@ -125,6 +125,16 @@ def run_integration_test(model_name: str, online: bool, temp_dir: str) -> tuple[
         err_msg = str(e)
         tb = traceback.format_exc()
 
+        # Check for CUDA OOM
+        is_oom = False
+        if "OutOfMemoryError" in type(e).__name__:
+            is_oom = True
+        elif any(x in err_msg.lower() or x in tb.lower() for x in ["out of memory", "oom", "cuda out of memory"]):
+            is_oom = True
+
+        if is_oom:
+            return "OOM", f"Out of memory: {err_msg}\n{tb}"
+
         # Detect offline/download errors
         is_offline_err = any(
             x in err_msg.lower() or x in tb.lower()
@@ -155,17 +165,53 @@ def main_cli():
     parser.add_argument("--model", type=str, default=None, help="Test a single specific model name.")
     parser.add_argument("--online", action="store_true", help="Allow online downloads during tests.")
     parser.add_argument("--clear", action="store_true", help="Clear previous test results cache before running.")
+    parser.add_argument("--dry-run", action="store_true", help="Run without writing to the cache or updating blacklist.json.")
+    parser.add_argument("--test-single-model", type=str, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    # 1. Results caching initialization
+    # 1. Private execution mode: single model test (runs in subprocess)
+    if args.test_single_model:
+        # Clear blacklist in-place in memory so we can load/import/test all models
+        for k in mt_core.BLACKLIST:
+            mt_core.BLACKLIST[k] = []
+
+        workspace_temp = os.path.join(os.path.dirname(__file__), ".temp_compat_runs")
+        os.makedirs(workspace_temp, exist_ok=True)
+        temp_run_dir = os.path.join(workspace_temp, f"run_single_{os.getpid()}")
+
+        status, message = run_integration_test(args.test_single_model, args.online, temp_run_dir)
+
+        if os.path.exists(workspace_temp):
+            try:
+                shutil.rmtree(workspace_temp)
+            except Exception:
+                pass
+
+        if status == "PASS":
+            print(message)
+            sys.exit(0)
+        elif status == "OOM":
+            sys.stderr.write(message + "\n")
+            sys.exit(2)
+        elif status == "OFFLINE_SKIPPED":
+            sys.stderr.write(message + "\n")
+            sys.exit(3)
+        else:  # FAIL
+            sys.stderr.write(message + "\n")
+            sys.exit(1)
+
+    # 2. Results caching initialization
     if args.clear:
-        if os.path.exists(RESULTS_FILE):
-            os.remove(RESULTS_FILE)
-        print("Cleared compatibility results cache.")
+        if not args.dry_run:
+            if os.path.exists(RESULTS_FILE):
+                os.remove(RESULTS_FILE)
+            print("Cleared compatibility results cache.")
+        else:
+            print("Running with cleared in-memory compatibility results cache (dry-run).")
 
-    results = load_results()
+    results = load_results() if not (args.clear and args.dry_run) else {}
 
-    # 2. Discover models before clearing the blacklist, so BackboneInfo has the original status
+    # 3. Discover models before clearing the blacklist, so BackboneInfo has the original status
     all_backbones = list_supported_backbones()
 
     # Filter backbones to test
@@ -194,20 +240,21 @@ def main_cli():
         mt_core.BLACKLIST[k] = []
 
     print(f"Starting compatibility integration tests for {len(to_test)} models...")
+    if args.dry_run:
+        print("Running in DRY-RUN mode. No changes will be saved to the cache or blacklist.json.")
     print("Press Ctrl+C to stop. Progress will be saved and the blacklist will be synchronized.")
     print("-" * 60)
-
-    # Base temp dir in workspace
-    workspace_temp = os.path.join(os.path.dirname(__file__), ".temp_compat_runs")
-    os.makedirs(workspace_temp, exist_ok=True)
 
     passed = 0
     failed = 0
     skipped = 0
+    oom_skipped = 0
+    oom_models = []
 
     run_outcomes = {}
 
     try:
+        import subprocess
         for idx, b in enumerate(to_test):
             # Check cache
             cached = results.get(b.model)
@@ -224,12 +271,30 @@ def main_cli():
 
             print(f"[{idx + 1}/{len(to_test)}] Testing {b.model} ({b.backend})... ", end="", flush=True)
 
-            temp_run_dir = os.path.join(workspace_temp, f"run_{idx}")
-            status, message = run_integration_test(b.model, args.online, temp_run_dir)
+            # Spawn subprocess to run this single test in isolation
+            cmd = [sys.executable, __file__, "--test-single-model", b.model]
+            if args.online:
+                cmd.append("--online")
+
+            res = subprocess.run(cmd, capture_output=True, text=True)
+
+            if res.returncode == 0:
+                status = "PASS"
+                message = res.stdout.strip()
+            elif res.returncode == 2:
+                status = "OOM"
+                message = res.stderr.strip()
+            elif res.returncode == 3:
+                status = "OFFLINE_SKIPPED"
+                message = res.stderr.strip()
+            else:
+                status = "FAIL"
+                message = res.stderr.strip() or "Subprocess failed with unknown error."
 
             # Save immediately
             results[b.model] = {"backend": b.backend, "status": status, "message": message}
-            save_results(results)
+            if not args.dry_run:
+                save_results(results)
 
             run_outcomes[b.model] = status
 
@@ -239,6 +304,10 @@ def main_cli():
             elif status == "OFFLINE_SKIPPED":
                 print("SKIPPED (Offline)")
                 skipped += 1
+            elif status == "OOM":
+                print("SKIPPED (OOM)")
+                oom_skipped += 1
+                oom_models.append(b.model)
             else:
                 print("FAIL")
                 print(f"  Error details: {message.splitlines()[0] if message else 'Unknown error'}")
@@ -246,13 +315,6 @@ def main_cli():
     except KeyboardInterrupt:
         print("\n\nTesting interrupted by user. Saving current progress...")
     finally:
-        # Clean up global temp dir
-        if os.path.exists(workspace_temp):
-            try:
-                shutil.rmtree(workspace_temp)
-            except Exception:
-                pass
-
         # Update blacklist on disk/core using test results
         new_blacklist = {k: list(v) for k, v in original_blacklist.items()}
         added_to_blacklist = []
@@ -260,7 +322,7 @@ def main_cli():
 
         for b in to_test:
             status = run_outcomes.get(b.model)
-            if not status or status == "OFFLINE_SKIPPED":
+            if not status or status in ("OFFLINE_SKIPPED", "OOM"):
                 continue
 
             clean_name = b.model
@@ -280,34 +342,56 @@ def main_cli():
                     backend_list.remove(clean_name)
                     removed_from_blacklist.append(b.model)
 
-        save_blacklist(new_blacklist)
+        if not args.dry_run:
+            save_blacklist(new_blacklist)
 
         # Print statistics
         print("-" * 60)
         print("Compatibility Testing Summary:")
-        print(f"  Total models evaluated: {passed + failed + skipped}")
+        print(f"  Total models evaluated: {passed + failed + skipped + oom_skipped}")
         print(f"  Passed: {passed}")
         print(f"  Failed: {failed}")
         print(f"  Skipped (Offline): {skipped}")
+        print(f"  Skipped (OOM): {oom_skipped}")
         print("-" * 60)
+
+        # Print OOM details
+        if oom_models:
+            print("OOM Skipped Models (not blacklisted):")
+            for m in sorted(oom_models):
+                print(f"    - {m}")
+            print("-" * 60)
 
         # Print blacklist updates
-        if added_to_blacklist or removed_from_blacklist:
-            print("Blacklist Updates:")
-            if added_to_blacklist:
-                print("  Added to blacklist:")
-                for m in sorted(added_to_blacklist):
-                    print(f"    - {m}")
-            if removed_from_blacklist:
-                print("  Removed from blacklist:")
-                for m in sorted(removed_from_blacklist):
-                    print(f"    - {m}")
+        if not args.dry_run:
+            if added_to_blacklist or removed_from_blacklist:
+                print("Blacklist Updates:")
+                if added_to_blacklist:
+                    print("  Added to blacklist:")
+                    for m in sorted(added_to_blacklist):
+                        print(f"    - {m}")
+                if removed_from_blacklist:
+                    print("  Removed from blacklist:")
+                    for m in sorted(removed_from_blacklist):
+                        print(f"    - {m}")
+            else:
+                print("No blacklist changes detected.")
+            print("-" * 60)
+            # Save results once more to be safe
+            save_results(results)
         else:
-            print("No blacklist changes detected.")
-        print("-" * 60)
-
-        # Save results once more to be safe
-        save_results(results)
+            print("Dry-run mode: blacklist updates and result caching were skipped.")
+            if added_to_blacklist or removed_from_blacklist:
+                print("Pending Blacklist Updates (if run without --dry-run):")
+                if added_to_blacklist:
+                    print("  Would add to blacklist:")
+                    for m in sorted(added_to_blacklist):
+                        print(f"    - {m}")
+                if removed_from_blacklist:
+                    print("  Would remove from blacklist:")
+                    for m in sorted(removed_from_blacklist):
+                        print(f"    - {m}")
+            print("-" * 60)
 
 
 if __name__ == "__main__":
