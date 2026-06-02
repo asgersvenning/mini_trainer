@@ -75,7 +75,7 @@ def test_timm_model():
     assert classifier_name == "fc"
 
     # Explicit prefix
-    model_auto, classifier_name_auto, _ = get_model("timm:vit_tiny_patch16_224", model_args={"pretrained": False})
+    model_auto, classifier_name_auto, _, _ = get_model("timm:vit_tiny_patch16_224", model_args={"pretrained": False})
     assert classifier_name_auto == "head"
 
     classifier_model, transform = Classifier.build(
