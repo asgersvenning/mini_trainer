@@ -3,7 +3,7 @@ from .imports import class_path, import_class
 from .logging import setup_logging
 from .math import cosine_schedule_with_warmup, cosine_to_zscore, decimals, float_signif_decimal, kl_distill
 from .misc import TERMINAL_WIDTH, TQDM, filter_ordered_dict, make_convert_dtype, make_empty_ndarray, recursive_dfs_attr
-from .types import device_to_string, dtype_to_string, memory_proportion, string_to_device, string_to_dtype
+from .types import device_to_string, dtype_to_string, memory_proportion, string_to_device, string_to_dtype, validate_type
 
 __all__ = [
     "MISSING_VALUE",
@@ -29,4 +29,5 @@ __all__ = [
     "get_logger",
     "setup_logging",
     "TQDM",
+    "validate_type",
 ]

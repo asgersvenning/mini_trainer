@@ -2,10 +2,10 @@ import json
 import os
 import warnings
 from collections.abc import Callable
+from typing import Any
 
 import torch
 from torch import nn
-from torchvision.io import ImageReadMode, decode_image
 
 
 def _read_blacklist():
@@ -98,6 +98,7 @@ class Preprocess:
             path = str(item)
             if not os.path.exists(path):
                 raise FileNotFoundError("Unable to find image: " + path)
+            from torchvision.io import ImageReadMode, decode_image
             image = decode_image(path, ImageReadMode.RGB)
         elif isinstance(item, torch.Tensor):
             image = item
@@ -180,3 +181,40 @@ class BackboneModel(nn.Module):
                 "\nPerhaps you forgot to pass the relevant `encoder_method` to `BackboneModel`?"
             )
         return self.classifier(x)
+
+
+def infer_size_from_transform(transform: Any, fallback: int = 256, warn_on_fallback: bool = True) -> int:
+    if transform is not None:
+        # Unwrap common wrapper attributes if present
+        for attr in ("transform", "processor"):
+            if hasattr(transform, attr):
+                transform = getattr(transform, attr)
+
+        if hasattr(transform, "crop_size"):
+            cs = getattr(transform, "crop_size")
+            if isinstance(cs, (list, tuple)) and len(cs) > 0:
+                return cs[0]
+            if isinstance(cs, int):
+                return cs
+        elif hasattr(transform, "size"):
+            sz = getattr(transform, "size")
+            if isinstance(sz, int):
+                return sz
+            elif isinstance(sz, dict):
+                for key in ["height", "width", "shortest_edge"]:
+                    if key in sz:
+                        return sz[key]
+            elif isinstance(sz, (list, tuple)) and len(sz) > 0:
+                return sz[0]
+        elif hasattr(transform, "transforms"):
+            for op in transform.transforms:
+                op_sz = infer_size_from_transform(op, fallback=-1, warn_on_fallback=False)
+                if op_sz != -1:
+                    return op_sz
+    if warn_on_fallback:
+        warnings.warn(
+            f"Could not infer preferred input size from transform. Falling back to default size of {fallback}.",
+            UserWarning,
+        )
+    return fallback
+

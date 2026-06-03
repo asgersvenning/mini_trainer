@@ -19,7 +19,7 @@ from mini_trainer.config import (
 )
 from mini_trainer.data import debug_augmentation
 from mini_trainer.logging import configure_loggers
-from mini_trainer.modeling import average_checkpoints
+from mini_trainer.modeling import average_checkpoints, classification_module
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.utils import (
@@ -29,6 +29,7 @@ from mini_trainer.utils import (
     increment_name_dir,
     save_on_master,
     setup_logging,
+    validate_type,
 )
 
 
@@ -39,7 +40,7 @@ def main(  # noqa: D417
     checkpoint: list[str] | None = None,
     class_spec: str | None = None,
     epochs: int = 15,
-    size: int = 256,
+    size: int | None = None,
     name: str | None = None,
     device: str = "cuda:0",
     dtype: str = "float16",
@@ -166,23 +167,8 @@ def main(  # noqa: D417
     log.debug("Building class spec...")
     class_spec = broadcast_from_master(builder.class_spec, path=class_spec, dir=input, **spec_model_dataloader_kwargs)
 
-    class_spec["resize_size"] = size
-
-    log.debug("Building dataloaders...")
-    train_labels, train_loader, val_loader = builder.build_dataloader(
-        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
-    )
-    log.debug(f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
-
-    if not isinstance(train_loader, torch.utils.data.DataLoader):
-        raise TypeError(
-            "Expected `dataloader_builder` to return an objects"
-            f"inheriting from `torch.utils.data.DataLoader`, but got `{type(train_loader)}."
-        )
-    if not isinstance(val_loader, torch.utils.data.DataLoader):
-        raise TypeError(
-            f"Expected `dataloader_builder` to return an objectsinheriting from `torch.utils.data.DataLoader`, but got `{type(val_loader)}."
-        )
+    if size is not None:
+        class_spec["resize_size"] = size
 
     # Prepare model
     # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to
@@ -200,56 +186,51 @@ def main(  # noqa: D417
         # train_labels=train_labels, # Disable prior on model - moved to loss function
         **{**class_spec, **model_builder_kwargs},
     )
-    if not isinstance(nn_model, torch.nn.Module):
-        raise TypeError(
-            "Expected `model_builder` to return a tuple, where the first element"
-            f"is an object inheriting from `torch.nn.Module`, but got `{type(nn_model)}`."
-        )
+    validate_type(nn_model, torch.nn.Module)
+
+    # Resolve input size if not explicitly set
+    if size is None:
+        try:
+            head = classification_module(nn_model)
+            size = head.metadata.get("resize_size", 224)
+        except RuntimeError:
+            size = 224
+        log.info(f"Using dynamically inferred preferred input size: {size}")
+        class_spec["resize_size"] = size
+
+    log.debug("Building dataloaders...")
+    train_labels, train_loader, val_loader = builder.build_dataloader(
+        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
+    )
+    log.debug(f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
+    validate_type(train_loader, torch.utils.data.DataLoader)
+    validate_type(val_loader, torch.utils.data.DataLoader)
 
     # Prepare augmentation
     augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
-    if not isinstance(augmentation, torchvision.transforms.Compose):
-        raise TypeError(
-            "Expected `augmentation_builder` to return an objects"
-            f"inheriting from `torchvision.transforms.Compose`, but got `{type(augmentation)}."
-        )
+    validate_type(augmentation, torchvision.transforms.Compose)
     debug_augmentation(augmentation=augmentation, dataset=train_loader.dataset, output_dir=output_dir, strict=True)
 
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
-    if not isinstance(optimizer, torch.optim.Optimizer):
-        raise TypeError(
-            f"Expected `optimizer_builder` to return an objectinheriting from `torch.optim.Optimizer`, but got `{type(optimizer)}."
-        )
+    validate_type(optimizer, torch.optim.Optimizer)
     criterion = builder.build_criterion(
         labels=train_labels, num_classes=class_spec["num_classes"], device=device, dtype=dtype, **criterion_builder_kwargs
     )
-    if not isinstance(criterion, torch.nn.modules.loss._Loss):
-        raise TypeError(
-            f"Expected `criterion_builder` to return an objectinheriting from `torch.nn.modules.loss._Loss`, but got `{type(criterion)}."
-        )
+    validate_type(criterion, torch.nn.modules.loss._Loss)
 
     lr_scheduler = builder.build_lr_scheduler(
         optimizer=optimizer, epochs=epochs, steps_per_epoch=len(train_loader), **lr_schedule_builder_kwargs
     )
-    if not isinstance(lr_scheduler, torch.optim.lr_scheduler.LRScheduler):
-        raise TypeError(
-            "Expected `lr_schedule_builder` to return an object"
-            f"inheriting from `torch.optim.lr_scheduler.LRScheduler`, but got `{type(lr_scheduler)}."
-        )
+    validate_type(lr_scheduler, torch.optim.lr_scheduler.LRScheduler)
 
     scaler_enabled = model_dtype == torch.float32 and dtype != torch.float32
     scaler = builder.build_scaler(device=device, enabled=scaler_enabled, **scaler_builder_kwargs)
-    if not isinstance(scaler, torch.amp.GradScaler):
-        raise TypeError(f"Expected `scaler` to return an objectinheriting from `torch.amp.GradScaler`, but got `{type(lr_scheduler)}.")
+    validate_type(scaler, torch.amp.GradScaler)
 
     nn_model_ema = builder.build_ema(
         enable=ema, model=nn_model, epochs=epochs, steps_per_epoch=len(train_loader), device=device, **ema_builder_kwargs
     )
-    if not isinstance(nn_model_ema, EMATeacher):
-        raise TypeError(
-            "Expected `nn_model_ema` to return None or an object"
-            f"inheriting from `mini_trainer.builders.EMATeacher`, but got `{type(nn_model_ema)}."
-        )
+    validate_type(nn_model_ema, EMATeacher, allow_none=True)
 
     if checkpoint is not None:
         checkpoint_files = checkpoint
@@ -315,7 +296,8 @@ def main(  # noqa: D417
     nn_model.eval()
     if weight_output_dir is not None:
         last_weight_dst = os.path.abspath(os.path.join(weight_output_dir, "last.pt"))
-        # TODO: ema.module might not be robust in multi-GPU setups see: https://docs.pytorch.org/docs/stable/optim.html#custom-averaging-strategies
+        # TODO: ema.module might not be robust in multi-GPU setups see: '
+        # https://docs.pytorch.org/docs/stable/optim.html#custom-averaging-strategies
         if nn_model_ema:
             save_on_master(nn_model_ema.module.state_dict(), last_weight_dst)
         else:

@@ -1,6 +1,7 @@
 import math
 import shutil
 import tempfile
+from typing import Any
 
 import psutil
 import torch
@@ -42,3 +43,17 @@ def memory_proportion(shape: tuple[int, ...], device: torch.types.Device, dtype:
             free = psutil.virtual_memory().available
 
     return required / free
+
+
+def validate_type(obj: Any, expected_cls: Any, allow_none: bool = False) -> None:
+    if obj is None and allow_none:
+        return
+    if not isinstance(obj, expected_cls):
+        if isinstance(expected_cls, tuple):
+            expected = " or ".join(c.__qualname__ for c in expected_cls)
+        else:
+            expected = expected_cls.__qualname__
+        raise TypeError(
+            f"Expected an instance of {expected}, but got {type(obj).__qualname__}."
+        )
+

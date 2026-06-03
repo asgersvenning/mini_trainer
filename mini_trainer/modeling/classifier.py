@@ -391,11 +391,18 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if dtype is None:
             dtype = torch.float32
         preprocess_dtype = preprocess_dtype or dtype
-        architecture, head_name, model_preprocess, num_embeddings = get_model(
+
+        resize_size = kwargs.get("resize_size") or cfg.get("resize_size")
+        model_args = {**model_args, "resize_size": resize_size} if resize_size else model_args
+
+        architecture, head_name, model_preprocess, num_embeddings, preferred_size = get_model(
             model_type, model_args=model_args, preprocess_dtype=preprocess_dtype, transform=transform
         )
         if not isinstance(architecture, nn.Module):
             raise TypeError(f"Unknown model type `{type(architecture)}`, expected `{nn.Module}`")
+
+        resize_size = resize_size or preferred_size
+
         if stored_head_name is not None and stored_head_name != head_name:
             warnings.warn(
                 f'Classification head module name "{stored_head_name}" implied in weights does not match the derived name "{head_name}"!',
@@ -426,6 +433,8 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 "out_features": num_classes,
                 "_dtype": dtype_to_string(dtype),
                 "preprocess_dtype": dtype_to_string(preprocess_dtype),
+                "preferred_size": preferred_size,
+                "resize_size": resize_size,
             }
         )
 

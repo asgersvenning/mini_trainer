@@ -9,7 +9,7 @@ from mini_trainer.utils import import_class, make_convert_dtype
 
 from . import core
 from .bioclip import get_bioclip_model, get_bioclip_models
-from .core import Preprocess, resolve_embedding_dim
+from .core import Preprocess, infer_size_from_transform, resolve_embedding_dim
 from .timm import get_timm_model
 from .torchvision import get_torchvision_model
 from .transformers import get_transformers_model
@@ -42,8 +42,13 @@ def save_blacklist(blacklist: dict[str, list[str]]) -> None:
         json.dump(blacklist, f, indent=4)
 
 
-def get_dynamic_model(model_class_path: str, transform, **model_args):
-    return import_class(model_class_path)(**model_args), transform
+def _infer_size_from_transform(transform: Any) -> int:
+    return infer_size_from_transform(transform, fallback=256, warn_on_fallback=True)
+
+
+def get_dynamic_model(model_class_path: str, transform, resize_size: int | None = None, **model_args):
+    backbone_model = import_class(model_class_path)(**model_args)
+    return backbone_model, transform, _infer_size_from_transform(transform)
 
 
 def resolve_backbone_getter(backbone_model: str) -> tuple[Any, str]:
@@ -87,6 +92,7 @@ def get_model(
 ):
     """Get torchvision, timm, transformers, or bioclip model and preprocessing function by name."""
     default_transform = transform
+    preferred_size = None
     if isinstance(backbone_model, str):
         getter, clean_name = resolve_backbone_getter(backbone_model)
 
@@ -104,7 +110,7 @@ def get_model(
         clean_args = dict(model_args)
         if getter is not get_transformers_model:
             clean_args.pop("local_files_only", None)
-        backbone_model, default_transform = getter(clean_name, default_transform, **clean_args)
+        backbone_model, default_transform, preferred_size = getter(clean_name, default_transform, **clean_args)
 
     if not isinstance(backbone_model, nn.Module):
         raise ValueError("backbone_model must be a string or a torch.nn.Module")
@@ -171,7 +177,10 @@ def get_model(
         model=backbone_model, head_name=backbone_classifier_name, preprocess=preprocess_pipeline, device=device
     )
 
-    return backbone_model, backbone_classifier_name, preprocess_pipeline, embedding_dim
+    if preferred_size is None:
+        preferred_size = _infer_size_from_transform(default_transform)
+
+    return backbone_model, backbone_classifier_name, preprocess_pipeline, embedding_dim, preferred_size
 
 
 def list_supported_backbones() -> list[BackboneInfo]:

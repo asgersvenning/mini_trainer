@@ -36,6 +36,7 @@ from ._core import (
     setup_logging,
     string_to_device,
     string_to_dtype,
+    validate_type,
     write_csv_from_dict,
 )
 
@@ -77,5 +78,6 @@ __all__ = [
     "setup_logging",
     "string_to_device",
     "string_to_dtype",
+    "validate_type",
     "write_csv_from_dict",
 ]

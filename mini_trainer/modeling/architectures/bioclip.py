@@ -12,7 +12,8 @@ def get_bioclip_encoder(version: str = "bioclip-2", pretrained: bool = True):
         import open_clip
     except ImportError as e:
         e.add_note(
-            "The `open_clip` module was not found in the current Python environment. Please install with `pip install open_clip_torch`."
+            "The `open_clip` module was not found in the current Python environment. "
+            "Please install with `pip install mini-trainer[bioclip]`."
         )
         raise
 
@@ -29,14 +30,20 @@ def get_bioclip_encoder(version: str = "bioclip-2", pretrained: bool = True):
     return model, preprocess_train, preprocess_val, tokenizer
 
 
-def get_bioclip_model(version: str = "bioclip-2", default_transform=None, pretrained: bool = True, **kwargs):
+def get_bioclip_model(
+    version: str = "bioclip-2",
+    default_transform=None,
+    pretrained: bool = True,
+    resize_size: int | None = None,
+    **kwargs,
+):
     encoder, _, bioclip_preprocess, tokenizer = get_bioclip_encoder(version.lower().strip(), pretrained=pretrained)
     encoder.compile(mode="reduce-overhead")
     if default_transform is None:
         default_transform = torchvision.transforms.transforms.Compose(
             [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
         )
-    return BackboneModel(encoder=encoder, encoder_method="encode_image"), default_transform
+    return BackboneModel(encoder=encoder, encoder_method="encode_image"), default_transform, resize_size or 256
 
 
 def get_bioclip_models() -> list[str]:

@@ -39,14 +39,19 @@ class TransformersBackboneWrapper(torch.nn.Module):
 
 
 def get_transformers_model(
-    model: str, default_transform: Any = None, pretrained: bool = True, **kwargs: Any,
-) -> tuple[Any, Any]:
+    model: str,
+    default_transform: Any = None,
+    pretrained: bool = True,
+    resize_size: int | None = None,
+    **kwargs: Any,
+) -> tuple[Any, Any, int]:
     """Load Hugging Face transformers classification model and resolve its default transform."""
     try:
         from transformers import AutoImageProcessor, AutoModelForImageClassification
     except ImportError as e:
         e.add_note(
-            "The `transformers` module was not found in the current Python environment. Please install with `pip install transformers`."
+            "The `transformers` module was not found in the current Python environment. "
+            "Please install with `pip install mini-trainer[transformers]`."
         )
         raise
 
@@ -83,6 +88,17 @@ def get_transformers_model(
 
     if default_transform is None:
         processor = AutoImageProcessor.from_pretrained(model, **hub_kwargs)
+        if resize_size is not None:
+            if hasattr(processor, "size") and isinstance(processor.size, dict):
+                for key in ["height", "width", "shortest_edge"]:
+                    if key in processor.size:
+                        processor.size[key] = resize_size
         default_transform = TransformersProcessorTransform(processor)
 
-    return backbone_model, default_transform
+    cfg = getattr(hf_model, "config", None)
+    preferred_size = getattr(cfg, "image_size", None) if cfg is not None else None
+    if isinstance(preferred_size, (list, tuple)) and len(preferred_size) > 0:
+        preferred_size = preferred_size[-1]
+
+    return backbone_model, default_transform, preferred_size
+
