@@ -36,8 +36,9 @@ def get_torchvision_model(
     if default_transform is None:
         transform_kwargs = {}
         if resize_size is not None:
-            transform_kwargs["crop_size"] = [resize_size]
-            transform_kwargs["resize_size"] = [int(resize_size * (256 / 224))]
+            size_val = resize_size[0] if isinstance(resize_size, (list, tuple)) else resize_size
+            transform_kwargs["crop_size"] = size_val
+            transform_kwargs["resize_size"] = int(size_val * (256 / 224))
         if weights is not None:
             default_transform = weights.transforms(**transform_kwargs)
         else:
