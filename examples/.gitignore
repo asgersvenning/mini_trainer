@@ -6,3 +6,5 @@
 !resize_image_dir.py
 !create_combinations.py
 !apply_quality_filter.py
+!birds/
+!birds/construct.py
