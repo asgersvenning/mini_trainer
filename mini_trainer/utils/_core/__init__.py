@@ -1,3 +1,4 @@
+from .device import detect_available_devices, resolve_device, select_best_device, setup_device, validate_device
 from .fs import MISSING_VALUE, increment_name_dir, write_csv_from_dict
 from .imports import class_path, import_class
 from .logging import setup_logging
@@ -30,4 +31,10 @@ __all__ = [
     "setup_logging",
     "TQDM",
     "validate_type",
+    "detect_available_devices",
+    "select_best_device",
+    "validate_device",
+    "resolve_device",
+    "setup_device",
 ]
+

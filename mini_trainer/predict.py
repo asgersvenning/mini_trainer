@@ -17,7 +17,7 @@ from mini_trainer.config import (
 from mini_trainer.data import auto_find_images, get_metadata
 from mini_trainer.logging import BaseResultCollector, RawResultCollector
 from mini_trainer.modeling import EmbeddingContext, classification_module, predict
-from mini_trainer.utils import TQDM, increment_name_dir
+from mini_trainer.utils import TQDM, increment_name_dir, setup_device
 
 
 def main(  # noqa: D417
@@ -29,7 +29,7 @@ def main(  # noqa: D417
     data_index: str | None = None,
     class_spec: str | dict | None = None,
     subsample: int | None = None,
-    device: str | torch.device = "cuda:0",
+    device: str | torch.device = "cuda",
     dtype: str | torch.dtype = "float16",
     builder: type[BaseBuilder] = BaseBuilder,
     collector_cls: type[BaseResultCollector] = BaseResultCollector,
@@ -54,7 +54,7 @@ def main(  # noqa: D417
         threshold: Confidence threshold.
         data_index: File containing metadata describing test set from training run to run inference on.
         subsample: Subsampling multiplier (2 = 50%, 3 = 33.3%, etc.).
-        device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
+        device: Device used for training (e.g., ``'cuda'``, ``'cpu'``). Default is ``'cuda'``.
         dtype: PyTorch data type for images during training and validation (e.g., ``'bfloat16'``).
             The model parameters are always stored in float32 with training AMP.
             Default is ``'float16'``.
@@ -79,8 +79,7 @@ def main(  # noqa: D417
         except OSError as e:
             e.add_note(f"Training output directory already exists: {output_dir}. Perhaps a run of with the `{{name=}}` already exists?")
 
-    if isinstance(device, str):
-        device = torch.device(device)
+    device = setup_device(device)
     if isinstance(dtype, str):
         dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
         assert isinstance(dtype, torch.dtype)
@@ -284,7 +283,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         required=False,
         help="Subsample the data for training and eval (useful for testing). Default is None (no subsampling).",
     )
-    cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda:0").')
+    cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda").')
     cfg_args.add_argument(
         "--dtype",
         type=str,

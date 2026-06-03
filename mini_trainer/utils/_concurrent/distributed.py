@@ -119,7 +119,7 @@ def ddp_train_wrapper(main_fn):
         sig = inspect.signature(main_fn)
         bound = sig.bind_partial(*args, **kwargs)
         bound.apply_defaults()
-        device_str = bound.arguments.get("device", "cuda:0")
+        device_str = bound.arguments.get("device", "cuda")
 
         ddp_info = init_distributed(device=device_str)
         bound.arguments["ddp_info"] = ddp_info

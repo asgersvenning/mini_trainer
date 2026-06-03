@@ -28,6 +28,7 @@ from mini_trainer.utils import (
     get_rank,
     increment_name_dir,
     save_on_master,
+    setup_device,
     setup_logging,
     validate_type,
 )
@@ -42,7 +43,7 @@ def main(  # noqa: D417
     epochs: int = 15,
     size: int | None = None,
     name: str | None = None,
-    device: str = "cuda:0",
+    device: str = "cuda",
     dtype: str = "float16",
     ema: bool = False,
     compile: bool = False,
@@ -91,7 +92,7 @@ def main(  # noqa: D417
             size: Size of the input image (width/height). Default is 256.
         name: Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is ``None``.
-        device: Device used for training (e.g., ``'cuda:0'``, ``'cpu'``). Default is ``'cuda:0'``.
+        device: Device used for training (e.g., ``'cuda'``, ``'cpu'``). Default is ``'cuda'``.
         dtype: PyTorch data type for images during training and validation (e.g., ``'float16'``).
             The model parameters are always stored in float32 with training AMP.
             Default is ``'float16'``.
@@ -132,7 +133,7 @@ def main(  # noqa: D417
     if weight_output_dir is not None:
         os.makedirs(weight_output_dir, exist_ok=True)
 
-    device: torch.device = torch.device(device)
+    device = setup_device(device)
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
     verbose = logger_builder_kwargs.get("verbose", False)
@@ -519,7 +520,7 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         'Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet).\n'
         "Mainly relevant for inefficiently stored training data or slow filesystems.",
     )
-    cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda:0").')
+    cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda").')
     cfg_args.add_argument(
         "--compile",
         action="store_true",

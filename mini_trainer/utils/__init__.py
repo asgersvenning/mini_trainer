@@ -22,6 +22,7 @@ from ._core import (
     cosine_schedule_with_warmup,
     cosine_to_zscore,
     decimals,
+    detect_available_devices,
     device_to_string,
     dtype_to_string,
     filter_ordered_dict,
@@ -33,9 +34,13 @@ from ._core import (
     make_empty_ndarray,
     memory_proportion,
     recursive_dfs_attr,
+    resolve_device,
+    select_best_device,
+    setup_device,
     setup_logging,
     string_to_device,
     string_to_dtype,
+    validate_device,
     validate_type,
     write_csv_from_dict,
 )
@@ -80,4 +85,10 @@ __all__ = [
     "string_to_dtype",
     "validate_type",
     "write_csv_from_dict",
+    "detect_available_devices",
+    "select_best_device",
+    "validate_device",
+    "resolve_device",
+    "setup_device",
 ]
+
