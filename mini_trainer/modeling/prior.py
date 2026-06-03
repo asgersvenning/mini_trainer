@@ -1,3 +1,5 @@
+"""WARNING: This module is scheduled for deprecation and will be removed in the future!"""
+
 import math
 from collections import Counter
 

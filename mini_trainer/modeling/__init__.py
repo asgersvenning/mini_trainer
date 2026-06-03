@@ -14,8 +14,8 @@ from .classifier import (
 from .context import EmbeddingContext, SupervisionContext
 from .distance import class_distance, class_similarity
 from .ema import EMATeacher, ema_lambda_per_update
-from .generic import get_prior_method, prior_from_labels
 from .mask import mask_classifier, set_classification_mask
+from .prior import get_prior_method, prior_from_labels
 
 __all__ = [
     "get_model",
