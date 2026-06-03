@@ -14,18 +14,34 @@ from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
 GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
 TAXONOMY_KEYS = ("species", "genus", "family", "order", "class", "phylum", "kingdom")
-cache = Cache(os.path.expanduser("~/.cache/nrs"))
+
+_CACHE = None
+CACHE_TIME = 7 * 86400 # One week in seconds
 
 
-@cache.memoize(expire=7 * 86400)  # One week
+def get_cache():
+    global _CACHE
+    if _CACHE is None:
+        _CACHE = Cache(os.path.expanduser("~/.cache/nrs"))
+    return _CACHE
+
+
 def retrive_request(req: str):
     """Retrieve a composed HTTPS request."""
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
+    cache = get_cache()
+    ck = f'retrive_request:{req}'
+    cached_result = cache.get(ck)
+    if cached_result is not None:
+        return cached_result
+
     with urlopen(req) as resp:
         if resp.status != 200:
             raise RuntimeError(f"Unable to resolve request, received status {resp.status} from {req}.")
-        return json.load(resp)
+        data = json.load(resp)
+        cache.set(ck, data, expire=CACHE_TIME)
+        return data
 
 
 @dataclass(kw_only=True)

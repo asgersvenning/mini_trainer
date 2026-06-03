@@ -33,6 +33,7 @@ fi
 MASTER_PORT="29500"
 IFNAME="enp1s0f1np1"   # The QSFP interface
 CURRENT_DIR=$(pwd)
+MASTER_CACHE="$HOME/.cache"
 RDZV_ID="uv_torch_ddp"
 
 # --- Dynamic IP Extraction ---
@@ -46,6 +47,9 @@ if [[ -z "$WORKER_IP" ]]; then
     echo "Please ensure '$WORKER_ALIAS' is a valid Host entry in your ~/.ssh/config."
     exit 1
 fi
+
+WORKER_HOME=$(ssh -q "$WORKER_ALIAS" "echo \$HOME")
+WORKER_CACHE="$WORKER_HOME/.cache"
 
 # 2. Extract master IP directly from the physical network interface
 MASTER_IP=$(ip -4 addr show $IFNAME | awk '/inet / {print $2}' | cut -d/ -f1)
@@ -80,8 +84,10 @@ cleanup() {
     echo -e "\n[Launcher] Tearing down ephemeral environment..."
     # Clean up worker processes and unmount cleanly using the root PROJECT_PATH
     ssh -q $WORKER_ALIAS "pkill -f torchrun"
+    ssh -q $WORKER_ALIAS "sudo umount -l $WORKER_CACHE"
     ssh -q $WORKER_ALIAS "sudo umount -l $PROJECT_PATH"
     
+    sudo exportfs -u $WORKER_IP:$MASTER_CACHE
     sudo exportfs -u $WORKER_IP:$PROJECT_PATH
     
     echo "[Launcher] Teardown complete. Restoring node state. Exit code: $exit_code"
@@ -92,12 +98,21 @@ trap cleanup INT TERM EXIT
 
 # 6. Setup ephemeral NFS to mirror the uv .venv, dependencies and data
 echo "[Launcher] Establishing ephemeral NFS mount over QSFP..."
+
+MASTER_USER_UID=$(id -u)
+MASTER_USER_GID=$(id -g)
+
 # We export and mount the parent PROJECT_PATH so the virtual environment (.venv) is fully included
-sudo exportfs -o rw,sync,no_subtree_check $WORKER_IP:$PROJECT_PATH
+sudo exportfs -o rw,sync,no_subtree_check,all_squash,anonuid=$MASTER_USER_UID,anongid=$MASTER_USER_GID $WORKER_IP:$PROJECT_PATH
+sudo exportfs -o rw,sync,no_subtree_check,all_squash,anonuid=$MASTER_USER_UID,anongid=$MASTER_USER_GID $WORKER_IP:$MASTER_CACHE
 
 # Mount with optimized FS-Cache and metadata performance parameters 
 # nocto and nconnect=16 drastically speed up Python's sequential module imports [2]
 ssh -q $WORKER_ALIAS "sudo mkdir -p $PROJECT_PATH && sudo mount -t nfs -o rw,noatime,rsize=32768,wsize=32768,tcp,intr,fsc,nocto,nconnect=16 $MASTER_IP:$PROJECT_PATH $PROJECT_PATH"
+echo "[Launcher]  -> Mounted Project: $MASTER_IP:$PROJECT_PATH  ==>  $WORKER_ALIAS:$PROJECT_PATH"
+
+ssh -q $WORKER_ALIAS "sudo mkdir -p $WORKER_CACHE && sudo mount -t nfs -o rw,noatime,rsize=32768,wsize=32768,tcp,intr,fsc,nocto,nconnect=16 $MASTER_IP:$MASTER_CACHE $WORKER_CACHE"
+echo "[Launcher]  -> Mounted Cache:   $MASTER_IP:$MASTER_CACHE  ==>  $WORKER_ALIAS:$WORKER_CACHE"
 
 # 7. Pre-flight validation
 echo "[Launcher] Verifying environment synchronization..."

@@ -27,6 +27,7 @@ from mini_trainer.utils import (
     ddp_train_wrapper,
     get_rank,
     increment_name_dir,
+    main_process_first,
     save_on_master,
     setup_device,
     setup_logging,
@@ -137,6 +138,7 @@ def main(  # noqa: D417
     dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
 
     verbose = logger_builder_kwargs.get("verbose", False)
+    assert isinstance(verbose, bool)
     setup_logging(verbose=verbose)
     log = get_logger()
 
@@ -171,23 +173,24 @@ def main(  # noqa: D417
     if size is not None:
         class_spec["resize_size"] = size
 
-    # Prepare model
-    # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to
-    # facilitate mixed precision training
-    # RE: Trying to disable again - perhaps this is why fastai is faster?
-    # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some
-    # performance by following the pattern given in:
-    # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244,
-    # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
-    log.debug("Building model...")
-    model_dtype = torch.float32
-    nn_model, model_preprocess = builder.build_model(
-        device=device,
-        dtype=model_dtype,
-        # train_labels=train_labels, # Disable prior on model - moved to loss function
-        **{**class_spec, **model_builder_kwargs},
-    )
-    validate_type(nn_model, torch.nn.Module)
+    with main_process_first(verbose=verbose):
+        # Prepare model
+        # Loading the model with a lower precision leads to instable training, instead we use `torch.autocast` to
+        # facilitate mixed precision training
+        # RE: Trying to disable again - perhaps this is why fastai is faster?
+        # RE RE: Using weights in fp32 seems to be the "correct" way, though it might be possible to squeeze some
+        # performance by following the pattern given in:
+        # https://github.com/fastai/fastai/blob/645e6b2c323dc4bf4d07a014881f46dcfecd2a57/nbs/18_callback.fp16.ipynb#L244,
+        # but it seems very cumbersome to implement the flexibility needed for this convoluted pattern.
+        log.debug("Building model...")
+        model_dtype = torch.float32
+        nn_model, model_preprocess = builder.build_model(
+            device=device,
+            dtype=model_dtype,
+            # train_labels=train_labels, # Disable prior on model - moved to loss function
+            **{**class_spec, **model_builder_kwargs},
+        )
+        validate_type(nn_model, torch.nn.Module)
 
     # Resolve input size if not explicitly set
     if size is None:
@@ -242,6 +245,7 @@ def main(  # noqa: D417
             checkpoint_data = torch.load(checkpoint_files, map_location=device, weights_only=False)
         else:
             checkpoint_data = average_checkpoints(checkpoint_files, map_location=device, weights_only=False)
+        assert checkpoint_data is not None
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])

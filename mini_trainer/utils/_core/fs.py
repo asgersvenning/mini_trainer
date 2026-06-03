@@ -1,6 +1,6 @@
 import csv
 import os
-from glob import glob
+import re
 from itertools import repeat
 from typing import Any
 
@@ -40,34 +40,46 @@ def write_csv_from_dict(d: dict[str, Any], path: str):
         writer.writerows(zip(*(d[h] for h in headers)))
 
 
-def increment_name_dir(name: str, dir: str | None = None, max_iter: int = 1000):  # noqa: D103
-    if name is None:
-        raise ValueError("A name must be specified.")
+def increment_name_dir(name: str, dir: str | None = None, max_iter: int = 1000) -> str:
+    """
+    Sanitizes a base name and appends an incrementing integer if the name 
+    already exists in the target directory.
+    """
     if not isinstance(name, str):
-        raise TypeError(f"Invalid type `{type(name)}` used for the name. Only `str` is accepted.")
-    if len(name) == 0:
-        raise ValueError("Invalid zero-length name specified.")
+        raise TypeError(f"Invalid type `{type(name).__name__}` used for the name. Only `str` is accepted.")
+
+    name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    name = re.sub(r'_+', "_", name)
+    name = name.strip("_")
+
+    if not name:
+        raise ValueError("The sanitized name is empty. It must contain at least one valid character (A-Z, a-z, 0-9).")
+
     if dir is None:
         return name
 
-    def _name(i: int):
-        if i < 0:
-            raise RuntimeError(f"Invalid name iteration {i} specified.")
-        if i == 0:
-            return name
-        return f"{name}_{i}"
-
-    fs = set([os.path.splitext(os.path.basename(f))[0] for f in glob(name + "*", root_dir=dir)])
+    base_name = name
     i0 = 0
-    if "_" in name and (parts := name.split("_"))[-1].isdigit():
-        i0 = int(parts[-1])
-        name = "_".join(parts[:-1])
+    if "_" in name:
+        parts = name.split("_")
+        if parts[-1].isdigit():
+            i0 = int(parts[-1])
+            base_name = "_".join(parts[:-1])
+
+    fs = set()
+    if os.path.exists(dir):
+        with os.scandir(dir) as it:
+            for entry in it:
+                if entry.name.startswith(base_name):
+                    fs.add(os.path.splitext(entry.name)[0])
+
     for i in range(i0, max_iter + 1):
-        if (this := _name(i)) not in fs:
-            return this
+        current_name = base_name if i == 0 else f"{base_name}_{i}"
+        if current_name not in fs:
+            return current_name
 
     raise RuntimeError(
-        f"Unable to create a new model name from {name} in {dir}, "
-        f"the maximum number of model iterations with the same base name {max_iter} has been reached. "
+        f"Unable to create a new model name from '{name}' in '{dir}'. "
+        f"The maximum number of model iterations ({max_iter}) has been reached. "
         "OBS: The name check is file-extension agnostic!"
     )

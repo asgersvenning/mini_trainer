@@ -1,24 +1,31 @@
+import warnings
 from typing import Any
 
 import torch
 
 
-class TransformersProcessorTransform:
-    """Wrapper to adapt Hugging Face AutoImageProcessor to torchvision-like transform."""
+class TransformersPreprocessor:
+    def __init__(self, preprocessor):
+        try:
+            from transformers import TorchvisionBackend
+        except ImportError as e:
+            e.add_note(
+                "The `transformers` module was not found in the current Python environment. "
+                "Please install with `pip install mini-trainer[transformers]`."
+            )
+            raise
+        assert isinstance(preprocessor, TorchvisionBackend)
+        self.preprocessor = preprocessor
 
-    def __init__(self, processor: Any):
-        self.processor = processor
+    def __call__(self, x) -> torch.Tensor:
+        return self.preprocessor(x, return_tensors="pt")["pixel_values"]
 
-    def __call__(self, image: Any) -> Any:
-        from torchvision.transforms.functional import to_pil_image
+    def __repr__(self):
+        return f'({self.preprocessor}) -> torch.Tensor'
 
-        if isinstance(image, torch.Tensor):
-            image = to_pil_image(image)
-        processed = self.processor(images=image, return_tensors="pt")
-        pixel_values = processed["pixel_values"]
-        if pixel_values.ndim == 4 and pixel_values.shape[0] == 1:
-            pixel_values = pixel_values.squeeze(0)
-        return pixel_values
+    def __getattr__(self, item):
+        return getattr(self.preprocessor, item)
+
 
 
 class TransformersBackboneWrapper(torch.nn.Module):
@@ -44,10 +51,10 @@ def get_transformers_model(
     pretrained: bool = True,
     resize_size: int | None = None,
     **kwargs: Any,
-) -> tuple[Any, Any, int]:
+) -> tuple[Any, Any, int | None]:
     """Load Hugging Face transformers classification model and resolve its default transform."""
     try:
-        from transformers import AutoImageProcessor, AutoModelForImageClassification
+        from transformers import AutoConfig, AutoImageProcessor, AutoModelForImageClassification
     except ImportError as e:
         e.add_note(
             "The `transformers` module was not found in the current Python environment. "
@@ -55,50 +62,77 @@ def get_transformers_model(
         )
         raise
 
-    # Extract hub kwargs that are applicable to both model/config loading and processor loading
-    hub_kwargs = {}
-    for key in ["local_files_only", "revision", "cache_dir", "force_download", "proxies", "token"]:
-        if key in kwargs:
-            hub_kwargs[key] = kwargs[key]
+    # 1. DRY Fallback with strict exception handling and state immutability
+    def _load_with_fallback(hf_class: Any, **load_kwargs: Any) -> Any:
+        try:
+            return hf_class.from_pretrained(model, **load_kwargs)
+        except OSError as e: # Hugging Face maps network reachability issues to OSError
+            if not load_kwargs.get("local_files_only", False):
+                warnings.warn(f"Network unreachable for {hf_class.__name__} ('{model}'). Forcing local cache.")
+                
+                # Copy kwargs to prevent side-effects on the original reference
+                offline_kwargs = load_kwargs.copy()
+                offline_kwargs["local_files_only"] = True
+                return hf_class.from_pretrained(model, **offline_kwargs)
+            
+            # If we are already offline and it throws OSError, the cache is missing/corrupted
+            raise e
 
+    # Extract hub kwargs applicable to config and processor loading
+    hub_keys = {"local_files_only", "revision", "cache_dir", "force_download", "proxies", "token"}
+    hub_kwargs = {k: v for k, v in kwargs.items() if k in hub_keys}
+
+    # --- 1. Model / Config Loading ---
     if pretrained:
-        hf_model = AutoModelForImageClassification.from_pretrained(model, **kwargs)
+        hf_model = _load_with_fallback(AutoModelForImageClassification, **kwargs)
     else:
-        from transformers import AutoConfig
-
-        config = AutoConfig.from_pretrained(model, **hub_kwargs)
+        config = _load_with_fallback(AutoConfig, **hub_kwargs)
         hf_model = AutoModelForImageClassification.from_config(config)
 
+    # --- 2. Classification Head Resolution ---
     classifier_name = None
-    for name in ["classifier", "logits", "head"]:
+    
+    # Semantic Search: Use tuples instead of lists for faster instantiation
+    for name in ("classifier", "logits", "head"):
         if hasattr(hf_model, name):
             classifier_name = name
             break
-
+            
+    # Structural Search: Reverse iterate to guarantee we grab the final layer, not an intermediate one
     if classifier_name is None:
-        for name, child in hf_model.named_children():
+        for name, child in reversed(list(hf_model.named_children())):
             if isinstance(child, torch.nn.Linear):
                 classifier_name = name
                 break
 
     if classifier_name is None:
-        raise AttributeError(f"Could not determine classification head name for Hugging Face model {model}")
+        raise AttributeError(f"Could not structurally determine the classification head for {model}.")
 
+    # Assuming TransformersBackboneWrapper is defined elsewhere
     backbone_model = TransformersBackboneWrapper(hf_model, classifier_name)
 
+    # --- 3. Processor Loading ---
     if default_transform is None:
-        processor = AutoImageProcessor.from_pretrained(model, **hub_kwargs)
-        if resize_size is not None:
-            if hasattr(processor, "size") and isinstance(processor.size, dict):
-                for key in ["height", "width", "shortest_edge"]:
-                    if key in processor.size:
-                        processor.size[key] = resize_size
-        default_transform = TransformersProcessorTransform(processor)
+        default_transform = _load_with_fallback(AutoImageProcessor, backend="torchvision", **hub_kwargs)
+        
+        # Safe structural type checking
+        if resize_size is not None and getattr(default_transform, "size", None):
+            if isinstance(default_transform.size, dict):
+                for key in ("height", "width", "shortest_edge"):
+                    if key in default_transform.size:
+                        default_transform.size[key] = resize_size
+                        
+        # Assuming TransformersPreprocessor is defined elsewhere
+        default_transform = TransformersPreprocessor(default_transform)
 
+    # --- 4. Preferred Size Resolution ---
     cfg = getattr(hf_model, "config", None)
     preferred_size = getattr(cfg, "image_size", None) if cfg is not None else None
+    
     if isinstance(preferred_size, (list, tuple)) and len(preferred_size) > 0:
         preferred_size = preferred_size[-1]
+        
+    assert isinstance(preferred_size, int) or preferred_size is None
 
     return backbone_model, default_transform, preferred_size
 
