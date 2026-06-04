@@ -53,7 +53,4 @@ def validate_type(obj: Any, expected_cls: Any, allow_none: bool = False) -> None
             expected = " or ".join(c.__qualname__ for c in expected_cls)
         else:
             expected = expected_cls.__qualname__
-        raise TypeError(
-            f"Expected an instance of {expected}, but got {type(obj).__qualname__}."
-        )
-
+        raise TypeError(f"Expected an instance of {expected}, but got {type(obj).__qualname__}.")

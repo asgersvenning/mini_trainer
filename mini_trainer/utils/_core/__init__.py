@@ -37,4 +37,3 @@ __all__ = [
     "resolve_device",
     "setup_device",
 ]
-

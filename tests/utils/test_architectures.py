@@ -1,3 +1,4 @@
+import importlib.util
 import os
 
 import pytest
@@ -68,6 +69,11 @@ def test_torchvision_model():
     assert isinstance(embed_dim, int)
 
 
+has_timm = importlib.util.find_spec("timm") is not None
+has_transformers = importlib.util.find_spec("transformers") is not None
+
+
+@pytest.mark.skipif(not has_timm, reason="timm package not installed")
 def test_timm_model():
     # Explicit prefix
     model, classifier_name, preprocess_fn, embed_dim, _ = get_model("timm:resnet18", model_args={"pretrained": False})
@@ -91,6 +97,7 @@ def test_timm_model():
     assert isinstance(embed_dim, int)
 
 
+@pytest.mark.skipif(not has_transformers, reason="transformers package not installed")
 def test_transformers_model():
     # Load vit model offline to avoid hitting the internet
     model_type = "google/vit-base-patch16-224"

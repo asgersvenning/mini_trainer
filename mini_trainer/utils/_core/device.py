@@ -48,7 +48,6 @@ def resolve_device(device: str | torch.device) -> torch.device:
     return device_obj
 
 
-
 def setup_device(device: str | torch.device) -> torch.device:
     """Resolve, validate, and configure precision settings for the target device."""
     device_obj = resolve_device(device)

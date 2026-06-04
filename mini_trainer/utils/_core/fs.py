@@ -42,14 +42,14 @@ def write_csv_from_dict(d: dict[str, Any], path: str):
 
 def increment_name_dir(name: str, dir: str | None = None, max_iter: int = 1000) -> str:
     """
-    Sanitizes a base name and appends an incrementing integer if the name 
+    Sanitizes a base name and appends an incrementing integer if the name
     already exists in the target directory.
     """
     if not isinstance(name, str):
         raise TypeError(f"Invalid type `{type(name).__name__}` used for the name. Only `str` is accepted.")
 
-    name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
-    name = re.sub(r'_+', "_", name)
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    name = re.sub(r"_+", "_", name)
     name = name.strip("_")
 
     if not name:

@@ -99,6 +99,7 @@ class Preprocess:
             if not os.path.exists(path):
                 raise FileNotFoundError("Unable to find image: " + path)
             from torchvision.io import ImageReadMode, decode_image
+
             image = decode_image(path, ImageReadMode.RGB)
         elif isinstance(item, torch.Tensor):
             image = item
@@ -217,4 +218,3 @@ def infer_size_from_transform(transform: Any, fallback: int = 256, warn_on_fallb
             UserWarning,
         )
     return fallback
-

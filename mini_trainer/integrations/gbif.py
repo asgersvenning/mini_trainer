@@ -16,7 +16,7 @@ GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
 TAXONOMY_KEYS = ("species", "genus", "family", "order", "class", "phylum", "kingdom")
 
 _CACHE = None
-CACHE_TIME = 7 * 86400 # One week in seconds
+CACHE_TIME = 7 * 86400  # One week in seconds
 
 
 def get_cache():
@@ -31,7 +31,7 @@ def retrive_request(req: str):
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
     cache = get_cache()
-    ck = f'retrive_request:{req}'
+    ck = f"retrive_request:{req}"
     cached_result = cache.get(ck)
     if cached_result is not None:
         return cached_result

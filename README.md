@@ -25,10 +25,20 @@ We recommend using `uv` for package and environment management.
 ## PyPi
 
 ```bash
-# install via pip (uv)
+# Recommended installation (includes logging, visualization, and optional utilities)
+uv pip install "mini_trainer[recommended]" --torch-backend=auto
+# or standard pip
+pip install "mini_trainer[recommended]"
+
+# Installation with all features (timm, transformers, BioCLIP, etc.)
+uv pip install "mini_trainer[all]" --torch-backend=auto
+# or standard pip
+pip install "mini_trainer[all]"
+
+# Minimal installation (core training & inference loop only)
 uv pip install mini_trainer --torch-backend=auto
-# or add to your existing project
-uv add mini_trainer
+# or standard pip
+pip install mini_trainer
 ```
 
 ## Local Installation
@@ -36,7 +46,13 @@ uv add mini_trainer
 ```bash
 git clone ssh://git@github.com:asgersvenning/mini_trainer.git
 cd mini_trainer
+
+# Sync with recommended extras:
 uv sync --extra recommended --extra [cpu/cu126/cu130/cu132]
+
+# Or sync with all features (timm, transformers, BioCLIP):
+uv sync --extra all --extra [cpu/cu126/cu130/cu132]
+
 source .venv/bin/activate
 ```
 

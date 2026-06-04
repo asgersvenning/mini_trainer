@@ -47,4 +47,3 @@ def get_torchvision_model(
     backbone_model = torchvision.models.get_model(model, weights=weights, **kwargs)
 
     return backbone_model, default_transform, None
-

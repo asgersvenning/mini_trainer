@@ -1,6 +1,8 @@
+import importlib.util
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 import torch
 
 from mini_trainer.training import raw_confusion_matrix
@@ -8,6 +10,12 @@ from mini_trainer.visualization import plot_probabilistic_dendrogram
 from mini_trainer.visualization.plot import (
     _aggregate_matrix_max,
     _get_scaled_matrix_for_display,
+)
+
+has_dendrogram_deps = (
+    importlib.util.find_spec("scipy") is not None
+    and importlib.util.find_spec("Bio") is not None
+    and importlib.util.find_spec("pycirclize") is not None
 )
 
 
@@ -57,6 +65,7 @@ def test_get_scaled_matrix_for_display():
     assert scaled.shape[1] >= 500
 
 
+@pytest.mark.skipif(not has_dendrogram_deps, reason="Dendrogram dependencies (scipy, biopython, pycirclize) not installed")
 def test_plot_probabilistic_dendrogram():
     mock_model = MagicMock()
     mock_model_module = MagicMock()

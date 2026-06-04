@@ -86,7 +86,7 @@ def test_integration_train_cpu(tmp_path):
         "builder": MockBuilder,
         "model_builder_kwargs": {"model_type": TinyMockModel(), "pretrained": False},
         # Be verbose to see output if needed
-        "logger_builder_kwargs": {"verbose": True, "logger_cls": configure_loggers(use_tensorboard=True)},
+        "logger_builder_kwargs": {"verbose": True, "logger_cls": configure_loggers()},
         # Disable EMA explicitly
         "ema": False,
         "seed": 42,

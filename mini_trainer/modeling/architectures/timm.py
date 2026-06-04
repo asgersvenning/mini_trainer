@@ -55,4 +55,3 @@ def _infer_preferred_size(backbone_model: Any) -> int | None:
         if isinstance(input_size, (list, tuple)) and len(input_size) >= 2:
             return input_size[-1]
     return None
-

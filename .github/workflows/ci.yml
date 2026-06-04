@@ -25,7 +25,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra recommended --extra cpu
+        run: uv sync --extra all --extra cpu
 
       - name: Lint with ruff
         run: uv run ruff check mini_trainer tests

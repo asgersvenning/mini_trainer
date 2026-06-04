@@ -255,6 +255,7 @@ def main_cli():
 
     try:
         import subprocess
+
         for idx, b in enumerate(to_test):
             # Check cache
             cached = results.get(b.model)
