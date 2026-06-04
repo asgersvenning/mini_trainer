@@ -1,31 +1,96 @@
+#!/usr/bin/env python3
 """Script to download and construct the iNaturalist 2021 dataset (mini or full)."""
 
 import argparse
+import concurrent.futures
 import json
 import os
 import shutil
 import sys
 import tarfile
+import time
 import urllib.request
 
 from tqdm import tqdm
 
 
-def download_with_progress(url, dst):
+def download_with_progress(url, dst, max_workers=8):
     print(f"Downloading {url} to {dst}...")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as response:
-        total_size = int(response.info().get("Content-Length", 0))
-        block_size = 1024 * 1024  # 1 MB
+    
+    # 1. HEAD request to check size and range support
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req) as resp:
+            total_size = int(resp.info().get("Content-Length", 0))
+            accept_ranges = resp.info().get("Accept-Ranges") == "bytes"
+    except Exception:
+        total_size = 0
+        accept_ranges = False
 
+    # 2. Parallel download if range request is supported
+    if accept_ranges and total_size > 10 * 1024 * 1024:
+        print(f"Server supports range requests. Downloading in parallel using {max_workers} threads...")
+        
+        # Preallocate file
+        with open(dst, "wb") as f:
+            f.truncate(total_size)
+            
+        chunk_size = 32 * 1024 * 1024  # 32 MB chunks
+        chunks = []
+        start = 0
+        while start < total_size:
+            end = min(start + chunk_size - 1, total_size - 1)
+            chunks.append((start, end))
+            start += chunk_size
+            
         with tqdm(total=total_size, unit="iB", unit_scale=True, desc=os.path.basename(dst)) as pbar:
-            with open(dst, "wb") as f:
-                while True:
-                    buffer = response.read(block_size)
-                    if not buffer:
-                        break
-                    f.write(buffer)
-                    pbar.update(len(buffer))
+            def download_chunk(start_pos, end_pos):
+                req_chunk = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Range": f"bytes={start_pos}-{end_pos}"
+                })
+                # Retry up to 3 times on failure
+                for attempt in range(3):
+                    try:
+                        with urllib.request.urlopen(req_chunk) as resp_chunk:
+                            with open(dst, "r+b") as f:
+                                f.seek(start_pos)
+                                block_size = 1024 * 1024  # 1 MB blocks
+                                while True:
+                                    data = resp_chunk.read(block_size)
+                                    if not data:
+                                        break
+                                    f.write(data)
+                                    pbar.update(len(data))
+                        return
+                    except Exception as e:
+                        if attempt == 2:
+                            raise e
+                        time.sleep(1.0)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(download_chunk, s, e) for s, e in chunks]
+                concurrent.futures.wait(futures)
+                # Check for exceptions
+                for fut in futures:
+                    if fut.exception():
+                        raise fut.exception()
+    else:
+        # Fallback to single thread download
+        print("Server does not support range requests or file is small. Downloading sequentially...")
+        req_seq = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req_seq) as response:
+            total = int(response.info().get("Content-Length", 0))
+            block_size = 1024 * 1024
+            with tqdm(total=total, unit="iB", unit_scale=True, desc=os.path.basename(dst)) as pbar:
+                with open(dst, "wb") as f:
+                    while True:
+                        buffer = response.read(block_size)
+                        if not buffer:
+                            break
+                        f.write(buffer)
+                        pbar.update(len(buffer))
+                        
     print("Download complete.")
 
 
@@ -33,13 +98,11 @@ def extract_tar(tar_path, extract_path):
     print(f"Extracting {tar_path} to {extract_path}...")
     with tarfile.open(tar_path, "r:gz") as tar:
         members = tar.getmembers()
-
         def tqdm_members(members):
             with tqdm(total=len(members), desc="Extracting", unit="file") as pbar:
                 for m in members:
                     yield m
                     pbar.update(1)
-
         tar.extractall(path=extract_path, members=tqdm_members(members), filter="data")
     print("Extraction complete.")
 
@@ -47,7 +110,7 @@ def extract_tar(tar_path, extract_path):
 def build_data_index(base_dir, train_dir_name, val_dir_name):
     train_dir = os.path.join(base_dir, train_dir_name)
     val_dir = os.path.join(base_dir, val_dir_name)
-
+    
     # Check if directories exist
     if not os.path.exists(train_dir) and not os.path.exists(val_dir):
         print("Error: train or val directory does not exist.")
@@ -67,9 +130,9 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
     print("\n[Step 5/8] Scanning and mapping category directories...")
     dir_to_species = {}
     scientific_names = set()
-
+    
     dirs_to_scan = [d for d in [train_dir, val_dir] if os.path.exists(d)]
-
+    
     for dir_path in dirs_to_scan:
         subdirs = sorted(os.listdir(dir_path))
         for name in tqdm(subdirs, desc=f"Scanning {os.path.basename(dir_path)}"):
@@ -95,7 +158,6 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
         print(f"Resolving taxonomy for {len(scientific_names)} species...")
         try:
             from mini_trainer.integrations import create_taxonomy, labels_from_taxonomy
-
             tax = create_taxonomy(list(scientific_names), levels="kingdom")
             labels = labels_from_taxonomy(tax)
             for species_name, tax_tuple in labels.items():
@@ -144,9 +206,9 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
     paths = []
     splits = []
     labels = []
-
+    
     img_exts = {".jpg", ".jpeg", ".png"}
-
+    
     # Process train
     if os.path.exists(train_dir):
         categories = sorted(os.listdir(train_dir))
@@ -161,7 +223,7 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
                         paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
                         splits.append("train")
                         labels.append(tax_list)
-
+                        
     # Process val
     if os.path.exists(val_dir):
         categories = sorted(os.listdir(val_dir))
@@ -176,9 +238,13 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
                         paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
                         splits.append("validation")
                         labels.append(tax_list)
-
-    index_data = {"path": paths, "split": splits, "label": labels}
-
+                        
+    index_data = {
+        "path": paths,
+        "split": splits,
+        "label": labels
+    }
+    
     index_path = os.path.join(base_dir, "data_index.json")
     with open(index_path, "w") as f:
         json.dump(index_data, f, indent=2)
@@ -204,33 +270,33 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     target_type = args.type
-
+    
     if args.output_dir is None:
         base_dir = os.path.abspath(os.path.join(current_dir, target_type))
     else:
         base_dir = os.path.abspath(os.path.join(args.output_dir, target_type))
-
+        
     os.makedirs(base_dir, exist_ok=True)
-
+    
     # URLs
     urls = {
         "mini": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train_mini.tar.gz",
         "full": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train.tar.gz",
-        "val": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/val.tar.gz",
+        "val": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/val.tar.gz"
     }
-
+    
     train_dir_name = "train_mini" if target_type == "mini" else "train"
     val_dir_name = "val"
-
+    
     # Check if directories already exist
     train_path = os.path.join(base_dir, train_dir_name)
     val_path = os.path.join(base_dir, val_dir_name)
-
+    
     # Download train
     train_tar = os.path.join(base_dir, f"{train_dir_name}.tar.gz")
     if os.path.exists(train_path):
         print(f"[Step 1/8] Checking train dataset... (Already extracted at {train_path})")
-        print(f"[Step 2/8] Extracting train dataset... (Skipped)")
+        print("[Step 2/8] Extracting train dataset... (Skipped)")
     else:
         print("[Step 1/8] Downloading train dataset...")
         if not os.path.exists(train_tar):
@@ -243,12 +309,12 @@ def main():
             os.remove(train_tar)
         except OSError:
             pass
-
+            
     # Download val
     val_tar = os.path.join(base_dir, "val.tar.gz")
     if os.path.exists(val_path):
         print(f"[Step 3/8] Checking validation dataset... (Already extracted at {val_path})")
-        print(f"[Step 4/8] Extracting validation dataset... (Skipped)")
+        print("[Step 4/8] Extracting validation dataset... (Skipped)")
     else:
         print("[Step 3/8] Downloading validation dataset...")
         if not os.path.exists(val_tar):
@@ -261,7 +327,7 @@ def main():
             os.remove(val_tar)
         except OSError:
             pass
-
+            
     # Build data index (steps 5-8 are inside build_data_index)
     build_data_index(base_dir, train_dir_name, val_dir_name)
     print("\nDataset construction completed successfully!")
