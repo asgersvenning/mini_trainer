@@ -88,7 +88,7 @@ def main(  # noqa: D417
         class_spec: Path to a JSON file containing the mapping from class names to indices
             and other important information necessary to construct compatible models and dataloaders.
             If the file does not exist, it will be created based on subdirectories
-            found under `output` if it is set. Default is 'class_index.json'.
+            found under `output` if it is set. Default is 'class_spec.json'.
         epochs: Number of training epochs. Default is 15.
             size: Size of the input image (width/height). Default is 256.
         name: Name of the output model. If not provided, a descriptive name
