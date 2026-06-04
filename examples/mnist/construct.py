@@ -107,7 +107,7 @@ def main():
     os.makedirs(base_dir, exist_ok=True)
 
     datasets_url = "https://ossci-datasets.s3.amazonaws.com/mnist/"
-    
+
     files = {
         "train_images": "train-images-idx3-ubyte.gz",
         "train_labels": "train-labels-idx1-ubyte.gz",
@@ -134,7 +134,7 @@ def main():
 
         # Step 2: Parsing and extracting PNG images
         print("\n[Step 2/2] Parsing IDX files and writing PNG images...")
-        
+
         # Train
         with gzip.open(downloaded_paths["train_labels"], "rb") as zf:
             train_labels = parse_idx(zf)

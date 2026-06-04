@@ -66,7 +66,7 @@ def main():
         # Step 3: Formatting directories
         print("\n[Step 3/3] Formatting directories...")
         images_dir = os.path.join(base_dir, "Images")
-        
+
         # Move training and testing folders
         shutil.move(os.path.join(images_dir, "training"), train_path)
         shutil.move(os.path.join(images_dir, "testing"), test_path)

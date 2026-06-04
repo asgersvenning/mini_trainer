@@ -87,9 +87,7 @@ def print_dataset_summary(base_dir, splits):
             continue
         classes = [d for d in os.listdir(split_dir) if os.path.isdir(os.path.join(split_dir, d))]
         num_images = sum(
-            len(files)
-            for _, _, files in os.walk(split_dir)
-            if any(f.lower().endswith((".jpg", ".jpeg", ".png")) for f in files)
+            len(files) for _, _, files in os.walk(split_dir) if any(f.lower().endswith((".jpg", ".jpeg", ".png")) for f in files)
         )
         print(f"  {split}: {len(classes)} classes, {num_images} images")
 
