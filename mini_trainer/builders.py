@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import torch
-import torchvision.transforms as tt
+import torchvision.transforms.v2 as tt
 from torch import nn
 from torch.amp import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn

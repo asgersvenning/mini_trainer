@@ -212,7 +212,7 @@ def main(  # noqa: D417
 
     # Prepare augmentation
     augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
-    validate_type(augmentation, torchvision.transforms.Compose)
+    validate_type(augmentation, (torchvision.transforms.Compose, torchvision.transforms.v2.Compose))
     debug_augmentation(augmentation=augmentation, dataset=train_loader.dataset, output_dir=output_dir, strict=True)
 
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)

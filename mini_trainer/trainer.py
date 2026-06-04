@@ -89,7 +89,7 @@ def train_one_epoch(
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
-        batch, target = batch.to(device), target.to(device)
+        batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
         with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
             loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
