@@ -4,7 +4,8 @@
 import argparse
 import os
 import sys
-import tarfile
+
+from examples.utils import extract_tar
 
 try:
     from huggingface_hub import hf_hub_download
@@ -52,10 +53,8 @@ def main():
 
         print(f"Extracting {filename}...")
         try:
-            with tarfile.open(tar_path, "r:gz") as tar:
-                tar.extractall(path=args.output_dir, filter="data")
+            extract_tar(tar_path, args.output_dir)
         except Exception as e:
-
             print(f"Error extracting {filename}: {e}")
             sys.exit(1)
 
