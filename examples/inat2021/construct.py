@@ -15,7 +15,7 @@ from examples.utils import CleanupOnFailure, download_with_progress, extract_tar
 def build_data_index(base_dir, train_dir_name, val_dir_name):
     train_dir = os.path.join(base_dir, train_dir_name)
     val_dir = os.path.join(base_dir, val_dir_name)
-    
+
     # Check if directories exist
     if not os.path.exists(train_dir) and not os.path.exists(val_dir):
         print("Error: train or val directory does not exist.")
@@ -35,9 +35,9 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
     print("\n[Step 5/8] Scanning and mapping category directories...")
     dir_to_species = {}
     scientific_names = set()
-    
+
     dirs_to_scan = [d for d in [train_dir, val_dir] if os.path.exists(d)]
-    
+
     for dir_path in dirs_to_scan:
         subdirs = sorted(os.listdir(dir_path))
         for name in tqdm(subdirs, desc=f"Scanning {os.path.basename(dir_path)}"):
@@ -63,6 +63,7 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
         print(f"Resolving taxonomy for {len(scientific_names)} species...")
         try:
             from mini_trainer.integrations import create_taxonomy, labels_from_taxonomy
+
             tax = create_taxonomy(list(scientific_names), levels="kingdom")
             labels = labels_from_taxonomy(tax)
             for species_name, tax_tuple in labels.items():
@@ -111,9 +112,9 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
     paths = []
     splits = []
     labels = []
-    
+
     img_exts = {".jpg", ".jpeg", ".png"}
-    
+
     # Process train
     if os.path.exists(train_dir):
         categories = sorted(os.listdir(train_dir))
@@ -128,7 +129,7 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
                         paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
                         splits.append("train")
                         labels.append(tax_list)
-                        
+
     # Process val
     if os.path.exists(val_dir):
         categories = sorted(os.listdir(val_dir))
@@ -143,13 +144,9 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
                         paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
                         splits.append("validation")
                         labels.append(tax_list)
-                        
-    index_data = {
-        "path": paths,
-        "split": splits,
-        "label": labels
-    }
-    
+
+    index_data = {"path": paths, "split": splits, "label": labels}
+
     index_path = os.path.join(base_dir, "data_index.json")
     with open(index_path, "w") as f:
         json.dump(index_data, f, indent=2)
@@ -175,24 +172,24 @@ def main():
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     target_type = args.type
-    
+
     if args.output_dir is None:
         base_dir = os.path.abspath(os.path.join(current_dir, target_type))
     else:
         base_dir = os.path.abspath(os.path.join(args.output_dir, target_type))
-        
+
     os.makedirs(base_dir, exist_ok=True)
-    
+
     # URLs
     urls = {
         "mini": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train_mini.tar.gz",
         "full": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train.tar.gz",
-        "val": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/val.tar.gz"
+        "val": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/val.tar.gz",
     }
-    
+
     train_dir_name = "train_mini" if target_type == "mini" else "train"
     val_dir_name = "val"
-    
+
     sentinel_path = os.path.join(base_dir, ".complete")
     if os.path.exists(sentinel_path):
         print(f"Dataset already fully constructed at {base_dir}. Skipping download/construction.")
@@ -222,7 +219,7 @@ def main():
             print(f"  (Using existing archive {train_tar})")
         print("[Step 2/8] Extracting train dataset...")
         extract_tar(train_tar, base_dir)
-            
+
         # Download val
         print("[Step 3/8] Downloading validation dataset...")
         if not os.path.exists(val_tar):
@@ -231,7 +228,7 @@ def main():
             print(f"  (Using existing archive {val_tar})")
         print("[Step 4/8] Extracting validation dataset...")
         extract_tar(val_tar, base_dir)
-            
+
         # Build data index (steps 5-8 are inside build_data_index)
         build_data_index(base_dir, train_dir_name, val_dir_name)
 

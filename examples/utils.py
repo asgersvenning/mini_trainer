@@ -129,50 +129,88 @@ def download_with_progress(url, dst, max_workers=8):
 
 
 def extract_tar(tar_path, extract_path):
+    """Extracts a tar archive using native tools if available, with a Python fallback."""
     print(f"Extracting {tar_path} to {extract_path}...")
     os.makedirs(extract_path, exist_ok=True)
 
-    # Try using system tar command (much faster)
+    # 1. Try using system native 'tar' command with real-time polling
     if shutil.which("tar"):
-        print("Using system native 'tar' for fast extraction...")
+        print("Using system native 'tar' with real-time progress...")
         try:
-            subprocess.run(["tar", "-xf", tar_path, "-C", extract_path], check=True)
+            # -v forces verbose output (one line per file extracted)
+            process = subprocess.Popen(
+                ["tar", "-xvf", tar_path, "-C", extract_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+            )
+
+            # Track progress using a running count (tar doesn't know total files upfront)
+            with tqdm(desc="Extracting (Native)", unit="file") as pbar:
+                for line in process.stdout:
+                    pbar.update(1)
+
+            process.wait()
+            if process.returncode != 0:
+                raise subprocess.SubprocessError(f"Tar failed with exit code {process.returncode}")
+
             print("Extraction complete.")
             return
-        except subprocess.SubprocessError as e:
+
+        except Exception as e:
             print(f"Native 'tar' failed: {e}. Falling back to Python tarfile...")
 
-    # Fallback to Python tarfile (with single-pass tqdm based on tar.next())
-    with tarfile.open(tar_path, "r:gz") as tar:
-        with tqdm(desc="Extracting", unit="file") as pbar:
-            while True:
-                member = tar.next()
-                if member is None:
-                    break
+    # 2. Fallback to pure Python with iterative progress
+    print("Using pure Python tarfile fallback...")
+    # Opening with "r" allows Python to transparently auto-detect gz, bz2, or xz compression
+    with tarfile.open(tar_path, "r") as tar:
+        with tqdm(desc="Extracting (Python)", unit="file") as pbar:
+            for member in tar:
+                # filter="data" prevents directory traversal attacks (Requires Python 3.12+)
+                # Note: If you are using Python 3.11 or older, remove the filter="data" argument
                 tar.extract(member, path=extract_path, filter="data")
                 pbar.update(1)
+
     print("Extraction complete.")
 
 
 def extract_zip(zip_path, extract_path):
+    """Extracts a zip archive using native tools if available, with a Python fallback."""
     print(f"Extracting {zip_path} to {extract_path}...")
     os.makedirs(extract_path, exist_ok=True)
 
-    # Try using system unzip command
+    # 1. Try using system native 'unzip' command with real-time polling
     if shutil.which("unzip"):
-        print("Using system native 'unzip' for fast extraction...")
+        print("Using system native 'unzip' with real-time progress...")
         try:
-            subprocess.run(["unzip", "-q", zip_path, "-d", extract_path], check=True)
+            # -o : overwrite existing files without prompting (prevents hanging)
+            # -d : specify destination directory
+            process = subprocess.Popen(
+                ["unzip", "-o", zip_path, "-d", extract_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+            )
+
+            with tqdm(desc="Extracting (Native)", unit="file") as pbar:
+                for line in process.stdout:
+                    # Filter out empty lines or the initial "Archive:" header
+                    if line.strip() and not line.startswith("Archive:"):
+                        pbar.update(1)
+
+            process.wait()
+            # unzip returns 0 for success, 1 for non-fatal warnings (like an empty zip)
+            if process.returncode not in (0, 1):
+                raise subprocess.SubprocessError(f"Unzip failed with exit code {process.returncode}")
+
             print("Extraction complete.")
             return
-        except subprocess.SubprocessError as e:
+
+        except Exception as e:
             print(f"Native 'unzip' failed: {e}. Falling back to Python zipfile...")
 
-    # Fallback to Python zipfile
+    # 2. Fallback to pure Python with total % progress
+    print("Using pure Python zipfile fallback...")
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        members = zip_ref.namelist()
-        with tqdm(total=len(members), desc="Extracting", unit="file") as pbar:
+        members = zip_ref.infolist()
+        # Because zips have a central directory, we can provide a 'total' for a 0-100% bar
+        with tqdm(total=len(members), desc="Extracting (Python)", unit="file") as pbar:
             for member in members:
                 zip_ref.extract(member, path=extract_path)
                 pbar.update(1)
+
     print("Extraction complete.")
