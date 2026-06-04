@@ -9,7 +9,7 @@ import sys
 
 from tqdm import tqdm
 
-from examples.utils import download_with_progress, extract_tar
+from examples.utils import CleanupOnFailure, download_with_progress, extract_tar
 
 
 def build_data_index(base_dir, train_dir_name, val_dir_name):
@@ -193,16 +193,28 @@ def main():
     train_dir_name = "train_mini" if target_type == "mini" else "train"
     val_dir_name = "val"
     
-    # Check if directories already exist
+    sentinel_path = os.path.join(base_dir, ".complete")
+    if os.path.exists(sentinel_path):
+        print(f"Dataset already fully constructed at {base_dir}. Skipping download/construction.")
+        return
+
     train_path = os.path.join(base_dir, train_dir_name)
     val_path = os.path.join(base_dir, val_dir_name)
-    
-    # Download train
+
+    # Clean up any partial folders from previous runs
+    for path in [train_path, val_path]:
+        if os.path.exists(path):
+            print(f"Removing partial/corrupt directory: {path}")
+            shutil.rmtree(path)
+
     train_tar = os.path.join(base_dir, f"{train_dir_name}.tar.gz")
-    if os.path.exists(train_path):
-        print(f"[Step 1/8] Checking train dataset... (Already extracted at {train_path})")
-        print("[Step 2/8] Extracting train dataset... (Skipped)")
-    else:
+    val_tar = os.path.join(base_dir, "val.tar.gz")
+
+    with CleanupOnFailure() as cleanup:
+        cleanup.register(train_path)
+        cleanup.register(val_path)
+
+        # Download train
         print("[Step 1/8] Downloading train dataset...")
         if not os.path.exists(train_tar):
             download_with_progress(urls[target_type], train_tar)
@@ -210,17 +222,8 @@ def main():
             print(f"  (Using existing archive {train_tar})")
         print("[Step 2/8] Extracting train dataset...")
         extract_tar(train_tar, base_dir)
-        try:
-            os.remove(train_tar)
-        except OSError:
-            pass
             
-    # Download val
-    val_tar = os.path.join(base_dir, "val.tar.gz")
-    if os.path.exists(val_path):
-        print(f"[Step 3/8] Checking validation dataset... (Already extracted at {val_path})")
-        print("[Step 4/8] Extracting validation dataset... (Skipped)")
-    else:
+        # Download val
         print("[Step 3/8] Downloading validation dataset...")
         if not os.path.exists(val_tar):
             download_with_progress(urls["val"], val_tar)
@@ -228,13 +231,22 @@ def main():
             print(f"  (Using existing archive {val_tar})")
         print("[Step 4/8] Extracting validation dataset...")
         extract_tar(val_tar, base_dir)
-        try:
-            os.remove(val_tar)
-        except OSError:
-            pass
             
-    # Build data index (steps 5-8 are inside build_data_index)
-    build_data_index(base_dir, train_dir_name, val_dir_name)
+        # Build data index (steps 5-8 are inside build_data_index)
+        build_data_index(base_dir, train_dir_name, val_dir_name)
+
+        # Success - clean up downloaded tar files
+        for tar in [train_tar, val_tar]:
+            if os.path.exists(tar):
+                try:
+                    os.remove(tar)
+                except OSError:
+                    pass
+
+        # Write sentinel
+        with open(sentinel_path, "w") as f:
+            f.write("complete")
+
     print("\nDataset construction completed successfully!")
 
 

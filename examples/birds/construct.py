@@ -3,9 +3,10 @@
 
 import argparse
 import os
+import shutil
 import sys
 
-from examples.utils import extract_tar
+from examples.utils import CleanupOnFailure, extract_tar
 
 try:
     from huggingface_hub import hf_hub_download
@@ -29,34 +30,49 @@ def main():
 
     splits = ["train", "valid", "test"]
 
-    # Check if directories already exist
-    existing_splits = [s for s in splits if os.path.exists(os.path.join(args.output_dir, s))]
-    if len(existing_splits) == len(splits):
-        print(f"All splits {splits} already exist in '{args.output_dir}'. Skipping download.")
+    # Check if sentinel file exists
+    sentinel_path = os.path.join(args.output_dir, ".complete")
+    if os.path.exists(sentinel_path):
+        print(f"Dataset already fully constructed at '{args.output_dir}'. Skipping download.")
         print_dataset_summary(args.output_dir, splits)
         return
 
+    # If not complete, remove any existing directories to avoid partial/corrupted state
+    for split in splits:
+        split_dir = os.path.join(args.output_dir, split)
+        if os.path.exists(split_dir):
+            print(f"Removing partial/corrupt directory: {split_dir}")
+            shutil.rmtree(split_dir)
+
     print(f"Downloading and extracting dataset to '{args.output_dir}'...")
 
-    for split in splits:
-        filename = f"data/{split}.tar.gz"
-        print(f"\nDownloading {filename} from Hugging Face...")
-        try:
-            tar_path = hf_hub_download(
-                repo_id="chriamue/bird-species-dataset",
-                repo_type="dataset",
-                filename=filename,
-            )
-        except Exception as e:
-            print(f"Error downloading {filename}: {e}")
-            sys.exit(1)
+    with CleanupOnFailure() as cleanup:
+        for split in splits:
+            split_dir = os.path.join(args.output_dir, split)
+            cleanup.register(split_dir)
 
-        print(f"Extracting {filename}...")
-        try:
-            extract_tar(tar_path, args.output_dir)
-        except Exception as e:
-            print(f"Error extracting {filename}: {e}")
-            sys.exit(1)
+            filename = f"data/{split}.tar.gz"
+            print(f"\nDownloading {filename} from Hugging Face...")
+            try:
+                tar_path = hf_hub_download(
+                    repo_id="chriamue/bird-species-dataset",
+                    repo_type="dataset",
+                    filename=filename,
+                )
+            except Exception as e:
+                print(f"Error downloading {filename}: {e}")
+                sys.exit(1)
+
+            print(f"Extracting {filename}...")
+            try:
+                extract_tar(tar_path, args.output_dir)
+            except Exception as e:
+                print(f"Error extracting {filename}: {e}")
+                sys.exit(1)
+
+        # Write sentinel file on success
+        with open(sentinel_path, "w") as f:
+            f.write("complete")
 
     print("\nDataset construction completed successfully!")
     print_dataset_summary(args.output_dir, splits)

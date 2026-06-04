@@ -7,6 +7,7 @@ import functools
 import gzip
 import operator
 import os
+import shutil
 import struct
 import urllib.parse
 
@@ -14,7 +15,7 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-from examples.utils import download_with_progress
+from examples.utils import CleanupOnFailure, download_with_progress
 
 
 class IdxDecodeError(ValueError):
@@ -91,10 +92,17 @@ def main():
     train_path = os.path.join(base_dir, "train")
     test_path = os.path.join(base_dir, "test")
 
-    # Check if directories already exist
-    if os.path.exists(train_path) and os.path.exists(test_path):
-        print(f"Dataset already exists at {base_dir}. Skipping download.")
+    # Check if sentinel file exists
+    sentinel_path = os.path.join(base_dir, ".complete")
+    if os.path.exists(sentinel_path):
+        print(f"Dataset already fully constructed at {base_dir}. Skipping download.")
         return
+
+    # Clean up any partial directories from previous runs
+    for path in [train_path, test_path]:
+        if os.path.exists(path):
+            print(f"Removing partial/corrupt path: {path}")
+            shutil.rmtree(path)
 
     os.makedirs(base_dir, exist_ok=True)
 
@@ -109,38 +117,46 @@ def main():
 
     downloaded_paths = {}
 
-    # Step 1: Downloading
-    print("[Step 1/2] Downloading MNIST gz files...")
-    for key, filename in files.items():
-        dst_path = os.path.join(base_dir, filename)
-        url = urllib.parse.urljoin(datasets_url, filename)
-        if not os.path.exists(dst_path):
-            download_with_progress(url, dst_path)
-        else:
-            print(f"  (Using existing archive {filename})")
-        downloaded_paths[key] = dst_path
+    with CleanupOnFailure() as cleanup:
+        cleanup.register(train_path)
+        cleanup.register(test_path)
 
-    # Step 2: Parsing and extracting PNG images
-    print("\n[Step 2/2] Parsing IDX files and writing PNG images...")
-    
-    # Train
-    with gzip.open(downloaded_paths["train_labels"], "rb") as zf:
-        train_labels = parse_idx(zf)
-    with gzip.open(downloaded_paths["train_images"], "rb") as zf:
-        train_images = parse_idx(zf)
-    prepare_mnist_for_minitrainer(train_images, train_labels, base_dir, "train", max_count=500)
+        # Step 1: Downloading
+        print("[Step 1/2] Downloading MNIST gz files...")
+        for key, filename in files.items():
+            dst_path = os.path.join(base_dir, filename)
+            url = urllib.parse.urljoin(datasets_url, filename)
+            if not os.path.exists(dst_path):
+                download_with_progress(url, dst_path)
+            else:
+                print(f"  (Using existing archive {filename})")
+            downloaded_paths[key] = dst_path
 
-    # Test
-    with gzip.open(downloaded_paths["test_labels"], "rb") as zf:
-        test_labels = parse_idx(zf)
-    with gzip.open(downloaded_paths["test_images"], "rb") as zf:
-        test_images = parse_idx(zf)
-    prepare_mnist_for_minitrainer(test_images, test_labels, base_dir, "test", max_count=500)
+        # Step 2: Parsing and extracting PNG images
+        print("\n[Step 2/2] Parsing IDX files and writing PNG images...")
+        
+        # Train
+        with gzip.open(downloaded_paths["train_labels"], "rb") as zf:
+            train_labels = parse_idx(zf)
+        with gzip.open(downloaded_paths["train_images"], "rb") as zf:
+            train_images = parse_idx(zf)
+        prepare_mnist_for_minitrainer(train_images, train_labels, base_dir, "train", max_count=500)
 
-    # Cleanup downloaded gz files
-    for path in downloaded_paths.values():
-        if os.path.exists(path):
-            os.remove(path)
+        # Test
+        with gzip.open(downloaded_paths["test_labels"], "rb") as zf:
+            test_labels = parse_idx(zf)
+        with gzip.open(downloaded_paths["test_images"], "rb") as zf:
+            test_images = parse_idx(zf)
+        prepare_mnist_for_minitrainer(test_images, test_labels, base_dir, "test", max_count=500)
+
+        # Cleanup downloaded gz files on success
+        for path in downloaded_paths.values():
+            if os.path.exists(path):
+                os.remove(path)
+
+        # Write sentinel
+        with open(sentinel_path, "w") as f:
+            f.write("complete")
 
     print("\nDataset construction completed successfully!")
 

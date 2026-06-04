@@ -3,12 +3,45 @@
 
 import concurrent.futures
 import os
+import shutil
+import subprocess
 import tarfile
 import time
 import urllib.request
 import zipfile
 
 from tqdm import tqdm
+
+
+class CleanupOnFailure:
+    """Context manager to cleanup registered directories/files if an exception occurs."""
+
+    def __init__(self):
+        self.paths_to_clean = []
+
+    def register(self, path):
+        if path not in self.paths_to_clean:
+            self.paths_to_clean.append(path)
+
+    def unregister(self, path):
+        if path in self.paths_to_clean:
+            self.paths_to_clean.remove(path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            print("\nCleaning up partial/corrupted files due to interruption or failure...")
+            for path in self.paths_to_clean:
+                if os.path.exists(path):
+                    try:
+                        if os.path.isdir(path):
+                            shutil.rmtree(path)
+                        else:
+                            os.remove(path)
+                    except Exception as e:
+                        print(f"Error deleting {path}: {e}")
 
 
 def download_with_progress(url, dst, max_workers=8):
@@ -43,7 +76,13 @@ def download_with_progress(url, dst, max_workers=8):
         with tqdm(total=total_size, unit="iB", unit_scale=True, desc=os.path.basename(dst)) as pbar:
 
             def download_chunk(start_pos, end_pos):
-                req_chunk = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Range": f"bytes={start_pos}-{end_pos}"})
+                req_chunk = urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "Range": f"bytes={start_pos}-{end_pos}",
+                    },
+                )
                 # Retry up to 3 times on failure
                 for attempt in range(3):
                     try:
@@ -91,21 +130,45 @@ def download_with_progress(url, dst, max_workers=8):
 
 def extract_tar(tar_path, extract_path):
     print(f"Extracting {tar_path} to {extract_path}...")
+    os.makedirs(extract_path, exist_ok=True)
+
+    # Try using system tar command (much faster)
+    if shutil.which("tar"):
+        print("Using system native 'tar' for fast extraction...")
+        try:
+            subprocess.run(["tar", "-xf", tar_path, "-C", extract_path], check=True)
+            print("Extraction complete.")
+            return
+        except subprocess.SubprocessError as e:
+            print(f"Native 'tar' failed: {e}. Falling back to Python tarfile...")
+
+    # Fallback to Python tarfile (with single-pass tqdm based on tar.next())
     with tarfile.open(tar_path, "r:gz") as tar:
-        members = tar.getmembers()
-
-        def tqdm_members(members):
-            with tqdm(total=len(members), desc="Extracting", unit="file") as pbar:
-                for m in members:
-                    yield m
-                    pbar.update(1)
-
-        tar.extractall(path=extract_path, members=tqdm_members(members), filter="data")
+        with tqdm(desc="Extracting", unit="file") as pbar:
+            while True:
+                member = tar.next()
+                if member is None:
+                    break
+                tar.extract(member, path=extract_path, filter="data")
+                pbar.update(1)
     print("Extraction complete.")
 
 
 def extract_zip(zip_path, extract_path):
     print(f"Extracting {zip_path} to {extract_path}...")
+    os.makedirs(extract_path, exist_ok=True)
+
+    # Try using system unzip command
+    if shutil.which("unzip"):
+        print("Using system native 'unzip' for fast extraction...")
+        try:
+            subprocess.run(["unzip", "-q", zip_path, "-d", extract_path], check=True)
+            print("Extraction complete.")
+            return
+        except subprocess.SubprocessError as e:
+            print(f"Native 'unzip' failed: {e}. Falling back to Python zipfile...")
+
+    # Fallback to Python zipfile
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         members = zip_ref.namelist()
         with tqdm(total=len(members), desc="Extracting", unit="file") as pbar:
