@@ -14,7 +14,7 @@ from torch._prims_common import DeviceLikeType
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
 from .architectures import get_model
-from .generic import prior_from_labels
+from .prior import prior_from_labels
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
