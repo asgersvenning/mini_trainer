@@ -59,11 +59,16 @@ def init_distributed(device=None):
         rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    elif "SLURM_PROCID" in os.environ:
+    elif "SLURM_PROCID" in os.environ and int(os.environ.get("SLURM_NTASKS", 1)) > 1:
         rank = int(os.environ["SLURM_PROCID"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
-        local_rank = rank % num_gpus if num_gpus > 0 else 0
+        world_size = int(os.environ["SLURM_NTASKS"])
+        local_rank = int(os.environ.get("SLURM_LOCALID", 0))        
+        # Safeguard DDP with `env://` initialization method
+        if "MASTER_ADDR" not in os.environ or "MASTER_PORT" not in os.environ:
+            raise RuntimeError(
+                "Slurm DDP detected, but MASTER_ADDR or MASTER_PORT is not set. "
+                "Please set these in your Slurm batch script."
+            )
     else:
         return None
 
