@@ -38,9 +38,9 @@ def validate_device(device: str | torch.device) -> None:
             raise RuntimeError(f"MPS is not available on this system, but device '{device}' was requested.")
 
 
-def resolve_device(device: str | torch.device) -> torch.device:
+def resolve_device(device: str | int | torch.device) -> torch.device:
     """Resolve an ambiguous device string or object and validate its availability."""
-    device_obj = torch.device(device) if isinstance(device, str) else device
+    device_obj = torch.device(device) if not isinstance(device, torch.device) else device
     if device_obj.type == "cuda" and device_obj.index is None:
         if torch.cuda.is_available():
             device_obj = torch.device(f"cuda:{torch.cuda.current_device()}")
@@ -48,7 +48,7 @@ def resolve_device(device: str | torch.device) -> torch.device:
     return device_obj
 
 
-def setup_device(device: str | torch.device) -> torch.device:
+def setup_device(device: str | int | torch.device) -> torch.device:
     """Resolve, validate, and configure precision settings for the target device."""
     device_obj = resolve_device(device)
     if device_obj.type == "cuda":

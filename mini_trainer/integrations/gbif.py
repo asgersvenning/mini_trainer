@@ -2,9 +2,9 @@ import json
 import os
 import re
 from collections import OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass, fields
-from types import NoneType
-from typing import get_args
+from typing import Any, Literal, get_args, overload
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -13,7 +13,16 @@ from diskcache import Cache
 from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
 GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
-TAXONOMY_KEYS = ("species", "genus", "family", "order", "class", "phylum", "kingdom")
+TK = Literal[
+    "species",
+    "genus",
+    "family",
+    "order",
+    "class",
+    "phylum",
+    "kingdom"
+]
+TAXONOMY_KEYS : tuple[TK, ...] = get_args(TK)
 
 _CACHE = None
 CACHE_TIME = 7 * 86400  # One week in seconds
@@ -26,7 +35,7 @@ def get_cache():
     return _CACHE
 
 
-def retrive_request(req: str):
+def retrive_request(req: str) -> Any:
     """Retrieve a composed HTTPS request."""
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
@@ -158,17 +167,24 @@ def resolve_id(id: str | int):
 
 SPACE_PATTERN = re.compile(r"\s[x×]\s|[\s_]+")
 
-
-def parse_name(name: str | None, user_author: str | None = None):
+@overload
+def parse_name(name: str, user_author: str) -> tuple[str, str]: ...
+@overload
+def parse_name(name: str, user_author: None = None) -> tuple[str, str | None]: ...
+@overload
+def parse_name(name: None, user_author: str) -> tuple[None, str]: ...
+@overload
+def parse_name(name: None, user_author: None = None) -> tuple[None, None]: ...
+def parse_name(name: str | None, user_author: str | None = None) -> tuple[str | None, str | None]:
     """Parse taxa name and author from scientific name-string."""
     if name is None:
         return name, user_author
     name = re.sub(SPACE_PATTERN, " ", name)
     parts = name.split(" ")
-    if len(parts) == 2:
+    if len(parts) <= 2:
         return name, user_author
     if user_author is not None:
-        raise RuntimeError(f'Found author in name ("{name}") while the an author ("{user_author}") was also passed.')
+        raise RuntimeError(f'Found author in name ("{name}") while an author ("{user_author}") was also passed.')
     name = " ".join(parts[:2])
     author = " ".join(parts[2:])
     return name, author
@@ -243,28 +259,42 @@ def id_to_name(id: str | int):
 
 @multithread_vectorize(desc="Resolving taxa...")
 def resolve_name_or_id(name_or_id: str | int):  # noqa: D103
-    name_or_id = name_or_id.strip()
-    if isinstance(name_or_id, int) or name_or_id.isdigit():
+    if isinstance(name_or_id, str):
+        name_or_id = name_or_id.strip()
+        if name_or_id.isdigit():
+            name_or_id = int(name_or_id)
+    
+    if isinstance(name_or_id, int):
         return resolve_id(name_or_id)
+    
     id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
     return resolve_id(id)
 
+def resolve_level(level : int | str):
+    if isinstance(level, int):
+        return TAXONOMY_KEYS[level]
+    level = level.strip().lower()
+    assert level in TAXONOMY_KEYS
+    return level
+
+def select_levels(
+        levels : str | int | Iterable[str | int] | None, 
+        taxonomy : list[OrderedDict[TK, tuple[str, str]]]
+    ) -> list[TK]:
+    # If levels is not None we consider the following cases:
+    if levels is None:
+        level_classes = OrderedDict((k, set(tax[k] for tax in taxonomy)) for k in TAXONOMY_KEYS)
+        return [k for k, v in level_classes.items() if len(v) > 1]
+    if isinstance(levels, (str, int)):
+        return [TAXONOMY_KEYS[i] for i in range(TAXONOMY_KEYS.index(resolve_level(levels)) + 1)]
+    return sorted([resolve_level(lvl) for lvl in levels], key=TAXONOMY_KEYS.index)
+
 
 def create_taxonomy(  # noqa: D103
-    names_or_ids: list[str], levels: str | int | tuple[str | int, ...] | list[str | int] = "family"
+    names_or_ids: Iterable[str], levels: str | int | Iterable[str | int] | None=None
 ):
-    # _levels = len(TAXONOMY_KEYS) - 1
-    if isinstance(levels, str):
-        _levels = TAXONOMY_KEYS.index(levels.strip().lower())
-    elif isinstance(levels, (tuple, list)):
-        _levels = [level if isinstance(level, int) else TAXONOMY_KEYS.index(level.strip().lower()) for level in levels]
-    elif isinstance(levels, int):
-        _levels = levels - 1
-    else:
-        raise TypeError(f"Unexpected type for {levels=} ({type(levels)}).")
-    _levels = list(range(_levels + 1)) if isinstance(_levels, int) else _levels
-    level_strs = [TAXONOMY_KEYS[lvl] for lvl in sorted(_levels)]
     taxs = resolve_name_or_id(names_or_ids)
+    level_strs : list[TK] = select_levels(levels, taxs)
     return OrderedDict(
         [
             (orig, filter_ordered_dict(tax, level_strs))
@@ -273,7 +303,7 @@ def create_taxonomy(  # noqa: D103
     )
 
 
-def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[str, tuple[str, ...]]]):  # noqa: D103
+def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[str, tuple[str, str]]]):  # noqa: D103
     return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])
 
 

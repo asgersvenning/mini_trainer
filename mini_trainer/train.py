@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 import torch
 import torchvision
+import torchvision.transforms.v2
 
 from mini_trainer import get_logger
 from mini_trainer.builders import BaseBuilder, EMATeacher
@@ -39,13 +40,13 @@ from mini_trainer.utils import (
 def main(  # noqa: D417
     input: str,
     output: str | None = None,
-    checkpoint: list[str] | None = None,
+    checkpoint: list[str] | str | None = None,
     class_spec: str | None = None,
     epochs: int = 15,
     size: int | None = None,
     name: str | None = None,
-    device: str = "cuda",
-    dtype: str = "float16",
+    device: str | torch.device= "cuda",
+    dtype: str | torch.dtype = "float16",
     ema: bool = False,
     compile: bool = False,
     seed: int | None = None,
@@ -68,7 +69,7 @@ def main(  # noqa: D417
     },
     scaler_builder_kwargs: dict[str, Any] = {},
     ema_builder_kwargs: dict[str, Any] = {"epoch_halflife": 1.5, "update_rate": 4, "temperature": 1.0, "distill_start": 2.0},
-    criterion_builder_kwargs: dict[str, Any] = {"weighted": False, "label_smoothing": 0.1},
+    criterion_builder_kwargs: dict[str, Any] = {"weighted": False, "label_smoothing": None},
     regularizer_builder_kwargs: dict[str, Any] = {"strength": 0.1},
     lr_schedule_builder_kwargs: dict[str, Any] = {"warmup_epochs": 2.0},
     logger_builder_kwargs: dict[str, Any] = {"verbose": False},
@@ -134,8 +135,11 @@ def main(  # noqa: D417
     if weight_output_dir is not None:
         os.makedirs(weight_output_dir, exist_ok=True)
 
-    device = setup_device(device)
-    dtype: torch.dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+    if isinstance(device, (str, int)):
+        device = setup_device(device)
+    if isinstance(dtype, str):
+        dtype = getattr(torch, dtype.removeprefix("torch.").strip().lower())
+        assert isinstance(dtype, torch.dtype)
 
     verbose = logger_builder_kwargs.get("verbose", False)
     assert isinstance(verbose, bool)
@@ -168,10 +172,10 @@ def main(  # noqa: D417
             class_spec = os.path.join(output_dir, "class_spec.json")
 
     log.debug("Building class spec...")
-    class_spec = broadcast_from_master(builder.class_spec, path=class_spec, dir=input, **spec_model_dataloader_kwargs)
+    class_spec_data = broadcast_from_master(builder.build_class_spec, path=class_spec, dir=input, **spec_model_dataloader_kwargs)
 
     if size is not None:
-        class_spec["resize_size"] = size
+        class_spec_data["resize_size"] = size
 
     with main_process_first(verbose=verbose):
         # Prepare model
@@ -188,9 +192,12 @@ def main(  # noqa: D417
             device=device,
             dtype=model_dtype,
             # train_labels=train_labels, # Disable prior on model - moved to loss function
-            **{**class_spec, **model_builder_kwargs},
+            **{**class_spec_data, **model_builder_kwargs},
         )
         validate_type(nn_model, torch.nn.Module)
+        log.info(
+            f'Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`'
+        )
 
     # Resolve input size if not explicitly set
     if size is None:
@@ -200,11 +207,11 @@ def main(  # noqa: D417
         except RuntimeError:
             size = 224
         log.info(f"Using dynamically inferred preferred input size: {size}")
-        class_spec["resize_size"] = size
+        class_spec_data["resize_size"] = size
 
     log.debug("Building dataloaders...")
     train_labels, train_loader, val_loader = builder.build_dataloader(
-        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec, **dataloader_builder_kwargs}
+        input_dir=input, output_dir=output_dir, device=device, dtype=dtype, **{**class_spec_data, **dataloader_builder_kwargs}
     )
     log.debug(f"Dataloaders built successfully. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
     validate_type(train_loader, torch.utils.data.DataLoader)
@@ -218,9 +225,10 @@ def main(  # noqa: D417
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     validate_type(optimizer, torch.optim.Optimizer)
     criterion = builder.build_criterion(
-        labels=train_labels, num_classes=class_spec["num_classes"], device=device, dtype=dtype, **criterion_builder_kwargs
+        labels=train_labels, num_classes=class_spec_data["num_classes"], device=device, dtype=dtype, **criterion_builder_kwargs
     )
     validate_type(criterion, torch.nn.modules.loss._Loss)
+    log.info(f'Using training criterion: `{criterion}`')
 
     lr_scheduler = builder.build_lr_scheduler(
         optimizer=optimizer, epochs=epochs, steps_per_epoch=len(train_loader), **lr_schedule_builder_kwargs
@@ -230,11 +238,15 @@ def main(  # noqa: D417
     scaler_enabled = model_dtype == torch.float32 and dtype != torch.float32
     scaler = builder.build_scaler(device=device, enabled=scaler_enabled, **scaler_builder_kwargs)
     validate_type(scaler, torch.amp.GradScaler)
+    if scaler_enabled:
+        log.info("AMP Gradient Scaler enabled.")
 
     nn_model_ema = builder.build_ema(
         enable=ema, model=nn_model, epochs=epochs, steps_per_epoch=len(train_loader), device=device, **ema_builder_kwargs
     )
     validate_type(nn_model_ema, EMATeacher, allow_none=True)
+    if ema:
+        log.info("EMA enabled.")
 
     if checkpoint is not None:
         checkpoint_files = checkpoint
@@ -264,6 +276,7 @@ def main(  # noqa: D417
             else:
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
+        log.info(f'Training restarted from checkpoint(s): {checkpoint}')
 
     # Instantiate logger
     logger_output = None if get_rank() > 0 else output
@@ -460,7 +473,7 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         dest="criterion_builder_kwargs.label_smoothing",
         default=None,
         required=False,
-        help="Label smoothing applied to training (default=0.1).",
+        help="Label smoothing applied to training (default=1/number of classes).",
     )
     train_args.add_argument(
         "--regularization_strength",

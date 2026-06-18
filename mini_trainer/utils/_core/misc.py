@@ -1,7 +1,7 @@
 import shutil
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar, TypeVarTuple
+from typing import Any, TypeVar, TypeVarTuple, Unpack
 
 import numpy as np
 import torch
@@ -24,7 +24,7 @@ def make_empty_ndarray(s: int) -> np.typing.NDArray[np.float64]:
     return arr
 
 
-def filter_ordered_dict(od: OrderedDict[X, R], keys: tuple[*Ks]):  # noqa: UP047
+def filter_ordered_dict[K, V](od: OrderedDict[K, V], keys: Iterable[K]):  # noqa: UP047
     """Filter an `OrderedDict` by keys and maintain order."""
     return OrderedDict([(k, od[k]) for k in keys])
 

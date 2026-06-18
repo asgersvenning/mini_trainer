@@ -1,0 +1,27 @@
+name: <NAME>
+
+slurm:
+    account: <ACCOUNT>
+    partition: <PARTITION>
+    gres: gpu:nvidia_h100_80gb_hbm3:1
+    cpus-per-task: 32
+    mem: 64G
+    time: <TIME>
+
+experiment:
+    model:
+        - ...
+    head:
+        - ...
+    dataset:
+        - ...
+
+eval:
+    - ...
+
+args:
+    dtype: float16
+    batch_size: 256
+    warmup_epochs: 0.1
+    class_weighted: true
+    wandb: true

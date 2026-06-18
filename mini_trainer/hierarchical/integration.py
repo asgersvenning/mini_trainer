@@ -4,7 +4,9 @@ from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
+from typing import Concatenate
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -41,7 +43,7 @@ def cls2idx_to_names(cls2idx: dict[str, dict[str, int]]):
     return _cls2idx_to_names(_freeze(cls2idx))
 
 
-def linnean_labels_from_directory(dir: str, levels="family", **kwargs):  # noqa: D103
+def linnean_labels_from_directory(dir: str, levels : str | int | list[str | int] | None=None, **kwargs):  # noqa: D103
     images = find_images(dir)
     dirnames = set([os.path.split(os.path.dirname(im))[1] for im in images])
     taxonomy = create_taxonomy(dirnames, levels=levels)
@@ -60,7 +62,7 @@ def parse_class_spec(
     path: str | None = None,
     dir: str | None = None,
     levels: int | None = None,
-    label_fn: Callable[[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
+    label_fn: Callable[Concatenate[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
     **kwargs,
 ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | int]:
     """Construct class specification:
@@ -201,7 +203,14 @@ def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx:
 
 class HierarchicalBuilder(BaseBuilder):  # noqa: D101
     @staticmethod
-    def class_spec(path: str | None = None, dir: str | None = None, levels: int | None = None, species: bool = True, *args, **kwargs):
+    def build_class_spec(
+        *args,
+        path: str | None = None, 
+        dir: str | None = None, 
+        levels: int | None = None, 
+        species: bool = True, 
+        **kwargs
+    ):
         """TODO.
 
         Returns:
@@ -239,24 +248,33 @@ class HierarchicalBuilder(BaseBuilder):  # noqa: D101
     @staticmethod
     def build_criterion(
         *args,
+        num_classes : list[int],
         weighted: bool = False,
-        labels: Iterable[Iterable[int]] | None = None,
-        num_classes: list[int] | None = None,
-        device: torch.types.Device | None = None,
+        labels: Iterable[np.ndarray | torch.Tensor | list | tuple] | None = None,
+        label_smoothing: float | None=None,
+        device: torch.device | None = None,
         dtype: torch.dtype | None = None,
         **kwargs,
     ):
-        if not weighted or labels is None or num_classes is None:
-            return MultiLevelWeightedCrossEntropyLoss(*args, device=device, dtype=dtype, **kwargs)
-        labels = [labs.tolist() if not isinstance(labels, list) else labs for labs in labels]
-        labels = list(zip(*labels))
+        if label_smoothing is None:
+            label_smoothing = 1/num_classes[0]
+        if not weighted or labels is None:
+            return MultiLevelWeightedCrossEntropyLoss(
+                *args, 
+                label_smoothing=label_smoothing, num_classes=num_classes, 
+                device=device, dtype=dtype, 
+            **kwargs)
+        labels_long = list(zip(*[labs.tolist() if not isinstance(labels, (list, tuple)) else labs for labs in labels]))
         counts = []
         for lvl, ncls in enumerate(num_classes):
-            lvlc = Counter(labels[lvl])
+            lvlc = Counter(labels_long[lvl])
             lvlc = [lvlc.get(i, 0) for i in range(ncls)]
             counts.append(lvlc)
         return MultiLevelWeightedCrossEntropyLoss(
-            *args, class_frequencies=counts, device=device, dtype=dtype, loss_cls=EMLACrossEntropy, **kwargs
+            *args, 
+            class_frequencies=counts, num_classes=num_classes, label_smoothing=label_smoothing, 
+            device=device, dtype=dtype, loss_cls=EMLACrossEntropy, 
+            **kwargs
         )
 
 

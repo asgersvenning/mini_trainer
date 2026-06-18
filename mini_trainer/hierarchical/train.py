@@ -14,7 +14,7 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
             "type": float,
             "nargs": "+",
             "dest": "criterion_builder_kwargs.weights",
-            "default": (1.0, 1.0, 1.0),
+            "default": None,
             "required": False,
             "help": "Weights for the hierarchical loss terms (species, genus, family). Three numbers should be supplied.",
         },
@@ -39,7 +39,8 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
         kwargs.pop(key, None)
 
     kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
-    kwargs["spec_model_dataloader_kwargs"]["levels"] = len(kwargs["criterion_builder_kwargs"]["weights"])
+    if "weights" in kwargs["criterion_builder_kwargs"]:
+        kwargs["spec_model_dataloader_kwargs"]["levels"] = len(kwargs["criterion_builder_kwargs"]["weights"])
     kwargs["builder"] = HierarchicalBuilder
 
     return kwargs

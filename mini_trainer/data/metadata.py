@@ -3,7 +3,7 @@ import os
 import random
 from collections import OrderedDict
 from glob import glob
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -150,7 +150,7 @@ def get_metadata(
     return metadata
 
 
-def parse_class_spec(path: str | None = None, dir: str | None = None) -> dict[str, dict[str, int]]:
+def parse_class_spec(path: str | None = None, dir: str | None = None) -> dict[str, Any]:
     """Create or load (flat) class specification."""
     if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):

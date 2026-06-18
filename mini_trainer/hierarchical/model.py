@@ -50,17 +50,17 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
 
     @classmethod
     def load(
-        cls,
-        architecture_class,
-        architecture_output_name,
-        architecture,
-        state,
-        device,
-        dtype,
-        cls2idx: dict[str, dict[str, int]] | None = None,
-        train_labels: list[list[int]] | None = None,
-        **kwargs,
-    ):
+            cls,
+            architecture_class,
+            architecture_output_name,
+            architecture,
+            state,
+            device,
+            dtype,
+            cls2idx: dict[str, dict[str, int]] | None = None,
+            train_labels: list[list[int]] | None = None,
+            **kwargs,
+        ):
         if state is not None:
             prefix = f"{architecture_output_name}.mask_"
             # Extract (index, tensor) tuples, sort by index, and retrieve tensors

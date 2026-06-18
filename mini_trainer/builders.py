@@ -50,7 +50,7 @@ class BaseBuilder:
         pass
 
     @staticmethod
-    def class_spec(path: str | None = None, dir: str | None = None, *args, **kwargs):
+    def build_class_spec(path: str | None = None, dir: str | None = None, *args, **kwargs):
         """TODO.
 
         Returns:
@@ -95,15 +95,15 @@ class BaseBuilder:
     @staticmethod
     def build_dataloader(
         input_dir: str,
-        output_dir: str,
+        output_dir: str | None,
         cls2idx: dict[str, int],
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
+        resize_size: int,
         data_index: str | None = None,
         splits: tuple[str, ...] = ("train", "val"),
         num_workers: int | None = None,
-        resize_size: int | None = None,
         subsample: int | None = None,
         cache: int | str | None = None,
         train_proportion: float = 0.9,
@@ -339,7 +339,7 @@ class BaseBuilder:
         steps_per_epoch: int,
         device: torch.types.Device,
         update_rate: int = 1,
-        epoch_halflife: float | int = None,
+        epoch_halflife: float | int | None = None,
         decay_rate: float | None = None,
         distill_start: int | None = None,
         use_buffers: bool = True,
@@ -372,7 +372,7 @@ class BaseBuilder:
         default_step_halflife = min(epochs * steps_per_epoch, 5000)
         if decay_rate is None:
             if epoch_halflife is None:
-                step_halflife = (epochs * steps_per_epoch) ** (1 / 2) / 2
+                step_halflife : float = (epochs * steps_per_epoch) ** (1 / 2) / 2
                 epoch_halflife = step_halflife / steps_per_epoch
                 default_ratio = step_halflife / default_step_halflife
                 if not ((1 / 5) < default_ratio < 5):
@@ -399,9 +399,10 @@ class BaseBuilder:
     @staticmethod
     def build_criterion(
         *args,
+        num_classes: int,
         weighted: bool = False,
-        labels: np.ndarray | None = None,
-        num_classes: int | None = None,
+        labels: np.ndarray | torch.Tensor | list | tuple | None = None,
+        label_smoothing: float | None=None,
         device: torch.types.Device | None = None,
         dtype: torch.dtype | None = None,
         **kwargs,
@@ -411,13 +412,15 @@ class BaseBuilder:
         Returns:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
-        if not weighted or labels is None or num_classes is None:
-            return nn.CrossEntropyLoss(*args, **kwargs)
-        if not isinstance(labels, list):
+        if label_smoothing is None:
+            label_smoothing = 1/num_classes
+        if not weighted or labels is None:
+            return nn.CrossEntropyLoss(*args, label_smoothing=label_smoothing, **kwargs)
+        if not isinstance(labels, (list, tuple)):
             labels = labels.tolist()
         counts = Counter(labels)
         counts = [counts.get(i, 0) for i in range(num_classes)]
-        return EMLACrossEntropy(class_frequencies=counts, device=device, *args, **kwargs)
+        return EMLACrossEntropy(class_frequencies=counts, label_smoothing=label_smoothing, device=device, *args, **kwargs)
 
     @staticmethod
     def build_regularizer(strength: float = 1e-3, *args, **kwargs):
