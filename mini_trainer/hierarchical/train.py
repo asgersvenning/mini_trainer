@@ -20,7 +20,7 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
         },
         head={
             "type": str,
-            "dest": "model_builder_kwargs.cls",
+            "dest": "head",
             "default": "hierarchical",
             "required": False,
             "help": "Which type of classification head architecture to use. "
@@ -28,7 +28,7 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
         },
         no_gbif={
             "action": "store_false",
-            "dest": "spec_model_dataloader_kwargs.species",
+            "dest": "species",
             "default": True,
             "required": False,
             "help": "Class names are not GBIF IDs.",
@@ -38,8 +38,14 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
     for key in overrides:
         kwargs.pop(key, None)
 
-    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(kwargs["model_builder_kwargs"]["cls"])
-    if "weights" in kwargs["criterion_builder_kwargs"]:
+    head_name = kwargs.pop("head", "hierarchical").strip().lower()
+    weights = kwargs.pop("weights", None)
+    kwargs["spec_model_dataloader_kwargs"]["species"]  = kwargs.pop("species", True)
+    if head_name == "flat":
+        return kwargs
+    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(head_name)
+    if weights is not None:
+        kwargs["spec_model_dataloader_kwargs"]["weights"] = weights
         kwargs["spec_model_dataloader_kwargs"]["levels"] = len(kwargs["criterion_builder_kwargs"]["weights"])
     kwargs["builder"] = HierarchicalBuilder
 

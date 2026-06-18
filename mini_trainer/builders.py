@@ -50,7 +50,7 @@ class BaseBuilder:
         pass
 
     @staticmethod
-    def build_class_spec(path: str | None = None, dir: str | None = None, *args, **kwargs):
+    def build_class_spec(path: str | None = None, dir: str | None = None, species : bool=False, *args, **kwargs):
         """TODO.
 
         Returns:
@@ -63,7 +63,7 @@ class BaseBuilder:
                 f"but got {len(args)} additional positional arguments ({args}) "
                 f"and {len(kwargs)} additional keyword arguments ({list(kwargs.keys())})."
             )
-        return parse_class_spec(path=path, dir=dir)
+        return parse_class_spec(path=path, dir=dir, species=species)
 
     @staticmethod
     def build_model(

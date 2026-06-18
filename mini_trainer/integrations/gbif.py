@@ -137,7 +137,7 @@ class GBIFTaxa:
     def __repr__(self):
         ranks = self.ranks
         fmt = "\n  ".join([f"{r.title():>7}: {{{r}}}" for r in ranks])
-        fmt = f"GBIFTaxa(\n  {fmt}\n)"
+        fmt = f"{self.__class__.__name__}(\n  {fmt}\n)"
         data = {level: f"{getattr(self, level + '_name')} [{getattr(self, level + '_id')}]" for level in ranks}
         return fmt.format(**data)
 
