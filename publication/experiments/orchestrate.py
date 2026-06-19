@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+BASE_DIR = Path("slurm_jobs")
 TRAIN_STUB = "uv run --no-sync mt_htrain"
 EVAL_STUB = "uv run --no-sync mt_hpredict"
 METRIC_STUB = "uvx --from git+https://github.com/GuillaumeMougeot/mini_metrics.git mm_metrics"
@@ -79,7 +80,7 @@ def main():
         return
 
     # Set up output directory
-    out_dir = Path("slurm_jobs") / name
+    out_dir = BASE_DIR / name
     out_dir.mkdir(parents=True, exist_ok=True)
     res_dir = out_dir / "results"
     res_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +166,8 @@ def main():
     metric_tasks_file.write_text("\n".join(metric_lines) + "\n")
 
     # Update slurm_cfg to handle array formatting for output logs
-    output_log = Path(slurm_cfg.get("output", f"logs/{name}/train_%A_%a.log"))
+    output_log = Path(slurm_cfg.get("output", f"{out_dir}/logs/train_%A_%a.log"))
+    print(output_log, output_log.parent)
     output_log.parent.mkdir(parents=True, exist_ok=True)
     if "%j" in output_log.name:
         output_log = output_log.with_name(output_log.name.replace("%j", "%A_%a"))

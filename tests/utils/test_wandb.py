@@ -49,7 +49,7 @@ def test_wandb_logger_update_and_step():
         assert logger._current_step_logs["loss/main"] == 1.5
 
         logger.step()
-        mock_wandb.log.assert_called_once_with({"loss/main": 1.5}, step=0)
+        mock_wandb.log.assert_called_once_with({"loss/main": 1.5, "step/main" : 0, "trainer/global_step" : 0})
         assert logger._idx == 1
         assert logger._current_step_logs == {}
 
@@ -65,5 +65,8 @@ def test_wandb_logger_add_figure():
         fig = plt.figure()
 
         logger.add_figure("my_plot", fig, epoch=1)
+        logger.step()
         mock_wandb.Image.assert_called_once_with(fig)
-        mock_wandb.log.assert_called_once_with({"my_plot/main": mock_wandb.Image.return_value, "epoch": 1}, step=0)
+        mock_wandb.log.assert_called_once_with(
+            {"my_plot/main": mock_wandb.Image.return_value, "epoch": 1, "step/main" : 0, "trainer/global_step" : 0}
+        )

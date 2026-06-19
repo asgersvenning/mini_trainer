@@ -12,12 +12,12 @@ from mini_trainer.utils import get_rank, is_dist_avail_and_initialized
 
 from .core import BaseStatistic, _Logger, _Statistic
 
+try:
+    import wandb as _wandb
 
-class _Unimported:
-    pass
-
-
-wandb = _Unimported()
+    wandb = _wandb
+except ImportError:
+    wandb = None
 
 
 class WandbLogger(_Logger):
@@ -33,19 +33,6 @@ class WandbLogger(_Logger):
     ):
         """Wandb logger."""
         global wandb
-        if isinstance(wandb, _Unimported):
-            try:
-                import wandb as _wandb
-
-                wandb = _wandb
-            except ImportError:
-                pass
-
-        if isinstance(wandb, _Unimported):
-            raise ImportError(
-                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
-                "`uv sync --extra recommended`, or `uv add wandb`."
-            )
         if steps is None:
             raise TypeError(f"Initializing {WandbLogger} with `steps=None` is invalid.")
 
@@ -74,6 +61,11 @@ class WandbLogger(_Logger):
             if config and "input" in config:
                 dataset = os.path.basename(config["input"])
 
+        if wandb is None:
+            raise ImportError(
+                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
+                "`uv sync --extra recommended`, or `uv add wandb`."
+            )
         if wandb.run is None:
             tags = []
             if machine:
@@ -163,7 +155,7 @@ class WandbLogger(_Logger):
 
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):
         """Add figure to wandb, queued to commit atomically with step()."""
-        if isinstance(wandb, _Unimported):
+        if wandb is None:
             raise ImportError(
                 "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
                 "`uv sync --extra recommended`, or `uv add wandb`."
@@ -189,21 +181,22 @@ class WandbLogger(_Logger):
 
         if is_svg:
             html_payload = f'<div style="background-color: white; width: 100%; overflow: auto; padding: 10px;">{svg_content}</div>'
-            self._current_step_logs[tag] = wandb.Html(html_payload)
+            elem = wandb.Html(html_payload)
         elif isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
-            self._current_step_logs[tag] = wandb.Image(figure)
+            elem = wandb.Image(figure)
         elif isinstance(figure, np.ndarray):
             if figure.shape[0] in [1, 3, 4] and figure.shape[2] not in [1, 3, 4]:
                 figure = np.transpose(figure, (1, 2, 0))
-            self._current_step_logs[tag] = wandb.Image(figure)
+            elem = wandb.Image(figure)
         else:
-            self._current_step_logs[tag] = wandb.Image(figure)
-
+            elem = wandb.Image(figure)
+        
+        self._current_step_logs[tag] = elem
         self._current_step_logs["epoch"] = epoch
 
     def step(self):
         """Step wandb logger."""
-        if isinstance(wandb, _Unimported):
+        if wandb is None:
             raise ImportError(
                 "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
                 "`uv sync --extra recommended`, or `uv add wandb`."
