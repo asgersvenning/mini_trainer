@@ -151,11 +151,11 @@ def get_metadata(
     return metadata
 
 
-def parse_class_spec(path: str | None = None, dir: str | None = None, species : bool=False) -> dict[str, Any]:
+def parse_class_spec(path: str | None = None, dir: str | None = None, species: bool = False) -> dict[str, Any]:
     """Create or load (flat) class specification."""
     if path is not None and os.path.exists(path):
         with open(path, "rb") as f:
-            data : dict[str, Any] = json.load(f)
+            data: dict[str, Any] = json.load(f)
         assert isinstance(data, dict)
     else:
         if dir is None or not os.path.isdir(dir):
@@ -179,10 +179,9 @@ def parse_class_spec(path: str | None = None, dir: str | None = None, species : 
         cls = list(cls2idx.keys())
         taxs = resolve_name_or_id(cls)
         ids_list = [[id for id, _ in tax.values()] for tax in taxs]
-        cls = [c for c, ids in sorted(zip(cls, ids_list), key=lambda kv : kv[1][::-1])]
-        data["cls2idx"] = {c : i for i, c in enumerate(cls)}
+        cls = [c for c, ids in sorted(zip(cls, ids_list), key=lambda kv: kv[1][::-1])]
+        data["cls2idx"] = {c: i for i, c in enumerate(cls)}
     if path is not None:
         with open(path, "w") as f:
             json.dump(data, f)
     return data
-    

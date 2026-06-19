@@ -1,7 +1,7 @@
 import shutil
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar, TypeVarTuple, Unpack
+from typing import Any, TypeVar, TypeVarTuple
 
 import numpy as np
 import torch

@@ -45,7 +45,7 @@ def main(  # noqa: D417
     epochs: int = 15,
     size: int | None = None,
     name: str | None = None,
-    device: str | torch.device= "cuda",
+    device: str | torch.device = "cuda",
     dtype: str | torch.dtype = "float16",
     ema: bool = False,
     compile: bool = False,
@@ -195,9 +195,7 @@ def main(  # noqa: D417
             **{**class_spec_data, **model_builder_kwargs},
         )
         validate_type(nn_model, torch.nn.Module)
-        log.info(
-            f'Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`'
-        )
+        log.info(f"Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`")
 
     # Resolve input size if not explicitly set
     if size is None:
@@ -228,7 +226,7 @@ def main(  # noqa: D417
         labels=train_labels, num_classes=class_spec_data["num_classes"], device=device, dtype=dtype, **criterion_builder_kwargs
     )
     validate_type(criterion, torch.nn.modules.loss._Loss)
-    log.info(f'Using training criterion: `{criterion}`')
+    log.info(f"Using training criterion: `{criterion}`")
 
     lr_scheduler = builder.build_lr_scheduler(
         optimizer=optimizer, epochs=epochs, steps_per_epoch=len(train_loader), **lr_schedule_builder_kwargs
@@ -276,7 +274,7 @@ def main(  # noqa: D417
             else:
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
-        log.info(f'Training restarted from checkpoint(s): {checkpoint}')
+        log.info(f"Training restarted from checkpoint(s): {checkpoint}")
 
     # Instantiate logger
     logger_output = None if get_rank() > 0 else output

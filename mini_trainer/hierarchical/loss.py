@@ -5,10 +5,10 @@ from torch import nn
 class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: D101 TODO
     def __init__(  # noqa: D107
         self,
-        num_classes : list[int],
+        num_classes: list[int],
         device: torch.device,
         dtype: torch.dtype,
-        weights: list[float] | list[int] | torch.Tensor | None=None,
+        weights: list[float] | list[int] | torch.Tensor | None = None,
         label_smoothing: float = 0.0,
         loss_cls: type[nn.CrossEntropyLoss] = nn.CrossEntropyLoss,
         **kwargs,
@@ -20,7 +20,6 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
         if weights is None:
             weights = [1] * self.n_levels
         self.weights = torch.tensor(weights).to(device=self.device, dtype=self.dtype)
-        
 
         # The adjustment:
         #   ls(L)=1-(1-ls(0))^(1/(L+1)), ls(0)=k
@@ -51,8 +50,4 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
         return [loss * weight for loss, weight in zip(losses, self.weights)]
 
     def __repr__(self):
-        return '{}({})[{}]'.format(
-            self.__class__.__name__,
-            self.loss_cls.__name__,
-            " x ".join(f"{w:.1f}" for w in self.weights.tolist())
-        )
+        return "{}({})[{}]".format(self.__class__.__name__, self.loss_cls.__name__, " x ".join(f"{w:.1f}" for w in self.weights.tolist()))

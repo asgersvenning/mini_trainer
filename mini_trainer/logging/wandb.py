@@ -17,7 +17,7 @@ class _Unimported:
     pass
 
 
-wandb = _Unimported
+wandb = _Unimported()
 
 
 class WandbLogger(_Logger):
@@ -33,15 +33,15 @@ class WandbLogger(_Logger):
     ):
         """Wandb logger."""
         global wandb
-        if wandb is _Unimported:
+        if isinstance(wandb, _Unimported):
             try:
                 import wandb as _wandb
 
                 wandb = _wandb
             except ImportError:
-                wandb = None
+                pass
 
-        if wandb is None:
+        if isinstance(wandb, _Unimported):
             raise ImportError(
                 "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
                 "`uv sync --extra recommended`, or `uv add wandb`."
@@ -74,7 +74,6 @@ class WandbLogger(_Logger):
             if config and "input" in config:
                 dataset = os.path.basename(config["input"])
 
-        # Initialize wandb run if not already initialized
         if wandb.run is None:
             tags = []
             if machine:
@@ -118,8 +117,15 @@ class WandbLogger(_Logger):
                 )
 
         self._idx = 0
+        self._internal_step = 0
         self._statistics: dict[str, _Statistic] = dict()
         self._current_step_logs = {}
+
+        if wandb.run is not None:
+            self.custom_step_key = self._make_scalar_hierarchical_tag("step")
+            metric_glob = self._make_scalar_hierarchical_tag("*")
+            wandb.define_metric(self.custom_step_key)
+            wandb.define_metric(metric_glob, step_metric=self.custom_step_key)
 
     def add_stat(self, name: str, container: _Statistic | type[_Statistic] = BaseStatistic):
         """Add new statistic to wandb."""
@@ -151,32 +157,25 @@ class WandbLogger(_Logger):
         if isinstance(values, (float, int)):
             self._current_step_logs[tag] = values
         else:
-            # We can log the mean of the values if it's an array
             self._current_step_logs[tag] = float(np.mean(values))
 
         super().update(name, values)
 
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):  # pyright: ignore[reportPrivateImportUsage]
-        """Add figure to wandb, with robust native SVG support."""
-        if get_rank() > 0:
-            return
-        if wandb.run is None:
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):
+        """Add figure to wandb, queued to commit atomically with step()."""
+        if isinstance(wandb, _Unimported):
+            raise ImportError(
+                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
+                "`uv sync --extra recommended`, or `uv add wandb`."
+            )
+        if get_rank() > 0 or wandb.run is None:
             return
 
         tag = self._make_scalar_hierarchical_tag(name)
-        step_idx = min(self._idx, len(self.global_steps) - 1)
-        global_step = self.global_steps[step_idx] if len(self.global_steps) > 0 else 0
-
-        # W&B strictly requires monotonically increasing steps
-        if getattr(wandb.run, "step", 0) > global_step:
-            global_step = wandb.run.step
-
-        # 1. Robust SVG Detection
         is_svg = False
         svg_content = ""
 
         if isinstance(figure, str):
-            # Case A: File Path
             if figure.lower().endswith(".svg") and os.path.isfile(figure):
                 try:
                     with open(figure, encoding="utf-8") as f:
@@ -184,45 +183,45 @@ class WandbLogger(_Logger):
                     is_svg = True
                 except OSError as e:
                     get_logger().warning(f"Failed to read SVG file {figure}: {e}")
-
-            # Case B: Raw String (Check only the first 500 chars to save memory)
             elif "<svg" in figure[:500].lower():
                 svg_content = figure
                 is_svg = True
 
-        # 2. Render SVG
         if is_svg:
-            # Wrapper handles Dark Mode visibility and allows scrolling if massive
             html_payload = f'<div style="background-color: white; width: 100%; overflow: auto; padding: 10px;">{svg_content}</div>'
-            wandb.log({tag: wandb.Html(html_payload), "epoch": epoch}, step=global_step)
-            return
-
-        # 3. Render Standard Formats
-        if isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
-            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
+            self._current_step_logs[tag] = wandb.Html(html_payload)
+        elif isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
+            self._current_step_logs[tag] = wandb.Image(figure)
         elif isinstance(figure, np.ndarray):
-            # Ensure it's correctly shaped for image (H, W, C)
             if figure.shape[0] in [1, 3, 4] and figure.shape[2] not in [1, 3, 4]:
                 figure = np.transpose(figure, (1, 2, 0))
-            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
+            self._current_step_logs[tag] = wandb.Image(figure)
         else:
-            # Fallback for standard image paths (e.g., "plot.png")
-            wandb.log({tag: wandb.Image(figure), "epoch": epoch}, step=global_step)
+            self._current_step_logs[tag] = wandb.Image(figure)
+
+        self._current_step_logs["epoch"] = epoch
 
     def step(self):
         """Step wandb logger."""
+        if isinstance(wandb, _Unimported):
+            raise ImportError(
+                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
+                "`uv sync --extra recommended`, or `uv add wandb`."
+            )
         if wandb.run is not None and self._current_step_logs:
             if get_rank() == 0:
-                global_step = self.global_steps[self._idx]
+                self._current_step_logs[self.custom_step_key] = self._internal_step
 
-                # W&B strictly requires monotonically increasing steps
-                if getattr(wandb.run, "step", 0) > global_step:
-                    global_step = wandb.run.step
+                step_idx = min(self._idx, len(self.global_steps) - 1)
+                if self.global_steps:
+                    self._current_step_logs["trainer/global_step"] = self.global_steps[step_idx]
 
-                wandb.log(self._current_step_logs, step=global_step)
+                wandb.log(self._current_step_logs)
+
             self._current_step_logs = {}
 
         self._idx += 1
+        self._internal_step += 1
 
     def synchronize_between_processes(self):
         pass

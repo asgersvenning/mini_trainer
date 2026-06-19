@@ -50,7 +50,7 @@ class BaseBuilder:
         pass
 
     @staticmethod
-    def build_class_spec(path: str | None = None, dir: str | None = None, species : bool=False, *args, **kwargs):
+    def build_class_spec(path: str | None = None, dir: str | None = None, species: bool = False, *args, **kwargs):
         """TODO.
 
         Returns:
@@ -372,7 +372,7 @@ class BaseBuilder:
         default_step_halflife = min(epochs * steps_per_epoch, 5000)
         if decay_rate is None:
             if epoch_halflife is None:
-                step_halflife : float = (epochs * steps_per_epoch) ** (1 / 2) / 2
+                step_halflife: float = (epochs * steps_per_epoch) ** (1 / 2) / 2
                 epoch_halflife = step_halflife / steps_per_epoch
                 default_ratio = step_halflife / default_step_halflife
                 if not ((1 / 5) < default_ratio < 5):
@@ -402,7 +402,7 @@ class BaseBuilder:
         num_classes: int,
         weighted: bool = False,
         labels: np.ndarray | torch.Tensor | list | tuple | None = None,
-        label_smoothing: float | None=None,
+        label_smoothing: float | None = None,
         device: torch.types.Device | None = None,
         dtype: torch.dtype | None = None,
         **kwargs,
@@ -413,7 +413,7 @@ class BaseBuilder:
             The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
         """
         if label_smoothing is None:
-            label_smoothing = 1/num_classes
+            label_smoothing = 1 / num_classes
         if not weighted or labels is None:
             return nn.CrossEntropyLoss(*args, label_smoothing=label_smoothing, **kwargs)
         if not isinstance(labels, (list, tuple)):

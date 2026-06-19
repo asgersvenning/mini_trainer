@@ -40,7 +40,7 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
 
     head_name = kwargs.pop("head", "hierarchical").strip().lower()
     weights = kwargs.pop("weights", None)
-    kwargs["spec_model_dataloader_kwargs"]["species"]  = kwargs.pop("species", True)
+    kwargs["spec_model_dataloader_kwargs"]["species"] = kwargs.pop("species", True)
     if head_name == "flat":
         return kwargs
     kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(head_name)

@@ -62,12 +62,11 @@ def init_distributed(device=None):
     elif "SLURM_PROCID" in os.environ and int(os.environ.get("SLURM_NTASKS", 1)) > 1:
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NTASKS"])
-        local_rank = int(os.environ.get("SLURM_LOCALID", 0))        
+        local_rank = int(os.environ.get("SLURM_LOCALID", 0))
         # Safeguard DDP with `env://` initialization method
         if "MASTER_ADDR" not in os.environ or "MASTER_PORT" not in os.environ:
             raise RuntimeError(
-                "Slurm DDP detected, but MASTER_ADDR or MASTER_PORT is not set. "
-                "Please set these in your Slurm batch script."
+                "Slurm DDP detected, but MASTER_ADDR or MASTER_PORT is not set. Please set these in your Slurm batch script."
             )
     else:
         return None

@@ -1271,17 +1271,6 @@ class MultiLogger:
             epoch += 1
         return f"E{epoch}/{self.total_epochs} ({self._step / self.total_steps:.1%} {self.eta}){stats_str}"
 
-    # def _last_epoch_values(self, stat : str):
-    #     values = []
-    #     for v, e, t in zip(
-    #       reversed(self.statistics_storage[stat]),
-    #       reversed(self.statistics_storage["epoch"]),
-    #       reversed(self.statistics_storage["type"])
-    #     ):
-    #         if e != self._epoch or t != self._type:
-    #             break
-    #         values.append(v)
-    #     return values
     def _last_epoch_value(self, stat: str):
         # Assume that the first logger is "canonical"
         if not self.loggers:
@@ -1311,10 +1300,6 @@ class MultiLogger:
     @property
     def canonical_scalar(self):
         return self._last_epoch_value(self.canonical_statistic)
-        # values = self._last_epoch_values(self.canonical_statistic)
-        # if len(values) == 0:
-        #     return np.nan
-        # return np.median(np.array(values))
 
     def render_soft_confusion_matrix(self, labels: torch.Tensor, predictions: torch.Tensor, level: int = 0):
         predictions = predictions.softmax(dim=1)

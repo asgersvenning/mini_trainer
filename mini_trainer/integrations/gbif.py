@@ -4,6 +4,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
+from types import NoneType
 from typing import Any, Literal, get_args, overload
 from urllib.parse import quote
 from urllib.request import urlopen
@@ -13,16 +14,8 @@ from diskcache import Cache
 from mini_trainer.utils import filter_ordered_dict, multithread_vectorize
 
 GBIF_SPECIES_API_ENDPOINT = "https://api.gbif.org/v1/species/"
-TK = Literal[
-    "species",
-    "genus",
-    "family",
-    "order",
-    "class",
-    "phylum",
-    "kingdom"
-]
-TAXONOMY_KEYS : tuple[TK, ...] = get_args(TK)
+TK = Literal["species", "genus", "family", "order", "class", "phylum", "kingdom"]
+TAXONOMY_KEYS: tuple[TK, ...] = get_args(TK)
 
 _CACHE = None
 CACHE_TIME = 7 * 86400  # One week in seconds
@@ -167,6 +160,7 @@ def resolve_id(id: str | int):
 
 SPACE_PATTERN = re.compile(r"\s[x×]\s|[\s_]+")
 
+
 @overload
 def parse_name(name: str, user_author: str) -> tuple[str, str]: ...
 @overload
@@ -263,24 +257,23 @@ def resolve_name_or_id(name_or_id: str | int):  # noqa: D103
         name_or_id = name_or_id.strip()
         if name_or_id.isdigit():
             name_or_id = int(name_or_id)
-    
+
     if isinstance(name_or_id, int):
         return resolve_id(name_or_id)
-    
+
     id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
     return resolve_id(id)
 
-def resolve_level(level : int | str):
+
+def resolve_level(level: int | str):
     if isinstance(level, int):
         return TAXONOMY_KEYS[level]
     level = level.strip().lower()
     assert level in TAXONOMY_KEYS
     return level
 
-def select_levels(
-        levels : str | int | Iterable[str | int] | None, 
-        taxonomy : list[OrderedDict[TK, tuple[str, str]]]
-    ) -> list[TK]:
+
+def select_levels(levels: str | int | Iterable[str | int] | None, taxonomy: list[OrderedDict[TK, tuple[str, str]]]) -> list[TK]:
     # If levels is not None we consider the following cases:
     if levels is None:
         level_classes = OrderedDict((k, set(tax[k] for tax in taxonomy)) for k in TAXONOMY_KEYS)
@@ -291,10 +284,10 @@ def select_levels(
 
 
 def create_taxonomy(  # noqa: D103
-    names_or_ids: Iterable[str], levels: str | int | Iterable[str | int] | None=None
+    names_or_ids: Iterable[str], levels: str | int | Iterable[str | int] | None = None
 ):
     taxs = resolve_name_or_id(names_or_ids)
-    level_strs : list[TK] = select_levels(levels, taxs)
+    level_strs: list[TK] = select_levels(levels, taxs)
     return OrderedDict(
         [
             (orig, filter_ordered_dict(tax, level_strs))
