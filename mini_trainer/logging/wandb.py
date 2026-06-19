@@ -150,7 +150,7 @@ class WandbLogger(_Logger):
                 values = values.tolist()
         elif isinstance(values, np.ndarray):
             values = values.tolist()
-            
+
         tag = self._make_scalar_hierarchical_tag(name)
         self._ensure_metric_defined(tag)
 
@@ -198,7 +198,7 @@ class WandbLogger(_Logger):
             elem = wandb.Image(figure)
         else:
             elem = wandb.Image(figure)
-        
+
         self._current_step_logs[tag] = elem
         self._current_step_logs["epoch"] = epoch
 
