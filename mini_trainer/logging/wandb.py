@@ -112,12 +112,18 @@ class WandbLogger(_Logger):
         self._internal_step = 0
         self._statistics: dict[str, _Statistic] = dict()
         self._current_step_logs = {}
+        self._defined_metrics = set()
 
         if wandb.run is not None:
             self.custom_step_key = self._make_scalar_hierarchical_tag("step")
-            metric_glob = self._make_scalar_hierarchical_tag("*")
-            wandb.define_metric(self.custom_step_key)
-            wandb.define_metric(metric_glob, step_metric=self.custom_step_key)
+            wandb.define_metric(self.custom_step_key, hidden=True)
+            wandb.define_metric("trainer/global_step", hidden=True)
+
+    def _ensure_metric_defined(self, tag: str, **kwargs):
+        """Dynamically link a specific metric to the custom step key."""
+        if tag not in self._defined_metrics and wandb is not None and wandb.run is not None:
+            wandb.define_metric(tag, step_metric=self.custom_step_key, **kwargs)
+            self._defined_metrics.add(tag)
 
     def add_stat(self, name: str, container: _Statistic | type[_Statistic] = BaseStatistic):
         """Add new statistic to wandb."""
@@ -144,7 +150,9 @@ class WandbLogger(_Logger):
                 values = values.tolist()
         elif isinstance(values, np.ndarray):
             values = values.tolist()
+            
         tag = self._make_scalar_hierarchical_tag(name)
+        self._ensure_metric_defined(tag)
 
         if isinstance(values, (float, int)):
             self._current_step_logs[tag] = values
