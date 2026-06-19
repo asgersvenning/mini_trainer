@@ -107,7 +107,7 @@ def broadcast_from_master[**P, Q](fn: Callable[P, Q], *args, **kwargs) -> Q:
     If DDP is not active, simply calls ``fn`` directly.
     """
     if is_dist_avail_and_initialized():
-        result: list[Q] = []
+        result: list[Q] = [None]  # type: ignore
         if get_rank() == 0:
             result = [fn(*args, **kwargs)]
         dist.broadcast_object_list(result, src=0)
