@@ -128,7 +128,7 @@ def main():
             cli_flag = flag_mapping.get(key, f"--{key}")
             train_args.extend([cli_flag, str(value)])
 
-        train_args.extend(["-o", name, "--name", combo_name])
+        train_args.extend(["-o", str(out_dir.absolute()), "--name", combo_name])
 
         # Construct the full training command directly in python
         train_cmd = f"{TRAIN_STUB} {' '.join(train_args)} {shared_args_str}"
@@ -152,8 +152,10 @@ def main():
             metric_csv = metric_dir / eval_ds / combo_name
             metric_csv.parent.mkdir(parents=True, exist_ok=True)
 
-            e_cmds.append(f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir} --weights {weights_path} --verbose")
-            m_cmds.append(f"{METRIC_STUB} --file {result_csv} -av --output {metric_csv}")
+            e_cmds.append(
+                f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir.absolute()} --weights {weights_path.absolute()} --verbose"
+            )
+            m_cmds.append(f"{METRIC_STUB} --file {result_csv.absolute()} -av --output {metric_csv.absolute()}")
 
         if e_cmds:
             eval_lines.append(" && ".join(e_cmds))
@@ -194,9 +196,9 @@ def main():
             'echo "Running on node: $SLURMD_NODENAME"',
             "",
             "# Extract the Nth line from task files",
-            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
-            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
-            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
+            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file.absolute()})',
+            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file.absolute()})',
+            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file.absolute()})',
             "",
             "# Train",
             'echo "=== Start training ==="',
