@@ -25,7 +25,7 @@ from torch import nn
 from mini_trainer import get_logger
 from mini_trainer.modeling import Prediction, classification_module
 from mini_trainer.training import named_confusion_matrix, raw_confusion_matrix
-from mini_trainer.utils import float_signif_decimal, get_rank, reduce_across_processes, write_csv_from_dict
+from mini_trainer.utils import float_signif_decimal, get_rank, main_process_first, reduce_across_processes, write_csv_from_dict
 from mini_trainer.visualization import (
     plot_class_distance_matrix,
     plot_heatmap,
@@ -1397,13 +1397,14 @@ class MultiLogger:
         for lab, fig in cm_figs.items():
             self.add_figure(lab, fig)
 
-        if model is not None:
-            cdm_fig = plot_class_distance_matrix(model)
-            self.add_figure("Class distance matrix", cdm_fig)
-            try:
-                pd_fig = plot_probabilistic_dendrogram(model)
-                with NamedTemporaryFile(suffix=".svg") as tmp_file:
-                    pd_fig.savefig(tmp_file.name, bbox_inches="tight")
-                    self.add_figure("Probabilistic dendrogram", tmp_file.name)
-            except Exception as e:
-                warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)
+        with main_process_first():
+            if get_rank() == 0 and model is not None:
+                cdm_fig = plot_class_distance_matrix(model)
+                self.add_figure("Class distance matrix", cdm_fig)
+                try:
+                    pd_fig = plot_probabilistic_dendrogram(model)
+                    with NamedTemporaryFile(suffix=".svg") as tmp_file:
+                        pd_fig.savefig(tmp_file.name, bbox_inches="tight")
+                        self.add_figure("Probabilistic dendrogram", tmp_file.name)
+                except Exception as e:
+                    warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)
