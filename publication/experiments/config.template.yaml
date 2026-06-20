@@ -8,6 +8,10 @@ slurm:
     mem: 64G
     time: <TIME>
 
+datasets:
+    ...: ...
+
+
 experiment:
     model:
         - ...

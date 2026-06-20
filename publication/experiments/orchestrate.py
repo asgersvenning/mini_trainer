@@ -53,6 +53,8 @@ def main():
     slurm_cfg = config.get("slurm", {})
     exp_cfg = config.get("experiment", {})
     args_cfg = config.get("args", {})
+    
+    dataset_paths = config.get("datasets", {})
 
     variable_args_cfg = {}
     for k in list(args_cfg.keys()):
@@ -121,6 +123,8 @@ def main():
         combo_name = "_".join(safe_values)
 
         for key, value in itertools.chain(experiment_params.items(), extra_args.items()):
+            if key == "dataset":
+                value = dataset_paths[value]
             cli_flag = flag_mapping.get(key, f"--{key}")
             train_args.extend([cli_flag, str(value)])
 
@@ -148,7 +152,7 @@ def main():
             metric_csv = metric_dir / eval_ds / combo_name
             metric_csv.parent.mkdir(parents=True, exist_ok=True)
 
-            e_cmds.append(f"{EVAL_STUB} -i {eval_ds} -o {eval_out_dir} --weights {weights_path} --verbose")
+            e_cmds.append(f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir} --weights {weights_path} --verbose")
             m_cmds.append(f"{METRIC_STUB} --file {result_csv} -av --output {metric_csv}")
 
         if e_cmds:
