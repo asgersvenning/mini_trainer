@@ -53,7 +53,7 @@ def main():
     slurm_cfg = config.get("slurm", {})
     exp_cfg = config.get("experiment", {})
     args_cfg = config.get("args", {})
-    
+
     dataset_paths = config.get("datasets", {})
 
     variable_args_cfg = {}
