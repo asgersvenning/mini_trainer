@@ -115,14 +115,14 @@ class WandbLogger(_Logger):
         self._defined_metrics = set()
 
         if wandb.run is not None:
-            self.custom_step_key = self._make_scalar_hierarchical_tag("step")
+            self.custom_step_key = "global_step"
             wandb.define_metric(self.custom_step_key, hidden=True)
-            wandb.define_metric("trainer/global_step", hidden=True)
+            wandb.define_metric("epoch", hidden=True)
 
-    def _ensure_metric_defined(self, tag: str, **kwargs):
+    def _ensure_metric_defined(self, tag: str, step_metric: str | None=None, **kwargs):
         """Dynamically link a specific metric to the custom step key."""
         if tag not in self._defined_metrics and wandb is not None and wandb.run is not None:
-            wandb.define_metric(tag, step_metric=self.custom_step_key, **kwargs)
+            wandb.define_metric(tag, step_metric=step_metric or self.custom_step_key, **kwargs)
             self._defined_metrics.add(tag)
 
     def add_stat(self, name: str, container: _Statistic | type[_Statistic] = BaseStatistic):
@@ -172,6 +172,7 @@ class WandbLogger(_Logger):
             return
 
         tag = self._make_scalar_hierarchical_tag(name)
+        self._ensure_metric_defined(tag, step_metric="epoch")
         is_svg = False
         svg_content = ""
 
@@ -199,8 +200,11 @@ class WandbLogger(_Logger):
         else:
             elem = wandb.Image(figure)
 
-        self._current_step_logs[tag] = elem
-        self._current_step_logs["epoch"] = epoch
+        wandb.log({
+            tag: elem,
+            "epoch": epoch,
+            self.custom_step_key: self._internal_step
+        })
 
     def step(self):
         """Step wandb logger."""
