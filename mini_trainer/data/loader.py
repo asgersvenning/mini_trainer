@@ -25,7 +25,7 @@ def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torc
         return torch.tensor(label, dtype=torch.long)
     if isinstance(label, np.ndarray):
         return torch.from_numpy(label).clone().long()
-    return label.long()
+    return torch.as_tensor(label).long()
 
 
 class PathLabelProcessor:
