@@ -108,7 +108,6 @@ class WandbLogger(_Logger):
                     tags=tags if tags else None,
                 )
 
-        self._idx = 0
         self._internal_step = 0
         self._statistics: dict[str, _Statistic] = dict()
         self._current_step_logs = {}
@@ -119,7 +118,7 @@ class WandbLogger(_Logger):
             wandb.define_metric(self.custom_step_key, hidden=True)
             wandb.define_metric("epoch", hidden=True)
 
-    def _ensure_metric_defined(self, tag: str, step_metric: str | None=None, **kwargs):
+    def _ensure_metric_defined(self, tag: str, step_metric: str | None = None, **kwargs):
         """Dynamically link a specific metric to the custom step key."""
         if tag not in self._defined_metrics and wandb is not None and wandb.run is not None:
             wandb.define_metric(tag, step_metric=step_metric or self.custom_step_key, **kwargs)
@@ -200,11 +199,7 @@ class WandbLogger(_Logger):
         else:
             elem = wandb.Image(figure)
 
-        wandb.log({
-            tag: elem,
-            "epoch": epoch,
-            self.custom_step_key: self._internal_step
-        })
+        wandb.log({tag: elem, "epoch": epoch})
 
     def step(self):
         """Step wandb logger."""
@@ -215,17 +210,21 @@ class WandbLogger(_Logger):
             )
         if wandb.run is not None and self._current_step_logs:
             if get_rank() == 0:
-                self._current_step_logs[self.custom_step_key] = self._internal_step
+                if self._internal_step < len(self.global_steps):
+                    curr_step = self.global_steps[self._internal_step]
+                else:
+                    if self._internal_step == len(self.global_steps):
+                        get_logger().warning(
+                            f"WandbLogger step count ({self._internal_step}) exceeded provided global_steps schedule."
+                            " Reverting to +1 increments."
+                        )
+                    curr_step = self.global_steps[-1] + (self._internal_step - len(self.global_steps) + 1)
 
-                step_idx = min(self._idx, len(self.global_steps) - 1)
-                if self.global_steps:
-                    self._current_step_logs["trainer/global_step"] = self.global_steps[step_idx]
-
+                self._current_step_logs[self.custom_step_key] = curr_step
                 wandb.log(self._current_step_logs)
 
             self._current_step_logs = {}
 
-        self._idx += 1
         self._internal_step += 1
 
     def synchronize_between_processes(self):
