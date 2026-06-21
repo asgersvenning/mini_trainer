@@ -128,7 +128,7 @@ def main():
             cli_flag = flag_mapping.get(key, f"--{key}")
             train_args.extend([cli_flag, str(value)])
 
-        train_args.extend(["-o", str(out_dir.absolute()), "--name", combo_name])
+        train_args.extend(["-o", str(run_dir.absolute()), "--name", combo_name])
 
         # Construct the full training command directly in python
         train_cmd = f"{TRAIN_STUB} {' '.join(train_args)} {shared_args_str}"
@@ -145,17 +145,17 @@ def main():
         m_cmds = []
 
         for eval_ds in eval_datasets:
-            # Sub-directory to prevent mini_metric.csv overwrites on multiple evals
-            eval_out_dir = model_out_dir / "predict" / eval_ds
+            eval_out_dir = model_out_dir / "predict"
             eval_out_dir.mkdir(parents=True, exist_ok=True)
-            result_csv = eval_out_dir / "mini_metric.csv"
-            metric_csv = metric_dir / eval_ds / combo_name
-            metric_csv.parent.mkdir(parents=True, exist_ok=True)
+            result_csv = eval_out_dir / eval_ds / "mini_metric.csv"
+            metric_output = metric_dir / eval_ds / combo_name
+            metric_output.parent.mkdir(parents=True, exist_ok=True)
 
             e_cmds.append(
-                f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir.absolute()} --weights {weights_path.absolute()} --verbose"
+                f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir.absolute()} "
+                f"--name {eval_ds} --weights {weights_path.absolute()} --verbose"
             )
-            m_cmds.append(f"{METRIC_STUB} --file {result_csv.absolute()} -av --output {metric_csv.absolute()}")
+            m_cmds.append(f"{METRIC_STUB} --file {result_csv.absolute()} -av --output {metric_output.absolute()}")
 
         if e_cmds:
             eval_lines.append(" && ".join(e_cmds))
