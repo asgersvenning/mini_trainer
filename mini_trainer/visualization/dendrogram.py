@@ -1,11 +1,14 @@
 import io
 import math
+from argparse import ArgumentParser
 
 import matplotlib.colors as mcolors
 import numpy as np
 from matplotlib import pyplot as plt
 from torch import nn
 
+from mini_trainer import get_logger
+from mini_trainer.config import Formatter
 from mini_trainer.integrations import resolve_name_or_id
 from mini_trainer.modeling import class_distance, classification_module
 
@@ -87,12 +90,18 @@ def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05
     class_names = [str(idx2cls.get(i, idx2cls.get(str(i), i))) for i in range(len(idx2cls))]
     try:
         # Attempt to coerce to scientific names
-        class_names = [res["species"][1] for res in resolve_name_or_id(class_names)]
+        taxonomy = {cls : resolve_name_or_id(cls) for cls in class_names}
+        get_logger().info("Class names successfully detected as species!")
+        if not apriori_groups:
+            get_logger().info('Automatically selecting genera as a priori groups (labels).')
+            apriori_groups =  [taxonomy[cls]["genus"][1] for cls in class_names]
+        class_names = [taxonomy[cls]["species"][1] for cls in class_names]
+        
     except Exception:
         pass
 
     W = class_distance(model).cpu().numpy()
-    condensed_dist = squareform(W)
+    condensed_dist = squareform(W, checks=False)
     Z = linkage(condensed_dist, method="ward")
 
     # Check if we actually have ground-truth colors to plot
@@ -151,3 +160,45 @@ def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05
     fig = circos.plotfig()
     fig.set_size_inches(fig_size, fig_size)
     return fig
+
+
+def cli():
+    description = (
+        "Plot a dendrogram of the (leaf) classes in a model by visual similarity.\n"
+        "Similarities are derived from the inner product between the parameters in the last layer"
+        "under a uniform null distribution over the unit hypersphere.\n"
+        "If the class names can be parsed as scientific species names or GBIF species IDs, then the "
+        "dendrogram will automatically map the internal class names to the accepted species name via "
+        "the GBIF API, and if no a priori groups are passed genera will be used as a priori groups (labels)."
+    )
+    parser = ArgumentParser(prog="plot_class_dendrogram", description=description, formatter_class=Formatter)
+    parser.add_argument(
+        "-w", "--weights", type=str, required=True,
+        help="Model weights from which parameters and class names are extracted."
+    )
+    parser.add_argument(
+        "-o", "--output", type=str, required=True,
+        help="Path to save the dendrogram figure. OBS: It is highly recommended to specify an SVG output (i.e. ends with .svg)."
+    )
+    parser.add_argument(
+        "-t", "--threshold", type=float, default=None, required=False, dest="min_merge_prob",
+        help="Class visual similarity (as fractional percent, e.g. 0.05) threshold for post-hoc clustering."
+    )
+    parser.add_argument(
+        "-l", "--labels", type=str, default=None, required=False, dest="apriori_groups",
+        help="Labels for a priori class clusters or groups. "
+        "For example if the classes are species, then a priori class clusters or groups could be genera, family, or order etc." 
+    )
+    return parser.parse_args()
+
+def run():
+    from mini_trainer.builders import BaseBuilder
+    kwargs = vars(cli())
+    output = kwargs.pop("output")
+    model, _ = BaseBuilder.build_model(weights=kwargs.pop("weights"))
+    kwargs = {k : v for k, v in kwargs.items() if v is not None}
+    fig = plot_probabilistic_dendrogram(model=model, **kwargs)
+    fig.savefig(output, bbox_inches="tight")
+
+if __name__ == "__main__":
+    run()
