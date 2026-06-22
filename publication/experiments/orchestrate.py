@@ -268,7 +268,7 @@ def main():
     # Clean up the base job name
     slurm_cfg["job-name"] = name
 
-    script_lines = ["#!/bin/bash", "set -e"]
+    script_lines = ["#!/bin/bash"]
     for key, value in slurm_cfg.items():
         script_lines.append(f"#SBATCH --{key}={str(value)}")
 
@@ -277,6 +277,8 @@ def main():
 
     script_lines.extend(
         [
+            "",
+            "set -e",
             "",
             'echo "Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"',
             'echo "Running on node: $SLURMD_NODENAME"',
