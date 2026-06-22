@@ -16,6 +16,7 @@ import yaml
 
 BASE_DIR = Path("slurm_jobs")
 
+
 @dataclass(kw_only=True)
 class Argument:
     key: str
