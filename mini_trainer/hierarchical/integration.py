@@ -129,10 +129,10 @@ def parse_class_spec(
                     labels[lab] = labels[lab][:levels]
             cls2idx = cls2idx_from_labels(labels)
             num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
-            retval : dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
-                "cls2idx": cls2idx, 
-                "labels": labels, 
-                "num_classes": num_classes
+            retval: dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
+                "cls2idx": cls2idx,
+                "labels": labels,
+                "num_classes": num_classes,
             }
         if path is not None:
             with open(path, "w") as f:
@@ -149,10 +149,10 @@ def parse_class_spec(
         cls2idx = {str(lvl): cls2idx[str(lvl)] for lvl in range(levels)}
         for lab in labels.keys():
             labels[lab] = labels[lab][:levels]
-    retval : dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
-        "cls2idx": cls2idx, 
-        "labels": labels, 
-        "num_classes": num_classes
+    retval: dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
+        "cls2idx": cls2idx,
+        "labels": labels,
+        "num_classes": num_classes,
     }
     return retval
 
@@ -177,7 +177,7 @@ def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx:
         List of sparse masks for levels `{0, ..., N-2}` where `N` is the
             number of layers in the hierarchy (e.g. 3 if [species, genus, family]).
     """
-    cls2idx = {str(k) : v for k, v in cls2idx.items()}
+    cls2idx = {str(k): v for k, v in cls2idx.items()}
     nlvl = len(cls2idx)
     # Initialize masks with "empty" values (-1)
     masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl - 1)]
