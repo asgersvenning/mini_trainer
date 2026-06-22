@@ -211,7 +211,7 @@ def main():
         weights_path = model_out_dir / "weights" / "last.pt"
 
         base_eval_args = ArgumentSet([Argument(key="weights", value=weights_path.absolute()), Argument(key="verbose", value=True)])
-        base_metric_args = ArgumentSet([Argument(key="all", value=True), Argument(key="verbose", value=True)])
+        base_metric_args = ArgumentSet([Argument(key="all", value=True), Argument(key="verbose", value=1)])
 
         eval_cmds, metric_cmds = [], []
         for eval_name in eval_dataset_names:
