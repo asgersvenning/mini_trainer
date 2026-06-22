@@ -8,30 +8,98 @@
 import argparse
 import itertools
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 BASE_DIR = Path("slurm_jobs")
-TRAIN_STUB = "uv run --no-sync mt_htrain"
-EVAL_STUB = "uv run --no-sync mt_hpredict"
-METRIC_STUB = "uvx --from git+https://github.com/GuillaumeMougeot/mini_metrics.git mm_metrics"
+
+@dataclass(kw_only=True)
+class Argument:
+    key: str
+    value: Any
+
+    def __str__(self):
+        if isinstance(self.value, bool):
+            if not self.value:
+                return ""
+            return f"--{self.key}"
+        values = [self.value] if not isinstance(self.value, (list, tuple)) else self.value
+        value_str = " ".join(str(x) for x in values)
+        return f"--{self.key} {value_str}"
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}[key={self.key}, value={self.value}] => ({self})"
 
 
-def build_shared_args_string(args: dict[str, Any]) -> str:
-    """Constructs the CLI string for shared, static arguments."""
-    cmd = []
-    for key, value in args.items():
-        if isinstance(value, bool):
-            if value:
-                cmd.append(f"--{key}")
-        elif isinstance(value, list):
-            val_str = " ".join(str(x) for x in value)
-            cmd.extend([f"--{key}", val_str])
-        else:
-            cmd.extend([f"--{key}", str(value)])
-    return " ".join(cmd)
+class ArgumentSet:
+    def __init__(self, arguments: list[Argument] | None = None):
+        if arguments is None:
+            arguments = []
+        self.arguments = arguments
+        self.argument_dict = {arg.key: arg for arg in self.arguments}
+        if len(self.arguments) != len(self.argument_dict):
+            raise ValueError(f"Duplicate arguments found: {[arg.key for arg in self.arguments]}")
+
+    def __len__(self):
+        return len(self.arguments)
+
+    def __contains__(self, arg: Argument | str):
+        return (arg.key if isinstance(arg, Argument) else arg) in self.argument_dict
+
+    def __iter__(self):
+        yield from self.arguments
+
+    def keys(self):
+        for arg in self:
+            yield arg.key
+
+    def values(self):
+        for arg in self:
+            yield arg.value
+
+    def __getitem__(self, i: str | int | slice):
+        if isinstance(i, str):
+            return self.get(i)
+        return self.arguments[i]
+
+    def index(self, arg: Argument | str):
+        for i, iarg in enumerate(self):
+            if arg is iarg or isinstance(arg, str) and arg == iarg.key:
+                return i
+        raise KeyError(f'Argument "{arg}" does not exist.')
+
+    def get(self, k: str):
+        arg = self.argument_dict.get(k)
+        if arg is None:
+            raise KeyError(f'Argument "{k}" does not exist.')
+        return arg
+
+    def pop(self, k: str):
+        arg = self.get(k)
+        self.arguments.pop(self.index(k))
+        self.argument_dict.pop(k)
+        return arg
+
+    def add(self, arg: Argument):
+        if arg in self:
+            raise KeyError(f'Argument "{arg}" already exists.')
+        self.arguments.append(arg)
+        self.argument_dict[arg.key] = arg
+        return self
+
+    def __add__(self, other: "ArgumentSet"):
+        return ArgumentSet(self.arguments + other.arguments)
+
+    def copy(self):
+        """Return a shallow copy of the argument set."""
+        return ArgumentSet(self.arguments.copy())
+
+    def build_args_string(self) -> str:
+        """Constructs the CLI string for shared, static arguments."""
+        return " ".join(map(str, self))
 
 
 def main():
@@ -49,24 +117,29 @@ def main():
     name = config.get("name", None)
     if name is None:
         raise KeyError(f"Missing `name` field in configuration file: {config_path}")
+    if not isinstance(name, str):
+        raise TypeError(f"Expected name to be a string, but found {name=} ({type(name)})")
 
+    stubs = config.get("stubs")
+    TRAIN_STUB = stubs["train"]
+    EVAL_STUB = stubs["eval"]
+    METRIC_STUB = stubs["metric"]
     slurm_cfg = config.get("slurm", {})
     exp_cfg = config.get("experiment", {})
-    args_cfg = config.get("args", {})
+    _args_cfg = ArgumentSet([Argument(key=k, value=v) for k, v in (config.get("args", {}) or {}).items()])
 
-    dataset_paths = config.get("datasets", {})
+    dataset_cfg = config.get("datasets", {})
 
-    variable_args_cfg = {}
-    for k in list(args_cfg.keys()):
-        v = args_cfg[k]
-        if isinstance(v, dict):
-            variable_args_cfg[k] = args_cfg.pop(k)
+    args_cfg = ArgumentSet()
+    variable_args_cfg = ArgumentSet()
+    for arg in _args_cfg:
+        if isinstance(arg.value, dict):
+            variable_args_cfg.add(arg)
         else:
-            continue
+            args_cfg.add(arg)
 
     # Extract the dataset mapping dictionary from eval configuration
-    eval_cfg = config.get("eval", {})
-    eval_dataset_map = eval_cfg.get("dataset", {})
+    eval_dataset_map = config.get("eval", {})
 
     if not exp_cfg:
         raise ValueError("No 'experiment' parameters found in the configuration.")
@@ -96,74 +169,86 @@ def main():
     metric_tasks_file = out_dir / "metric_tasks.txt"
     submit_file = out_dir / "array.sh"
 
-    flag_mapping = {"dataset": "-i"}
     train_lines = []
     eval_lines = []
     metric_lines = []
 
-    # Pre-calculate shared arguments string for the training commands
-    shared_args_str = build_shared_args_string(args_cfg)
-
     for combo in combinations:
-        experiment_params = dict(zip(param_names, combo))
+        experiment_params = ArgumentSet([Argument(key=k, value=v) for k, v in zip(param_names, combo)])
+        combo_name = "_".join(str(v).replace("/", "-") for v in experiment_params.values())
 
         # Assign variable arguments
-        extra_args = {}
-        for train_param, exp_param in variable_args_cfg.items():
-            for vk, vvks in exp_param.items():
-                if vk not in experiment_params:
-                    raise KeyError(f"Variable training argument {train_param} assigned to non-existing experiment parameter {vk}")
-                for vvk, vv in vvks.items():
-                    if experiment_params[vk] == vvk:
-                        extra_args[train_param] = vv
+        extra_args = ArgumentSet()
+        for var_arg in variable_args_cfg:
+            var_arg_key = var_arg.key
+            for exp_param_key, override in var_arg.value.items():
+                if exp_param_key not in experiment_params:
+                    raise KeyError(
+                        f"Variable training argument {var_arg.key} assigned to non-existing experiment parameter {exp_param_key}"
+                    )
+                for exp_param_value, arg_value in override.items():
+                    if experiment_params.get(exp_param_key).value == exp_param_value:
+                        extra_args.add(Argument(key=var_arg_key, value=arg_value))
 
         # 1. Prepare Training Commands
-        train_args = []
-        safe_values = [str(v).replace("/", "-") for v in experiment_params.values()]
-        combo_name = "_".join(safe_values)
+        train_args = args_cfg.copy() + experiment_params + extra_args
+        dataset = train_args.pop("dataset")
+        data_index = dataset_cfg[dataset.value]["data_index"]
+        train_args.add(Argument(key="input", value=dataset_cfg[dataset.value]["path"]))
+        if data_index:
+            train_args.add(Argument(key="data_index", value=data_index))
+        train_args.add(Argument(key="output", value=run_dir.absolute()))
+        train_args.add(Argument(key="name", value=combo_name))
 
-        for key, value in itertools.chain(experiment_params.items(), extra_args.items()):
-            if key == "dataset":
-                value = dataset_paths[value]
-            cli_flag = flag_mapping.get(key, f"--{key}")
-            train_args.extend([cli_flag, str(value)])
-
-        train_args.extend(["-o", str(run_dir.absolute()), "--name", combo_name])
-
-        # Construct the full training command directly in python
-        train_cmd = f"{TRAIN_STUB} {' '.join(train_args)} {shared_args_str}"
+        train_cmd = f"{TRAIN_STUB} {train_args.build_args_string()}"
         train_lines.append(train_cmd)
 
         # 2. Prepare Evaluation and Metric Commands
-        current_train_dataset = experiment_params.get("dataset")
-        eval_datasets = eval_dataset_map.get(current_train_dataset, [])
+        eval_dataset_names = eval_dataset_map.get(dataset.value, [])
 
         model_out_dir = run_dir / combo_name
         weights_path = model_out_dir / "weights" / "last.pt"
 
-        e_cmds = []
-        m_cmds = []
+        base_eval_args = ArgumentSet([Argument(key="weights", value=weights_path.absolute()), Argument(key="verbose", value=True)])
+        base_metric_args = ArgumentSet([Argument(key="all", value=True), Argument(key="verbose", value=True)])
 
-        for eval_ds in eval_datasets:
+        eval_cmds, metric_cmds = [], []
+        for eval_name in eval_dataset_names:
+            if not isinstance(eval_name, str):
+                raise TypeError(f"Expected name to be a string, but found {eval_name=} ({type(eval_name)})")
+            eval_data_index = dataset_cfg[eval_name]["data_index"]
+            if not eval_data_index:
+                eval_data_index = data_index or (model_out_dir / "data_index.json").absolute()
+            eval_dataset = dataset_cfg[eval_name]
             eval_out_dir = model_out_dir / "predict"
             eval_out_dir.mkdir(parents=True, exist_ok=True)
-            result_csv = eval_out_dir / eval_ds / "mini_metric.csv"
-            metric_output = metric_dir / eval_ds / combo_name
+            result_csv = eval_out_dir / eval_name / "mini_metric.csv"
+            metric_output = metric_dir / eval_name / combo_name
             metric_output.parent.mkdir(parents=True, exist_ok=True)
 
-            e_cmds.append(
-                f"{EVAL_STUB} -i {dataset_paths[eval_ds]} -o {eval_out_dir.absolute()} "
-                f"--name {eval_ds} --weights {weights_path.absolute()} --verbose"
+            eval_args = base_eval_args.copy() + ArgumentSet(
+                [
+                    Argument(key="input", value=eval_dataset["path"]),
+                    Argument(key="output", value=eval_out_dir.absolute()),
+                    Argument(key="name", value=eval_name),
+                    Argument(key="data_index", value=eval_data_index),
+                ]
             )
-            m_cmds.append(f"{METRIC_STUB} --file {result_csv.absolute()} -av --output {metric_output.absolute()}")
 
-        if e_cmds:
-            eval_lines.append(" && ".join(e_cmds))
+            metric_args = base_metric_args.copy() + ArgumentSet(
+                [Argument(key="file", value=result_csv.absolute()), Argument(key="output", value=metric_output.absolute())]
+            )
+
+            eval_cmds.append(f"{EVAL_STUB} {eval_args.build_args_string()}")
+            metric_cmds.append(f"{METRIC_STUB} {metric_args.build_args_string()}")
+
+        if eval_cmds:
+            eval_lines.append(" && ".join(eval_cmds))
         else:
             eval_lines.append('echo "No evaluation datasets mapped."')
 
-        if m_cmds:
-            metric_lines.append(" && ".join(m_cmds))
+        if metric_cmds:
+            metric_lines.append(" && ".join(metric_cmds))
         else:
             metric_lines.append('echo "No metrics to calculate."')
 
@@ -182,9 +267,9 @@ def main():
     # Clean up the base job name
     slurm_cfg["job-name"] = name
 
-    script_lines = ["#!/bin/bash"]
+    script_lines = ["#!/bin/bash", "set -e"]
     for key, value in slurm_cfg.items():
-        script_lines.append(f"#SBATCH --{key}={value}")
+        script_lines.append(f"#SBATCH --{key}={str(value)}")
 
     # Append the array directive
     script_lines.append(f"#SBATCH --array=1-{num_tasks}")
