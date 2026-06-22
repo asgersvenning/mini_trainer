@@ -296,7 +296,7 @@ def create_taxonomy(  # noqa: D103
     )
 
 
-def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[str, tuple[str, str]]]):  # noqa: D103
+def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[TK, tuple[str, str]]]):  # noqa: D103
     return OrderedDict([(k, tuple([v[0] for v in e.values()])) for k, e in tax.items()])
 
 

@@ -35,7 +35,7 @@ def main(  # noqa: D417
     collector_cls: type[BaseResultCollector] = BaseResultCollector,
     spec_model_dataloader_kwargs: dict[str, Any] = {},
     model_builder_kwargs: dict[str, Any] = {},
-    dataloader_builder_kwargs: dict[str, Any] = {"batch_size": 16},
+    dataloader_builder_kwargs: dict[str, Any] = {"batch_size": 64},
     augmentation_builder_kwargs: dict[str, Any] = {},
     criterion_builder_kwargs: dict[str, Any] = {},
     collector_cls_kwargs: dict[str, Any] = {},
@@ -273,7 +273,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         dest="dataloader_builder_kwargs.batch_size",
         default=None,
         required=False,
-        help="Number of images used in each mini-batch for training/validation (default=16).",
+        help="Number of images used in each mini-batch for training/validation (default=64).",
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(

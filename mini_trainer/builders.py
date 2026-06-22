@@ -161,8 +161,8 @@ class BaseBuilder:
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
+        resize_size: int,
         num_workers: int | None = None,
-        resize_size: int | None = None,
         subsample: int | None = None,
         hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
         preprocess: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -328,7 +328,9 @@ class BaseBuilder:
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
 
     @staticmethod
-    def build_scaler(device: torch.types.Device, init_scale: float = 2**14, growth_interval: int = 100, **kwargs):
+    def build_scaler(device: torch.device | str, init_scale: float = 2**14, growth_interval: int = 100, **kwargs):
+        if isinstance(device, torch.device):
+            device = device.type
         return GradScaler(device=device, init_scale=init_scale, growth_interval=growth_interval, **kwargs)
 
     @staticmethod

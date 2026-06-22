@@ -4,7 +4,7 @@ from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
-from typing import Concatenate
+from typing import Concatenate, cast
 
 import numpy as np
 import torch
@@ -64,7 +64,7 @@ def parse_class_spec(
     levels: int | None = None,
     label_fn: Callable[Concatenate[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
     **kwargs,
-) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | int]:
+) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]]:
     """Construct class specification:
     * class index (label string to index mapping)
     * hierarchical labels (tuple of label strings leaf->root)
@@ -129,23 +129,35 @@ def parse_class_spec(
                     labels[lab] = labels[lab][:levels]
             cls2idx = cls2idx_from_labels(labels)
             num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
-            retval = {"cls2idx": cls2idx, "labels": labels, "num_classes": num_classes}
+            retval : dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
+                "cls2idx": cls2idx, 
+                "labels": labels, 
+                "num_classes": num_classes
+            }
         if path is not None:
             with open(path, "w") as f:
                 json.dump(retval, f)
         else:
             return retval
     with open(path, "rb") as f:
-        retval = json.load(f)
-        retval["labels"] = OrderedDict([(k, v) for k, v in retval["labels"].items()])
+        data = json.load(f)
+    cls2idx = cast(dict[str, dict[str, int]], data["cls2idx"])
+    labels = cast(dict[str, tuple[str, ...]], data["labels"])
+    labels = OrderedDict([(cls, labels[cls]) for cls, _ in sorted(cls2idx["0"].items(), key=lambda kv: kv[1])])
+    num_classes = cast(list[int], data["num_classes"])
     if levels:
-        retval["cls2idx"] = {str(lvl): retval["cls2idx"][str(lvl)] for lvl in range(levels)}
-        for lab in retval["labels"].keys():
-            retval["labels"][lab] = retval["labels"][lab][:levels]
+        cls2idx = {str(lvl): cls2idx[str(lvl)] for lvl in range(levels)}
+        for lab in labels.keys():
+            labels[lab] = labels[lab][:levels]
+    retval : dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]] = {
+        "cls2idx": cls2idx, 
+        "labels": labels, 
+        "num_classes": num_classes
+    }
     return retval
 
 
-def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx: dict[str, dict[str, int]]):
+def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx: dict[int | str, dict[str, int]]):
     """Compute 'sparse masks' from labels (e.g. [species, genus, family]) and class indices.
 
     A sparse mask is an integer vector (1D tensor) with length equal to the number of classes
@@ -165,6 +177,7 @@ def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx:
         List of sparse masks for levels `{0, ..., N-2}` where `N` is the
             number of layers in the hierarchy (e.g. 3 if [species, genus, family]).
     """
+    cls2idx = {str(k) : v for k, v in cls2idx.items()}
     nlvl = len(cls2idx)
     # Initialize masks with "empty" values (-1)
     masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl - 1)]
@@ -218,8 +231,8 @@ class HierarchicalBuilder(BaseBuilder):  # noqa: D101
 
     @staticmethod
     def build_model(
-        cls2idx: dict[int, dict[str, int]] | None = None,
-        labels: list[tuple[str, ...]] | None = None,
+        cls2idx: dict[int | str, dict[str, int]] | None = None,
+        labels: OrderedDict[str, tuple[str, ...]] | None = None,
         *args,
         cls=HierarchicalClassifier,
         **kwargs,
@@ -242,11 +255,11 @@ class HierarchicalBuilder(BaseBuilder):  # noqa: D101
     def build_criterion(
         *args,
         num_classes: list[int],
+        device: torch.device,
+        dtype: torch.dtype,
         weighted: bool = False,
         labels: Iterable[np.ndarray | torch.Tensor | list | tuple] | None = None,
         label_smoothing: float | None = None,
-        device: torch.device | None = None,
-        dtype: torch.dtype | None = None,
         **kwargs,
     ):
         if label_smoothing is None:

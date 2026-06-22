@@ -97,7 +97,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         # Register the base adjustments as a buffer so they move to the correct device
         self.register_buffer("adjustments", log_priors)
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """.
 
         Args:
@@ -109,15 +109,15 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         """
         # Uncertainty gate: 1.0 when confident, 0.0 when uncertain
         with torch.no_grad():
-            log_probs = logits.log_softmax(dim=-1)
+            log_probs = input.log_softmax(dim=-1)
             entropy = -(torch.exp(log_probs) * log_probs).sum(dim=-1, keepdim=True)
-            evenness = 1.0 - entropy / math.log(logits.size(-1))
+            evenness = 1.0 - entropy / math.log(input.size(-1))
 
         adjustments = self.adjustments
         if self._device is None:
-            adjustments = adjustments.to(logits.device)
+            adjustments = adjustments.to(input.device)
 
-        return super().forward(logits + (evenness * adjustments), targets)
+        return super().forward(input + (evenness * adjustments), target)
 
 
 def class_weight_distribution_regularization(W: torch.Tensor, sparse: bool = True):

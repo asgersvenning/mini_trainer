@@ -1,6 +1,7 @@
 import os
-from collections.abc import Iterable
-from typing import Any
+from collections import OrderedDict
+from collections.abc import Sequence
+from typing import Any, cast
 
 from tqdm import tqdm
 
@@ -74,9 +75,9 @@ def get_keys(row: dict[str, Any]):
     return [str(int(row[k].strip())) for k in KCOLUMNS]
 
 
-def combine_dicts(dicts: Iterable[dict]):
+def combine_dicts(dicts: Sequence[dict]):
     """Combine dictionaries with shared keys by stacking values in lists."""
-    if not isinstance(dicts, (list, tuple)):
+    if not isinstance(dicts, list):
         dicts = list(dicts)
     if len(dicts) == 0:
         return dict()
@@ -219,7 +220,7 @@ def get_metadata_from_parquet(
                 out_label.extend(label_batch)
                 out_class.extend(class_batch)
             else:
-                mapping: dict[str, int] = cls2idx  # type: ignore[assignment]
+                mapping = cast(dict[str, int], cls2idx)
                 key_list = batch.column(idx[KCOLUMNS[0]]).to_pylist()
 
                 label_batch = [_to_str(v).strip() for v in key_list]
@@ -247,13 +248,18 @@ def parquet_to_class_spec(path: str):
     return {"cls2idx": {cls: i for i, cls in enumerate(clss)}, "num_classes": len(clss)}
 
 
-def parquet_to_class_spec_hierarchical(path: str, levels: int = 3):
+def parquet_to_class_spec_hierarchical(
+        path: str, 
+        levels: int = 3
+    ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]]:
     """Create hierarchical class specification from ``gbifxdl`` parquet."""
-    combs = {v[0]: v for v in sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x: x[::-1])}
-    cls2idx = dict()
+    combs = OrderedDict(
+        (v[0], v) for v in sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x: x[::-1])
+    )
+    cls2idx : dict[str, dict[str, int]] = dict()
     for level in range(levels):
         clss = set()
-        this_cls2idx = dict()
+        this_cls2idx : dict[str, int] = dict()
         for _, comb in combs.items():
             cls = comb[level]
             if cls in clss:
