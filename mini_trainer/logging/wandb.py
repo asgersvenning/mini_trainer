@@ -44,6 +44,9 @@ class WandbLogger(_Logger):
         if output is not None and name is not None:
             output_dir = os.path.join(output, name)
 
+        if name is None:
+            name = "run"
+
         config = None
         dataset = None
         machine = socket.gethostname()
