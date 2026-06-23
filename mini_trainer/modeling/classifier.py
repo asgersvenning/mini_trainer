@@ -356,6 +356,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 stored_classifier_type = import_class(stored_classifier_type)
                 if stored_classifier_type is not cls:
                     cls = stored_classifier_type
+                    assert issubclass(cls, Classifier)
             if stored_model_type is None:
                 if model_type is None:
                     raise RuntimeError("Unable to infer missing model type from supplied weights.")
@@ -567,13 +568,18 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
 
     def _translate(self):
         if self.idx2cls:
+            _idx2cls = self.idx2cls.copy()
 
-            def fmt_idx(i):  # type: ignore
-                return self.idx2cls[i.item()]  # type: ignore
+            def fmt_idx(i: int | torch.Tensor):
+                if isinstance(i, torch.Tensor):
+                    i = int(i.item())
+                return _idx2cls[i]
         else:
 
-            def fmt_idx(i):
-                return str(i.item())
+            def fmt_idx(i: int | torch.Tensor):
+                if isinstance(i, torch.Tensor):
+                    i = int(i.item())
+                return str(i)
 
         return [[fmt_idx(i) for i in idxs] for idxs in self.indices]
 
@@ -656,7 +662,9 @@ def classification_module(model: nn.Module):
     """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`."""
     # Unwrap torch.compile (OptimizedModule) and DDP wrappers
     if hasattr(model, "_orig_mod"):
-        model = model._orig_mod
+        _orig = model._orig_mod
+        assert isinstance(_orig, nn.Module)
+        model = _orig
     model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
     backbone_name = getattr(model, "_backbone_output_name", None)
     if backbone_name is None:

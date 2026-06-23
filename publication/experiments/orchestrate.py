@@ -28,7 +28,7 @@ class Argument:
                 return ""
             return f"--{self.key}"
         values = [self.value] if not isinstance(self.value, (list, tuple)) else self.value
-        value_str = " ".join(str(x) for x in values)
+        value_str = " ".join(str(x.absolute().resolve() if isinstance(x, Path) else x) for x in values)
         return f"--{self.key} {value_str}"
 
     def __repr__(self):
@@ -36,16 +36,20 @@ class Argument:
 
 
 class ArgumentSet:
-    def __init__(self, arguments: list[Argument] | None = None):
+    def __init__(self, arguments: list[Argument] | None = None, **kwargs):
         if arguments is None:
             arguments = []
         self.arguments = arguments
         self.argument_dict = {arg.key: arg for arg in self.arguments}
         if len(self.arguments) != len(self.argument_dict):
             raise ValueError(f"Duplicate arguments found: {[arg.key for arg in self.arguments]}")
+        self.add(**kwargs)
 
     def __len__(self):
         return len(self.arguments)
+
+    def __bool__(self):
+        return bool(self.arguments)
 
     def __contains__(self, arg: Argument | str):
         return (arg.key if isinstance(arg, Argument) else arg) in self.argument_dict
@@ -84,11 +88,15 @@ class ArgumentSet:
         self.argument_dict.pop(k)
         return arg
 
-    def add(self, arg: Argument):
-        if arg in self:
-            raise KeyError(f'Argument "{arg}" already exists.')
-        self.arguments.append(arg)
-        self.argument_dict[arg.key] = arg
+    def add(self, *args: Argument, **kwargs):
+        new_args = list(args)
+        for k, v in kwargs.items():
+            new_args.append(Argument(key=k, value=v))
+        for arg in new_args:
+            if arg in self:
+                raise KeyError(f'Argument "{arg}" already exists.')
+            self.arguments.append(arg)
+            self.argument_dict[arg.key] = arg
         return self
 
     def __add__(self, other: "ArgumentSet"):
@@ -100,7 +108,46 @@ class ArgumentSet:
 
     def build_args_string(self) -> str:
         """Constructs the CLI string for shared, static arguments."""
-        return " ".join(map(str, self))
+        return " ".join(map(str, sorted(self, key=lambda arg: isinstance(arg.value, Path))))
+
+
+def assign_variable_args(match: ArgumentSet, options: ArgumentSet):
+    new_args = ArgumentSet()
+    for opt_cfg in options:
+        opt_key = opt_cfg.key
+        for match_key, opt_case in opt_cfg.value.items():
+            if match_key not in match:
+                raise KeyError(f"Variable training argument {opt_key} assigned to non-existing match parameter {match_key}")
+            for match_value, opt_value in opt_case.items():
+                if match.get(match_key).value == match_value:
+                    new_args.add(Argument(key=opt_key, value=opt_value))
+    return new_args
+
+
+def split_var_args(orig: ArgumentSet):
+    fixed_args = ArgumentSet()
+    var_args = ArgumentSet()
+    for arg in orig:
+        if isinstance(arg.value, dict):
+            var_args.add(arg)
+        else:
+            fixed_args.add(arg)
+    return fixed_args, var_args
+
+
+def configure_input_output(args: ArgumentSet, datasets: dict[str, dict[str, str | bool]]):
+    dataset = args.pop("dataset")
+    args.add(Argument(key="input", value=datasets[dataset.value]["path"]))
+
+    if "data_index" not in args:
+        args.add(Argument(key="data_index", value=datasets[dataset.value]["data_index"]))
+    data_index = args.get("data_index").value
+
+    if isinstance(data_index, Path):
+        data_index = str(data_index.absolute().resolve())
+    assert isinstance(data_index, (bool, str))
+
+    return args, dataset, data_index
 
 
 def main():
@@ -127,17 +174,18 @@ def main():
     METRIC_STUB = stubs["metric"]
     slurm_cfg = config.get("slurm", {})
     exp_cfg = config.get("experiment", {})
-    _args_cfg = ArgumentSet([Argument(key=k, value=v) for k, v in (config.get("args", {}) or {}).items()])
+    args_data = config.get("args", {}) or {}
 
+    # Split fixed and variable args
+    (
+        (shared_args, var_shared_args),
+        (base_train_args, var_train_args),
+        (base_eval_args, var_eval_args),
+        (base_metric_args, var_metric_args),
+    ) = [split_var_args(ArgumentSet(**(args_data.get(arg_set, {}) or {}))) for arg_set in ["shared", "train", "eval", "metric"]]
+
+    # Dataset config
     dataset_cfg = config.get("datasets", {})
-
-    args_cfg = ArgumentSet()
-    variable_args_cfg = ArgumentSet()
-    for arg in _args_cfg:
-        if isinstance(arg.value, dict):
-            variable_args_cfg.add(arg)
-        else:
-            args_cfg.add(arg)
 
     # Extract the dataset mapping dictionary from eval configuration
     eval_dataset_map = config.get("eval", {})
@@ -157,116 +205,88 @@ def main():
 
     # Set up output directory
     out_dir = BASE_DIR / name
-    out_dir.mkdir(parents=True, exist_ok=True)
     res_dir = out_dir / "results"
-    res_dir.mkdir(parents=True, exist_ok=True)
     run_dir = res_dir / "runs"
     run_dir.mkdir(parents=True, exist_ok=True)
     metric_dir = res_dir / "metrics"
     metric_dir.mkdir(parents=True, exist_ok=True)
 
-    train_tasks_file = out_dir / "train_tasks.txt"
-    eval_tasks_file = out_dir / "eval_tasks.txt"
-    metric_tasks_file = out_dir / "metric_tasks.txt"
-    submit_file = out_dir / "array.sh"
-
-    train_lines = []
-    eval_lines = []
-    metric_lines = []
-
-    for combo in combinations:
-        experiment_params = ArgumentSet([Argument(key=k, value=v) for k, v in zip(param_names, combo)])
-        combo_name = "_".join(str(v).replace("/", "-") for v in experiment_params.values())
-
-        # Assign variable arguments
-        extra_args = ArgumentSet()
-        for var_arg in variable_args_cfg:
-            var_arg_key = var_arg.key
-            for exp_param_key, override in var_arg.value.items():
-                if exp_param_key not in experiment_params:
-                    raise KeyError(
-                        f"Variable training argument {var_arg.key} assigned to non-existing experiment parameter {exp_param_key}"
-                    )
-                for exp_param_value, arg_value in override.items():
-                    if experiment_params.get(exp_param_key).value == exp_param_value:
-                        extra_args.add(Argument(key=var_arg_key, value=arg_value))
-
-        # 1. Prepare Training Commands
-        train_args = args_cfg.copy() + experiment_params + extra_args
-        dataset = train_args.pop("dataset")
-        data_index = dataset_cfg[dataset.value]["data_index"]
-        train_args.add(Argument(key="input", value=dataset_cfg[dataset.value]["path"]))
-        if data_index:
-            train_args.add(Argument(key="data_index", value=data_index))
-        train_args.add(Argument(key="output", value=run_dir.absolute()))
-        train_args.add(Argument(key="name", value=combo_name))
-
-        train_cmd = f"{TRAIN_STUB} {train_args.build_args_string()}"
-        train_lines.append(train_cmd)
-
-        # 2. Prepare Evaluation and Metric Commands
-        eval_dataset_names = eval_dataset_map.get(dataset.value, [])
-
-        model_out_dir = run_dir / combo_name
-        weights_path = model_out_dir / "weights" / "last.pt"
-
-        base_eval_args = ArgumentSet([Argument(key="weights", value=weights_path.absolute()), Argument(key="verbose", value=True)])
-        base_metric_args = ArgumentSet([Argument(key="all", value=True), Argument(key="verbose", value=1)])
-
-        eval_cmds, metric_cmds = [], []
-        for eval_name in eval_dataset_names:
-            if not isinstance(eval_name, str):
-                raise TypeError(f"Expected name to be a string, but found {eval_name=} ({type(eval_name)})")
-            eval_data_index = dataset_cfg[eval_name]["data_index"]
-            if not eval_data_index:
-                eval_data_index = data_index or (model_out_dir / "data_index.json").absolute()
-            eval_dataset = dataset_cfg[eval_name]
-            eval_out_dir = model_out_dir / "predict"
-            eval_out_dir.mkdir(parents=True, exist_ok=True)
-            result_csv = eval_out_dir / eval_name / "mini_metric.csv"
-            metric_output = metric_dir / eval_name / combo_name
-            metric_output.parent.mkdir(parents=True, exist_ok=True)
-
-            eval_args = base_eval_args.copy() + ArgumentSet(
-                [
-                    Argument(key="input", value=eval_dataset["path"]),
-                    Argument(key="output", value=eval_out_dir.absolute()),
-                    Argument(key="name", value=eval_name),
-                    Argument(key="data_index", value=eval_data_index),
-                ]
-            )
-
-            metric_args = base_metric_args.copy() + ArgumentSet(
-                [Argument(key="file", value=result_csv.absolute()), Argument(key="output", value=metric_output.absolute())]
-            )
-
-            eval_cmds.append(f"{EVAL_STUB} {eval_args.build_args_string()}")
-            metric_cmds.append(f"{METRIC_STUB} {metric_args.build_args_string()}")
-
-        if eval_cmds:
-            eval_lines.append(" && ".join(eval_cmds))
-        else:
-            eval_lines.append('echo "No evaluation datasets mapped."')
-
-        if metric_cmds:
-            metric_lines.append(" && ".join(metric_cmds))
-        else:
-            metric_lines.append('echo "No metrics to calculate."')
-
-    train_tasks_file.write_text("\n".join(train_lines) + "\n")
-    eval_tasks_file.write_text("\n".join(eval_lines) + "\n")
-    metric_tasks_file.write_text("\n".join(metric_lines) + "\n")
-
-    # Update slurm_cfg to handle array formatting for output logs
+    # Resolve config arguments
     output_log = Path(slurm_cfg.get("output", f"{out_dir}/logs/train_%A_%a.log"))
     print(output_log, output_log.parent)
     output_log.parent.mkdir(parents=True, exist_ok=True)
     if "%j" in output_log.name:
         output_log = output_log.with_name(output_log.name.replace("%j", "%A_%a"))
-    slurm_cfg["output"] = str(output_log.absolute())
-
-    # Clean up the base job name
+    slurm_cfg["output"] = str(output_log.absolute().resolve())
     slurm_cfg["job-name"] = name
+
+    # Define SLURM task files
+    train_tasks_file, eval_tasks_file, metric_tasks_file = [
+        (out_dir / f"{task}_tasks.txt").absolute().resolve() for task in ["train", "eval", "metric"]
+    ]
+    train_lines, eval_lines, metric_lines = [], [], []
+
+    submit_file = out_dir / "array.sh"
+
+    for combo in combinations:
+        experiment_params = ArgumentSet([Argument(key=k, value=v) for k, v in zip(param_names, combo)])
+        combo_name = "_".join(str(v).replace("/", "-") for v in experiment_params.values())
+
+        # 1. Prepare Training Command
+        train_args = base_train_args + shared_args + experiment_params
+        train_args.add(*assign_variable_args(train_args, var_train_args + var_shared_args))
+        train_args, train_dataset, train_data_index = configure_input_output(
+            args=train_args.add(output=run_dir, name=combo_name), datasets=dataset_cfg
+        )
+        train_lines.append(f"{TRAIN_STUB} {train_args.build_args_string()}")
+
+        # 2. Prepare Evaluation and Metric Command(s)
+        eval_dataset_names = eval_dataset_map.get(train_dataset.value, [])
+
+        model_out_dir = run_dir / combo_name
+        weights_path = model_out_dir / "weights" / "last.pt"
+
+        eval_cmds, metric_cmds = [], []
+        for eval_name in eval_dataset_names:
+            if not isinstance(eval_name, str):
+                raise TypeError(f"Expected name to be a string, but found {eval_name=} ({type(eval_name)})")
+
+            eval_out_dir = model_out_dir / "predict"
+            result_csv = eval_out_dir / eval_name / "mini_metric.csv"
+            metric_output = metric_dir / eval_name / combo_name
+            metric_output.parent.mkdir(parents=True, exist_ok=True)
+
+            eval_args = base_eval_args.copy().add(
+                weights=weights_path, verbose=True, dataset=eval_name, output=eval_out_dir, name=eval_name
+            )
+            eval_args.add(*assign_variable_args(eval_args, var_eval_args + var_shared_args))
+            eval_args, eval_dataset, eval_data_index = configure_input_output(args=eval_args, datasets=dataset_cfg)
+            # If data_index is not specified in the `datasets` section of the
+            # config YAML, we can use the constructed data_index.json from
+            # the training run - if and only if, the evaluation dataset is
+            # the same as the training dataset
+            if not eval_data_index:
+                assert eval_dataset.value == train_dataset.value
+                eval_args.pop("data_index")
+                eval_args.add(data_index=model_out_dir / "data_index.json")
+
+            metric_args = base_metric_args.copy().add(all=True, verbose=1, file=result_csv, output=metric_output)
+            # Scaffolding for variable metric args is implemented, but the use-case
+            # is not clear, so we'll alert the user
+            _mva = assign_variable_args(metric_args, var_metric_args)
+            if _mva:
+                print(f"Found variable metric args `{_mva.build_args_string()}`!")
+                metric_args.add(*_mva)
+
+            eval_cmds.append(f"{EVAL_STUB} {eval_args.build_args_string()}")
+            metric_cmds.append(f"{METRIC_STUB} {metric_args.build_args_string()}")
+
+        eval_lines.append(" && ".join(eval_cmds) or 'echo "No evaluation datasets mapped."')
+        metric_lines.append(" && ".join(metric_cmds) or 'echo "No metrics to calculate."')
+
+    train_tasks_file.write_text("\n".join(train_lines) + "\n")
+    eval_tasks_file.write_text("\n".join(eval_lines) + "\n")
+    metric_tasks_file.write_text("\n".join(metric_lines) + "\n")
 
     script_lines = ["#!/bin/bash"]
     for key, value in slurm_cfg.items():
@@ -284,9 +304,9 @@ def main():
             'echo "Running on node: $SLURMD_NODENAME"',
             "",
             "# Extract the Nth line from task files",
-            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file.absolute()})',
-            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file.absolute()})',
-            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file.absolute()})',
+            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
+            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
+            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
             "",
             "# Train",
             'echo "=== Start training ==="',

@@ -1,4 +1,5 @@
-from .core import BaseResultCollector, BaseStatistic, MetricLogger, MultiLogger, RawResultCollector, _Logger, _ResultsCollector, _Statistic
+from .collector import BaseResultCollector, RawResultCollector, _ResultsCollector
+from .core import BaseStatistic, MetricLogger, MultiLogger, _Logger, _Statistic
 from .tensorboard import TensorboardLogger
 from .wandb import WandbLogger
 

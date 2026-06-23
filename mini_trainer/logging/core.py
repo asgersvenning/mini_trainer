@@ -1,20 +1,20 @@
-import json
 import math
 import os
 import time
 import warnings
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from itertools import chain, repeat
 from tempfile import NamedTemporaryFile
 from threading import RLock
-from types import GeneratorType
 from typing import Any, TextIO, TypeVar
 
 import numpy as np
 
 try:
-    import psutil
+    import psutil as _psutil
+
+    psutil = _psutil
 except ImportError:
     psutil = None
 import torch
@@ -23,8 +23,7 @@ from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer import get_logger
-from mini_trainer.modeling import Prediction, classification_module
-from mini_trainer.training import named_confusion_matrix, raw_confusion_matrix
+from mini_trainer.training import raw_confusion_matrix
 from mini_trainer.utils import float_signif_decimal, get_rank, main_process_first, reduce_across_processes, write_csv_from_dict
 from mini_trainer.visualization import (
     plot_class_distance_matrix,
@@ -163,278 +162,6 @@ def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
         return res
 
 
-class _ResultsCollector:
-    """This is an abstract base class, it is likely easier to subclass `BaseResultCollector` instead.
-
-    If you are using the `mini_trainer` train and prediction scripts/APIs,
-      it is very unlikely that this is the correct class to subclass.
-    However, if you are building entirely new train and/or predictions scripts/APIs, it may be an option.
-    """
-
-    def collect(self, *args, **kwargs):
-        raise NotImplementedError("Result collectors must have a `collect` class method.")
-
-    def evaluate(self):
-        raise NotImplementedError("Result collector must have a `evaluate` class method.")
-
-    @property
-    def data(self):
-        raise NotImplementedError("Result collector must have `data` class propery suitable for JSON serialization.")
-
-
-_BaseTypes = bool | str | float | int | torch.Tensor | np.ndarray | np.str_
-
-
-class RawResultCollector(_ResultsCollector):
-    """Agnostic collector with minimal postprocessing."""
-
-    _attributes = ("predictions", "labels", "paths")
-
-    def __init__(  # noqa: D107
-        self, strict: bool = True, *args, **kwargs
-    ):
-        self.strict = strict
-        self.predictions, self.labels, self.paths = [], [], []
-
-    def collect(
-        self,
-        paths: list[str] | None = None,
-        predictions: torch.Tensor | list[torch.Tensor] | None = None,
-        labels: list[int] | list[list[int]] | None = None,
-        **kwargs,
-    ):
-        contrib = locals()
-        for attr in self._attributes:
-            try:
-                values = contrib.get(attr, None)
-                if isinstance(values, torch.Tensor):
-                    values = values.detach().cpu()
-                if values is not None and len(values) > 0:
-                    if not isinstance(values, (torch.Tensor, np.ndarray)):
-                        if isinstance(values[0], torch.Tensor):
-                            values = [v.detach().cpu() for v in values]
-                        if isinstance(values[0], torch.Tensor) and values[0].ndim <= 1:
-                            values = torch.stack(values)
-                        elif isinstance(values[0], (np.ndarray, np.str_)) and values[0].ndim <= 1:
-                            values = np.stack(values)
-                    if len(getattr(self, attr)) > 0:
-                        assert isinstance(getattr(self, attr)[0], type(values))
-                    getattr(self, attr).append(values)
-            except Exception as e:
-                raise RuntimeError(f"Error while collecting {attr}.") from e
-
-    def _stack_and_normalize(self, data: list[_BaseTypes | list[_BaseTypes]]):
-        if len(data) < 1:
-            return data
-        if isinstance(data[0], (list, tuple)):
-            return [self._stack_and_normalize(col) for col in zip(*data)]
-        assert isinstance(data[0], _BaseTypes)
-        if data and isinstance(data[0], torch.Tensor):
-            data = torch.cat(data)
-        elif data and isinstance(data[0], np.ndarray):
-            data = np.concat(data)
-        if isinstance(data, np.ndarray):
-            if data.dtype.type is np.str_:
-                data = data.tolist()
-            else:
-                data = torch.from_numpy(data)
-        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], (float, int, bool)):
-            data = torch.tensor(data)
-        return data
-
-    def _datalength(self, data: torch.Tensor | list[str] | list[torch.Tensor] | list[list[str]]):
-        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], torch.Tensor):
-            lengths = list(map(len, data))
-            assert len(set(lengths)) == 1
-            return lengths[0]
-        return len(data)
-
-    @property
-    def data(self):
-        data = {}
-        for attr in self._attributes:
-            values = getattr(self, attr)
-            data[attr] = self._stack_and_normalize(values)
-        data_length = {k: self._datalength(v) for k, v in data.items()}
-        non_empty = [k for k, length in data_length.items() if length > 0]
-        if self.strict and len(non_empty) == 0:
-            raise RuntimeError(f"Attempt to access empty data: {data_length}")
-        mdl = max(data_length.values())
-        consistent = [data_length[k] == mdl for k in non_empty]
-        if self.strict and not all(consistent):
-            raise RuntimeError(f"Stored data is heterogeneous: {data_length}")
-        return data
-
-    def save(self, dst: str, *args, **kwargs):
-        if os.path.isdir(dst):
-            dst = os.path.join(dst, "predictions.pt")
-        torch.save(self.data, dst)
-
-
-class BaseResultCollector(_ResultsCollector):  # noqa: D101
-    def __init__(  # noqa: D107
-        self,
-        model: nn.Module | None = None,
-        idx2cls: dict[int, str] | None = None,
-        cls2idx: dict[str, int] | None = None,
-        verbose: bool = False,
-        additional_attributes: list[str] | None = None,
-        *args,
-        **kwargs,
-    ):
-        if model is not None:
-            model_metadata = classification_module(model).metadata
-            cls2idx = model_metadata.get("cls2idx", None)
-            if cls2idx is not None:
-                idx2cls = None
-        if idx2cls is None and cls2idx is None:
-            raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
-        if cls2idx is None:
-            cls2idx = {v: k for k, v in idx2cls.items()}
-        if idx2cls is None:
-            idx2cls = {v: k for k, v in cls2idx.items()}
-        self.paths = []
-        self.preds = []
-        self.confs = []
-        self.labels = []
-        self.cls2idx, self.idx2cls = cls2idx, idx2cls
-        self.verbose = verbose
-        self._extra_attr = set(additional_attributes or [])
-        for attr in self._extra_attr:
-            setattr(self, attr, [])
-
-    def collect(self, paths: list[str], predictions: torch.Tensor | list[Prediction], labels: list[str] | None = None, **kwargs):
-        self._collect_base_attributes(paths, predictions, labels)
-        self._collect_extra_attributes(**kwargs)
-
-    def _collect_base_attributes(
-        self, paths: list[str], predictions: torch.Tensor | Prediction, labels: list[int] | list[list[int]] | None = None
-    ):
-        """Override in subclasses!"""
-        self.paths.extend(paths)
-
-        if not isinstance(predictions, Prediction):
-            predictions = Prediction(predictions, topk=1, cls2idx=self.cls2idx)
-        self.preds.extend([self.idx2cls[p.index] for p in predictions])
-        self.confs.extend([p.confidence for p in predictions])
-
-        if labels is not None:
-            self.labels.extend([e if isinstance(e, str) else str(e[0]) for e in labels])
-
-    def _collect_extra_attributes(self, **kwargs: list | tuple | GeneratorType | np.ndarray | torch.Tensor):
-        if len(self._extra_attr) == 0:
-            return
-        if not all([attr in kwargs for attr in self._extra_attr]):
-            raise ValueError(
-                "To ensure proper ordering and avoid data loss it is required "
-                f"to always pass all extra attributes ([{', '.join(self._extra_attr)}])"
-            )
-        for key, value in kwargs.items():
-            if value is None:
-                continue
-            elif isinstance(value, list):
-                pass
-            elif isinstance(value, (torch.Tensor, np.ndarray)):
-                value = value.tolist()
-                if not isinstance(value, list):
-                    raise ValueError(
-                        f"Value passed for {key} is likely a zero-dimensional (scalar)"
-                        f"array/tensor containing a {type(value)}.\nIf you want to pass"
-                        "a single value, it should still be contained in a 1-dimensional"
-                        "array/tensor:\n\tIncorrect: `torch.tensor(1)`/`np.array(1)`\n"
-                        "\tCorrect: `torch.tensor([1])`/`np.array([1])`"
-                    )
-            elif isinstance(value, (tuple, GeneratorType)):
-                value = list(value)
-            else:
-                raise TypeError(f"Unexpected value type `{type(value)}` supplied for {key}.")
-            getattr(self, key).extend(value)
-
-    def eval_label_fn(self, data: dict, outdir: str | None, save: bool, prefix: str = "", plot_conf_mat: bool = False, **kwargs):
-        if kwargs:
-            raise RuntimeError(
-                f"Unknown arguments ([{', '.join(kwargs)}]) passed."
-                "Perhaps you forgot to implement the intended `eval_label_fn` in your subclass."
-            )
-        if save and not isinstance(outdir, str):
-            raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
-        results = named_confusion_matrix(
-            results=data,
-            cls2idx=self.cls2idx,
-            verbose=self.verbose,
-        )
-        if plot_conf_mat and save:
-            dst = os.path.join(outdir, f"{prefix}confusion_matrix.png")
-            classes = [k for k, v in sorted(self.cls2idx.items(), key=lambda x: x[1])]
-            conf_mat = results["conf_mat"]
-            conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-            arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
-            from PIL.Image import fromarray
-
-            fromarray(arr).save(dst)
-        return results
-
-    def evaluate(self, outdir: str | None = None, prefix: str = "", **kwargs):
-        do_save = isinstance(outdir, str)
-        if do_save and not os.path.isdir(outdir):
-            raise OSError(f"Specified output directory (`{outdir}`) does not exist.")
-        if self.labels:
-            results = self.eval_label_fn(data=self.data, outdir=outdir, save=do_save, prefix=prefix, **kwargs)
-            if do_save:
-                with open(os.path.join(outdir, f"{prefix}eval_results.json"), "w") as f:
-                    json.dump(results, f)
-            return results
-
-    @property
-    def data(self):
-        return {
-            "paths": self.paths,
-            "preds": self.preds,
-            "confs": self.confs,
-            "labels": self.labels,
-            **{attr: getattr(self, attr) for attr in self._extra_attr},
-        }
-
-    def save(self, dst: str, threshold: float = 0.0):
-        if os.path.isdir(dst):
-            dst = os.path.join(dst, "mini_metric.csv")
-        SCHEMA = dict(
-            (
-                ("instance_id", int),
-                ("filename", str),
-                ("level", int),
-                ("label", str),
-                ("prediction", str),
-                ("confidence", float),
-                ("threshold", float),
-                ("known_label", int),
-                ("prediction_made", int),
-                ("correct", int),
-            )
-        )
-        data = {k: list() for k in SCHEMA}
-        labels = self.labels or repeat("-1")
-        for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
-            do_predict = int(conf >= threshold)
-            row = {
-                "instance_id": i,
-                "filename": path,
-                "level": 0,
-                "label": lab,
-                "prediction": pred,
-                "confidence": conf,
-                "threshold": float(threshold),
-                "known_label": int(lab in self.cls2idx),
-                "prediction_made": do_predict,
-                "correct": do_predict if do_predict == 0 else 1 if pred == lab else -1,
-            }
-            for k, v in row.items():
-                if not isinstance(v, SCHEMA.get(k, "None")):
-                    raise RuntimeError(f"Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, 'None')}")
-                data[k].append(v)
-        write_csv_from_dict(data, dst)
-
-
 class _Statistic:
     min: float | None = None
     max: float | None = None
@@ -444,7 +171,7 @@ class _Statistic:
     def __len__(self):
         raise NotImplementedError()
 
-    def __getitem__(self):
+    def __getitem__(self, i):
         raise NotImplementedError()
 
     def __iter__(self):
@@ -479,7 +206,7 @@ class _Logger:
 
     def __init__(
         self,
-        steps: int | None = None,
+        steps: list[int] | None = None,
         tag: type | str | None = None,
         name: str | None = None,
         output: str | None = None,
@@ -501,7 +228,7 @@ class _Logger:
 
     def update(self, name, values: float | int | list[float | int] | torch.Tensor | np.ndarray):
         if isinstance(values, np.ndarray):
-            values = values.tolist()
+            values = values.tolist()  # ty:ignore[no-matching-overload]
         self.get(name).update(values)
 
     def add_figure(self, name: str, figure: plt.Figure | str, **kwargs):
@@ -538,27 +265,17 @@ class SmoothedValue(_Statistic):
     def __len__(self):
         return self.count
 
-    def update(self, value, n=1):
+    def update(self, value: float | int | torch.Tensor | Sequence[float | int], n=1):
         if isinstance(value, torch.Tensor):
-            self.deque.append(value.detach())
-            self.total += value.detach() * n
-            self.count += n
-            if self.min is None:
-                self.min = value.detach()
-            else:
-                self.min = torch.minimum(self.min, value.detach())
+            value = value.tolist()
+        self.deque.append(value)
+        if not isinstance(value, (float, int)):
+            for v in value:
+                self.update(float(v), n=n)
             return
 
-        self.deque.append(value)
-        if isinstance(value, (float, int)):
-            if self.min is None or value < self.min:
-                self.min = float(value)
-        else:
-            for v in value:
-                v = float(v)
-                if self.min is None or v < self.min:
-                    self.min = v
-
+        if self.min is None or value < self.min:
+            self.min = float(value)
         self.count += n
         self.total += value * n
 
@@ -712,7 +429,7 @@ class BaseStatistic(_Statistic):  # noqa: D101
     def __len__(self):
         return self._len
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int | slice):
         get_logger().warning("The behaviour of this is currently ill defined")  # TODO!
         return self.values[i]
 
@@ -726,59 +443,35 @@ class BaseStatistic(_Statistic):  # noqa: D101
     def data(self):
         return self.values
 
-    def update(self, value: float | int | list[int | float] | np.ndarray | torch.Tensor, **kwargs):
-        if isinstance(value, torch.Tensor):
-            value = value.detach()
-            with self.lock:
-                if value.numel() == 1:
-                    tmin = tmax = tsum = value
-                    n = 1
-                else:
-                    tmin = value.min()
-                    tmax = value.max()
-                    tsum = value.sum()
-                    n = value.numel()
-                if self.min is None:
-                    self.min = tmin
-                else:
-                    if isinstance(self.min, torch.Tensor) or isinstance(tmin, torch.Tensor):
-                        self.min = torch.minimum(torch.as_tensor(self.min, device=value.device), torch.as_tensor(tmin, device=value.device))
-                    else:
-                        self.min = min(self.min, tmin)
-                if self.max is None:
-                    self.max = tmax
-                else:
-                    if isinstance(self.max, torch.Tensor) or isinstance(tmax, torch.Tensor):
-                        self.max = torch.maximum(torch.as_tensor(self.max, device=value.device), torch.as_tensor(tmax, device=value.device))
-                    else:
-                        self.max = max(self.max, tmax)
-                if self.sum is None:
-                    self.sum = tsum
-                else:
-                    self.sum += tsum
-                self._len += n
+    def update(
+        self,
+        value: float | int | list[int | float] | np.ndarray | torch.Tensor,
+        **kwargs,
+    ):
+        if isinstance(value, np.ndarray):
+            value = torch.from_numpy(value)
+        elif not isinstance(value, torch.Tensor):
+            try:
+                value = torch.as_tensor(value)
+            except Exception as e:
+                raise RuntimeError(f"Unable to update statistic ({self}) with heterogenous data or invalid type.") from e
+        value = value.detach().cpu()
+
+        n = value.numel()
+        if n == 0:
             return
 
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-            if not isinstance(value, (float, int, list)):
-                raise RuntimeError(f"Unable to update statistic ({self}) with heterogenous data or invalid type.")
+        if n == 1:
+            tmin = tmax = tsum = float(value.item())
+        else:
+            tmin = float(value.min().item())
+            tmax = float(value.max().item())
+            tsum = float(value.sum().item())
 
         with self.lock:
-            if isinstance(value, (float, int)):
-                tmin = tmax = tsum = value
-                n = 1
-            else:
-                tmin, tmax, tsum = [fn(value) for fn in [min, max, sum]]
-                n = len(value)
-            if self.min is None or tmin < self.min:
-                self.min = float(tmin)
-            if self.max is None or tmax > self.max:
-                self.max = float(tmax)
-            if self.sum is None:
-                self.sum = float(tsum)
-            else:
-                self.sum += tsum
+            self.min = tmin if self.min is None else min(self.min, tmin)
+            self.max = tmax if self.max is None else max(self.max, tmax)
+            self.sum = tsum if self.sum is None else self.sum + tsum
             self._len += n
 
     @property
@@ -787,8 +480,8 @@ class BaseStatistic(_Statistic):  # noqa: D101
             return float("nan")
         val = self.sum / len(self)
         if isinstance(val, torch.Tensor):
-            return val.item()
-        return val
+            return float(val.item())
+        return float(val)
 
     def __str__(self):
         with self.lock:
@@ -798,12 +491,13 @@ class BaseStatistic(_Statistic):  # noqa: D101
             mn = self.min
             mx = self.max
         if isinstance(m, torch.Tensor):
-            m = m.item()
+            m = float(m.item())
         if isinstance(mn, torch.Tensor):
-            mn = mn.item()
+            mn = float(mn.item())
         if isinstance(mx, torch.Tensor):
-            mx = mx.item()
-        digs = float_signif_decimal(min(filter(lambda x: math.isfinite(x) and x != 0, map(abs, [m, mn, mx])), default=1))
+            mx = float(mx.item())
+            # filter(lambda x: math.isfinite(x) and x != 0, map(abs, [m, mn, mx])
+        digs = float_signif_decimal(float(min((abs(x) for x in [m, mn, mx] if math.isfinite(x) and x != 0), default=1.0)))
         self.digs.append(digs)
         digs = max(self.digs)
         return f"{m:>{digs + 2}.{digs}f} [{mn:>{digs + 3}.{digs}f}; {mx:>{digs + 3}.{digs}f}]"
@@ -908,7 +602,7 @@ class MultiLogger:
         self._step: int = 0
         self._start_time: float | None = None
         self.eta: ETA | None = None
-        self._current_loggers: list[_Logger] | None = None
+        self._current_loggers: list[_Logger] = []
         self._epoch: int | None = None
         self._type: str | None = None
         self._batch_size: int | None = None
@@ -982,7 +676,7 @@ class MultiLogger:
         self._type = type
         self._reset_cuda_memory_stats()
         self._current_loggers = []
-        self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
+        self._soft_confusion_matrix = dict()
         for cls, kwargs, stat_factory in zip(
             self.logger_cls,
             chain(self.logger_cls_extra_kwargs, repeat(dict())),
@@ -1130,7 +824,7 @@ class MultiLogger:
         self._type = None
         self._reset_cuda_memory_stats()
         self._current_loggers: list[_Logger] = []
-        self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
+        self._soft_confusion_matrix = dict()
         self._finished = True
 
     def log_batch(self, batch):
@@ -1184,10 +878,10 @@ class MultiLogger:
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             self.log_statistic(loss=loss.detach())
         else:
-            self.log_statistic(loss=sum(loss).detach())
-            for i, term in enumerate(iterable=loss):
+            self.log_statistic(loss=sum(loss).detach())  # type: ignore
+            for i, term in enumerate(loss):
                 if term.numel() != 1:
-                    raise RuntimeError(f"Expected scalar loss term but found {loss.shape}.")
+                    raise RuntimeError(f"Expected scalar loss term but found {term.shape}.")
                 self.log_statistic(**{f"loss/lvl{i}": term.detach()})
 
     def log_optim(self, optimizer: torch.optim.Optimizer | None):
