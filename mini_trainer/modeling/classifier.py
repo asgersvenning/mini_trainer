@@ -280,7 +280,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         architecture_output_name: str,
         architecture: nn.Module,
         state: OrderedDict[str, torch.Tensor | Any] | None,
-        device: torch.types.Device,
+        device: torch.device,
         dtype: torch.dtype,
         strict: bool = True,
         train_labels: list[int | list[int]] | None = None,
@@ -298,7 +298,8 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             kwargs["cls2idx"] = cls2idx
             if train_labels is not None:
                 kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
-        architecture.add_module(architecture_output_name, cls(**kwargs, device=device))
+        with device:
+            architecture.add_module(architecture_output_name, cls(**kwargs))
         for k, v in cfg.items():
             setattr(architecture, f"_{k}", v)
         if state is not None:
