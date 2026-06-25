@@ -1096,7 +1096,7 @@ class MultiLogger:
                 cdm_fig = plot_class_distance_matrix(model)
                 self.add_figure("Class distance matrix", cdm_fig)
                 try:
-                    pd_fig = plot_probabilistic_dendrogram(model)
+                    pd_fig, _ = plot_probabilistic_dendrogram(model)
                     with NamedTemporaryFile(suffix=".svg") as tmp_file:
                         pd_fig.savefig(tmp_file.name, bbox_inches="tight")
                         self.add_figure("Probabilistic dendrogram", tmp_file.name)

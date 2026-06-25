@@ -257,7 +257,7 @@ def main():
             metric_output.parent.mkdir(parents=True, exist_ok=True)
 
             eval_args = base_eval_args.copy().add(
-                weights=weights_path, verbose=True, dataset=eval_name, output=eval_out_dir, name=eval_name
+                experiment_params.get("head"), weights=weights_path, verbose=True, dataset=eval_name, output=eval_out_dir, name=eval_name
             )
             eval_args.add(*assign_variable_args(eval_args, var_eval_args + var_shared_args))
             eval_args, eval_dataset, eval_data_index = configure_input_output(args=eval_args, datasets=dataset_cfg)

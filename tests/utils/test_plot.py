@@ -79,8 +79,9 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None
+            assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
 
     # 2. Test hierarchical metadata dictionary (e.g. from JSON)
     mock_model_module.metadata = {
@@ -96,8 +97,9 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None
+            assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
 
     # 3. Test pathological hierarchical metadata with unhashable dictionaries directly in idx2cls
     mock_model_module.metadata = {
@@ -111,5 +113,6 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)
             assert fig is not None
+            assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())

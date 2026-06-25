@@ -1,4 +1,5 @@
 from .gbif import (
+    TK,
     GBIFTaxa,
     cls2idx_from_labels,
     create_taxonomy,
@@ -16,6 +17,7 @@ from .parquet import (
 )
 
 __all__ = [
+    "TK",
     "GBIFTaxa",
     "cls2idx_from_labels",
     "create_taxonomy",

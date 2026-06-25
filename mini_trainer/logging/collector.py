@@ -1,5 +1,6 @@
 import json
 import os
+from collections import defaultdict
 from itertools import repeat
 from types import GeneratorType
 from typing import cast
@@ -7,6 +8,7 @@ from typing import cast
 import numpy as np
 import torch
 
+from mini_trainer.integrations import id_to_name
 from mini_trainer.modeling import Prediction, classification_module
 from mini_trainer.training import named_confusion_matrix
 from mini_trainer.utils import write_csv_from_dict
@@ -121,29 +123,39 @@ class RawResultCollector(_ResultsCollector):
         torch.save(self.data, dst)
 
 
-class BaseResultCollector(_ResultsCollector):  # noqa: D101
-    def __init__(  # noqa: D107
+class BaseResultCollector(_ResultsCollector):
+    def __init__(
         self,
         model: torch.nn.Module | None = None,
-        idx2cls: dict[int, str] | None = None,
-        cls2idx: dict[str, int] | None = None,
+        idx2cls: dict | None = None,
+        cls2idx: dict | None = None,
         verbose: bool = False,
+        scientific_names: bool = True,
         additional_attributes: list[str] | None = None,
         *args,
         **kwargs,
     ):
+        self.scientific_names = scientific_names
+        self._sn_cache = defaultdict(str)
+
         if model is not None:
             model_metadata = classification_module(model).metadata
             cls2idx = model_metadata.get("cls2idx", None)
             if cls2idx is not None:
                 idx2cls = None
+
+        if cls2idx is not None and self.scientific_names:
+            cls2idx = self._cls2idx_to_scientific(cls2idx)
+            idx2cls = None
+
         if idx2cls is None and cls2idx is None:
             raise ValueError("Either `idx2cls` or `cls2idx` must not be `None`.")
+
         if cls2idx is None:
-            assert idx2cls is not None
-            cls2idx = {v: k for k, v in idx2cls.items()}
+            cls2idx = self._invert_mapping(idx2cls)
         if idx2cls is None:
-            idx2cls = {v: k for k, v in cls2idx.items()}
+            idx2cls = self._invert_mapping(cls2idx)
+
         self.paths = []
         self.preds = []
         self.confs = []
@@ -154,6 +166,19 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
         for attr in self._extra_attr:
             setattr(self, attr, [])
 
+    # --- Hook Methods for Polymorphic Initialization ---
+    def _cls2idx_to_scientific(self, cls2idx: dict) -> dict:
+        return {self._get_scientific_name(k): v for k, v in cls2idx.items()}
+
+    def _get_scientific_name(self, name: str) -> str:
+        if name in self._sn_cache:
+            return self._sn_cache[name]
+        return self._sn_cache.setdefault(name, id_to_name(name))
+
+    def _invert_mapping(self, mapping: dict) -> dict:
+        return {v: k for k, v in mapping.items()}
+
+    # --- Collection Methods ---
     def collect(self, paths: list[str], predictions: torch.Tensor | Prediction, labels: list[int | str] | None = None, **kwargs):
         self._collect_base_attributes(paths, predictions, labels)
         self._collect_extra_attributes(**kwargs)
@@ -161,7 +186,6 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
     def _collect_base_attributes(
         self, paths: list[str], predictions: torch.Tensor | Prediction, labels: list[int | str] | list[list[int | str]] | None = None
     ):
-        """Override in subclasses!"""
         self.paths.extend(paths)
 
         if not isinstance(predictions, Prediction):
@@ -170,7 +194,10 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
         self.confs.extend([p.confidence for p in predictions])
 
         if labels is not None:
-            self.labels.extend([str(e) if isinstance(e, (str, int)) else str(e[0]) for e in labels])
+            processed_labels = [str(e) if isinstance(e, (str, int)) else str(e[0]) for e in labels]
+            if self.scientific_names:
+                processed_labels = [self._get_scientific_name(e) for e in processed_labels]
+            self.labels.extend(processed_labels)
 
     def _collect_extra_attributes(self, **kwargs: list | tuple | GeneratorType | np.ndarray | torch.Tensor):
         if len(self._extra_attr) == 0:
@@ -189,9 +216,9 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
                 value = value.tolist()  # ty:ignore[no-matching-overload]
                 if not isinstance(value, list):
                     raise ValueError(
-                        f"Value passed for {key} is likely a zero-dimensional (scalar)"
-                        f"array/tensor containing a {type(value)}.\nIf you want to pass"
-                        "a single value, it should still be contained in a 1-dimensional"
+                        f"Value passed for {key} is likely a zero-dimensional (scalar) "
+                        f"array/tensor containing a {type(value)}.\nIf you want to pass "
+                        "a single value, it should still be contained in a 1-dimensional "
                         "array/tensor:\n\tIncorrect: `torch.tensor(1)`/`np.array(1)`\n"
                         "\tCorrect: `torch.tensor([1])`/`np.array([1])`"
                     )
@@ -201,6 +228,7 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
                 raise TypeError(f"Unexpected value type `{type(value)}` supplied for {key}.")
             getattr(self, key).extend(value)
 
+    # --- Evaluation Methods ---
     def eval_label_fn(self, data: dict, outdir: str | None, save: bool, prefix: str = "", plot_conf_mat: bool = False, **kwargs):
         if kwargs:
             raise RuntimeError(
@@ -247,41 +275,48 @@ class BaseResultCollector(_ResultsCollector):  # noqa: D101
             **{attr: getattr(self, attr) for attr in self._extra_attr},
         }
 
+    # --- Hooks for Generic Flat/Hierarchical Saving ---
+    def _is_known_label(self, label: str, level: int = 0) -> bool:
+        return label in self.cls2idx
+
+    def _get_evaluation_rows(self):
+        labels = self.labels or repeat("-1")
+        for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
+            yield i, path, 0, lab, pred, conf
+
     def save(self, dst: str, threshold: float = 0.0):
         if os.path.isdir(dst):
             dst = os.path.join(dst, "mini_metric.csv")
-        SCHEMA = dict(
-            (
-                ("instance_id", int),
-                ("filename", str),
-                ("level", int),
-                ("label", str),
-                ("prediction", str),
-                ("confidence", float),
-                ("threshold", float),
-                ("known_label", int),
-                ("prediction_made", int),
-                ("correct", int),
-            )
-        )
+        SCHEMA = {
+            "instance_id": int,
+            "filename": str,
+            "level": int,
+            "label": str,
+            "prediction": str,
+            "confidence": float,
+            "threshold": float,
+            "known_label": int,
+            "prediction_made": int,
+            "correct": int,
+        }
         data = {k: list() for k in SCHEMA}
-        labels = self.labels or repeat("-1")
-        for i, (path, pred, lab, conf) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
+
+        for i, path, level, label, pred, conf in self._get_evaluation_rows():
             do_predict = int(conf >= threshold)
             row = {
                 "instance_id": i,
                 "filename": path,
-                "level": 0,
-                "label": lab,
+                "level": level,
+                "label": label,
                 "prediction": pred,
                 "confidence": conf,
                 "threshold": float(threshold),
-                "known_label": int(lab in self.cls2idx),
+                "known_label": int(self._is_known_label(label, level)),
                 "prediction_made": do_predict,
-                "correct": do_predict if do_predict == 0 else 1 if pred == lab else -1,
+                "correct": do_predict if do_predict == 0 else 1 if pred == label else -1,
             }
             for k, v in row.items():
-                if not isinstance(v, SCHEMA.get(k, "None")):  # type: ignore
-                    raise RuntimeError(f"Invalid data type in {k}, found {v}, but expected a {SCHEMA.get(k, 'None')}")  # type: ignore
+                if not isinstance(v, SCHEMA[k]):
+                    raise RuntimeError(f"Invalid data type in {k}, found {v}, but expected a {SCHEMA[k]}")
                 data[k].append(v)
         write_csv_from_dict(data, dst)

@@ -1,4 +1,5 @@
 from mini_trainer.logging import RawResultCollector
+from mini_trainer.modeling import Classifier
 from mini_trainer.predict import cli as mt_predict_cli
 from mini_trainer.predict import main as mt_predict
 
@@ -11,7 +12,7 @@ def cli(description: str = "Predict with a trained hierarchical model", **extra_
         description=description,
         head={
             "type": str,
-            "dest": "model_builder_kwargs.cls",
+            "dest": "head",
             "default": None,
             "required": False,
             "help": "Which type of classification head architecture to use. ",
@@ -26,9 +27,12 @@ def cli(description: str = "Predict with a trained hierarchical model", **extra_
         },
         **extra_kwargs,
     )
-    head: str | None = kwargs["model_builder_kwargs"].get("cls", None)
+    head: str | type | None = kwargs.get("head", None)
     if head is not None:
-        kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(head)
+        head = head_name_to_cls(head)
+    if head is Classifier:
+        return kwargs
+    kwargs["model_builder_kwargs"]["cls"] = head
     kwargs["builder"] = HierarchicalBuilder
     if kwargs["collector_cls"] is not RawResultCollector:
         kwargs["collector_cls"] = HierarchicalResultCollector

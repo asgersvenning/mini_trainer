@@ -1,6 +1,6 @@
 import json
 import os
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from itertools import repeat
@@ -20,9 +20,8 @@ from mini_trainer.integrations import (
     parquet_to_class_spec_hierarchical,
 )
 from mini_trainer.logging import BaseResultCollector
-from mini_trainer.modeling import classification_module
 from mini_trainer.training import EMLACrossEntropy, named_confusion_matrix
-from mini_trainer.utils import write_csv_from_dict
+from mini_trainer.visualization import plot_heatmap
 
 from .loss import MultiLevelWeightedCrossEntropyLoss
 from .model import HierarchicalClassifier, HierarchicalPrediction
@@ -143,7 +142,7 @@ def parse_class_spec(
         data = json.load(f)
     cls2idx = cast(dict[str, dict[str, int]], data["cls2idx"])
     labels = cast(dict[str, tuple[str, ...]], data["labels"])
-    labels = OrderedDict([(cls, labels[cls]) for cls, _ in sorted(cls2idx["0"].items(), key=lambda kv: kv[1])])
+    labels = OrderedDict([(k, v) for k, v in sorted(labels.items(), key=lambda kv: cls2idx["0"][kv[1][0]])])
     num_classes = cast(list[int], data["num_classes"])
     if levels:
         cls2idx = {str(lvl): cls2idx[str(lvl)] for lvl in range(levels)}
@@ -286,8 +285,8 @@ class HierarchicalBuilder(BaseBuilder):  # noqa: D101
         )
 
 
-class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
-    def __init__(  # noqa: D107
+class HierarchicalResultCollector(BaseResultCollector):
+    def __init__(
         self,
         model: nn.Module | None = None,
         idx2cls: dict[str, dict[int, str]] | None = None,
@@ -296,27 +295,31 @@ class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
         *args,
         **kwargs,
     ):
-        if model is not None:
-            model_metadata = classification_module(model).metadata
-            cls2idx = model_metadata.get("cls2idx", None)
-            if cls2idx is not None:
-                idx2cls = None
-        self.scientific_names = scientific_names
-        self._sn_cache = defaultdict(str)
-        if cls2idx is not None and self.scientific_names:
-            cls2idx = cls2idx_to_names(cls2idx)
-            idx2cls = None
-        if idx2cls is None and cls2idx is not None:
-            idx2cls = {lvl: {v: k for k, v in _cls2idx.items()} for lvl, _cls2idx in cls2idx.items()}
-        if cls2idx is None and idx2cls is not None:
-            cls2idx = {lvl: {v: k for k, v in _idx2cls.items()} for lvl, _idx2cls in idx2cls.items()}
-        super().__init__(idx2cls=idx2cls, cls2idx=cls2idx, *args, **kwargs)
+        super().__init__(model=model, idx2cls=idx2cls, cls2idx=cls2idx, scientific_names=scientific_names, *args, **kwargs)
         self._levels = None
 
+    # --- Overridden Hooks for Hierarchical Operations ---
+    def _cls2idx_to_scientific(self, cls2idx: dict) -> dict:
+        return cls2idx_to_names(cls2idx)
+
+    def _invert_mapping(self, mapping: dict) -> dict:
+        return {lvl: {v: k for k, v in sub_map.items()} for lvl, sub_map in mapping.items()}
+
+    def _is_known_label(self, label: str, level: int) -> bool:
+        return label in self.cls2idx[str(level)]
+
+    def _get_evaluation_rows(self):
+        if self._levels is None:
+            return
+        labels = self.labels or repeat(tuple(["-1"] * self._levels))
+        for i, (path, preds, labs, confs) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
+            for level in range(self._levels):
+                yield i, path, level, labs[level], preds[level], confs[level]
+
+    # --- Overridden Base Attribute Extraction ---
     def _collect_base_attributes(
         self, paths: list[str], predictions: list[torch.Tensor] | HierarchicalPrediction, labels: list[tuple[str, ...]] | None = None
     ):
-        """Override in subclasses!"""
         self.paths.extend(paths)
 
         if not isinstance(predictions, HierarchicalPrediction):
@@ -329,10 +332,7 @@ class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
 
         if labels is not None:
             if self.scientific_names:
-                labels = [
-                    tuple(self._sn_cache[e] if e in self._sn_cache else self._sn_cache.setdefault(e, id_to_name(e)) for e in label)
-                    for label in labels
-                ]
+                labels = [tuple(self._get_scientific_name(e) for e in label) for label in labels]
             self.labels.extend(labels)
 
     def eval_label_fn(self, data: dict, outdir: str | None, save: bool, prefix: str = "", plot_conf_mat: bool = False, **kwargs):
@@ -356,59 +356,15 @@ class HierarchicalResultCollector(BaseResultCollector):  # noqa: D101 TODO
             results[level] = lvl_results
 
             if plot_conf_mat and save:
+                assert outdir is not None
                 dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
                 classes = [k for k, v in sorted(self.cls2idx[str(level)].items(), key=lambda x: x[1])]
                 conf_mat = lvl_results["conf_mat"]
 
-                import numpy as np
-
                 conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-
-                from mini_trainer.visualization import plot_heatmap
-
                 arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
                 from PIL.Image import fromarray
 
                 fromarray(arr).save(dst)
 
         return results
-
-    def save(self, dst: str, threshold: float = 0.0):
-        if os.path.isdir(dst):
-            dst = os.path.join(dst, "mini_metric.csv")
-        SCHEMA = dict(
-            (
-                ("instance_id", int),
-                ("filename", str),
-                ("level", int),
-                ("label", str),
-                ("prediction", str),
-                ("confidence", float),
-                ("threshold", float),
-                ("known_label", int),
-                ("prediction_made", int),
-                ("correct", int),
-            )
-        )
-        data = {k: list() for k in SCHEMA}
-        labels = self.labels or repeat(tuple(["-1"] * self._levels))
-        for i, (path, preds, labs, confs) in enumerate(zip(self.paths, self.preds, labels, self.confs)):
-            for level in range(self._levels):
-                label, pred, conf = labs[level], preds[level], confs[level]
-                do_predict = int(conf >= threshold)
-                row = {
-                    "instance_id": i,
-                    "filename": path,
-                    "level": level,
-                    "label": label,
-                    "prediction": pred,
-                    "confidence": conf,
-                    "threshold": float(threshold),
-                    "known_label": int(label in self.cls2idx[str(level)]),
-                    "prediction_made": do_predict,
-                    "correct": do_predict if do_predict == 0 else 1 if pred == label else -1,
-                }
-                for k, v in row.items():
-                    assert isinstance(v, SCHEMA[k]), f"Invalid data type in {k}, found {v}, but expected a {SCHEMA[k]}"
-                    data[k].append(v)
-        write_csv_from_dict(data, dst)

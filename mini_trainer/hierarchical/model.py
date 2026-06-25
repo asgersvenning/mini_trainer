@@ -420,6 +420,7 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
 
 
 HEAD_OPTIONS = {
+    "flat": Classifier,
     "hierarchical": HierarchicalClassifier,
     "conditional": ConditionalClassifier,
     "independent": IndependentClassifier,

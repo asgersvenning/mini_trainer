@@ -1,6 +1,7 @@
 import io
 import math
 from argparse import ArgumentParser
+from typing import cast, get_args
 
 import matplotlib.colors as mcolors
 import numpy as np
@@ -9,7 +10,7 @@ from torch import nn
 
 from mini_trainer import get_logger
 from mini_trainer.config import Formatter
-from mini_trainer.integrations import resolve_name_or_id
+from mini_trainer.integrations import TK, resolve_name_or_id
 from mini_trainer.modeling import class_distance, classification_module
 
 try:
@@ -73,7 +74,9 @@ def sanitize(x):
     return x
 
 
-def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05, apriori_groups: list[str] | dict[str, str] | None = None):
+def plot_probabilistic_dendrogram(
+    model: nn.Module, min_merge_prob: float = 0.05, apriori_groups: list[str] | dict[str, str] | str | None = "genus", plot: bool = True
+):
     """Plot the probabilistic dendrogram for a model's class centers."""
     _check_deps()
 
@@ -88,13 +91,17 @@ def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05
         idx2cls = idx2cls["0"]
 
     class_names = [str(idx2cls.get(i, idx2cls.get(str(i), i))) for i in range(len(idx2cls))]
+    orig_class_names = class_names.copy()
     try:
         # Attempt to coerce to scientific names
         taxonomy = {cls: resolve_name_or_id(cls) for cls in class_names}
         get_logger().info("Class names successfully detected as species!")
-        if not apriori_groups:
+        if isinstance(apriori_groups, str):
             get_logger().info("Automatically selecting genera as a priori groups (labels).")
-            apriori_groups = [taxonomy[cls]["genus"][1] for cls in class_names]
+            if apriori_groups not in get_args(TK):
+                raise KeyError(f"Selected taxonomic labelling level {apriori_groups} is not one of the valid options: {get_args(TK)}")
+            apriori_groups = cast(TK, apriori_groups)
+            apriori_groups = [taxonomy[cls][apriori_groups][1] for cls in class_names]
         class_names = [taxonomy[cls]["species"][1] for cls in class_names]
 
     except Exception:
@@ -105,7 +112,7 @@ def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05
     Z = linkage(condensed_dist, method="ward")
 
     # Check if we actually have ground-truth colors to plot
-    if not apriori_groups:
+    if not apriori_groups or isinstance(apriori_groups, str):
         apriori_groups = {}
     elif isinstance(apriori_groups, (list, tuple)):
         apriori_groups = {cls: grp for cls, grp in zip(class_names, apriori_groups)}
@@ -119,47 +126,55 @@ def plot_probabilistic_dendrogram(model: nn.Module, min_merge_prob: float = 0.05
     cluster_color_map = {cluster_id: mcolors.to_hex(cmap(i % 20)) for i, cluster_id in enumerate(sorted(set(clusters)))}
     apriori_color_map = {grp: mcolors.to_hex(cmap(i % 20)) for i, grp in enumerate(set(apriori_groups.values()))}
 
-    # --- 2. BUILD THE TREE ---
-    newick_str = linkage_to_newick(Z, class_names)
-    phylo_tree = Phylo.read(io.StringIO(newick_str), format="newick")
+    if plot:
+        # --- 2. BUILD THE TREE ---
+        newick_str = linkage_to_newick(Z, class_names)
+        phylo_tree = Phylo.read(io.StringIO(newick_str), format="newick")
 
-    # --- 3. DYNAMIC SCALING HEURISTICS ---
-    num_classes = len(class_names)
-    fig_size = min(40.0, max(10.0, num_classes / 50.0))
-    radius_inches = fig_size * 0.4
-    pts_per_label = (2 * math.pi * radius_inches * 72) / num_classes
+        # --- 3. DYNAMIC SCALING HEURISTICS ---
+        num_classes = len(class_names)
+        fig_size = min(40.0, max(10.0, num_classes / 50.0))
+        radius_inches = fig_size * 0.4
+        pts_per_label = (2 * math.pi * radius_inches * 72) / num_classes
 
-    dynamic_font_size = min(12.0, max(0.5, pts_per_label * 0.8))
-    dynamic_line_width = dynamic_font_size * 0.15
+        dynamic_font_size = min(12.0, max(0.5, pts_per_label * 0.8))
+        dynamic_line_width = dynamic_font_size * 0.15
 
-    # --- 4. INITIALIZE CIRCULAR DENDROGRAM ---
-    rmargin = 5.0 if apriori_groups else 0.5
+        # --- 4. INITIALIZE CIRCULAR DENDROGRAM ---
+        rmargin = 5.0 if apriori_groups else 0.5
 
-    circos, tv = Circos.initialize_from_tree(
-        phylo_tree, r_lim=(30, 85), leaf_label_size=dynamic_font_size, leaf_label_rmargin=rmargin, line_kws=dict(lw=dynamic_line_width)
-    )
+        circos, tv = Circos.initialize_from_tree(
+            phylo_tree, r_lim=(30, 85), leaf_label_size=dynamic_font_size, leaf_label_rmargin=rmargin, line_kws=dict(lw=dynamic_line_width)
+        )
 
-    # --- 5. Apply colors ---
-    for cluster, color in cluster_color_map.items():
-        leaf_list = [class_names[i] for i, clst in enumerate(clusters) if clst == cluster]
-        tv.set_node_line_props(leaf_list, color=color, apply_label_color=True)
+        # --- 5. Apply colors ---
+        for cluster, color in cluster_color_map.items():
+            leaf_list = [class_names[i] for i, clst in enumerate(clusters) if clst == cluster]
+            tv.set_node_line_props(leaf_list, color=color, apply_label_color=True)
 
-    # --- 6. A PRIORI METADATA TRACK ---
-    if apriori_groups:
-        sector = circos.sectors[0]
-        color_track = sector.add_track((86, 89))
+        # --- 6. A PRIORI METADATA TRACK ---
+        if apriori_groups:
+            sector = circos.sectors[0]
+            color_track = sector.add_track((86, 89))
 
-        for i, leaf in enumerate(phylo_tree.get_terminals()):
-            grp = apriori_groups.get(sanitize(leaf.name), None)
-            if grp is not None:
-                x_start, x_end = i, i + 1
-                color = apriori_color_map[grp]
-                color_track.rect(x_start, x_end, r_lim=(86, 89), color=color, lw=0)
+            for i, leaf in enumerate(phylo_tree.get_terminals()):
+                grp = apriori_groups.get(sanitize(leaf.name), None)
+                if grp is not None:
+                    x_start, x_end = i, i + 1
+                    color = apriori_color_map[grp]
+                    color_track.rect(x_start, x_end, r_lim=(86, 89), color=color, lw=0)
 
-    # --- 7. EXPORT ---
-    fig = circos.plotfig()
-    fig.set_size_inches(fig_size, fig_size)
-    return fig
+        # --- 7. EXPORT ---
+        fig = circos.plotfig()
+        fig.set_size_inches(fig_size, fig_size)
+    else:
+        fig = plt.figure()
+    return fig, {
+        "class": orig_class_names,
+        "label": class_names,
+        "apriori": [apriori_groups.get(sanitize(cl), None) for cl in class_names],
+        "cluster": [int(c) for c in clusters],
+    }
 
 
 def cli():
@@ -211,7 +226,7 @@ def run():
     output = kwargs.pop("output")
     model, _ = BaseBuilder.build_model(weights=kwargs.pop("weights"))
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    fig = plot_probabilistic_dendrogram(model=model, **kwargs)
+    fig, clustering = plot_probabilistic_dendrogram(model=model, **kwargs)
     fig.savefig(output, bbox_inches="tight")
 
 

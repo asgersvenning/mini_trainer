@@ -298,7 +298,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             kwargs["cls2idx"] = cls2idx
             if train_labels is not None:
                 kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
-        architecture.add_module(architecture_output_name, cls(**kwargs))
+        architecture.add_module(architecture_output_name, cls(**kwargs, device=device))
         for k, v in cfg.items():
             setattr(architecture, f"_{k}", v)
         if state is not None:
