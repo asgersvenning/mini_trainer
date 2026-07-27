@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, cast
@@ -51,14 +52,15 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
     @classmethod
     def load(
         cls,
-        architecture_class,
-        architecture_output_name,
-        architecture,
-        state,
-        device,
-        dtype,
-        cls2idx: dict[str, dict[str, int]] | None = None,
-        train_labels: list[list[int]] | None = None,
+        architecture_class: str,
+        architecture_output_name: str,
+        architecture: nn.Module,
+        state: OrderedDict[str, torch.Tensor | Any] | None,
+        device: torch.device,
+        dtype: torch.dtype,
+        strict: bool = True,
+        train_labels: list[list[int]] | list[int] | None = None,
+        cls2idx: dict[str, int] | None = None,
         **kwargs,
     ):
         if state is not None:
@@ -172,7 +174,7 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
             self.register_buffer(f"_linear_weight_{i}", torch.empty(0), persistent=False)
             self.register_buffer(f"_linear_bias_{i}", torch.empty(0), persistent=False)
 
-    def _weight_bias(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def _weight_bias(self, i: int=0) -> tuple[torch.Tensor, torch.Tensor]:
         if self._dirty_cache[f"_weight_bias_{i}"] or self.training:
             if self._dirty_cache["_masks"]:
                 _ = self.masks
@@ -183,8 +185,11 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
                 weight = weight.index_select(0, filter)
                 if bias is not None:
                     bias = bias.index_select(0, filter)
-            setattr(self, f"_linear_weight_{i}", weight.view_as(weight))
-            setattr(self, f"_linear_bias_{i}", bias.view_as(bias))
+            if self.training:
+                self._dirty_cache[f"_weight_bias_{i}"] = True
+                return weight, bias
+            setattr(self, f"_linear_weight_{i}", weight.detach())
+            setattr(self, f"_linear_bias_{i}", bias.detach() if bias is not None else bias)
             self._dirty_cache[f"_weight_bias_{i}"] = False
         return getattr(self, f"_linear_weight_{i}"), getattr(self, f"_linear_bias_{i}")
 
@@ -221,7 +226,7 @@ class IndependentClassifier(ConditionalClassifier):  # noqa: D101 TODO
         return self.marginals(embeddings)
 
 
-class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):
+class AutoregressiveClassifier(AutoregressiveMixin, IndependentClassifier):
     def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):
         if isinstance(decoder_cls, str):
             decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
@@ -270,7 +275,7 @@ class AutoregressiveClassifier(IndependentClassifier, AutoregressiveMixin):
 
 
 # Differs from the one above in that we don't carry explicit independent embeddings for each layer
-class AutoregressiveClassifierV2(HierarchicalClassifier, AutoregressiveMixin):
+class AutoregressiveClassifierV2(AutoregressiveMixin, HierarchicalClassifier):
     def __init__(self, *args, decoder_cls: type[BaseDecoder] | str = XADecoder, decoder_kwargs: dict[str, Any] | None = None, **kwargs):
         if isinstance(decoder_cls, str):
             decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
@@ -407,7 +412,7 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
 
         return [[[fmt_idx(level, i) for level, i in enumerate(idxs)] for idxs in e] for e in self.indices]
 
-    def _extract_confidence(self, raw_prediction) -> list[torch.Tensor]:
+    def _extract_confidence(self, raw_prediction) -> torch.Tensor:
         confidences = []
         for rp, idx in zip(raw_prediction, torch.permute(self.indices, (2, 0, 1))):
             if not (

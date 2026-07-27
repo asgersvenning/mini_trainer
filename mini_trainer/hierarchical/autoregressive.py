@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, ParamSpec, Protocol, Self, TypeVar
 
 import torch
 import torch.nn as nn
@@ -20,7 +20,11 @@ def register_generator(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     return decorator
 
 
-class AutoregressiveMixin(nn.Module, ABC):
+class Preclassification(Protocol):
+    def __call__(self, x: torch.Tensor) -> torch.Tensor: ...
+
+
+class AutoregressiveMixin(ABC, nn.Module):
     """
     Intermediary abstract mixin unifying transformer-based generation,
     setup, and prediction logic across different classifier hierarchies.
@@ -28,11 +32,10 @@ class AutoregressiveMixin(nn.Module, ABC):
 
     sequence_length: int
     preclassification_size: int
+    preclassification: Preclassification
 
-    # --- Structural Abstractions ---
-    @abstractmethod
-    def preclassification(self, x: torch.Tensor) -> torch.Tensor:
-        pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @abstractmethod
     def classify(self, sequence: torch.Tensor | list[torch.Tensor]) -> list[torch.Tensor]:
