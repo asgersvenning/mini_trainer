@@ -242,7 +242,7 @@ class HierarchicalBuilder(BaseBuilder):  # noqa: D101
             sparse_masks = None
         if cls2idx is not None:
             kwargs["cls2idx"] = cls2idx
-        return BaseBuilder.build_model(*args, cls=cls, sparse_masks=sparse_masks, **kwargs)
+        return BaseBuilder.build_model(*args, cls=cls, sparse_masks=sparse_masks, labels=labels, **kwargs)
 
     @staticmethod
     def build_dataloader(*args, **kwargs):

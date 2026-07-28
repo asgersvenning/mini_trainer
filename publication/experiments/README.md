@@ -28,7 +28,7 @@ mt_htrain -i <INPUT> \
     --dtype float16 \
     --batch_size 256 \
     --epochs <EPOCHS> \
-    --label_smoothing <1/NCLS> --warmup_epochs 0.1 \
+    --warmup_epochs 0.1 \
     --class_weighted \
     --loss_weights <W0> <W1> [...] \
     --wandb
@@ -42,7 +42,7 @@ mt_htrain -i <INPUT> \
 
 - Models (6)
   - efficientnet_v2_[s/m/l]
-  - ViT_L16
+  - ViT_L_16
   - ViT_H_14
   - BioClip2 (finetune only and/or zero-shot)
 

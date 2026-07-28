@@ -163,7 +163,7 @@ class WandbLogger(_Logger):
 
         super().update(name, values)
 
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int=0, **kwargs):
         """Add figure to wandb, queued to commit atomically with step()."""
         if wandb is None:
             raise ImportError(
@@ -195,7 +195,9 @@ class WandbLogger(_Logger):
             elem = wandb.Html(html_payload)
         elif isinstance(figure, plt.Figure):  # pyright: ignore[reportPrivateImportUsage]
             elem = wandb.Image(figure)
-        elif isinstance(figure, np.ndarray):
+        elif isinstance(figure, (np.ndarray, torch.Tensor)):
+            if isinstance(figure, torch.Tensor):
+                figure = figure.numpy(force=True)
             if figure.shape[0] in [1, 3, 4] and figure.shape[2] not in [1, 3, 4]:
                 figure = np.transpose(figure, (1, 2, 0))
             elem = wandb.Image(figure)

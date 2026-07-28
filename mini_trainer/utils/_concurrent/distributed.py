@@ -21,7 +21,7 @@ def setup_for_distributed(is_master):
         if is_master or force:
             builtin_print(*args, **kwargs)
 
-    __builtin__.print = print
+    __builtin__.print = print  # ty:ignore[invalid-assignment]
 
 
 def is_dist_avail_and_initialized():  # noqa: D103

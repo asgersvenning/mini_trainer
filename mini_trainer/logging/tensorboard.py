@@ -92,7 +92,7 @@ class TensorboardLogger(_Logger):
                 self.buffer_scalar(tag, v, self._idx + i)
         super().update(name, values)
 
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | str, epoch: int):
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int=0, **kwargs):
         tag = self._make_scalar_hierarchical_tag(name)
 
         if isinstance(figure, str):
@@ -115,7 +115,12 @@ class TensorboardLogger(_Logger):
 
         if isinstance(figure, plt.Figure):
             self.writer.add_figure(tag, figure, epoch, close=False)
-        elif isinstance(figure, np.ndarray):
+            return
+        
+        if isinstance(figure, torch.Tensor):
+            figure = figure.numpy(force=True)
+        
+        if isinstance(figure, np.ndarray):
             if figure.shape[-1] in [1, 3, 4]:
                 figure = np.permute_dims(figure, (2, 0, 1))
             self.writer.add_image(tag, figure, epoch)

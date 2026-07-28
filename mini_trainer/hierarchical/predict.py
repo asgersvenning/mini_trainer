@@ -32,7 +32,8 @@ def cli(description: str = "Predict with a trained hierarchical model", **extra_
         head = head_name_to_cls(head)
     if head is Classifier:
         return kwargs
-    kwargs["model_builder_kwargs"]["cls"] = head
+    if head is not None:
+        kwargs["model_builder_kwargs"]["cls"] = head
     kwargs["builder"] = HierarchicalBuilder
     if kwargs["collector_cls"] is not RawResultCollector:
         kwargs["collector_cls"] = HierarchicalResultCollector

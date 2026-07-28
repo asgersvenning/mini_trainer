@@ -1,5 +1,4 @@
 import os
-from collections import Counter
 from collections.abc import Callable
 
 import numpy as np
@@ -13,7 +12,6 @@ from mini_trainer.utils import is_dist_avail_and_initialized
 from .io import (
     CACHE_MODE,
     LazyDataset,
-    Reindexed,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
@@ -131,20 +129,21 @@ def get_dataset_dataloader(  # noqa: D103
 
     datasets = []
     for mode, data in zip(modes, metadata):
-        items = list(zip(data["path"], data["class"]))
+        # items = list(zip(data["path"], data["class"]))
         # TODO: Abstract and modularize
         if mode.strip().lower() == "train" and resample:
-            if cache != CACHE_MODE.NONE:
-                raise NotImplementedError("Resampling with caching is not supported.")
-            labs = data["class"]
-            if isinstance(labs[0], (list, tuple)):
-                labs = [lab[0] for lab in labs]
-            cc = Counter(labs)
-            resample_kwargs = {}
-            if isinstance(resample, str):
-                resample_kwargs["transform"] = resample
-            items = Reindexed(items, [cc.get(k, 0) for k in labs], inflation=2, **resample_kwargs)
-        dset = LazyDataset(func=proc_path_label, items=items, cache=cache)
+            raise NotImplementedError("Resampling is currently not supported.")
+            # if cache != CACHE_MODE.NONE:
+            #     raise NotImplementedError("Resampling with caching is not supported.")
+            # labs = data["class"]
+            # if isinstance(labs[0], (list, tuple)):
+            #     labs = [lab[0] for lab in labs]
+            # cc = Counter(labs)
+            # resample_kwargs = {}
+            # if isinstance(resample, str):
+            #     resample_kwargs["transform"] = resample
+            # items = Reindexed(items, [cc.get(k, 0) for k in labs], inflation=2, **resample_kwargs)
+        dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache)
         datasets.append(dset)
 
     if num_workers is None:
@@ -186,7 +185,7 @@ def get_inference_dataloader(  # noqa: D103
     if hook is not None:
         reader = HookedReader(reader, hook)
 
-    dataset = LazyDataset(func=reader, items=images, cache=CACHE_MODE.NONE)
+    dataset = LazyDataset(func=reader, items=(images,), cache=CACHE_MODE.NONE)
 
     if num_workers is None:
         num_workers = (os.cpu_count() or 0) - 4

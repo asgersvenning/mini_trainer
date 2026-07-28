@@ -2,8 +2,9 @@ import math
 import os
 import time
 import warnings
+from abc import ABC, abstractmethod
 from collections import defaultdict, deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from itertools import chain, repeat
 from tempfile import NamedTemporaryFile
 from threading import RLock
@@ -32,7 +33,7 @@ from mini_trainer.visualization import (
 )
 
 
-def format_duration(sec: int, suffix="dhms"):
+def format_duration(sec: int | float, suffix="dhms"):
     """Format duration in seconds."""
     sec = int(sec)
     days, rem = divmod(sec, 86400)
@@ -137,9 +138,7 @@ class ETA:
 
     def __str__(self):
         used_str = format_duration(time.time() - self._start_time)
-        if self._ema is None:
-            return f"{used_str}/??"
-        eta_str = format_duration(self.eta)
+        eta_str = format_duration(self.eta) if self.eta is not None else "??"
         return f"{used_str}/{eta_str}"
 
 
@@ -162,33 +161,33 @@ def accuracy(output: torch.Tensor, target: torch.Tensor, topk=(1,)):
         return res
 
 
-class _Statistic:
-    min: float | None = None
-    max: float | None = None
-    mean: float | None = None
-    sum: float | None = None
+class _Statistic(ABC):
+    min: float | None
+    max: float | None
+    mean: float | None
+    sum: float | None
 
-    def __len__(self):
-        raise NotImplementedError()
+    @abstractmethod
+    def __len__(self) -> int: ...
 
-    def __getitem__(self, i):
-        raise NotImplementedError()
+    @abstractmethod
+    def __getitem__(self, i) -> float: ...
 
-    def __iter__(self):
-        raise NotImplementedError()
-
+    @abstractmethod
+    def __iter__(self) -> Iterator[float]: ...
+    
     def __bool__(self):
         return len(self) > 0
 
-    def __str__(self):
-        raise NotImplementedError()
+    @abstractmethod
+    def __str__(self) -> str: ...
 
-    @property
-    def data(self) -> list[float]:
-        raise NotImplementedError()
+    # @property
+    # @abstractmethod
+    # def data(self) -> list[float]: ...
 
-    def update(self, value, *args, **kwargs):
-        raise NotImplementedError()
+    @abstractmethod
+    def update(self, value, *args, **kwargs): ...
 
 
 S = TypeVar("S", bound=_Statistic)
@@ -204,6 +203,7 @@ class _Logger:
         **`step`**: Function to indicate that the current iteration has completed.
     """
 
+    @abstractmethod
     def __init__(
         self,
         steps: list[int] | None = None,
@@ -211,14 +211,13 @@ class _Logger:
         name: str | None = None,
         output: str | None = None,
         **kwargs,
-    ):
-        raise NotImplementedError()
+    ): ...
 
-    def __str__(self):
-        raise NotImplementedError()
-
-    def add_stat(self, name: str, container: _Statistic):
-        raise NotImplementedError()
+    @abstractmethod
+    def __str__(self) -> str: ...
+    
+    @abstractmethod
+    def add_stat(self, name: str, container: _Statistic) -> None: ...
 
     def get(self, name: str) -> _Statistic:
         return self.statistics[name]
@@ -231,19 +230,20 @@ class _Logger:
             values = values.tolist()  # ty:ignore[no-matching-overload]
         self.get(name).update(values)
 
-    def add_figure(self, name: str, figure: plt.Figure | str, **kwargs):
-        pass
+    @abstractmethod
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, **kwargs) -> None: ...
+    """This function should close any new matplotlib.pyplot.Figures it creates!"""
 
     def step(self):
         """This function may not be necessary for your logger."""
         pass
 
     @property
-    def statistics(self) -> dict[str, _Statistic]:
-        raise NotImplementedError()
+    @abstractmethod
+    def statistics(self) -> dict[str, _Statistic]: ...
 
-    def synchronize_between_processes(self):
-        raise NotImplementedError()
+    @abstractmethod
+    def synchronize_between_processes(self) -> None: ...
 
 
 L = TypeVar("L", bound=_Logger)
@@ -298,18 +298,20 @@ class SmoothedValue(_Statistic):
         if not self.deque:
             return float("nan")
         if isinstance(self.deque[0], torch.Tensor):
-            return torch.stack(list(self.deque)).median().item()
-        d = torch.tensor(list(self.deque))
-        return d.median().item()
+            val = torch.stack(list(self.deque)).median().item()
+        else:
+            val = torch.tensor(list(self.deque)).median().item()
+        return float(val)
 
     @property
     def avg(self):
         if not self.deque:
             return float("nan")
         if isinstance(self.deque[0], torch.Tensor):
-            return torch.stack(list(self.deque)).mean().item()
-        d = torch.tensor(list(self.deque), dtype=torch.float32)
-        return d.mean().item()
+            val = torch.stack(list(self.deque)).mean().item()
+        else:
+            val = torch.tensor(list(self.deque), dtype=torch.float32).mean().item()
+        return float(val)
 
     @property
     def global_avg(self):
@@ -317,8 +319,8 @@ class SmoothedValue(_Statistic):
             return float("nan")
         val = self.total / self.count
         if isinstance(val, torch.Tensor):
-            return val.item()
-        return val
+            val = val.item()
+        return float(val)
 
     @property
     def mean(self):
@@ -329,23 +331,25 @@ class SmoothedValue(_Statistic):
         if not self.deque:
             return float("nan")
         if isinstance(self.deque[0], torch.Tensor):
-            return torch.stack(list(self.deque)).max().item()
-        return max(self.deque)
+            val = torch.stack(list(self.deque)).max().item()
+        else:
+            val = max(self.deque)
+        return float(val)
 
     @property
     def sum(self):
         val = self.total
         if isinstance(val, torch.Tensor):
-            return val.item()
-        return val
+            val = val.item()
+        return float(val)
 
     @property
     def value(self):
         if self.deque:
             val = self.deque[-1]
             if isinstance(val, torch.Tensor):
-                return val.item()
-            return val
+                val = val.item()
+            return float(val)
         else:
             return float("nan")
 
@@ -359,6 +363,12 @@ class SmoothedValue(_Statistic):
             part = f"{value:>{digs + 3}.{digs}f}"
             parts.append(part)
         return "/".join(parts)
+    
+    def __iter__(self):
+        yield from repeat(None, len(self))
+
+    def __getitem__(self, i):
+        return None
 
 
 class MetricLogger(_Logger):  # noqa: D101
@@ -402,9 +412,11 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     is used to compute the EMA.
     """
 
-    def __init__(self, model, decay, device="cpu"):  # noqa: D107
+    def __init__(self, model, decay, device : int | str | torch.device | None="cpu"):  # noqa: D107
         def ema_avg(avg_model_param, model_param, num_averaged):
             return decay * avg_model_param + (1 - decay) * model_param
+        if isinstance(device, (str, int)):
+            device = torch.device(device)
 
         super().__init__(model, device, ema_avg, use_buffers=True)
 
@@ -480,7 +492,7 @@ class BaseStatistic(_Statistic):  # noqa: D101
             return float("nan")
         val = self.sum / len(self)
         if isinstance(val, torch.Tensor):
-            return float(val.item())
+            val = val.item()
         return float(val)
 
     def __str__(self):
@@ -496,9 +508,9 @@ class BaseStatistic(_Statistic):  # noqa: D101
             mn = float(mn.item())
         if isinstance(mx, torch.Tensor):
             mx = float(mx.item())
-            # filter(lambda x: math.isfinite(x) and x != 0, map(abs, [m, mn, mx])
-        digs = float_signif_decimal(float(min((abs(x) for x in [m, mn, mx] if math.isfinite(x) and x != 0), default=1.0)))
-        self.digs.append(digs)
+        self.digs.append(
+            float_signif_decimal(min((abs(x) for x in map(lambda x : float(x), [m, mn, mx]) if math.isfinite(x) and x != 0), default=1.0))
+        )
         digs = max(self.digs)
         return f"{m:>{digs + 2}.{digs}f} [{mn:>{digs + 3}.{digs}f}; {mx:>{digs + 3}.{digs}f}]"
 
@@ -608,7 +620,7 @@ class MultiLogger:
         self._batch_size: int | None = None
         self._idx: int | None = None
         self._n_classes: int | None = None
-        self._soft_confusion_matrix: dict[str, torch.Tensor] = dict()
+        self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
         self._finished = False
 
     def start_timing(self):
@@ -895,6 +907,7 @@ class MultiLogger:
                     self.log_statistic(**{f"lr/{grp['name']}": grp["lr"]})
 
     def log_speed(self, start_time: float):
+        assert self._batch_size is not None
         self.log_statistic(**{"item/s": self._batch_size / (time.time() - start_time)})
 
     def log_memory_use(self):
@@ -971,7 +984,7 @@ class MultiLogger:
             return 0.0
         return self.loggers[0].statistics[stat].mean
 
-    def summary(self, stats: list[str] | None = None):
+    def summary(self, stats: list[str] | None = None) -> dict[str, Any]:
         if stats is None:
             stats = self.statistics
         return {stat: self._last_epoch_value(stat) for stat in stats}
@@ -993,7 +1006,13 @@ class MultiLogger:
 
     @property
     def canonical_scalar(self):
-        return self._last_epoch_value(self.canonical_statistic)
+        val = self._last_epoch_value(self.canonical_statistic)
+        if val is None:
+            raise RuntimeError(
+                'Expected Logger canonical value to be a `float`, but found `None` '
+                f'for canonical statistic "{self.canonical_statistic}" '
+            )
+        return val
 
     def render_soft_confusion_matrix(self, labels: torch.Tensor, predictions: torch.Tensor, level: int = 0):
         predictions = predictions.softmax(dim=1)
@@ -1014,9 +1033,10 @@ class MultiLogger:
 
     def confusion_matrix(self):
         lvl = None
-        figs = dict()
+        figs : dict[str, np.ndarray] = dict()
         while True:
             # Check if there is one or multiple levels, and if so if the current level exists
+            counts : dict[str, list[int]]
             if lvl is None:
                 counts = {"labels": [], "predictions": []}
                 lvl = 0
@@ -1042,7 +1062,7 @@ class MultiLogger:
                 get_logger().warning(f"No labels or predictions found for {self._epoch}!")
 
             # Create confusion matrix from counts
-            cm = raw_confusion_matrix(*counts.values())
+            cm = raw_confusion_matrix(*counts.values(), n_classes=None)
             m = cm.sum(axis=1) > 0
             cm = cm[m][:, m]
             if not bool(np.any(np.isfinite(cm))):
@@ -1100,5 +1120,7 @@ class MultiLogger:
                     with NamedTemporaryFile(suffix=".svg") as tmp_file:
                         pd_fig.savefig(tmp_file.name, bbox_inches="tight")
                         self.add_figure("Probabilistic dendrogram", tmp_file.name)
+                    plt.close(pd_fig)
                 except Exception as e:
                     warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)
+

@@ -37,7 +37,7 @@ def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], l
     elif os.path.isdir(src):
         contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
         if contains_only_dirs:
-            metadata = create_metadata(src, **{**kwargs, **{"train_proportion": 0, "val_proportion": 0, "labels": None}})
+            metadata = create_metadata(src, **{**kwargs, **{"train_proportion": 0, "val_proportion": 0}})
         else:
             images = find_images(src)
     else:

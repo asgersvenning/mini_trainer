@@ -46,10 +46,16 @@ class CACHE_MODE(int, Enum):  # noqa: D101
         return super()._missing_(value)
 
 
-DEFAULT_THRESHOLDS = {CACHE_MODE.NONE: -1, CACHE_MODE.GUESS: None, CACHE_MODE.DISK: 0.5, CACHE_MODE.CPU: 0.5, CACHE_MODE.CUDA: None}
+DEFAULT_THRESHOLDS: dict[CACHE_MODE, int | float | None] = {
+    CACHE_MODE.NONE: -1,
+    CACHE_MODE.GUESS: None,
+    CACHE_MODE.DISK: 0.5,
+    CACHE_MODE.CPU: 0.5,
+    CACHE_MODE.CUDA: None,
+}
 
 
-def guess_cache_mode(shape: list[int], dtype: torch.dtype, thresholds: dict[CACHE_MODE, float | int] | None = None):
+def guess_cache_mode(shape: list[int], dtype: torch.dtype, thresholds: dict[CACHE_MODE, float | int | None] | None = None):
     """Heuristic to guess/select a caching strategy."""
     if thresholds is None:
         thresholds = dict()
@@ -120,7 +126,9 @@ class ReadAndResize:
         self.device = device
         self.dtype = dtype
 
-    def __call__(self, path: str) -> torch.Tensor:
+    def __call__(self, path: str | tuple[str, ...]) -> torch.Tensor:
+        if not isinstance(path, str):
+            path = path[0]
         try:
             img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False)  # uint8 [C,H,W]
         except Exception as e:
@@ -316,6 +324,19 @@ class ReindexedSampler(Reindexed[T], Sampler[int]):  # noqa: D101
         return len(self._indices)
 
 
+def _infer_numeric_dtype(seq) -> Any:
+    if len(seq) == 0:
+        return None
+    first_item = seq[0]
+    while hasattr(first_item, "__iter__") and not isinstance(first_item, str):
+        if len(first_item) == 0:
+            return None
+        first_item = first_item[0]
+    if isinstance(first_item, (int, float, np.number)):
+        return None
+    return object
+
+
 class LazyDataset(torch.utils.data.Dataset):
     """A general lazy dataset which calls func on items to
     obtain the image (and label) when needed.
@@ -330,13 +351,12 @@ class LazyDataset(torch.utils.data.Dataset):
     def __init__(  # noqa: D107
         self,
         func: Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]],
-        items: Sequence,
+        items: Sequence[Sequence],
         cache: str | int | CACHE_MODE | None = None,
     ):
         self.func = func
-        self.items = items
-        self._cache_mode = CACHE_MODE(cache)
-        self._init_cache()
+        self.items = tuple(np.asarray(seq, dtype=_infer_numeric_dtype(seq)) if len(seq) > 0 else np.empty((0,)) for seq in items)
+        self._init_cache(CACHE_MODE(cache))
 
     @staticmethod
     def _hash_item(item):
@@ -349,16 +369,15 @@ class LazyDataset(torch.utils.data.Dataset):
 
     def _get_cache_hash(self) -> str:
         s256 = hashlib.sha256(b"mini_trainer", usedforsecurity=False)
-        for item_hash in sorted(map(self._hash_item, self.items)):
+        for item_hash in sorted(map(self._hash_item, zip(*self.items))):
             s256.update(item_hash)
         return s256.hexdigest()
 
-    def _init_cache(self):
-        match self._cache_mode:
+    def _init_cache(self, mode: CACHE_MODE):
+        match mode:
             case CACHE_MODE.NONE:
                 log = get_logger()
                 log.info("On-the-fly data loading enabled (no cache).")
-                return
             case CACHE_MODE.DISK:
                 raise NotImplementedError("Disk caching is obsolete and has been removed.")
             case CACHE_MODE.CPU:
@@ -371,15 +390,16 @@ class LazyDataset(torch.utils.data.Dataset):
                 )
                 self._ram_cache.tensors = tuple([t.to(guess_device) for t in self._ram_cache.tensors])
             case _:
-                raise ValueError(f'Invalid cache mode "{self._cache_mode}". Choose from [None, "cpu", "cuda"].')
+                raise ValueError(f'Invalid cache mode "{mode}". Choose from [None, "cpu", "cuda"].')
+        self._cache_mode = mode
 
     def _cache_ram(self, desc: str = "Writing to CPU RAM cache..."):
-        if not self.items:
+        if len(self) == 0:
             self._ram_cache = torch.utils.data.TensorDataset()  # Handle empty case
             self._ram_was_single_tensor = False
             return
 
-        first_item_processed = self.func(self.items[0])
+        first_item_processed = self.func(tuple(seq[0] for seq in self.items))
 
         if isinstance(first_item_processed, torch.Tensor):
             self._ram_was_single_tensor = True
@@ -454,7 +474,7 @@ class LazyDataset(torch.utils.data.Dataset):
         write_thread.start()
 
         try:
-            fetch_pool.map(_fetch_one, enumerate(self.items))
+            fetch_pool.map(_fetch_one, enumerate(zip(*self.items)))
 
             nxt_idx = 0
             for _ in range(len(self)):
@@ -477,24 +497,25 @@ class LazyDataset(torch.utils.data.Dataset):
         self._ram_cache = torch.utils.data.TensorDataset(*[t for t in stacked_tensors])
 
     def __len__(self):
-        return len(self.items)
+        return len(self.items[0])
 
-    def __getitem__(self, i):
+    def __getitem__(self, index):
         match self._cache_mode:
             case CACHE_MODE.NONE:
-                if isinstance(i, int):
-                    return self.func(self.items[i])
-                if isinstance(i, (torch.Tensor, np.ndarray)):
-                    i = i.tolist()
-                if isinstance(i, list):
-                    elements = [self.func(self.items[j]) for j in i]
-                elif isinstance(i, slice):
-                    elements = [self.func(item) for item in self.items[i]]
+                if isinstance(index, int):
+                    return self.func(tuple(seq[index] for seq in self.items))
+                if isinstance(index, (torch.Tensor, np.ndarray)):
+                    index = index.tolist()
+                if isinstance(index, list):
+                    index = np.array(index)
+                elif isinstance(index, slice):
+                    pass
                 else:
                     raise NotImplementedError(
-                        f"Indexing with {i} is not implemented. Only integer, "
+                        f"Indexing with {index} is not implemented. Only integer, "
                         "slice, or list/np.ndarray/torch.Tensor of integers indexing is supported."
                     )
+                elements = [self.func(args) for args in zip(*(seq[index] for seq in self.items))]
                 if isinstance(elements[0], torch.Tensor):
                     elements = cast(list[torch.Tensor], elements)
                     return torch.stack(elements)
@@ -502,7 +523,7 @@ class LazyDataset(torch.utils.data.Dataset):
             case CACHE_MODE.DISK:
                 raise NotImplementedError("Disk caching is obsolete and has been removed.")
             case CACHE_MODE.CPU | CACHE_MODE.CUDA:
-                data = self._ram_cache[i]
+                data = self._ram_cache[index]
                 return data[0] if self._ram_was_single_tensor else data
             case _:
                 raise RuntimeError(f'Invalid caching mode found {self._cache_mode}, expected one of None, "cpu" or "cuda".')
