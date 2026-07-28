@@ -1,20 +1,32 @@
 import os
+import socket
 
+import torch
 import torch.multiprocessing as mp
 
 from mini_trainer.train import main as train_main
 from tests.test_integration_train import MockBuilder, TinyMockModel
 
 
-def ddp_worker(rank, world_size, tmp_path_str):
-    # Set environment variables for torch.distributed env init
+def _get_free_port():
+    """Dynamically acquire a free localhost port to prevent test suite collisions."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return str(s.getsockname()[1])
+
+
+def ddp_worker(rank, world_size, port, tmp_path_str):
+    # Enable detailed PyTorch DDP diagnostics and C++ tracebacks
+    os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
+    os.environ["TORCH_SHOW_CPP_STACKTRACES"] = "1"
+
+    # Set process topology for torch.distributed
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = "29505"
+    os.environ["MASTER_PORT"] = port
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["LOCAL_RANK"] = str(rank)
 
-    # Use CPU for testing
     args = {
         "input": os.path.join(tmp_path_str, "data"),
         "output": os.path.join(tmp_path_str, "output"),
@@ -29,18 +41,12 @@ def ddp_worker(rank, world_size, tmp_path_str):
         "seed": 42,
     }
 
-    try:
-        train_main(**args)
-    except Exception as e:
-        # Re-raise so the process fails and mp.spawn detects it
-        raise e
+    # mp.spawn automatically captures and re-raises exceptions from child workers
+    train_main(**args)
 
 
 def test_integration_ddp_cpu(tmp_path):
-    # Setup paths
     input_dir = str(tmp_path / "data")
-    os.makedirs(input_dir, exist_ok=True)
-    # create dummy class dirs so validation passes
     os.makedirs(os.path.join(input_dir, "class_a"), exist_ok=True)
     os.makedirs(os.path.join(input_dir, "class_b"), exist_ok=True)
 
@@ -48,28 +54,39 @@ def test_integration_ddp_cpu(tmp_path):
     os.makedirs(output_dir, exist_ok=True)
 
     world_size = 2
-    # Spawn 2 worker processes using torch multiprocessing
+    port = _get_free_port()
+
+    # mp.spawn(..., join=True) routes worker exceptions directly back to the main thread
     mp.spawn(
         ddp_worker,
-        args=(world_size, str(tmp_path)),
+        args=(world_size, port, str(tmp_path)),
         nprocs=world_size,
         join=True,
     )
 
-    # Verify checkponts were successfully created
+    # Assertions
     run_dir = os.path.join(output_dir, "ddp_run")
-    assert os.path.exists(run_dir)
     assert os.path.isdir(run_dir)
 
     weights_dir = os.path.join(run_dir, "weights")
-    assert os.path.exists(weights_dir)
     assert os.path.exists(os.path.join(weights_dir, "last.pt"))
     assert os.path.exists(os.path.join(weights_dir, "best.pt"))
     assert os.path.exists(os.path.join(weights_dir, "checkpoint_last.pth"))
 
-    # Verify we don't have duplicate loggers (e.g. no tensorboard run folder for rank 1)
     tb_dir = os.path.join(run_dir, "tensorboard")
     if os.path.exists(tb_dir):
-        runs = os.listdir(tb_dir)
-        # Should only have 1 run folder created by rank 0
-        assert len(runs) == 1
+        assert len(os.listdir(tb_dir)) == 1
+
+    # Test autoloading from a single .pt weights file without passing model_type or other args
+    from mini_trainer.modeling import Classifier, classification_module
+
+    loaded_model, loaded_preprocess = Classifier.build(weights=os.path.join(weights_dir, "best.pt"))
+    cls_mod = classification_module(loaded_model)
+    assert isinstance(cls_mod, Classifier)
+    assert cls_mod.metadata["backbone_output_name"] == "fc"
+    assert cls_mod.metadata["backbone_class"] == "tests.test_integration_train:TinyMockModel"
+    assert loaded_preprocess is not None
+    # Test that the custom preprocessing function runs
+    dummy_input = torch.randn(3, 5, 5)
+    processed = loaded_preprocess(dummy_input)
+    assert processed.shape == (3, 5, 5)
