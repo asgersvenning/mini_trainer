@@ -166,7 +166,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         self.active_indices = self.active_indices.sort().values
         _ = self._preprocess_metadata()
 
-    def _weight_bias(self, i: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+    def _weight_bias(self, i: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
         if self._dirty_cache["_weight_bias"] or self.training:
             weight, bias = self.linear.weight, self.linear.bias
             if self.active_indices is not None:

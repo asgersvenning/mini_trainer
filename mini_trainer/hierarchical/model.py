@@ -174,7 +174,7 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
             self.register_buffer(f"_linear_weight_{i}", torch.empty(0), persistent=False)
             self.register_buffer(f"_linear_bias_{i}", torch.empty(0), persistent=False)
 
-    def _weight_bias(self, i: int=0) -> tuple[torch.Tensor, torch.Tensor]:
+    def _weight_bias(self, i: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
         if self._dirty_cache[f"_weight_bias_{i}"] or self.training:
             if self._dirty_cache["_masks"]:
                 _ = self.masks

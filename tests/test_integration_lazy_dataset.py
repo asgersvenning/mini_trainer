@@ -10,7 +10,7 @@ from mini_trainer.data import LazyDataset
 
 def create_dummy_images(root_dir, n=10, size=(32, 32)):
     os.makedirs(root_dir, exist_ok=True)
-    paths : list[str] = []
+    paths: list[str] = []
     for i in range(n):
         path = os.path.join(root_dir, f"img_{i}.png")
         # Create random image
@@ -18,23 +18,23 @@ def create_dummy_images(root_dir, n=10, size=(32, 32)):
         img = Image.fromarray(img_np)
         img.save(path)
         paths.append(path)
-    return (paths, )
+    return (paths,)
 
 
-def dummy_loader(path : tuple[str]):
+def dummy_loader(path: tuple[str]):
     assert len(path) == 1
     img = Image.open(path[0]).convert("RGB")
     return torch.from_numpy(np.array(img)).permute(2, 0, 1)
 
 
-def failing_loader(path : tuple[str]):
+def failing_loader(path: tuple[str]):
     assert len(path) == 1
     if "fail" in path[0]:
         raise ValueError("Simulated read failure")
     return torch.randn(3, 32, 32)
 
 
-def dummy_loader_tuple(path : tuple[str]):
+def dummy_loader_tuple(path: tuple[str]):
     assert len(path) == 1
     img = Image.open(path[0]).convert("RGB")
     t_img = torch.from_numpy(np.array(img)).permute(2, 0, 1)
@@ -108,4 +108,4 @@ class TestLazyDatasetIntegration:
     def test_lazy_dataset_caching_exception_propagation(self):
         paths = ["ok1.png", "fail.png", "ok2.png"]
         with pytest.raises(ValueError, match="Simulated read failure"):
-            LazyDataset(failing_loader, (paths, ), cache="cpu")
+            LazyDataset(failing_loader, (paths,), cache="cpu")

@@ -163,7 +163,7 @@ class WandbLogger(_Logger):
 
         super().update(name, values)
 
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int=0, **kwargs):
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int = 0, **kwargs):
         """Add figure to wandb, queued to commit atomically with step()."""
         if wandb is None:
             raise ImportError(

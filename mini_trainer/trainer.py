@@ -285,19 +285,13 @@ def train(
 
     if is_dist_avail_and_initialized():
         log.debug("Model DDP wrap starting...")
-        
-        device_ids : list[int] | None = None
+
+        device_ids: list[int] | None = None
         if device.type == "cuda":
             model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
             device_ids = [device.index]
-        
-        model = DDP(
-            model, 
-            device_ids=device_ids, 
-            find_unused_parameters=True, 
-            gradient_as_bucket_view=True,
-            broadcast_buffers=False
-        )
+
+        model = DDP(model, device_ids=device_ids, find_unused_parameters=True, gradient_as_bucket_view=True, broadcast_buffers=False)
         log.debug("DDP wrap completed.")
 
     if compile:

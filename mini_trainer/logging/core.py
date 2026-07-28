@@ -175,7 +175,7 @@ class _Statistic(ABC):
 
     @abstractmethod
     def __iter__(self) -> Iterator[float]: ...
-    
+
     def __bool__(self):
         return len(self) > 0
 
@@ -215,7 +215,7 @@ class _Logger:
 
     @abstractmethod
     def __str__(self) -> str: ...
-    
+
     @abstractmethod
     def add_stat(self, name: str, container: _Statistic) -> None: ...
 
@@ -232,6 +232,7 @@ class _Logger:
 
     @abstractmethod
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, **kwargs) -> None: ...
+
     """This function should close any new matplotlib.pyplot.Figures it creates!"""
 
     def step(self):
@@ -363,7 +364,7 @@ class SmoothedValue(_Statistic):
             part = f"{value:>{digs + 3}.{digs}f}"
             parts.append(part)
         return "/".join(parts)
-    
+
     def __iter__(self):
         yield from repeat(None, len(self))
 
@@ -412,9 +413,10 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     is used to compute the EMA.
     """
 
-    def __init__(self, model, decay, device : int | str | torch.device | None="cpu"):  # noqa: D107
+    def __init__(self, model, decay, device: int | str | torch.device | None = "cpu"):  # noqa: D107
         def ema_avg(avg_model_param, model_param, num_averaged):
             return decay * avg_model_param + (1 - decay) * model_param
+
         if isinstance(device, (str, int)):
             device = torch.device(device)
 
@@ -509,7 +511,7 @@ class BaseStatistic(_Statistic):  # noqa: D101
         if isinstance(mx, torch.Tensor):
             mx = float(mx.item())
         self.digs.append(
-            float_signif_decimal(min((abs(x) for x in map(lambda x : float(x), [m, mn, mx]) if math.isfinite(x) and x != 0), default=1.0))
+            float_signif_decimal(min((abs(x) for x in map(lambda x: float(x), [m, mn, mx]) if math.isfinite(x) and x != 0), default=1.0))
         )
         digs = max(self.digs)
         return f"{m:>{digs + 2}.{digs}f} [{mn:>{digs + 3}.{digs}f}; {mx:>{digs + 3}.{digs}f}]"
@@ -1009,8 +1011,7 @@ class MultiLogger:
         val = self._last_epoch_value(self.canonical_statistic)
         if val is None:
             raise RuntimeError(
-                'Expected Logger canonical value to be a `float`, but found `None` '
-                f'for canonical statistic "{self.canonical_statistic}" '
+                f'Expected Logger canonical value to be a `float`, but found `None` for canonical statistic "{self.canonical_statistic}" '
             )
         return val
 
@@ -1033,10 +1034,10 @@ class MultiLogger:
 
     def confusion_matrix(self):
         lvl = None
-        figs : dict[str, np.ndarray] = dict()
+        figs: dict[str, np.ndarray] = dict()
         while True:
             # Check if there is one or multiple levels, and if so if the current level exists
-            counts : dict[str, list[int]]
+            counts: dict[str, list[int]]
             if lvl is None:
                 counts = {"labels": [], "predictions": []}
                 lvl = 0
@@ -1123,4 +1124,3 @@ class MultiLogger:
                     plt.close(pd_fig)
                 except Exception as e:
                     warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)
-

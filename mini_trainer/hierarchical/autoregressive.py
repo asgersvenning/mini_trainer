@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, ParamSpec, Protocol, Self, TypeVar
+from typing import Any, ParamSpec, Protocol, TypeVar
 
 import torch
 import torch.nn as nn
