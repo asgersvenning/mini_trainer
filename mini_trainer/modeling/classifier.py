@@ -166,15 +166,18 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         self.active_indices = self.active_indices.sort().values
         _ = self._preprocess_metadata()
 
-    def _weight_bias(self):
+    def _weight_bias(self, i: int=0) -> tuple[torch.Tensor, torch.Tensor]:
         if self._dirty_cache["_weight_bias"] or self.training:
             weight, bias = self.linear.weight, self.linear.bias
             if self.active_indices is not None:
                 weight = weight.index_select(0, self.active_indices)
                 if bias is not None:
                     bias = bias.index_select(0, self.active_indices)
-            self._linear_weight = weight.view_as(weight)
-            self._linear_bias = bias.view_as(bias)
+            if self.training:
+                self._dirty_cache["_weight_bias"] = True
+                return weight, bias
+            self._linear_weight = weight.detach()
+            self._linear_bias = bias.detach() if bias is not None else bias
             self._dirty_cache["_weight_bias"] = False
         return self._linear_weight, self._linear_bias
 
@@ -283,7 +286,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         device: torch.device,
         dtype: torch.dtype,
         strict: bool = True,
-        train_labels: list[int | list[int]] | None = None,
+        train_labels: list[list[int]] | list[int] | None = None,
         cls2idx: dict[str, int] | None = None,
         **kwargs,
     ):

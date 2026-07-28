@@ -13,6 +13,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
         loss_cls: type[nn.CrossEntropyLoss] = nn.CrossEntropyLoss,
         **kwargs,
     ):
+        super().__init__()
         self.device = device
         self.dtype = dtype
         self.loss_cls = loss_cls
@@ -34,7 +35,7 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
         kwargs["label_smoothing"] = self.label_smoothing
 
         # Construct marginal loss functions and handle vectorized (per-level) keyword arguments
-        self._loss_fns: list[nn.CrossEntropyLoss] = []
+        self._loss_fns: torch.nn.ModuleList = torch.nn.ModuleList()
         for lvl in range(self.n_levels):
             lvlkw = dict()
             for k, v in kwargs.items():
