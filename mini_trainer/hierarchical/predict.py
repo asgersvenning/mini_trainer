@@ -27,8 +27,8 @@ def cli(description: str = "Predict with a trained hierarchical model", **extra_
         },
         **extra_kwargs,
     )
-    head: str | type | None = kwargs.get("head", None)
-    if head is not None:
+    head: type | str | None = kwargs.pop("head", None)
+    if isinstance(head, str):
         head = head_name_to_cls(head)
     if head is Classifier:
         return kwargs

@@ -449,7 +449,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 kwargs[k] = v
                 continue
             if v != kwargs[k]:
-                warnings.warn(f"Model configuration option {k} overriden by value stored in config: {kwargs[k]} ==> {v}", UserWarning)
+                warnings.warn(f"Model configuration option '{k}' overriden by value stored in config: {kwargs[k]} ==> {v}", UserWarning)
                 kwargs[k] = v
         # Rebuild (and load) integrated backbone and classifier
         model_type_str = model_type if isinstance(model_type, str) else class_path(model_type)

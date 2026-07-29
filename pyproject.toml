@@ -1,6 +1,6 @@
 [project]
 name = "mini_trainer"
-version = "0.1.0"
+version = "0.1.1"
 default-optional-dependency-keys = ["recommended"]
 dependencies = [
   "torch>=2.11",
@@ -43,6 +43,7 @@ mt_predict = "mini_trainer.predict:run"
 mt_htrain = "mini_trainer.hierarchical.train:run"
 mt_hpredict = "mini_trainer.hierarchical.predict:run"
 mt_plot_dendrogram = "mini_trainer.visualization.dendrogram:run"
+mt_create_combinations = "mini_trainer.utils.create_combinations:run"
 
 [tool.ruff]
 target-version = "py312"

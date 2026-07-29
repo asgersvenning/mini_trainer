@@ -1,3 +1,4 @@
+from mini_trainer.modeling import Classifier
 from mini_trainer.train import cli as mt_train_args
 from mini_trainer.train import main as mt_train
 
@@ -38,12 +39,13 @@ def cli(desc="Train a hierarchical classifier", **kwargs):  # noqa: D103
     for key in overrides:
         kwargs.pop(key, None)
 
-    head_name = kwargs.pop("head", "hierarchical").strip().lower()
+    head = head_name_to_cls(kwargs.pop("head", "hierarchical").strip().lower())
     weights = kwargs.pop("weights", None)
     kwargs["spec_model_dataloader_kwargs"]["species"] = kwargs.pop("species", True)
-    if head_name == "flat":
+    if head is Classifier:
+        kwargs["criterion_builder_kwargs"].pop("weights")
         return kwargs
-    kwargs["model_builder_kwargs"]["cls"] = head_name_to_cls(head_name)
+    kwargs["model_builder_kwargs"]["cls"] = head
     if weights is not None:
         kwargs["spec_model_dataloader_kwargs"]["weights"] = weights
         kwargs["spec_model_dataloader_kwargs"]["levels"] = len(kwargs["criterion_builder_kwargs"]["weights"])
