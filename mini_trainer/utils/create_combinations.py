@@ -35,7 +35,7 @@ def is_taxalist(content: str | list[str]):
     return all(map(lambda s: bool(re.match(SCIENTIFICNAME_OR_NUMBER, s)), content))
 
 
-def labels_from_json(file: str | dict, interactive : bool=True):
+def labels_from_json(file: str | dict, interactive: bool = True):
     if isinstance(file, str):
         with open(file) as f:
             data = json.load(f)
@@ -65,7 +65,7 @@ def labels_from_json(file: str | dict, interactive : bool=True):
     return labels, levels
 
 
-def labels_from_model(file: str | OrderedDict[str, torch.Tensor | Any] | nn.Module, interactive : bool=True):
+def labels_from_model(file: str | OrderedDict[str, torch.Tensor | Any] | nn.Module, interactive: bool = True):
     if not isinstance(file, nn.Module):
         model, _ = Classifier.build(weights=file)
     else:
@@ -75,7 +75,7 @@ def labels_from_model(file: str | OrderedDict[str, torch.Tensor | Any] | nn.Modu
     return labels_from_json(metadata, interactive=interactive)
 
 
-def labels_from_csv(file: str, interactive : bool=True):
+def labels_from_csv(file: str, interactive: bool = True):
     with open(file) as f:
         reader = csv.reader(f)
         headers = next(reader)
@@ -95,7 +95,7 @@ def labels_from_csv(file: str, interactive : bool=True):
     return labels_from_taxalist(list(set(map(str, chain.from_iterable(data.get(c, []) for c in cols)))), interactive=interactive)
 
 
-def labels_from_txt(file: str, interactive : bool=True):
+def labels_from_txt(file: str, interactive: bool = True):
     with open(file) as f:
         content = [f for f in map(str.strip, f.readlines()) if f]
     if len(content) == 0:
@@ -106,10 +106,8 @@ def labels_from_txt(file: str, interactive : bool=True):
 
 
 def labels_from_taxalist(
-        taxa: list[str], 
-        levels : list[int] | list[str] | list[int | str] | str | int | None=None, 
-        interactive : bool=True
-    ) -> tuple[list[tuple[str, ...]], list[int]]:
+    taxa: list[str], levels: list[int] | list[str] | list[int | str] | str | int | None = None, interactive: bool = True
+) -> tuple[list[tuple[str, ...]], list[int]]:
     if isinstance(levels, (str, int)):
         levels = [levels]
     if isinstance(levels, list):
@@ -117,7 +115,7 @@ def labels_from_taxalist(
     if is_taxalist(taxa):
         txl = ""
         if interactive:
-            txl = input(f"Which levels do you want to include (default={TAXONOMY_KEYS[levels - 1] if levels is not None else "??"}):")
+            txl = input(f"Which levels do you want to include (default={TAXONOMY_KEYS[levels - 1] if levels is not None else '??'}):")
         txl = txl or (levels - 1 if isinstance(levels, int) else levels)
         labels = list(labels_from_taxonomy(create_taxonomy(taxa, levels=txl)).values())
     else:
@@ -125,12 +123,12 @@ def labels_from_taxalist(
     return labels, list(range(len(labels[0])))
 
 
-def main(file: str, output: str | None = None, interactive: bool=True):
+def main(file: str, output: str | None = None, interactive: bool = True):
     if not os.path.exists(file):
         raise FileNotFoundError(f"Supplied source file {file} does not exist.")
     if not os.path.isfile(file):
         raise ValueError(f"Supplied source file {file} is not a file.")
-    
+
     _, ext = os.path.splitext(file)
     match ext.lower():
         case ".pt" | ".pth":
@@ -141,10 +139,10 @@ def main(file: str, output: str | None = None, interactive: bool=True):
             label_retriever = labels_from_csv
         case _:
             label_retriever = labels_from_txt
-    
+
     labels, levels = label_retriever(file, interactive=interactive)
     labels = sorted(labels, key=lambda x: x[::-1])
-    
+
     if output is not None:
         colnames = [TAXONOMY_KEYS[i] for i in levels]
         with open(output, "w", encoding="utf8") as f:
@@ -152,7 +150,7 @@ def main(file: str, output: str | None = None, interactive: bool=True):
             writer.writerow(colnames)
             for label in labels:
                 writer.writerow(label)
-    
+
     return labels
 
 
@@ -160,8 +158,7 @@ def cli():
     parser = ArgumentParser(
         prog="class2combinations",
         description=(
-            "Create a hierarchical combinations file from a list of species, "
-            "a model or a class specification created by mini_trainer."
+            "Create a hierarchical combinations file from a list of species, a model or a class specification created by mini_trainer."
         ),
     )
     parser.add_argument(

@@ -424,7 +424,7 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
         return torch.stack([torch.stack(v, dim=1) for v in zip(*confidences)])
 
 
-HEAD_OPTIONS : dict[str, type[Classifier]] = {
+HEAD_OPTIONS: dict[str, type[Classifier]] = {
     "flat": Classifier,
     "hierarchical": HierarchicalClassifier,
     "conditional": ConditionalClassifier,
