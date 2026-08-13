@@ -296,4 +296,4 @@ def plot_class_distance_matrix(model: nn.Module, **kwargs):
     in the last-layer weight matrix, assuming that these
     have unit norm.
     """
-    return plot_heatmap(1 - class_similarity(model, cdf=True).cpu(), **kwargs)
+    return [plot_heatmap(1 - csi.cpu(), **kwargs) for csi in class_similarity(model, cdf=True)]

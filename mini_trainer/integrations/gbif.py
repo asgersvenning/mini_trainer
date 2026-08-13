@@ -135,7 +135,7 @@ class GBIFTaxa:
         return fmt.format(**data)
 
 
-def resolve_id(id: str | int):
+def resolve_id(id: str | int, skip: int=0, full: bool=False):
     """Resolves a GBIF id to the accepted GBIF id and scientific name for all taxonomic levels.
 
     * `[species, genus, family, order, class, phylum, kingdom]`
@@ -151,7 +151,10 @@ def resolve_id(id: str | int):
     req = f"{GBIF_SPECIES_API_ENDPOINT}{id}"
     data = retrive_request(req)
     try:
-        clean_data = OrderedDict([(key, (str(data[f"{key}Key"]), str(data[key]))) for key in TAXONOMY_KEYS])
+        clean_data = OrderedDict()
+        for key in TAXONOMY_KEYS[skip:]:
+            rid = str(data[f"{key}Key"])
+            clean_data[key] = (rid, id_to_name(rid) if full else str(data[key]))
     except KeyError as e:
         e.add_note(f"Missing keys in: {data}")
         raise
@@ -246,23 +249,23 @@ def id_to_name(id: str | int):
         if not id.isdigit():
             raise ValueError(f"{id} must be a digit.")
         id = int(id)
-    req = f"{GBIF_SPECIES_API_ENDPOINT}{id}/name"
+    req = f"{GBIF_SPECIES_API_ENDPOINT}{id}"
     data = retrive_request(req)
     return data["scientificName"]
 
 
 @multithread_vectorize(desc="Resolving taxa...")
-def resolve_name_or_id(name_or_id: str | int):  # noqa: D103
+def resolve_name_or_id(name_or_id: str | int, rank_contains: str | None="SPECIES", skip: int=0, full: bool=False):  # noqa: D103
     if isinstance(name_or_id, str):
         name_or_id = name_or_id.strip()
         if name_or_id.isdigit():
             name_or_id = int(name_or_id)
 
     if isinstance(name_or_id, int):
-        return resolve_id(name_or_id)
+        return resolve_id(name_or_id, skip=skip, full=full)
 
-    id, rank, conf = name_to_id(name_or_id, rank_contains="SPECIES", threshold=90)
-    return resolve_id(id)
+    id, rank, conf = name_to_id(name_or_id, rank_contains=rank_contains, threshold=90)
+    return resolve_id(id, skip=skip, full=full)
 
 
 def resolve_level(level: int | str):

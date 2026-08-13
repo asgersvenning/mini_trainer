@@ -72,6 +72,10 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                     return value.copy()
         return {}
 
+    @property
+    def last_layer_weights(self) -> torch.Tensor | list[torch.Tensor]:
+        return self.linear.weight
+
     def __init__(  # noqa: D107
         self,
         in_features: int,
@@ -682,7 +686,3 @@ def classification_module(model: nn.Module):
         if not isinstance(module, Classifier):
             raise RuntimeError(f"Unexpected classification head type {type(module)} found.")
         return module
-
-
-def last_layer_weights(model: nn.Module):
-    return classification_module(model).linear.weight

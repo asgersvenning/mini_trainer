@@ -1114,13 +1114,15 @@ class MultiLogger:
 
         with main_process_first():
             if get_rank() == 0 and model is not None:
-                cdm_fig = plot_class_distance_matrix(model)
-                self.add_figure("Class distance matrix", cdm_fig)
+                cdm_figs = plot_class_distance_matrix(model)
+                for lvl, fig in enumerate(cdm_figs):
+                    self.add_figure(f"Class distance matrix/lvl{lvl}", fig)
                 try:
-                    pd_fig, _ = plot_probabilistic_dendrogram(model)
-                    with NamedTemporaryFile(suffix=".svg") as tmp_file:
-                        pd_fig.savefig(tmp_file.name, bbox_inches="tight")
-                        self.add_figure("Probabilistic dendrogram", tmp_file.name)
-                    plt.close(pd_fig)
+                    dendrograms = plot_probabilistic_dendrogram(model)
+                    for lvl, (pd_fig, _) in enumerate(dendrograms):
+                        with NamedTemporaryFile(suffix=".svg") as tmp_file:
+                            pd_fig.savefig(tmp_file.name, bbox_inches="tight")
+                            self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
+                        plt.close(pd_fig)
                 except Exception as e:
                     warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)

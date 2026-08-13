@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torchvision.transforms.v2 as tt
 from torch import nn
-from torch.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn
 
 from mini_trainer.data import (
@@ -22,7 +22,7 @@ from mini_trainer.data import (
     parse_class_spec,
 )
 from mini_trainer.logging import MultiLogger
-from mini_trainer.modeling import Classifier, EMATeacher, backbone, ema_lambda_per_update, last_layer_weights
+from mini_trainer.modeling import Classifier, EMATeacher, backbone, classification_module, ema_lambda_per_update
 from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_regularization
 from mini_trainer.utils import (
     broadcast_from_master,
@@ -431,8 +431,10 @@ class BaseBuilder:
             return lambda x: 0
 
         def func(model):
-            llw = last_layer_weights(model)
-            return strength * class_weight_distribution_regularization(llw)
+            llw = classification_module(model).last_layer_weights
+            if isinstance(llw, torch.Tensor):
+                llw = [llw]
+            return sum(strength * class_weight_distribution_regularization(w) for w in llw)
 
         return func
 

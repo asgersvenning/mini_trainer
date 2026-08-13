@@ -76,6 +76,7 @@ def test_plot_probabilistic_dendrogram():
     dummy = torch.rand(4, 4)
     dummy = dummy + dummy.T  # Make it symmetric
     dummy.fill_diagonal_(0)  # Make diagonal zero
+    dummy = [dummy]
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):

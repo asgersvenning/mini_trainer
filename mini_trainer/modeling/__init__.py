@@ -8,7 +8,6 @@ from .classifier import (
     backbone,
     bypass_submodule,
     classification_module,
-    last_layer_weights,
     predict,
 )
 from .context import EmbeddingContext, SupervisionContext
@@ -43,5 +42,4 @@ __all__ = [
     "class_similarity",
     "mask_classifier",
     "set_classification_mask",
-    "last_layer_weights",
 ]

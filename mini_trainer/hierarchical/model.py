@@ -155,6 +155,10 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
 
 
 class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
+    @property
+    def last_layer_weights(self):
+        return [layer.weight for layer in self.layers]
+
     def __init__(self, normalized: bool = True, **kwargs):  # noqa: D107
         super().__init__(normalized=normalized, **kwargs)
         # Conditional layers
