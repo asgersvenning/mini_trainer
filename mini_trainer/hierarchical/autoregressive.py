@@ -94,16 +94,17 @@ class AutoregressiveMixin(ABC, nn.Module):
         return context, BOS, POS
 
     # --- Unified Generators ---
-    def _standard_generate(self, x: torch.Tensor, mode: str):
+    def _standard_generate(self, x: torch.Tensor, mode: str) -> torch.Tensor:
         context, BOS, POS = self._prepare_generate(x)
-        decision = BOS.unsqueeze(0).repeat(self.sequence_length, 1, 1)
-
+        tokens: list[torch.Tensor] = [BOS]
+        
         for step in range(self.sequence_length - 1):
-            sequence = self.decoder(tgt=decision + POS, memory=context.unsqueeze(0), tgt_is_causal=True)
+            tgt = torch.stack(tokens + [BOS] * (self.sequence_length - len(tokens)), dim=0)
+            sequence = self.decoder(tgt=tgt + POS, memory=context.unsqueeze(0), tgt_is_causal=True)
             logits = self._get_step_logits(sequence, step)
-            decision[step + 1] = self._get_step_decision(sequence, logits, step, mode=mode)
+            tokens.append(self._get_step_decision(sequence, logits, step, mode=mode))
 
-        return sequence
+        return self.decoder(tgt=torch.stack(tokens, dim=0) + POS, memory=context.unsqueeze(0), tgt_is_causal=True)
 
     @register_generator("geometric")
     def _geometric_generate(self, x: torch.Tensor):

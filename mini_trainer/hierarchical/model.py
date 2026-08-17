@@ -265,7 +265,7 @@ class AutoregressiveClassifier(AutoregressiveMixin, IndependentClassifier):
             case "geometric":
                 return F.normalize(sequence[seq_i])
             case "soft":
-                return F.normalize(logits.softmax(dim=1) @ self.embedding(emb_i), 2, 1)
+                return F.normalize(logits.softmax(dim=1) @ self.embedding(emb_i), 2, 1, eps=1e-6)
             case "greedy":
                 return self.embedding(emb_i)[logits.argmax(dim=1)]
             case _:

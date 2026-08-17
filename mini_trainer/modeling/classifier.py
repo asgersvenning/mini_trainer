@@ -35,17 +35,15 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         w = layer.weight
         assert isinstance(w, torch.Tensor)
         nn.init.normal_(w)
+        num_classes = w.size(0)
 
         for _ in range(iterations):
             w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
-
-            # Gradient of sum((w @ w.T)^2) is 4 * (w @ w.T @ w)
-            # We subtract the projection onto the vectors to stay on the sphere
             grad = w @ w.t() @ w
             proj = (grad * w).sum(dim=1, keepdim=True) * w
-            w.sub_(lr * (grad - proj))
+            w.sub_((lr / num_classes) * (grad - proj))
 
-        w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))  # type: ignore
+        w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
         return layer
 
     @classmethod
@@ -304,6 +302,9 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if cls2idx is not None:
             kwargs["cls2idx"] = cls2idx
             if train_labels is not None:
+                raise NotImplementedError(
+                    "DEPRECATED: This method of logit adjustment is currently defunct. Please use EMLACrossEntropy instead."
+                )
                 kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
         with device:
             architecture.add_module(architecture_output_name, cls(**kwargs))

@@ -114,6 +114,7 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
             evenness = 1.0 - entropy / math.log(input.size(-1))
 
         adjustments = self.adjustments
+        assert isinstance(adjustments, torch.Tensor)
         if self._device is None:
             adjustments = adjustments.to(input.device)
 

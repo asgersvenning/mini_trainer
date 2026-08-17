@@ -60,12 +60,12 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
-    def forward(self, x: torch.Tensor):
-        normed = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return normed * self.weight
-
-    def __call__(self, *args, **kwargs) -> torch.Tensor:
-        return super().__call__(*args, **kwargs)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        in_dtype = x.dtype
+        x_fp32 = x.to(torch.float32)
+        variance = x_fp32.pow(2).mean(-1, keepdim=True)
+        normed = x_fp32 * torch.rsqrt(variance + self.eps)
+        return (normed * self.weight.to(torch.float32)).to(in_dtype)
 
 
 class XADecoderLayer(nn.Module):
@@ -224,14 +224,14 @@ class PrefixDecoder(BaseDecoder):
         """
         tot_len = mem_len + tgt_len
 
-        # True means "do not attend" (mask out) in SDPA when using a boolean mask
-        mask = torch.ones(tot_len, tot_len, dtype=torch.bool, device=device)
+        # False means "do not attend" (mask out) in SDPA when using a boolean mask
+        mask = torch.zeros(tot_len, tot_len, dtype=torch.bool, device=device)
 
         # 1. Memory attends to memory
-        mask[:mem_len, :mem_len] = False
+        mask[:mem_len, :mem_len] = True
 
         # 2. Tgt attends to memory
-        mask[mem_len:, :mem_len] = False
+        mask[mem_len:, :mem_len] = True
 
         # 3. Tgt attends to tgt (causal - upper triangular)
         tgt_causal = torch.triu(torch.ones(tgt_len, tgt_len, dtype=torch.bool, device=device), diagonal=1)

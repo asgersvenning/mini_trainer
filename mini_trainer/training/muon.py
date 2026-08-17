@@ -298,7 +298,7 @@ def _single_tensor_muon(
     adjust_lr_fn: str | None,
     has_complex: bool,
 ) -> None:
-    lr = _to_scalar(lr)
+    lr = _to_scalar(lr) # type: ignore
     if has_complex:
         raise ValueError("Complex parameters are not supported")
 
@@ -440,7 +440,7 @@ class MuonAuxAdamW(Optimizer):
                 continue
             opt: Optimizer | None = getattr(self, name, None)
             if opt is None:
-                setattr(self, name, self.opt_cls[name]([grp], **{**self.opt_args[name], **self.defaults}))
+                setattr(self, name, self.opt_cls[name]([grp], **{**self.opt_args[name], **self.defaults}))  # ty: ignore[invalid-argument-type]
             else:
                 opt.add_param_group(grp)
         self._refresh_param_groups()
