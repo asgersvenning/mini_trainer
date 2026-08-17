@@ -182,7 +182,7 @@ def main():
         (base_train_args, var_train_args),
         (base_eval_args, var_eval_args),
         (base_metric_args, var_metric_args),
-    ) = [split_var_args(ArgumentSet(**(args_data.get(arg_set, {}) or {}))) for arg_set in ["shared", "train", "eval", "metric"]]
+    ) = [split_var_args(ArgumentSet(**(args_data.get(arg_set, {}) or {}))) for arg_set in ["shared", "train", "eval", "metrics"]]
 
     # Dataset config
     dataset_cfg = config.get("datasets", {})
@@ -270,7 +270,7 @@ def main():
                 eval_args.pop("data_index")
                 eval_args.add(data_index=model_out_dir / "data_index.json")
 
-            metric_args = base_metric_args.copy().add(all=True, verbose=1, file=result_csv, output=metric_output)
+            metric_args = base_metric_args.copy().add(file=result_csv, output_dir=metric_output)
             # Scaffolding for variable metric args is implemented, but the use-case
             # is not clear, so we'll alert the user
             _mva = assign_variable_args(metric_args, var_metric_args)
