@@ -97,7 +97,7 @@ class AutoregressiveMixin(ABC, nn.Module):
     def _standard_generate(self, x: torch.Tensor, mode: str) -> torch.Tensor:
         context, BOS, POS = self._prepare_generate(x)
         tokens: list[torch.Tensor] = [BOS]
-        
+
         for step in range(self.sequence_length - 1):
             tgt = torch.stack(tokens + [BOS] * (self.sequence_length - len(tokens)), dim=0)
             sequence = self.decoder(tgt=tgt + POS, memory=context.unsqueeze(0), tgt_is_causal=True)

@@ -298,7 +298,7 @@ def _single_tensor_muon(
     adjust_lr_fn: str | None,
     has_complex: bool,
 ) -> None:
-    lr = _to_scalar(lr) # type: ignore
+    lr = _to_scalar(lr)  # type: ignore
     if has_complex:
         raise ValueError("Complex parameters are not supported")
 

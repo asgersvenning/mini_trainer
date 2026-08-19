@@ -42,7 +42,7 @@ def cosine_schedule_with_warmup(total: int, warmup: int, start: float, end: floa
     return _shape_fn
 
 
-def cosine_to_zscore(cosine: torch.Tensor, ndim: int, eps: float=1e-7):
+def cosine_to_zscore(cosine: torch.Tensor, ndim: int, eps: float = 1e-7):
     r"""Converts a cosine (or inner product) between random unit vectors in D dimensions to z-score.
 
             ::math::`Z(x) = \sqrt(D-2) * (cos^{-1}(-x) - \frac{\pi}{2})`

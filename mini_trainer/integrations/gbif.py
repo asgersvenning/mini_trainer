@@ -135,7 +135,7 @@ class GBIFTaxa:
         return fmt.format(**data)
 
 
-def resolve_id(id: str | int, skip: int=0, full: bool=False):
+def resolve_id(id: str | int, skip: int = 0, full: bool = False):
     """Resolves a GBIF id to the accepted GBIF id and scientific name for all taxonomic levels.
 
     * `[species, genus, family, order, class, phylum, kingdom]`
@@ -255,7 +255,7 @@ def id_to_name(id: str | int):
 
 
 @multithread_vectorize(desc="Resolving taxa...")
-def resolve_name_or_id(name_or_id: str | int, rank_contains: str | None="SPECIES", skip: int=0, full: bool=False):  # noqa: D103
+def resolve_name_or_id(name_or_id: str | int, rank_contains: str | None = "SPECIES", skip: int = 0, full: bool = False):  # noqa: D103
     if isinstance(name_or_id, str):
         name_or_id = name_or_id.strip()
         if name_or_id.isdigit():

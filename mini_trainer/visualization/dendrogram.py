@@ -28,7 +28,6 @@ except ImportError:
     _HAS_DENDROGRAM_DEPS = False
 
 
-
 @contextmanager
 def temporary_recursion_limit(new_limit: int):
     """Temporarily increases Python's recursion limit for a block of code."""
@@ -48,9 +47,7 @@ def _check_deps():
         )
 
 
-def linkage_to_newick(
-    Z: np.ndarray, labels: list[str] | tuple[str, ...]
-) -> str:
+def linkage_to_newick(Z: np.ndarray, labels: list[str] | tuple[str, ...]) -> str:
     """Safely converts Scipy Linkage to Newick, escaping reserved chars."""
     tree = cast(ClusterNode, to_tree(Z, False))
     assert isinstance(tree, ClusterNode)
@@ -109,11 +106,11 @@ def sanitize(x):
 
 
 def plot_probabilistic_dendrogram(
-        model: nn.Module,
-        min_merge_prob: float = 0.05,
-        apriori_groups: list[list[str]] | list[dict[str, str]] | list[str] | dict[str, str] | str | bool | None = True,
-        plot: bool = True
-    ):
+    model: nn.Module,
+    min_merge_prob: float = 0.05,
+    apriori_groups: list[list[str]] | list[dict[str, str]] | list[str] | dict[str, str] | str | bool | None = True,
+    plot: bool = True,
+):
     """Plot the probabilistic dendrogram for a model's class centers."""
     _check_deps()
     if apriori_groups is False:
@@ -128,12 +125,9 @@ def plot_probabilistic_dendrogram(
         idx2cls = {int(level): {v: k for k, v in c2i.items()} for level, c2i in cls2idx.items()}
     elif not isinstance(idx2cls.get("0", None), dict):
         idx2cls = {0: idx2cls}
-    idx2cls = {int(k) : v for k, v in idx2cls.items()}
+    idx2cls = {int(k): v for k, v in idx2cls.items()}
 
-    class_names = [
-        [str(idx2cls[i].get(j, idx2cls[i].get(str(j), j))) for j in range(len(idx2cls[i]))]
-        for i in range(len(idx2cls))
-    ]
+    class_names = [[str(idx2cls[i].get(j, idx2cls[i].get(str(j), j))) for j in range(len(idx2cls[i]))] for i in range(len(idx2cls))]
     orig_class_names = [c.copy() for c in class_names]
     apriori: list[None | list[str] | dict[str, str]] = [None] * len(class_names)
 
@@ -153,9 +147,9 @@ def plot_probabilistic_dendrogram(
                 ag = apriori_groups[level]
             else:
                 ag = None
-            c2p = {v[level][1] : v for v in (list(_v.values()) for _v in taxonomy.values())}
+            c2p = {v[level][1]: v for v in (list(_v.values()) for _v in taxonomy.values())}
             # | Resolve untracked synonym conflicts |
-            c2n = {cls : resolve_name_or_id(cls, rank_contains=None, skip=level)[TKC[level]][1] for cls in class_names[level]}
+            c2n = {cls: resolve_name_or_id(cls, rank_contains=None, skip=level)[TKC[level]][1] for cls in class_names[level]}
             n2c = {}
             for c, n in c2n.items():
                 n2c.setdefault(n, []).append(c)
@@ -176,23 +170,20 @@ def plot_probabilistic_dendrogram(
 
     return [
         _plot_probabilistic_dendrogram(
-            W=W,
-            names=class_names[i],
-            orig_names=orig_class_names[i],
-            apriori=apriori[i],
-            min_merge_prob=min_merge_prob,
-            plot=plot
-        ) for i, W in enumerate(class_distance(model))
+            W=W, names=class_names[i], orig_names=orig_class_names[i], apriori=apriori[i], min_merge_prob=min_merge_prob, plot=plot
+        )
+        for i, W in enumerate(class_distance(model))
     ]
 
+
 def _plot_probabilistic_dendrogram(
-        W: torch.Tensor | np.ndarray,
-        names: list[str],
-        orig_names: list[str] | None=None,
-        apriori: dict[str, str] | list[str] | str | None = None,
-        min_merge_prob: float = 0.05,
-        plot: bool=True
-    ):
+    W: torch.Tensor | np.ndarray,
+    names: list[str],
+    orig_names: list[str] | None = None,
+    apriori: dict[str, str] | list[str] | str | None = None,
+    min_merge_prob: float = 0.05,
+    plot: bool = True,
+):
     if isinstance(W, torch.Tensor):
         W = W.numpy(force=True)
     if orig_names is None:
@@ -218,7 +209,7 @@ def _plot_probabilistic_dendrogram(
     if plot:
         # --- 2. BUILD THE TREE ---
         newick_str = linkage_to_newick(Z, names)
-        phylo_tree = Phylo.read(io.StringIO(newick_str), format="newick") # pyright: ignore[reportPrivateImportUsage]
+        phylo_tree = Phylo.read(io.StringIO(newick_str), format="newick")  # pyright: ignore[reportPrivateImportUsage]
 
         # --- 3. DYNAMIC SCALING HEURISTICS ---
         num_classes = len(names)
@@ -233,11 +224,11 @@ def _plot_probabilistic_dendrogram(
         rmargin = 5.0 if apriori else 0.5
         with temporary_recursion_limit(100000):
             circos, tv = Circos.initialize_from_tree(
-                phylo_tree, 
-                r_lim=(30, 85), 
+                phylo_tree,
+                r_lim=(30, 85),
                 leaf_label_size=dynamic_font_size,
                 leaf_label_rmargin=rmargin,
-                line_kws=dict(lw=dynamic_line_width)
+                line_kws=dict(lw=dynamic_line_width),
             )
 
         # --- 5. Apply colors ---
@@ -320,7 +311,7 @@ def run():
     output: str = kwargs.pop("output")
     assert len(output) > 0
 
-    apriori_groups: str | bool | None = kwargs.pop("labels", None) 
+    apriori_groups: str | bool | None = kwargs.pop("labels", None)
     if isinstance(apriori_groups, str):
         match apriori_groups.strip().lower():
             case "auto":
@@ -329,19 +320,19 @@ def run():
                 apriori_groups = False
             case _:
                 pass
-    
+
     model, _ = BaseBuilder.build_model(weights=kwargs.pop("weights"))
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
     dendr = plot_probabilistic_dendrogram(model=model, apriori_groups=apriori_groups, **kwargs)
     for level, (fig, _) in enumerate(dendr):
         parts = output.split(".")
-        path = ".".join(parts[:max(2, len(parts) - 1)])
+        path = ".".join(parts[: max(2, len(parts) - 1)])
         ext = "svg" if len(parts) <= 1 else parts[-1]
         if len(dendr) > 1:
-            figname = f'{path}_{level}.{ext}'
+            figname = f"{path}_{level}.{ext}"
         else:
-            figname = f'{path}.{ext}'
+            figname = f"{path}.{ext}"
         fig.savefig(figname, bbox_inches="tight")
 
 

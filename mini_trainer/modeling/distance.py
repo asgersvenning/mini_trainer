@@ -25,12 +25,8 @@ def class_similarity(model: nn.Module, cdf: bool = False):
 
 
 @torch.no_grad()
-def class_distance(model: nn.Module, eps: float | None = None): 
+def class_distance(model: nn.Module, eps: float | None = None):
     return [
-        (
-            (-sim.clamp_(min=torch.finfo(sim.dtype).eps if eps is None else eps, max=1.0).log_())
-            .clamp_min_(0)
-            .fill_diagonal_(0.0)
-        ) 
+        ((-sim.clamp_(min=torch.finfo(sim.dtype).eps if eps is None else eps, max=1.0).log_()).clamp_min_(0).fill_diagonal_(0.0))
         for sim in class_similarity(model, cdf=True)
     ]
