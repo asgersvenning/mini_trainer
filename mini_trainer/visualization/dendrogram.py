@@ -165,8 +165,8 @@ def plot_probabilistic_dendrogram(
             else:
                 apriori[level] = ag
             class_names[level] = [c2c.get(cls, c2n[cls]) for cls in class_names[level]]
-    except Exception:
-        raise
+    except (RuntimeError, KeyError, ValueError):
+        pass
 
     return [
         _plot_probabilistic_dendrogram(

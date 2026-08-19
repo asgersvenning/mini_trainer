@@ -80,7 +80,7 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig, clustering = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)[0]
             assert fig is not None
             assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
 
@@ -98,7 +98,7 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig, clustering = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)[0]
             assert fig is not None
             assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
 
@@ -114,6 +114,6 @@ def test_plot_probabilistic_dendrogram():
 
     with patch("mini_trainer.visualization.dendrogram.classification_module", return_value=mock_model_module):
         with patch("mini_trainer.visualization.dendrogram.class_distance", return_value=dummy):
-            fig, clustering = plot_probabilistic_dendrogram(mock_model)
+            fig, clustering = plot_probabilistic_dendrogram(mock_model)[0]
             assert fig is not None
             assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
