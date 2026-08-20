@@ -291,10 +291,12 @@ def create_taxonomy(  # noqa: D103
 ):
     taxs = resolve_name_or_id(names_or_ids)
     level_strs: list[TK] = select_levels(levels, taxs)
-    return OrderedDict([
-        (orig, filter_ordered_dict(tax, level_strs))
-        for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x: [v[1] for v in x[1].values()])
-    ])
+    return OrderedDict(
+        [
+            (orig, filter_ordered_dict(tax, level_strs))
+            for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x: [v[1] for v in x[1].values()])
+        ]
+    )
 
 
 def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[TK, tuple[str, str]]]):  # noqa: D103

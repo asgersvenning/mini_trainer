@@ -332,35 +332,37 @@ def main():
     # Append the array directive
     script_lines.append(f"#SBATCH --array=1-{num_tasks}")
 
-    script_lines.extend([
-        "",
-        "set -e",
-        "",
-        'echo "Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"',
-        'echo "Running on node: $SLURMD_NODENAME"',
-        "",
-        "# Extract the Nth line from task files",
-        f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
-        f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
-        f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
-        "",
-        "# Train",
-        'echo "=== Start training ==="',
-        'eval "$TRAIN_CMD"',
-        'echo "=== End training ==="',
-        "",
-        "# Eval",
-        'echo "=== Start eval ==="',
-        'eval "$EVAL_CMDS"',
-        'echo "=== End eval ==="',
-        "",
-        "# Metrics",
-        'echo "=== Start metrics ==="',
-        'eval "$METRIC_CMDS"',
-        'echo "=== End metrics ==="',
-        "",
-        'echo "Finished"',
-    ])
+    script_lines.extend(
+        [
+            "",
+            "set -e",
+            "",
+            'echo "Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"',
+            'echo "Running on node: $SLURMD_NODENAME"',
+            "",
+            "# Extract the Nth line from task files",
+            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
+            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
+            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
+            "",
+            "# Train",
+            'echo "=== Start training ==="',
+            'eval "$TRAIN_CMD"',
+            'echo "=== End training ==="',
+            "",
+            "# Eval",
+            'echo "=== Start eval ==="',
+            'eval "$EVAL_CMDS"',
+            'echo "=== End eval ==="',
+            "",
+            "# Metrics",
+            'echo "=== Start metrics ==="',
+            'eval "$METRIC_CMDS"',
+            'echo "=== End metrics ==="',
+            "",
+            'echo "Finished"',
+        ]
+    )
 
     submit_file.write_text("\n".join(script_lines) + "\n")
     submit_file.chmod(submit_file.stat().st_mode | stat.S_IEXEC)
