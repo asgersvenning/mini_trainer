@@ -134,18 +134,23 @@ def save_yaml_template(path: str) -> str:
     return path
 
 
-def load_yaml_config(path: str | None, resume: bool = False) -> dict[str, Any]:
+def load_yaml_config(path: str | None, resume: bool = False, output_dir: str | None = None) -> dict[str, Any]:
     """Load a YAML config file into a dict of keyword arguments.
 
     Supports optional "builder" as an import path string.
     """
-    if path is None:
-        return {}
+    if path is None and output_dir is not None:
+        candidate_config = os.path.join(output_dir, "config.yaml")
+        if os.path.exists(candidate_config):
+            path = candidate_config
 
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        raise TypeError(f"Top-level YAML in {path!r} must be a mapping/object.")
+    if path is None:
+        data = {}
+    else:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            raise TypeError(f"Top-level YAML in {path!r} must be a mapping/object.")
 
     # Attempt to deserialize any dotted import strings anywhere in the config
     dotted_path = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]+)+$")
@@ -176,13 +181,23 @@ def load_yaml_config(path: str | None, resume: bool = False) -> dict[str, Any]:
         warnings.warn(f"! OBS: CONFIG SKIPPED !\nConfig not properly deserialized: {out}")
         return {}
     if resume:
-        dir = os.path.dirname(os.path.abspath(path))
-        weight_dir = os.path.join(dir, "weights")
-        last_checkpoint = os.path.join(weight_dir, "checkpoint_last.pth")
-        if os.path.exists(weight_dir) and os.path.exists(last_checkpoint):
-            out["checkpoint"] = str(last_checkpoint)
+        candidate_checkpoints: list[str] = []
+        if output_dir is not None:
+            candidate_checkpoints.append(os.path.join(output_dir, "weights", "checkpoint_last.pth"))
+        if path is not None:
+            dir_path = os.path.dirname(os.path.abspath(path))
+            candidate_checkpoints.append(os.path.join(dir_path, "weights", "checkpoint_last.pth"))
+
+        found_checkpoint = None
+        for ckpt in candidate_checkpoints:
+            if os.path.exists(ckpt):
+                found_checkpoint = str(os.path.abspath(ckpt))
+                break
+
+        if found_checkpoint is not None:
+            out["checkpoint"] = found_checkpoint
         else:
-            raise FileNotFoundError(f"Unable to resume run due to missing checkpoint file {last_checkpoint} in the run directory {dir}.")
+            get_logger().info("No existing checkpoint file found to resume from. Starting a fresh training run.")
     return out
 
 

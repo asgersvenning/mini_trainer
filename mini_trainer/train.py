@@ -582,9 +582,15 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
     use_tensorboard = cli_args.pop("tensorboard", False)
     use_wandb = cli_args.pop("wandb", False)
 
+    config_path = cli_args.pop("config")
+    resume = cli_args.pop("resume")
+    output_val = cli_args.get("output")
+    name_val = cli_args.get("name")
+    output_dir_val = os.path.abspath(os.path.join(output_val, name_val)) if (output_val and name_val) else None
+
     # Build the three layers
     defaults_full = defaults_from_function(main)  # Defaults defined in the function signature
-    config_full = load_yaml_config(cli_args.pop("config"), cli_args.pop("resume"))  # Load arguments from config file
+    config_full = load_yaml_config(config_path, resume=resume, output_dir=output_dir_val)  # Load arguments from config file
     cli_full = restructure_cli_args(cli_args)  # Manual CLI arguments
 
     args = merge_dicts(defaults_full, config_full, cli_full)

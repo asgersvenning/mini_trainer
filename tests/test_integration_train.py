@@ -135,3 +135,85 @@ def test_integration_train_cpu(tmp_path):
     dummy_input = torch.randn(3, 5, 5)
     processed = loaded_preprocess(dummy_input)
     assert processed.shape == (3, 5, 5)
+
+
+def test_integration_resume_train(tmp_path):
+    from mini_trainer.config import load_yaml_config
+
+    input_dir = str(tmp_path / "data")
+    os.makedirs(os.path.join(input_dir, "class_a"), exist_ok=True)
+    os.makedirs(os.path.join(input_dir, "class_b"), exist_ok=True)
+
+    output_dir = str(tmp_path / "output")
+    run_name = "resume_test_run"
+    run_dir = os.path.join(output_dir, run_name)
+
+    # 1. Fresh run with resume=True when no checkpoint exists yet
+    config_fresh = load_yaml_config(path=None, resume=True, output_dir=run_dir)
+    assert "checkpoint" not in config_fresh
+
+    args = {
+        "input": input_dir,
+        "output": output_dir,
+        "epochs": 1,
+        "device": "cpu",
+        "dtype": "float32",
+        "name": run_name,
+        "builder": MockBuilder,
+        "model_builder_kwargs": {"model_type": TinyMockModel(), "pretrained": False},
+        "logger_builder_kwargs": {"verbose": False, "logger_cls": configure_loggers()},
+        "ema": False,
+        "seed": 42,
+    }
+    main(**args)
+
+    ckpt_path = os.path.join(run_dir, "weights", "checkpoint_last.pth")
+    assert os.path.exists(ckpt_path)
+
+    # 2. Resumed run with resume=True when checkpoint exists
+    config_resumed = load_yaml_config(path=None, resume=True, output_dir=run_dir)
+    assert "checkpoint" in config_resumed
+    assert config_resumed["checkpoint"] == os.path.abspath(ckpt_path)
+
+    # Run for 2 epochs using checkpoint
+    args_resume = args.copy()
+    args_resume["epochs"] = 2
+    args_resume["checkpoint"] = config_resumed["checkpoint"]
+
+    main(**args_resume)
+
+    # Run directory should NOT be incremented to resume_test_run_1
+    assert os.path.exists(run_dir)
+    assert not os.path.exists(os.path.join(output_dir, "resume_test_run_1"))
+
+
+def test_integration_migration(tmp_path):
+    from publication.experiments.migrate import migrate_results
+
+    src_dir = tmp_path / "slurm_jobs" / "exp1" / "results"
+    dst_dir = tmp_path / "custom_storage" / "exp1" / "results"
+    task_dir = tmp_path / "slurm_jobs" / "exp1"
+
+    runs_dir = src_dir / "runs" / "combo1"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    config_file = runs_dir / "config.yaml"
+    config_file.write_text(f"output: {src_dir}/runs\ncheckpoint: {src_dir}/runs/combo1/weights/checkpoint_last.pth\n", encoding="utf-8")
+
+    task_file = task_dir / "train_tasks.txt"
+    task_file.write_text(f"mt_train --output {src_dir}/runs --name combo1\n", encoding="utf-8")
+
+    migrate_results(src_dir=src_dir, dst_dir=dst_dir, task_dir=task_dir, move=False)
+
+    # Check that dst_dir exists
+    dst_config = dst_dir / "runs" / "combo1" / "config.yaml"
+    assert dst_config.exists()
+    content = dst_config.read_text(encoding="utf-8")
+    assert str(dst_dir) in content
+    assert str(src_dir) not in content
+
+    # Check that task file was updated
+    task_content = task_file.read_text(encoding="utf-8")
+    assert str(dst_dir) in task_content
+    assert str(src_dir) not in task_content

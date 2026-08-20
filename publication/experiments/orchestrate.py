@@ -7,6 +7,7 @@
 
 import argparse
 import itertools
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -204,8 +205,15 @@ def main():
         return
 
     # Set up output directory
-    out_dir = BASE_DIR / name
+    output_dir_cfg = config.get("output_dir") or config.get("results_dir")
+    if output_dir_cfg:
+        base_output_dir = Path(os.path.expandvars(os.path.expanduser(str(output_dir_cfg)))).resolve()
+    else:
+        base_output_dir = BASE_DIR.resolve()
+
+    out_dir = base_output_dir / name
     res_dir = out_dir / "results"
+
     run_dir = res_dir / "runs"
     run_dir.mkdir(parents=True, exist_ok=True)
     metric_dir = res_dir / "metrics"
@@ -235,6 +243,8 @@ def main():
         # 1. Prepare Training Command
         train_args = base_train_args + shared_args + experiment_params
         train_args.add(*assign_variable_args(train_args, var_train_args + var_shared_args))
+        if "resume" not in train_args:
+            train_args.add(Argument(key="resume", value=True))
         train_args, train_dataset, train_data_index = configure_input_output(
             args=train_args.add(output=run_dir, name=combo_name), datasets=dataset_cfg
         )

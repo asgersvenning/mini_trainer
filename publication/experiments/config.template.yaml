@@ -1,5 +1,10 @@
 name: <NAME>
 
+# Optional custom base output directory (e.g., on Gefion persistent shared storage /dcai/projects/...)
+# Environment variables like $PROJECT, $USER, or $HOME are automatically expanded.
+# Defaults to "slurm_jobs" if omitted (<NAME>/results is appended automatically).
+# output_dir: /dcai/projects/$PROJECT/mini_trainer/experiments
+
 stubs:
     train: ...
     eval: ...

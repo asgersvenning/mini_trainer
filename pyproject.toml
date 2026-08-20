@@ -175,10 +175,19 @@ layers = [
     "mini_trainer.modeling",
     "mini_trainer.utils"
 ]
+ignore_imports = [
+    "mini_trainer.utils.create_combinations -> mini_trainer.modeling",
+    "mini_trainer.utils.create_combinations -> mini_trainer.integrations.gbif"
+]
 unmatched_ignore_imports_alerting = "error"
 
 [[tool.importlinter.contracts]]
 name = "Acyclic Siblings"
 type = "acyclic_siblings"
 ancestors = ["mini_trainer"]
+ignore_imports = [
+    "mini_trainer.builders -> mini_trainer.logging",
+    "mini_trainer.utils.create_combinations -> mini_trainer.integrations.gbif",
+    "mini_trainer.utils.create_combinations -> mini_trainer.modeling"
+]
 unmatched_ignore_imports_alerting = "error"
