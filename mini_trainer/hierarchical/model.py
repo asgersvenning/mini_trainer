@@ -409,6 +409,7 @@ class HierarchicalPrediction(BasePrediction[HierarchicalPredictionItem, list[tor
 
             def fmt_idx(level, i):
                 return idx2cls[str(level)][i.item()]
+
         else:
 
             def fmt_idx(level, i):

@@ -148,7 +148,8 @@ class AutoregressiveMixin(ABC, nn.Module):
             current_beam_width = decision.shape[2]
             decision_flat = decision.reshape(self.sequence_length, batch_size * current_beam_width, d_model)
             context_flat = (
-                context.unsqueeze(1)
+                context
+                .unsqueeze(1)
                 .expand(batch_size, current_beam_width, context.shape[-1])
                 .reshape(batch_size * current_beam_width, context.shape[-1])
             )

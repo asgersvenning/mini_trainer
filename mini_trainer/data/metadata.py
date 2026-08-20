@@ -143,9 +143,9 @@ def get_metadata(
             cls2idx = {"0": cast(dict[str, int], cls2idx)}
         cls2idx = cast(dict[str, dict[str, int]], cls2idx)
         levels = sorted(cls2idx.keys(), key=int)
-        metadata["class"] = np.array(
-            [[cls2idx[level][lab] for level, lab in zip(levels, labs if labs.size > 1 else [labs])] for labs in metadata["label"]]
-        )
+        metadata["class"] = np.array([
+            [cls2idx[level][lab] for level, lab in zip(levels, labs if labs.size > 1 else [labs])] for labs in metadata["label"]
+        ])
         if not multilabel:
             metadata["class"] = np.array([c[0] for c in metadata["class"]])
     return metadata

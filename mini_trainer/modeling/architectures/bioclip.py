@@ -40,9 +40,10 @@ def get_bioclip_model(
     encoder, _, bioclip_preprocess, tokenizer = get_bioclip_encoder(version.lower().strip(), pretrained=pretrained)
     encoder.compile(mode="reduce-overhead")
     if default_transform is None:
-        default_transform = torchvision.transforms.transforms.Compose(
-            [torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32), bioclip_preprocess]
-        )
+        default_transform = torchvision.transforms.transforms.Compose([
+            torchvision.transforms.transforms.ConvertImageDtype(dtype=torch.float32),
+            bioclip_preprocess,
+        ])
     return BackboneModel(encoder=encoder, encoder_method="encode_image"), default_transform, resize_size or 256
 
 

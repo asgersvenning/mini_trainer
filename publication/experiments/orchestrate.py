@@ -107,6 +107,28 @@ class ArgumentSet:
         """Return a shallow copy of the argument set."""
         return ArgumentSet(self.arguments.copy())
 
+    def update(self, *args: Any, **kwargs):
+        """Add or update arguments in-place, overriding any existing argument with the same key."""
+        new_args: list[Argument] = []
+        for a in args:
+            if a is None:
+                continue
+            if isinstance(a, ArgumentSet):
+                new_args.extend(a.arguments)
+            elif isinstance(a, Argument):
+                new_args.append(a)
+        for k, v in kwargs.items():
+            new_args.append(Argument(key=k, value=v))
+        for arg in new_args:
+            if arg.key in self.argument_dict:
+                idx = self.index(arg.key)
+                self.arguments[idx] = arg
+                self.argument_dict[arg.key] = arg
+            else:
+                self.arguments.append(arg)
+                self.argument_dict[arg.key] = arg
+        return self
+
     def build_args_string(self) -> str:
         """Constructs the CLI string for shared, static arguments."""
         return " ".join(map(str, sorted(self, key=lambda arg: isinstance(arg.value, Path))))
@@ -266,10 +288,15 @@ def main():
             metric_output = metric_dir / eval_name / combo_name
             metric_output.parent.mkdir(parents=True, exist_ok=True)
 
-            eval_args = base_eval_args.copy().add(
-                experiment_params.get("head"), weights=weights_path, verbose=True, dataset=eval_name, output=eval_out_dir, name=eval_name
-            )
-            eval_args.add(*assign_variable_args(eval_args, var_eval_args + var_shared_args))
+            head_arg = experiment_params.argument_dict.get("head")
+            eval_args = shared_args.copy()
+            eval_args.update(base_eval_args)
+            if head_arg:
+                eval_args.update(head_arg)
+            eval_args.update(weights=weights_path, verbose=True, dataset=eval_name, output=eval_out_dir, name=eval_name)
+            var_eval = assign_variable_args(eval_args, var_eval_args + var_shared_args)
+            if var_eval:
+                eval_args.update(var_eval)
             eval_args, eval_dataset, eval_data_index = configure_input_output(args=eval_args, datasets=dataset_cfg)
             # If data_index is not specified in the `datasets` section of the
             # config YAML, we can use the constructed data_index.json from
@@ -305,37 +332,35 @@ def main():
     # Append the array directive
     script_lines.append(f"#SBATCH --array=1-{num_tasks}")
 
-    script_lines.extend(
-        [
-            "",
-            "set -e",
-            "",
-            'echo "Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"',
-            'echo "Running on node: $SLURMD_NODENAME"',
-            "",
-            "# Extract the Nth line from task files",
-            f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
-            f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
-            f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
-            "",
-            "# Train",
-            'echo "=== Start training ==="',
-            'eval "$TRAIN_CMD"',
-            'echo "=== End training ==="',
-            "",
-            "# Eval",
-            'echo "=== Start eval ==="',
-            'eval "$EVAL_CMDS"',
-            'echo "=== End eval ==="',
-            "",
-            "# Metrics",
-            'echo "=== Start metrics ==="',
-            'eval "$METRIC_CMDS"',
-            'echo "=== End metrics ==="',
-            "",
-            'echo "Finished"',
-        ]
-    )
+    script_lines.extend([
+        "",
+        "set -e",
+        "",
+        'echo "Job ID: $SLURM_ARRAY_JOB_ID, Task ID: $SLURM_ARRAY_TASK_ID"',
+        'echo "Running on node: $SLURMD_NODENAME"',
+        "",
+        "# Extract the Nth line from task files",
+        f'TRAIN_CMD=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {train_tasks_file})',
+        f'EVAL_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {eval_tasks_file})',
+        f'METRIC_CMDS=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {metric_tasks_file})',
+        "",
+        "# Train",
+        'echo "=== Start training ==="',
+        'eval "$TRAIN_CMD"',
+        'echo "=== End training ==="',
+        "",
+        "# Eval",
+        'echo "=== Start eval ==="',
+        'eval "$EVAL_CMDS"',
+        'echo "=== End eval ==="',
+        "",
+        "# Metrics",
+        'echo "=== Start metrics ==="',
+        'eval "$METRIC_CMDS"',
+        'echo "=== End metrics ==="',
+        "",
+        'echo "Finished"',
+    ])
 
     submit_file.write_text("\n".join(script_lines) + "\n")
     submit_file.chmod(submit_file.stat().st_mode | stat.S_IEXEC)

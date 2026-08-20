@@ -107,18 +107,16 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             raise TypeError(f"Normalized should be a `bool`, not `{normalized}` ({type(normalized)}).")
 
         # Store metadata
-        metadata.update(
-            {
-                "mini_trainer_version": self._version,
-                "classifier_class": class_path(self),
-                "in_features": in_features,
-                "out_features": out_features,
-                "hidden": hidden,
-                "droprate": droprate,
-                "normalized": normalized,
-                "prior": prior.tolist() if isinstance(prior, torch.Tensor) else prior,
-            }
-        )
+        metadata.update({
+            "mini_trainer_version": self._version,
+            "classifier_class": class_path(self),
+            "in_features": in_features,
+            "out_features": out_features,
+            "hidden": hidden,
+            "droprate": droprate,
+            "normalized": normalized,
+            "prior": prior.tolist() if isinstance(prior, torch.Tensor) else prior,
+        })
         self._metadata = metadata
 
         # Create one hidden layer
@@ -437,16 +435,14 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             kwargs.update({"hidden": isinstance(hidden_layer, torch.Tensor) and hidden_layer.shape[0]})
         if isinstance(num_classes, (list, tuple)):
             num_classes = num_classes[0]
-        kwargs.update(
-            {
-                "in_features": num_embeddings,
-                "out_features": num_classes,
-                "_dtype": dtype_to_string(dtype),
-                "preprocess_dtype": dtype_to_string(preprocess_dtype),
-                "preferred_size": preferred_size,
-                "resize_size": resize_size,
-            }
-        )
+        kwargs.update({
+            "in_features": num_embeddings,
+            "out_features": num_classes,
+            "_dtype": dtype_to_string(dtype),
+            "preprocess_dtype": dtype_to_string(preprocess_dtype),
+            "preferred_size": preferred_size,
+            "resize_size": resize_size,
+        })
 
         # Check parity between supplied/heuristic and stored config, and let stored override
         for k, v in cfg.items():
@@ -583,6 +579,7 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
                 if isinstance(i, torch.Tensor):
                     i = int(i.item())
                 return _idx2cls[i]
+
         else:
 
             def fmt_idx(i: int | torch.Tensor):

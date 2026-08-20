@@ -217,3 +217,43 @@ def test_integration_migration(tmp_path):
     task_content = task_file.read_text(encoding="utf-8")
     assert str(dst_dir) in task_content
     assert str(src_dir) not in task_content
+
+
+def test_orchestrate_shared_args(tmp_path, monkeypatch):
+    import sys
+
+    import yaml
+
+    from publication.experiments import orchestrate
+
+    cfg_file = tmp_path / "exp.yaml"
+    cfg = {
+        "name": "test_exp",
+        "stubs": {"train": "mt_train", "eval": "mt_predict", "metric": "mt_metric"},
+        "slurm": {"account": "test"},
+        "datasets": {"dataset_a": {"path": str(tmp_path / "data_a"), "data_index": False}},
+        "experiment": {"model": ["resnet18"], "dataset": ["dataset_a"]},
+        "eval": {"dataset_a": ["dataset_a"]},
+        "args": {
+            "shared": {"num_workers": 12, "dtype": "float16"},
+            "train": {"epochs": 5},
+            "eval": {"verbose": True},
+        },
+    }
+    cfg_file.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["orchestrate.py", str(cfg_file)])
+    orchestrate.main()
+
+    eval_tasks_file = tmp_path / "slurm_jobs" / "test_exp" / "eval_tasks.txt"
+    train_tasks_file = tmp_path / "slurm_jobs" / "test_exp" / "train_tasks.txt"
+
+    assert eval_tasks_file.exists()
+    assert train_tasks_file.exists()
+
+    eval_content = eval_tasks_file.read_text(encoding="utf-8")
+    train_content = train_tasks_file.read_text(encoding="utf-8")
+
+    assert "--num_workers 12" in eval_content
+    assert "--num_workers 12" in train_content
