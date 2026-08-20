@@ -1,11 +1,12 @@
 import json
 import os
-import warnings
 from collections.abc import Callable
 from typing import Any
 
 import torch
 from torch import nn
+
+from mini_trainer import get_logger
 
 
 def _read_blacklist():
@@ -50,7 +51,7 @@ def resolve_embedding_dim(
         if isinstance(m, nn.Conv2d):
             return m.in_channels
 
-    warnings.warn("Could not structurally infer embedding dimension. Falling back to dummy forward pass.")
+    get_logger().debug("Could not structurally infer embedding dimension. Falling back to dummy forward pass.")
 
     return _infer_via_dummy_pass(model, preprocess, device)
 
@@ -149,7 +150,7 @@ class WrappedEncoder(nn.Module):
         if "encoder_method" in state:
             encoder_method = state["encoder_method"]
         else:
-            warnings.warn("No `encoder_method` found in state, assuming None.", UserWarning)
+            get_logger().debug("No `encoder_method` found in state, assuming None.")
             encoder_method = None
         self.encoder_method = encoder_method
 
@@ -213,8 +214,5 @@ def infer_size_from_transform(transform: Any, fallback: int = 256, warn_on_fallb
                 if op_sz != -1:
                     return op_sz
     if warn_on_fallback:
-        warnings.warn(
-            f"Could not infer preferred input size from transform. Falling back to default size of {fallback}.",
-            UserWarning,
-        )
+        get_logger().debug(f"Could not infer preferred input size from transform. Falling back to default size of {fallback}.")
     return fallback

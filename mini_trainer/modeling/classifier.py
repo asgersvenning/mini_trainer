@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch._prims_common import DeviceLikeType
 
+from mini_trainer import get_logger
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
 from .architectures import get_model
@@ -432,7 +433,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             if head_weights is not None:
                 num_classes, _ = head_weights.shape
             else:
-                warnings.warn("Unable to infer number of classes from supplied weights.", UserWarning)
+                get_logger().debug("Unable to infer number of classes from supplied weights.")
             hidden_layer = state.get(f"{head_name}.hidden.weight", None)
             kwargs.update({"hidden": isinstance(hidden_layer, torch.Tensor) and hidden_layer.shape[0]})
         if isinstance(num_classes, (list, tuple)):
@@ -454,7 +455,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 kwargs[k] = v
                 continue
             if v != kwargs[k]:
-                warnings.warn(f"Model configuration option '{k}' overriden by value stored in config: {kwargs[k]} ==> {v}", UserWarning)
+                get_logger().debug(f"Model configuration option '{k}' overridden by value stored in config: {kwargs[k]} ==> {v}")
                 kwargs[k] = v
         # Rebuild (and load) integrated backbone and classifier
         model_type_str = model_type if isinstance(model_type, str) else class_path(model_type)

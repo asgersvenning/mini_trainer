@@ -1,6 +1,5 @@
 import json
 import os
-import warnings
 from collections import Counter
 from collections.abc import Callable
 from tempfile import NamedTemporaryFile
@@ -13,6 +12,7 @@ from torch import nn
 from torch.amp.grad_scaler import GradScaler
 from torch.optim.swa_utils import get_ema_multi_avg_fn
 
+from mini_trainer import get_logger
 from mini_trainer.data import (
     SaltAndPepper,
     create_metadata,
@@ -378,7 +378,7 @@ class BaseBuilder:
                 epoch_halflife = step_halflife / steps_per_epoch
                 default_ratio = step_halflife / default_step_halflife
                 if not ((1 / 5) < default_ratio < 5):
-                    warnings.warn(
+                    get_logger().info(
                         f"EMA decay rate half-life is very low/high: {epoch_halflife:.2f} epochs, which "
                         f"is {default_ratio:.1f}X the default ({default_step_halflife / steps_per_epoch:.2f} epochs)."
                     )
