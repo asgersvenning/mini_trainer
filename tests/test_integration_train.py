@@ -244,16 +244,21 @@ def test_orchestrate_shared_args(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["orchestrate.py", str(cfg_file)])
+    monkeypatch.setattr(orchestrate, "create_combinations_file", lambda **kwargs: ([], []))
     orchestrate.main()
 
     eval_tasks_file = tmp_path / "slurm_jobs" / "test_exp" / "eval_tasks.txt"
     train_tasks_file = tmp_path / "slurm_jobs" / "test_exp" / "train_tasks.txt"
+    metric_tasks_file = tmp_path / "slurm_jobs" / "test_exp" / "metric_tasks.txt"
 
     assert eval_tasks_file.exists()
     assert train_tasks_file.exists()
+    assert metric_tasks_file.exists()
 
     eval_content = eval_tasks_file.read_text(encoding="utf-8")
     train_content = train_tasks_file.read_text(encoding="utf-8")
+    metric_content = metric_tasks_file.read_text(encoding="utf-8")
 
     assert "--num_workers 12" in eval_content
     assert "--num_workers 12" in train_content
+    assert "--combinations" in metric_content

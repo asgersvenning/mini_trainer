@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.14"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "pyyaml",
 # ]
@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from mini_trainer.utils.create_combinations import create_combinations_file
 
 BASE_DIR = Path("slurm_jobs")
 
@@ -240,6 +242,28 @@ def main():
     run_dir.mkdir(parents=True, exist_ok=True)
     metric_dir = res_dir / "metrics"
     metric_dir.mkdir(parents=True, exist_ok=True)
+    combinations_dir = res_dir / "combinations"
+    combinations_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pre-generate combinations files for evaluation dataset mappings
+    combinations_map: dict[tuple[str, str], Path] = {}
+    for train_name, eval_names in eval_dataset_map.items():
+        for eval_name in eval_names:
+            pair = (train_name, eval_name)
+            if pair in combinations_map:
+                continue
+            comb_name = f"{eval_name}.csv" if train_name == eval_name else f"{train_name}_{eval_name}.csv"
+            comb_path = combinations_dir / comb_name
+
+            sources = []
+            if train_name in dataset_cfg:
+                sources.append(dataset_cfg[train_name])
+            if eval_name != train_name and eval_name in dataset_cfg:
+                sources.append(dataset_cfg[eval_name])
+
+            if sources:
+                create_combinations_file(sources=sources, output=comb_path)
+            combinations_map[pair] = comb_path
 
     # Resolve config arguments
     output_log = Path(slurm_cfg.get("output", f"{out_dir}/logs/train_%A_%a.log"))
@@ -307,7 +331,11 @@ def main():
                 eval_args.pop("data_index")
                 eval_args.add(data_index=model_out_dir / "data_index.json")
 
+            comb_path = combinations_map.get((train_dataset.value, eval_name))
             metric_args = base_metric_args.copy().add(file=result_csv, output_dir=metric_output)
+            if comb_path:
+                metric_args.add(combinations=comb_path)
+
             # Scaffolding for variable metric args is implemented, but the use-case
             # is not clear, so we'll alert the user
             _mva = assign_variable_args(metric_args, var_metric_args)
