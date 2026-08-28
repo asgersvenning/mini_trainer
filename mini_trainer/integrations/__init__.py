@@ -9,6 +9,7 @@ from .gbif import (
     name_to_id,
     resolve_id,
     resolve_name_or_id,
+    resolve_taxonomical_classes,
 )
 from .parquet import (
     get_metadata_from_parquet,
@@ -27,6 +28,7 @@ __all__ = [
     "name_to_id",
     "resolve_id",
     "resolve_name_or_id",
+    "resolve_taxonomical_classes",
     "get_metadata_from_parquet",
     "parquet_to_class_spec",
     "parquet_to_class_spec_hierarchical",

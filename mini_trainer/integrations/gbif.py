@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
 from types import NoneType
@@ -297,6 +297,32 @@ def create_taxonomy(  # noqa: D103
             for orig, tax in sorted(zip(names_or_ids, taxs), key=lambda x: [v[1] for v in x[1].values()])
         ]
     )
+
+
+def resolve_taxonomical_classes(
+    names_or_ids: Iterable[str | int],
+    rank: str = "species",
+) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Resolve raw class names or taxon IDs to canonical GBIF taxonomy and detect class collapse.
+
+    Returns:
+        raw_to_resolved: mapping from raw class label -> resolved canonical label.
+        collapsed: mapping from canonical label -> list of raw labels that collapsed into it (where count > 1).
+    """
+    unique_names = sorted(set(str(n) for n in names_or_ids))
+    tax = create_taxonomy(unique_names, levels=rank)
+
+    raw_to_resolved: dict[str, str] = {
+        orig: (t[rank][1] if rank in t else next(reversed(t.values()))[1] if t else orig)
+        for orig, t in tax.items()
+    }
+
+    resolved_to_raw: dict[str, list[str]] = defaultdict(list)
+    for raw, resolved in raw_to_resolved.items():
+        resolved_to_raw[resolved].append(raw)
+
+    collapsed = {resolved: raws for resolved, raws in resolved_to_raw.items() if len(raws) > 1}
+    return raw_to_resolved, collapsed
 
 
 def labels_from_taxonomy(tax: OrderedDict[str, OrderedDict[TK, tuple[str, str]]]):  # noqa: D103

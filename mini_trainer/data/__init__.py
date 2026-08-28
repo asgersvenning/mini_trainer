@@ -7,6 +7,7 @@ from .metadata import (
     create_metadata,
     find_images,
     get_metadata,
+    label_to_class_idx,
     parse_class_spec,
     partition_class_samples,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "create_metadata",
     "find_images",
     "get_metadata",
+    "label_to_class_idx",
     "parse_class_spec",
     "auto_find_images",
     "collect_samples_from_source",

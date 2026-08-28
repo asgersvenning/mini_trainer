@@ -1,17 +1,13 @@
-import json
-import os
-import random
 import sys
 from argparse import ArgumentParser
 from collections import defaultdict
-from collections.abc import Sequence
 from pathlib import Path
 
 from mini_trainer.data import (
     collect_samples_from_source,
-    partition_class_samples,
+    create_metadata,
 )
-from mini_trainer.integrations.gbif import resolve_name_or_id
+from mini_trainer.integrations import resolve_taxonomical_classes
 
 
 def parse_verbosity(verbosity: int | str) -> int:
@@ -31,57 +27,6 @@ def parse_verbosity(verbosity: int | str) -> int:
         return 1
 
 
-def resolve_classes_gbif(
-    raw_labels: Sequence[str],
-    verbosity: int = 1,
-) -> tuple[dict[str, str], dict[str, list[str]]]:
-    """Resolve raw dataset class identifiers to canonical GBIF taxonomy and detect class collapse.
-
-    Returns:
-        raw_to_resolved: mapping from raw label -> canonical resolved label.
-        collapsed_classes: mapping from resolved label -> list of raw labels (for groups where len > 1).
-    """
-    raw_to_resolved: dict[str, str] = {}
-    unique_raw = sorted(set(raw_labels))
-
-    try:
-        taxs = resolve_name_or_id(unique_raw)
-        for raw, tax in zip(unique_raw, taxs):
-            if "species" in tax:
-                resolved = str(tax["species"][1])
-            elif len(tax) > 0:
-                resolved = str(next(iter(tax.values()))[1])
-            else:
-                resolved = str(raw)
-            raw_to_resolved[raw] = resolved
-    except Exception as e:
-        if verbosity >= 2:
-            print(f"[DEBUG] Batch GBIF resolution encountered exception ({e}); resolving individually...", file=sys.stderr)
-        for raw in unique_raw:
-            try:
-                tax = resolve_name_or_id(raw)
-                if isinstance(tax, list) and len(tax) > 0:
-                    tax = tax[0]
-                if isinstance(tax, dict) and "species" in tax:
-                    resolved = str(tax["species"][1])
-                elif isinstance(tax, dict) and len(tax) > 0:
-                    resolved = str(next(iter(tax.values()))[1])
-                else:
-                    resolved = str(raw)
-            except Exception as ex:
-                if verbosity >= 2:
-                    print(f"[DEBUG] Could not resolve '{raw}' via GBIF ({ex}); retaining raw label.", file=sys.stderr)
-                resolved = str(raw)
-            raw_to_resolved[raw] = resolved
-
-    resolved_to_raw: dict[str, list[str]] = defaultdict(list)
-    for raw, resolved in raw_to_resolved.items():
-        resolved_to_raw[resolved].append(raw)
-
-    collapsed_classes = {resolved: raws for resolved, raws in resolved_to_raw.items() if len(raws) > 1}
-    return raw_to_resolved, collapsed_classes
-
-
 def create_data_index_file(
     sources: list[str | Path | dict] | str | Path | dict,
     output: str | Path | None = None,
@@ -94,63 +39,42 @@ def create_data_index_file(
     seed: int | None = 42,
     relative_paths: bool = True,
 ) -> dict[str, list]:
-    """Generate a static data index with consistent train-test splitting.
-
-    Args:
-        sources: Dataset source or list of sources (directories, Parquet, JSON data index).
-        output: Destination file path for data_index.json (or directory). If None, returns metadata dict without writing.
-        train_proportion: Target proportion for the training split (default: 0.8).
-        test_proportion: Target proportion for the test split (default: 0.2).
-        min_train: Attempted minimum sample frequency per class in the train split (default: 0).
-        min_test: Attempted minimum sample frequency per class in the test split (default: 1).
-        no_gbif: If True, disables GBIF taxonomic resolution and uses raw dataset class labels.
-        verbosity: Logging verbosity level (0/minimal, 1/info, 2/debug).
-        seed: Random seed for reproducible sample shuffling and splitting.
-        relative_paths: Whether to store paths relative to the output index directory (default: True).
-
-    Returns:
-        metadata: Dictionary with keys 'path', 'class', 'split', 'label'.
-    """
+    """Generate a static data index with consistent train-test splitting."""
     verb = parse_verbosity(verbosity)
-    rng = random.Random(seed)
-
-    if not isinstance(sources, list):
-        sources = [sources]
+    src_list = sources if isinstance(sources, list) else [sources]
 
     if verb >= 1:
-        print(f"[INFO] Collecting samples from {len(sources)} source(s)...")
+        print(f"[INFO] Collecting samples from {len(src_list)} source(s)...")
 
-    raw_samples: list[tuple[str, str]] = []
-    for src in sources:
-        items = collect_samples_from_source(src)
-        raw_samples.extend(items)
-        if verb >= 2:
+    if verb >= 2:
+        raw_samples: list[tuple[str, str]] = []
+        for src in src_list:
+            items = collect_samples_from_source(src)
+            raw_samples.extend(items)
             print(f"[DEBUG] Source '{src}' contributed {len(items)} samples.", file=sys.stderr)
+    else:
+        raw_samples = collect_samples_from_source(src_list)
 
     if not raw_samples:
         raise ValueError(f"No samples could be extracted from sources: {sources}")
 
-    total_samples = len(raw_samples)
     unique_raw_classes = sorted(set(lbl for _, lbl in raw_samples))
     if verb >= 1:
-        print(f"[INFO] Loaded {total_samples} samples across {len(unique_raw_classes)} raw classes.")
+        print(f"[INFO] Loaded {len(raw_samples)} samples across {len(unique_raw_classes)} raw classes.")
 
-    # GBIF taxonomic resolution
-    collapsed_classes: dict[str, list[str]] = {}
+    labels_map = None
     if no_gbif:
         if verb >= 1:
             print("[INFO] GBIF taxonomy resolution disabled (--no-gbif). Using raw dataset class labels.")
-        raw_to_resolved = {c: c for c in unique_raw_classes}
     else:
         if verb >= 1:
             print(f"[INFO] Resolving {len(unique_raw_classes)} classes via GBIF taxonomy...")
-        raw_to_resolved, collapsed_classes = resolve_classes_gbif(unique_raw_classes, verbosity=verb)
-
+        labels_map, collapsed_classes = resolve_taxonomical_classes(unique_raw_classes)
         if collapsed_classes:
-            total_raw_collapsed = sum(len(raws) for raws in collapsed_classes.values())
+            total_collapsed = sum(len(raws) for raws in collapsed_classes.values())
             if verb >= 1:
                 print(
-                    f"[INFO] GBIF taxonomy resolution collapsed {total_raw_collapsed} raw classes "
+                    f"[INFO] GBIF taxonomy resolution collapsed {total_collapsed} raw classes "
                     f"into {len(collapsed_classes)} canonical classes:"
                 )
                 for resolved, raws in sorted(collapsed_classes.items()):
@@ -158,119 +82,58 @@ def create_data_index_file(
         elif verb >= 1:
             print("[INFO] No class collapses detected during GBIF resolution.")
 
-    # Group sample image paths by resolved class
-    samples_by_class: dict[str, list[str]] = defaultdict(list)
-    for img_path, raw_lbl in raw_samples:
-        resolved_lbl = raw_to_resolved.get(raw_lbl, raw_lbl)
-        samples_by_class[resolved_lbl].append(img_path)
-
-    all_resolved_classes = sorted(samples_by_class.keys())
-    cls2idx = {cls_name: idx for idx, cls_name in enumerate(all_resolved_classes)}
-
-    proportions = {"train": float(train_proportion), "test": float(test_proportion)}
     min_freqs = {"train": int(min_train), "test": int(min_test)}
-
     if verb >= 1:
         print(
-            f"[INFO] Splitting dataset (train={proportions['train']:.1%}, test={proportions['test']:.1%}, "
-            f"min_train={min_freqs['train']}, min_test={min_freqs['test']})..."
+            f"[INFO] Splitting dataset (train={train_proportion:.1%}, test={test_proportion:.1%}, "
+            f"min_train={min_train}, min_test={min_test})..."
         )
 
-    split_paths: dict[str, list[str]] = defaultdict(list)
-    split_labels: dict[str, list[str]] = defaultdict(list)
-    split_classes: dict[str, list[int]] = defaultdict(list)
-    split_class_occurrences: dict[str, set[str]] = defaultdict(set)
+    # Delegate to create_metadata
+    metadata = create_metadata(
+        directory=raw_samples,
+        labels=labels_map,
+        train_proportion=train_proportion,
+        test_proportion=test_proportion,
+        val_proportion=0.0,
+        min_freqs=min_freqs,
+        output=output,
+        relative_paths=relative_paths,
+        seed=seed,
+    )
 
-    total_violations_per_split: dict[str, int] = defaultdict(int)
-    classes_with_violations: list[tuple[str, dict[str, int], dict[str, int]]] = []
-
-    for cls_name in all_resolved_classes:
-        cls_items = samples_by_class[cls_name]
-        class_splits, class_violations = partition_class_samples(
-            samples=cls_items,
-            proportions=proportions,
-            min_freqs=min_freqs,
-            rng=rng,
-        )
-
-        has_violation = False
-        actual_counts = {}
-        for s, s_samples in class_splits.items():
-            actual_counts[s] = len(s_samples)
-            if class_violations[s] > 0:
-                has_violation = True
-                total_violations_per_split[s] += 1
-
-            if s_samples:
-                split_class_occurrences[s].add(cls_name)
-                split_paths[s].extend(s_samples)
-                split_labels[s].extend([cls_name] * len(s_samples))
-                split_classes[s].extend([cls2idx[cls_name]] * len(s_samples))
-
-        if has_violation:
-            classes_with_violations.append((cls_name, actual_counts, class_violations))
-
-    # Form final metadata lists
-    output_path = None
-    if output is not None:
-        out_p = Path(output).expanduser().resolve()
-        if out_p.is_dir() or (not out_p.exists() and out_p.suffix == ""):
-            out_p.mkdir(parents=True, exist_ok=True)
-            output_path = out_p / "data_index.json"
-        else:
-            out_p.parent.mkdir(parents=True, exist_ok=True)
-            output_path = out_p
-
-    base_dir = output_path.parent if output_path is not None else Path(os.getcwd())
-
-    final_paths: list[str] = []
-    final_classes: list[int] = []
-    final_splits: list[str] = []
-    final_labels: list[str] = []
-
-    for s in ("train", "test"):
-        for p, c, lbl in zip(split_paths[s], split_classes[s], split_labels[s]):
-            formatted_p = os.path.relpath(os.path.abspath(p), base_dir) if relative_paths else os.path.abspath(p)
-            final_paths.append(formatted_p)
-            final_classes.append(c)
-            final_splits.append(s)
-            final_labels.append(lbl)
-
-    metadata = {
-        "path": final_paths,
-        "class": final_classes,
-        "split": final_splits,
-        "label": final_labels,
-    }
-
-    # Summary reporting
     if verb >= 1:
+        counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        for p, s, lbl in zip(metadata["path"], metadata["split"], metadata["label"]):
+            counts[s][lbl] += 1
+
         print("[INFO] Split summary:")
         for s in ("train", "test"):
-            print(f"  - {s:>5}: {len(split_paths[s]):>6} samples across {len(split_class_occurrences[s]):>5} classes")
+            total_s = sum(counts[s].values())
+            n_classes_s = len(counts[s])
+            print(f"  - {s:>5}: {total_s:>6} samples across {n_classes_s:>5} classes")
 
-        if classes_with_violations:
+        all_classes = sorted(set(metadata["label"]))
+        violations = {s: 0 for s in ("train", "test")}
+        for cls in all_classes:
+            for s in ("train", "test"):
+                if counts[s].get(cls, 0) < min_freqs[s]:
+                    violations[s] += 1
+
+        total_viol = sum(1 for cls in all_classes if any(counts[s].get(cls, 0) < min_freqs[s] for s in ("train", "test")))
+        if total_viol > 0:
             print(
-                f"[INFO] Minimum frequency violations: {len(classes_with_violations)} of {len(all_resolved_classes)} "
+                f"[INFO] Minimum frequency violations: {total_viol} of {len(all_classes)} "
                 f"classes violated minimum split-class requirements:"
             )
             for s in ("train", "test"):
-                if total_violations_per_split[s] > 0:
-                    print(f"  - {s:>5} (< {min_freqs[s]}): {total_violations_per_split[s]} classes")
-
-            if verb >= 2:
-                print("[DEBUG] Detailed class violations:", file=sys.stderr)
-                for cls_name, counts, viols in classes_with_violations:
-                    counts_str = ", ".join(f"{s}={counts[s]} (min={min_freqs[s]})" for s in ("train", "test"))
-                    print(f"  - Class '{cls_name}': {counts_str}", file=sys.stderr)
+                if violations[s] > 0:
+                    print(f"  - {s:>5} (< {min_freqs[s]}): {violations[s]} classes")
         else:
             print("[INFO] Minimum frequency requirements: all classes satisfied requested minimum frequencies.")
 
-    if output_path is not None:
-        with open(output_path, "w", encoding="utf8") as f:
-            json.dump(metadata, f, indent=2)
-        if verb >= 1:
-            print(f"[INFO] Saved data index to '{output_path}'.")
+        if output is not None:
+            print(f"[INFO] Saved data index to '{output}'.")
 
     return metadata
 

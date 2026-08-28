@@ -2,7 +2,8 @@ import csv
 import json
 import os
 import random
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+from collections.abc import Sequence
 from glob import glob
 from pathlib import Path
 from typing import Any, cast
@@ -57,8 +58,13 @@ def _samples_from_dict(data: dict, base_dir: Path | str | None = None) -> list[t
     return samples
 
 
-def collect_samples_from_source(source: str | Path | dict) -> list[tuple[str, str]]:
+def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> list[tuple[str, str]]:
     """Collect (image_path, raw_class_label) pairs from various dataset formats."""
+    if isinstance(source, (list, tuple)):
+        if len(source) > 0 and isinstance(source[0], (tuple, list)):
+            return list(source)
+        return [s for src in source for s in collect_samples_from_source(src)]
+
     if isinstance(source, dict):
         return _samples_from_dict(source)
 
@@ -210,103 +216,145 @@ def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], l
     return labels, images
 
 
+def label_to_class_idx(
+    label: str | tuple[str, ...] | list[str] | np.ndarray,
+    cls2idx: dict[str, int] | dict[str, dict[str, int]],
+) -> int | list[int] | None:
+    """Map a label (flat string or hierarchical tuple/list) to class index integer(s)."""
+    if isinstance(label, (list, tuple, np.ndarray)):
+        cls2idx_hier = cast(dict[str, dict[str, int]], cls2idx)
+        return [cls2idx_hier[str(lvl)].get(str(c), None) for lvl, c in enumerate(label)]
+    cls2idx_flat = cast(dict[str, int], cls2idx)
+    return cls2idx_flat.get(str(label), None)
+
+
 # TODO: Unfortunately, this function has some functionality for the hierarchical submodule
 # even though the core mini_trainer module and the hierarchical submodule are
 # supposed to be entirely compartmentalized. Difficulty to fix: very high.
 def create_metadata(
-    directory: str,
-    cls2idx: dict[str, int] | dict[str, dict[str, int]],
-    labels: OrderedDict[str, str] | OrderedDict[str, tuple[str, ...]] | list[str] | None,
+    directory: str | Path | dict | list[str | Path | dict],
+    cls2idx: dict[str, int] | dict[str, dict[str, int]] | None = None,
+    labels: OrderedDict[str, str] | OrderedDict[str, tuple[str, ...]] | list[str] | None = None,
     train_proportion: float = 0.9,
     val_proportion: float = 0.5,
+    test_proportion: float | None = None,
+    min_freqs: dict[str, int] | None = None,
+    output: str | Path | None = None,
+    relative_paths: bool = False,
+    seed: int | None = None,
     **kwargs,
-):
-    """Create training metadata.
+) -> dict[str, list]:
+    """Create or generate dataset metadata / data index."""
+    if isinstance(directory, (str, Path)) and str(directory).endswith(".parquet"):
+        return get_metadata_from_parquet(str(directory), cls2idx=cls2idx or {})
 
-    TODO: This function has too many responsibilities, and crosses semantic boundaries.
-    """
-    if directory.endswith(".parquet"):
-        return get_metadata_from_parquet(directory, cls2idx=cls2idx)
-    metadata = {"path": [], "class": [], "split": [], "label": []}
-    if labels is None:
-        # If no labels are supplied we just assume that the images are put into
-        # folders named after the class
-        if isinstance(cls2idx.get("0", None), dict):
-            if not is_taxonomical_cls2idx(cls2idx):
-                raise ValueError("Hierarchical class index passed without labels and is not taxonomical.")
-            dirs = [
-                name
-                for name in os.listdir(directory)
-                if os.path.isdir(subdir := os.path.join(directory, name)) and len(os.listdir(subdir)) > 0
-            ]
-            tax = create_taxonomy(dirs, len(cls2idx))
-            labels = labels_from_taxonomy(tax)
-            del dirs, tax
-        else:
-            labels = OrderedDict(
-                (name, name)
-                for name in sorted(os.listdir(directory))
-                if os.path.isdir(subdir := os.path.join(directory, name)) and len(os.listdir(subdir)) > 0
-            )
-    elif isinstance(labels, list):
-        # Same if it is a list, in this case we just assume the folders
-        # are named after the (leaf) class
-        labels = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
-    for dir, cls in labels.items():
-        if isinstance(cls, str):
-            cls2idx = cast(dict[str, int], cls2idx)
-            idx = cls2idx.get(cls, None)
-        else:
-            cls2idx = cast(dict[str, dict[str, int]], cls2idx)
-            idx = [cls2idx[str(lvl)].get(c, None) for lvl, c in enumerate(cls)]
-        this_dir = os.path.join(directory, str(dir))
-        for image_path in find_images(this_dir):
-            metadata["path"].append(image_path)
-            metadata["class"].append(idx)
-            metadata["split"].append(
-                "train" if random.random() < train_proportion else "validation" if random.random() < val_proportion else "test"
-            )
-            metadata["label"].append(cls)
+    # Hierarchical taxonomy construction if applicable
+    if labels is None and isinstance(cls2idx, dict) and isinstance(cls2idx.get("0", None), dict) and isinstance(directory, (str, Path)):
+        dir_str = str(directory)
+        if not is_taxonomical_cls2idx(cls2idx):
+            raise ValueError("Hierarchical class index passed without labels and is not taxonomical.")
+        dirs = [
+            name
+            for name in os.listdir(dir_str)
+            if os.path.isdir(os.path.join(dir_str, name)) and len(os.listdir(os.path.join(dir_str, name))) > 0
+        ]
+        tax = create_taxonomy(dirs, len(cls2idx))
+        labels = labels_from_taxonomy(tax)
+
+    if isinstance(labels, list):
+        dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
+        labels_map = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
+        samples = [(img, cls) for d, cls in labels_map.items() for img in find_images(os.path.join(dir_str, str(d)))]
+    elif isinstance(labels, OrderedDict):
+        dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
+        samples = [(img, cls) for d, cls in labels.items() for img in find_images(os.path.join(dir_str, str(d)))]
+    else:
+        samples = collect_samples_from_source(directory)
+        if isinstance(labels, dict):
+            samples = [(p, labels.get(lbl, lbl)) for p, lbl in samples]
+
+    # Group samples by class label
+    class_samples: dict[Any, list[str]] = defaultdict(list)
+    for img_path, lbl in samples:
+        class_samples[lbl].append(img_path)
+
+    # Proportions: train, validation, test
+    p_train = float(train_proportion)
+    if test_proportion is not None:
+        p_test = float(test_proportion)
+        p_val = float(val_proportion) if val_proportion < 1.0 else max(0.0, 1.0 - p_train - p_test)
+    else:
+        p_val = float((1.0 - train_proportion) * val_proportion)
+        p_test = max(0.0, 1.0 - p_train - p_val)
+
+    proportions = {"train": p_train, "validation": p_val, "test": p_test}
+    min_freqs_map = min_freqs or {}
+    rng = random.Random(seed) if seed is not None else None
+
+    out_base_dir = Path(output).parent if output is not None else None
+
+    resolved_cls2idx = cls2idx if cls2idx is not None else {c: i for i, c in enumerate(sorted(set(class_samples.keys())))}
+    metadata: dict[str, list] = {"path": [], "class": [], "split": [], "label": []}
+    for lbl, paths in class_samples.items():
+        split_dict, _ = partition_class_samples(paths, proportions=proportions, min_freqs=min_freqs_map, rng=rng)
+        cls_idx = label_to_class_idx(lbl, resolved_cls2idx)
+        for split, split_paths in split_dict.items():
+            for p in split_paths:
+                p_out = os.path.relpath(p, out_base_dir) if (relative_paths and out_base_dir is not None) else p
+                metadata["path"].append(p_out)
+                metadata["class"].append(cls_idx)
+                metadata["split"].append(split)
+                metadata["label"].append(lbl)
+
+    if output is not None:
+        out_file = Path(output)
+        if out_file.is_dir() or not out_file.suffix:
+            out_file = out_file / "data_index.json"
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_file, "w", encoding="utf8") as f:
+            json.dump(metadata, f, indent=2)
+
     return metadata
 
 
 def get_metadata(
-    path: str,
+    path: str | Path | dict,
     splits: tuple[str, ...] = ("train", "validation"),
     check_integrity: bool = False,
     cls2idx: dict[str, int] | dict[str, dict[str, int]] | None = None,
     **kwargs,
 ) -> dict[str, np.ndarray]:
     """Load training metadata."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Meta data file ({path}) for training split not found. "
-            'Please provide a JSON with the following keys: "path", "class" or "label", "split".'
-        )
-    with open(path, "rb") as f:
-        data = json.load(f)
+    if isinstance(path, dict):
+        data = {k: list(v) for k, v in path.items()}
+    else:
+        src_path = Path(path).expanduser().resolve()
+        if not src_path.exists():
+            raise FileNotFoundError(
+                f"Meta data file ({src_path}) for training split not found. "
+                'Please provide a JSON with the following keys: "path", "class" or "label", "split".'
+            )
+        if src_path.suffix.lower() == ".parquet":
+            return {k: np.array(v) for k, v in get_metadata_from_parquet(str(src_path), cls2idx=cls2idx or {}, **kwargs).items()}
+
+        with open(src_path, "rb") as f:
+            data = json.load(f)
         if "path" in data:
-            base_dir = os.path.dirname(path) or "."
-            data["path"] = [os.path.relpath(os.path.join(base_dir, p)) for p in data["path"]]
-        metadata = {k: np.array(v) for k, v in data.items()}
-    if check_integrity:
+            base_dir = src_path.parent
+            data["path"] = [os.path.relpath(os.path.join(base_dir, p)) if not os.path.isabs(p) else p for p in data["path"]]
+
+    metadata = {k: np.array(v) for k, v in data.items()}
+    if check_integrity and "path" in metadata:
         integrity_mask = np.array(is_image(metadata["path"]))
         metadata = {k: v[integrity_mask] for k, v in metadata.items()}
-    if "class" not in metadata:
+
+    if "class" not in metadata or len(metadata["class"]) == 0 or metadata["class"][0] is None:
         if "label" not in metadata:
-            raise KeyError(f"No 'class's or 'label's found in {path}")
+            raise KeyError(f"No 'class' or 'label' found in {path}")
         if cls2idx is None:
             raise TypeError(f"Found 'label's in {path}, but no 'cls2idx' was supplied.")
-        multilabel = isinstance(list(cls2idx.values())[0], dict)
-        if not multilabel:
-            cls2idx = {"0": cast(dict[str, int], cls2idx)}
-        cls2idx = cast(dict[str, dict[str, int]], cls2idx)
-        levels = sorted(cls2idx.keys(), key=int)
-        metadata["class"] = np.array(
-            [[cls2idx[level][lab] for level, lab in zip(levels, labs if labs.size > 1 else [labs])] for labs in metadata["label"]]
-        )
-        if not multilabel:
-            metadata["class"] = np.array([c[0] for c in metadata["class"]])
+        metadata["class"] = np.array([label_to_class_idx(lbl, cls2idx) for lbl in metadata["label"]])
+
     return metadata
 
 

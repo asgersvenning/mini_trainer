@@ -154,13 +154,7 @@ def get_metadata_from_parquet(
             path_batch: list[str] = []
             for gid, fn, s in zip(gid_list, filename_list, set_list, strict=True):
                 si = _to_int_or_minus1(s)
-                if si == 0:
-                    split_batch.append("test")
-                elif si == 1:
-                    split_batch.append("validation")
-                else:
-                    split_batch.append("train")
-
+                split_batch.append(set2split(si))
                 path_batch.append(base_dir + _to_str(gid) + os.sep + _to_str(fn))
 
             if is_hierarchical:

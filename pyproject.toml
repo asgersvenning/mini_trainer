@@ -191,7 +191,7 @@ ignore_imports = [
     "mini_trainer.utils.create_combinations -> mini_trainer.integrations.gbif",
     "mini_trainer.utils.create_combinations -> mini_trainer.integrations.parquet",
     "mini_trainer.utils.create_combinations -> mini_trainer.modeling",
-    "mini_trainer.utils.create_data_index -> mini_trainer.integrations.gbif",
+    "mini_trainer.utils.create_data_index -> mini_trainer.integrations",
     "mini_trainer.utils.create_data_index -> mini_trainer.data"
 ]
 unmatched_ignore_imports_alerting = "error"
