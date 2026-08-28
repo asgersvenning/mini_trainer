@@ -44,6 +44,7 @@ mt_htrain = "mini_trainer.hierarchical.train:run"
 mt_hpredict = "mini_trainer.hierarchical.predict:run"
 mt_plot_dendrogram = "mini_trainer.visualization.dendrogram:run"
 mt_create_combinations = "mini_trainer.utils.create_combinations:run"
+mt_create_data_index = "mini_trainer.utils.create_data_index:run"
 
 [tool.ruff]
 target-version = "py312"
@@ -189,6 +190,8 @@ ignore_imports = [
     "mini_trainer.builders -> mini_trainer.logging",
     "mini_trainer.utils.create_combinations -> mini_trainer.integrations.gbif",
     "mini_trainer.utils.create_combinations -> mini_trainer.integrations.parquet",
-    "mini_trainer.utils.create_combinations -> mini_trainer.modeling"
+    "mini_trainer.utils.create_combinations -> mini_trainer.modeling",
+    "mini_trainer.utils.create_data_index -> mini_trainer.integrations.gbif",
+    "mini_trainer.utils.create_data_index -> mini_trainer.data"
 ]
 unmatched_ignore_imports_alerting = "error"

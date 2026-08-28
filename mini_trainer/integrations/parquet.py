@@ -88,42 +88,6 @@ def combine_dicts(dicts: Sequence[dict]):
     return retval
 
 
-# def get_metadata_from_parquet(
-#         path : str,
-#         cls2idx : dict[str, int | dict[str, int]],
-#         **kwargs
-#     ) -> dict[Literal['split', 'class', 'path', 'label'], list[str | int]]:
-#     """This functions retrieves the metadata index for use with minitrainer.
-
-#     Args:
-#         path: Path to parquet created by ``gbifxdl``.
-#         cls2idx: A dictionary with mappings from GBIF taxon (probably species) IDs to indexes used for DL training.
-#             Can also be a dictionary with mappings from ``"0"``-``"N"`` to dictionaries as described above,
-#             where the key denotes the taxonomic level, such that ``"0"`` is species, ``"1"`` is genus and so forth.
-#         kwargs: unused.
-#     """
-#     if isinstance(cls2idx[next(iter(cls2idx))], dict):
-#         def parse_row(row : dict[str, Any]):
-#             nonlocal path
-#             split = set2split(int(row["set"].strip()))
-#             keys = get_keys(row)
-#             cls : list[int] = [cls2idx[str(level)][keys[level]] for level in range(len(cls2idx))]
-#             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-#             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys}
-#     else:
-#         def parse_row(row : dict[str, Any]):
-#             nonlocal path
-#             split = set2split(int(row["set"].strip()))
-#             keys = get_keys(row)
-#             cls : int = cls2idx[keys[0]]
-#             filepath = path_from_class(file=row["filename"], gid=keys[0], dir=os.path.dirname(os.path.abspath(path)))
-#             return {"split" : split, "class" : cls, "path" : filepath, "label" : keys[0]}
-#
-#     return combine_dicts(
-#         map(parse_row, tqdm(iter_parquet(path), desc=f"Parsing metadata from {path}...", total=nrow(path)))
-#     )
-
-
 def get_metadata_from_parquet(
     path: str,
     cls2idx: dict[str, int] | dict[str, dict[str, int]],

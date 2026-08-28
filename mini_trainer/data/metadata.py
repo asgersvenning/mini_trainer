@@ -1,8 +1,10 @@
+import csv
 import json
 import os
 import random
 from collections import OrderedDict
 from glob import glob
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -15,6 +17,7 @@ from mini_trainer.integrations import (
     parquet_to_class_spec,
     resolve_name_or_id,
 )
+from mini_trainer.integrations.parquet import KCOLUMNS, iter_parquet, path_from_class
 
 from .io import is_image
 
@@ -24,6 +27,162 @@ def find_images(root: str):
     paths = sorted(glob(os.path.join(root, "**"), recursive=True))
     check = is_image(paths)
     return [p for p, f in zip(paths, check) if f]
+
+
+def _samples_from_dict(data: dict, base_dir: Path | str | None = None) -> list[tuple[str, str]]:
+    """Extract (image_path, raw_class_label) pairs from a dictionary or loaded file."""
+    if "data_index" in data and isinstance(data["data_index"], (str, Path)) and os.path.exists(str(data["data_index"])):
+        return collect_samples_from_source(str(data["data_index"]))
+
+    path_key = next((k for k in ("path", "filename", "filepath", "image", "file") if k in data), None)
+    label_key = next((k for k in ("label", "labels", "class", "classes", "species", "speciesKey") if k in data), None)
+
+    if path_key is None or label_key is None:
+        raise KeyError(f"Dict must contain path ({('path', 'filename')}) and label ({('label', 'class')}) keys.")
+
+    paths = data[path_key]
+    labels = data[label_key]
+
+    if not isinstance(paths, (list, tuple, np.ndarray)) or not isinstance(labels, (list, tuple, np.ndarray)):
+        raise TypeError("Path and label entries in dict must be sequences of values.")
+
+    samples = []
+    for p, lbl in zip(paths, labels):
+        p_str = str(p)
+        if base_dir is not None and not os.path.isabs(p_str):
+            p_str = os.path.normpath(os.path.join(base_dir, p_str))
+        lbl_str = str(lbl[0] if isinstance(lbl, (list, tuple, np.ndarray)) and len(lbl) > 0 else lbl)
+        samples.append((p_str, lbl_str))
+
+    return samples
+
+
+def collect_samples_from_source(source: str | Path | dict) -> list[tuple[str, str]]:
+    """Collect (image_path, raw_class_label) pairs from various dataset formats."""
+    if isinstance(source, dict):
+        return _samples_from_dict(source)
+
+    src_path = Path(source).expanduser().resolve()
+    if not src_path.exists():
+        raise FileNotFoundError(f"Dataset source '{src_path}' does not exist.")
+
+    if src_path.is_dir():
+        if (src_path / "data_index.json").exists():
+            return collect_samples_from_source(src_path / "data_index.json")
+
+        subdirs = sorted(d for d in src_path.iterdir() if d.is_dir() and not d.name.startswith("."))
+        if subdirs:
+            samples = []
+            for subdir in subdirs:
+                cls_name = subdir.name
+                for img in find_images(str(subdir)):
+                    samples.append((img, cls_name))
+            if samples:
+                return samples
+
+        # Flat directory containing images
+        images = find_images(str(src_path))
+        if images:
+            return [(img, src_path.name) for img in images]
+        raise RuntimeError(f"Directory '{src_path}' does not contain any images or class subdirectories.")
+
+    ext = src_path.suffix.lower()
+    match ext:
+        case ".parquet":
+            samples = []
+            root_dir = str(src_path.parent)
+            for row in iter_parquet(str(src_path), ("filename", KCOLUMNS[0])):
+                gid = str(int(row[KCOLUMNS[0]]))
+                fn = str(row["filename"])
+                img_path = path_from_class(file=fn, gid=int(gid), dir=root_dir)
+                samples.append((img_path, gid))
+            return samples
+
+        case ".json":
+            with open(src_path, encoding="utf8") as f:
+                data = json.load(f)
+            return _samples_from_dict(data, base_dir=src_path.parent)
+
+        case ".csv":
+            with open(src_path, encoding="utf8") as f:
+                reader = csv.reader(f)
+                headers = [h.strip() for h in next(reader)]
+                data = {h: [] for h in headers}
+                for row in reader:
+                    for h, val in zip(headers, row):
+                        data[h].append(val.strip())
+            return _samples_from_dict(data, base_dir=src_path.parent)
+
+        case _:
+            raise ValueError(f"Unsupported file format '{ext}' for dataset source '{src_path}'.")
+
+
+def partition_class_samples(
+    samples: list[str],
+    proportions: dict[str, float],
+    min_freqs: dict[str, int],
+    rng: random.Random | None = None,
+) -> tuple[dict[str, list[str]], dict[str, int]]:
+    """Partition samples of a single class into splits respecting target proportions and minimum frequencies.
+
+    Returns:
+        split_samples: mapping from split_name -> list of sample paths.
+        violations: mapping from split_name -> count deficit below min_freq (0 if met).
+    """
+    if rng is None:
+        rng = random.Random()
+    n = len(samples)
+    splits = list(proportions.keys())
+    total_p = sum(proportions.values())
+    norm_p = {s: proportions[s] / total_p for s in splits}
+
+    shuffled = list(samples)
+    rng.shuffle(shuffled)
+
+    total_min = sum(min_freqs.get(s, 0) for s in splits)
+
+    if n <= total_min:
+        counts = {s: 0 for s in splits}
+        remaining = n
+        sorted_splits = sorted(splits, key=lambda s: (min_freqs.get(s, 0), s == "test"), reverse=True)
+        for s in sorted_splits:
+            need = min_freqs.get(s, 0)
+            alloc = min(need, remaining)
+            counts[s] = alloc
+            remaining -= alloc
+        if remaining > 0:
+            for s in sorted_splits:
+                counts[s] += remaining
+                break
+    else:
+        counts = {s: min_freqs.get(s, 0) for s in splits}
+        remainder = n - total_min
+
+        ideal_extra = {s: max(0.0, n * norm_p[s] - min_freqs.get(s, 0)) for s in splits}
+        sum_extra = sum(ideal_extra.values())
+        extra_ratios = {s: ideal_extra[s] / sum_extra for s in splits} if sum_extra > 0 else norm_p
+
+        exact_alloc = {s: remainder * extra_ratios[s] for s in splits}
+        floor_alloc = {s: int(exact_alloc[s]) for s in splits}
+        unassigned = remainder - sum(floor_alloc.values())
+
+        remainders = sorted(splits, key=lambda s: exact_alloc[s] - floor_alloc[s], reverse=True)
+        for s in remainders[:unassigned]:
+            floor_alloc[s] += 1
+
+        for s in splits:
+            counts[s] += floor_alloc[s]
+
+    violations = {s: max(0, min_freqs.get(s, 0) - counts[s]) for s in splits}
+
+    split_samples = {}
+    offset = 0
+    for s in splits:
+        cnt = counts[s]
+        split_samples[s] = shuffled[offset : offset + cnt]
+        offset += cnt
+
+    return split_samples, violations
 
 
 def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], list[str]]:
