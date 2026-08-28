@@ -279,8 +279,9 @@ def resolve_level(level: int | str):
 def select_levels(levels: str | int | Iterable[str | int] | None, taxonomy: list[OrderedDict[TK, tuple[str, str]]]) -> list[TK]:
     # If levels is not None we consider the following cases:
     if levels is None:
-        level_classes = OrderedDict((k, set(tax[k] for tax in taxonomy)) for k in TAXONOMY_KEYS)
-        return [k for k, v in level_classes.items() if len(v) > 1]
+        level_classes = OrderedDict((k, set(tax[k] for tax in taxonomy if k in tax)) for k in TAXONOMY_KEYS)
+        res = [k for k, v in level_classes.items() if len(v) > 1]
+        return res if res else ([TAXONOMY_KEYS[0]] if any(TAXONOMY_KEYS[0] in t for t in taxonomy) else [])
     if isinstance(levels, (str, int)):
         return [TAXONOMY_KEYS[i] for i in range(TAXONOMY_KEYS.index(resolve_level(levels)) + 1)]
     return sorted([resolve_level(lvl) for lvl in levels], key=TAXONOMY_KEYS.index)
@@ -301,23 +302,27 @@ def create_taxonomy(  # noqa: D103
 
 def resolve_taxonomical_classes(
     names_or_ids: Iterable[str | int],
-    rank: str = "species",
-) -> tuple[dict[str, str], dict[str, list[str]]]:
-    """Resolve raw class names or taxon IDs to canonical GBIF taxonomy and detect class collapse.
+    levels: str | int | Iterable[str | int] | None = None,
+) -> tuple[dict[str, str | tuple[str, ...]], dict[str | tuple[str, ...], list[str]]]:
+    """Resolve raw class names or taxon IDs to canonical GBIF taxon IDs and detect class collapse.
 
     Returns:
-        raw_to_resolved: mapping from raw class label -> resolved canonical label.
-        collapsed: mapping from canonical label -> list of raw labels that collapsed into it (where count > 1).
+        raw_to_resolved: mapping from raw class label -> resolved canonical GBIF taxon ID (or tuple of IDs).
+        collapsed: mapping from canonical ID -> list of raw labels that collapsed into it (where count > 1).
     """
     unique_names = sorted(set(str(n) for n in names_or_ids))
-    tax = create_taxonomy(unique_names, levels=rank)
+    tax = create_taxonomy(unique_names, levels=levels)
 
-    raw_to_resolved: dict[str, str] = {
-        orig: (t[rank][1] if rank in t else next(reversed(t.values()))[1] if t else orig)
-        for orig, t in tax.items()
-    }
+    raw_to_resolved: dict[str, str | tuple[str, ...]] = {}
+    for orig, t in tax.items():
+        if not t:
+            raw_to_resolved[orig] = orig
+        elif len(t) == 1:
+            raw_to_resolved[orig] = next(iter(t.values()))[0]
+        else:
+            raw_to_resolved[orig] = tuple(v[0] for v in t.values())
 
-    resolved_to_raw: dict[str, list[str]] = defaultdict(list)
+    resolved_to_raw: dict[Any, list[str]] = defaultdict(list)
     for raw, resolved in raw_to_resolved.items():
         resolved_to_raw[resolved].append(raw)
 

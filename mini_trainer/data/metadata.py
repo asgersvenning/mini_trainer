@@ -30,39 +30,61 @@ def find_images(root: str):
     return [p for p, f in zip(paths, check) if f]
 
 
-def _samples_from_dict(data: dict, base_dir: Path | str | None = None) -> list[tuple[str, str]]:
-    """Extract (image_path, raw_class_label) pairs from a dictionary or loaded file."""
+SPLIT_DIR_MAP: dict[str, str] = {
+    "train": "train",
+    "training": "train",
+    "trn": "train",
+    "val": "validation",
+    "valid": "validation",
+    "validation": "validation",
+    "dev": "validation",
+    "eval": "validation",
+    "evaluation": "validation",
+    "test": "test",
+    "testing": "test",
+    "tst": "test",
+}
+
+
+def _samples_from_dict(data: dict, base_dir: Path | str | None = None) -> list[tuple[str, str, str | None]]:
+    """Extract (image_path, raw_class_label, split) tuples from a dictionary or loaded file."""
     if "data_index" in data and isinstance(data["data_index"], (str, Path)) and os.path.exists(str(data["data_index"])):
         return collect_samples_from_source(str(data["data_index"]))
 
     path_key = next((k for k in ("path", "filename", "filepath", "image", "file") if k in data), None)
     label_key = next((k for k in ("label", "labels", "class", "classes", "species", "speciesKey") if k in data), None)
+    split_key = next((k for k in ("split", "splits", "set", "subset") if k in data), None)
 
     if path_key is None or label_key is None:
         raise KeyError(f"Dict must contain path ({('path', 'filename')}) and label ({('label', 'class')}) keys.")
 
     paths = data[path_key]
     labels = data[label_key]
+    splits = data[split_key] if split_key is not None else None
 
     if not isinstance(paths, (list, tuple, np.ndarray)) or not isinstance(labels, (list, tuple, np.ndarray)):
         raise TypeError("Path and label entries in dict must be sequences of values.")
 
     samples = []
-    for p, lbl in zip(paths, labels):
+    for idx, (p, lbl) in enumerate(zip(paths, labels)):
         p_str = str(p)
         if base_dir is not None and not os.path.isabs(p_str):
             p_str = os.path.normpath(os.path.join(base_dir, p_str))
         lbl_str = str(lbl[0] if isinstance(lbl, (list, tuple, np.ndarray)) and len(lbl) > 0 else lbl)
-        samples.append((p_str, lbl_str))
+        s_str = str(splits[idx]).strip().lower() if splits is not None else None
+        samples.append((p_str, lbl_str, s_str))
 
     return samples
 
 
-def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> list[tuple[str, str]]:
-    """Collect (image_path, raw_class_label) pairs from various dataset formats."""
+def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> list[tuple[str, str, str | None]]:
+    """Collect (image_path, raw_class_label, split) tuples from various dataset formats."""
     if isinstance(source, (list, tuple)):
         if len(source) > 0 and isinstance(source[0], (tuple, list)):
-            return list(source)
+            return [
+                (s[0], s[1], s[2] if len(s) >= 3 else None)
+                for s in source
+            ]
         return [s for src in source for s in collect_samples_from_source(src)]
 
     if isinstance(source, dict):
@@ -78,18 +100,31 @@ def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> li
 
         subdirs = sorted(d for d in src_path.iterdir() if d.is_dir() and not d.name.startswith("."))
         if subdirs:
+            # Check if this is a pre-split directory structure (e.g. train/, valid/, test/)
+            if all(d.name.lower() in SPLIT_DIR_MAP for d in subdirs) and any(
+                any(child.is_dir() for child in d.iterdir() if not child.name.startswith(".")) for d in subdirs
+            ):
+                samples = []
+                for split_dir in subdirs:
+                    assigned_split = SPLIT_DIR_MAP[split_dir.name.lower()]
+                    split_samples = collect_samples_from_source(split_dir)
+                    for item in split_samples:
+                        samples.append((item[0], item[1], assigned_split))
+                if samples:
+                    return samples
+
             samples = []
             for subdir in subdirs:
                 cls_name = subdir.name
                 for img in find_images(str(subdir)):
-                    samples.append((img, cls_name))
+                    samples.append((img, cls_name, None))
             if samples:
                 return samples
 
         # Flat directory containing images
         images = find_images(str(src_path))
         if images:
-            return [(img, src_path.name) for img in images]
+            return [(img, src_path.name, None) for img in images]
         raise RuntimeError(f"Directory '{src_path}' does not contain any images or class subdirectories.")
 
     ext = src_path.suffix.lower()
@@ -101,7 +136,7 @@ def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> li
                 gid = str(int(row[KCOLUMNS[0]]))
                 fn = str(row["filename"])
                 img_path = path_from_class(file=fn, gid=int(gid), dir=root_dir)
-                samples.append((img_path, gid))
+                samples.append((img_path, gid, None))
             return samples
 
         case ".json":
@@ -118,6 +153,23 @@ def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> li
                     for h, val in zip(headers, row):
                         data[h].append(val.strip())
             return _samples_from_dict(data, base_dir=src_path.parent)
+
+        case ".txt" | ".tsv":
+            samples = []
+            with open(src_path, encoding="utf8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    parts = line.split("\t") if "\t" in line else line.split()
+                    if len(parts) >= 2:
+                        p_str = parts[0]
+                        if not os.path.isabs(p_str):
+                            p_str = os.path.normpath(os.path.join(src_path.parent, p_str))
+                        lbl_str = parts[1]
+                        s_str = parts[2].lower() if len(parts) >= 3 else None
+                        samples.append((p_str, lbl_str, s_str))
+            return samples
 
         case _:
             raise ValueError(f"Unsupported file format '{ext}' for dataset source '{src_path}'.")
@@ -264,47 +316,72 @@ def create_metadata(
     if isinstance(labels, list):
         dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
         labels_map = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
-        samples = [(img, cls) for d, cls in labels_map.items() for img in find_images(os.path.join(dir_str, str(d)))]
+        samples = [(img, cls, None) for d, cls in labels_map.items() for img in find_images(os.path.join(dir_str, str(d)))]
     elif isinstance(labels, OrderedDict):
         dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
-        samples = [(img, cls) for d, cls in labels.items() for img in find_images(os.path.join(dir_str, str(d)))]
+        samples = [(img, cls, None) for d, cls in labels.items() for img in find_images(os.path.join(dir_str, str(d)))]
     else:
-        samples = collect_samples_from_source(directory)
-        if isinstance(labels, dict):
-            samples = [(p, labels.get(lbl, lbl)) for p, lbl in samples]
+        raw_samples = collect_samples_from_source(directory)
+        samples = []
+        for item in raw_samples:
+            p, lbl = item[0], item[1]
+            s = item[2] if len(item) >= 3 else None
+            resolved_lbl = labels.get(lbl, lbl) if isinstance(labels, dict) else lbl
+            samples.append((p, resolved_lbl, s))
 
-    # Group samples by class label
-    class_samples: dict[Any, list[str]] = defaultdict(list)
-    for img_path, lbl in samples:
-        class_samples[lbl].append(img_path)
-
-    # Proportions: train, validation, test
-    p_train = float(train_proportion)
-    if test_proportion is not None:
-        p_test = float(test_proportion)
-        p_val = float(val_proportion) if val_proportion < 1.0 else max(0.0, 1.0 - p_train - p_test)
-    else:
-        p_val = float((1.0 - train_proportion) * val_proportion)
-        p_test = max(0.0, 1.0 - p_train - p_val)
-
-    proportions = {"train": p_train, "validation": p_val, "test": p_test}
-    min_freqs_map = min_freqs or {}
-    rng = random.Random(seed) if seed is not None else None
-
+    has_presplit = len(samples) > 0 and all(s[2] is not None for s in samples)
+    unique_classes = sorted(set(s[1] for s in samples))
+    resolved_cls2idx = cls2idx if cls2idx is not None else {c: i for i, c in enumerate(unique_classes)}
+    metadata: dict[str, list] = {"path": [], "class": [], "split": [], "label": []}
     out_base_dir = Path(output).parent if output is not None else None
 
-    resolved_cls2idx = cls2idx if cls2idx is not None else {c: i for i, c in enumerate(sorted(set(class_samples.keys())))}
-    metadata: dict[str, list] = {"path": [], "class": [], "split": [], "label": []}
-    for lbl, paths in class_samples.items():
-        split_dict, _ = partition_class_samples(paths, proportions=proportions, min_freqs=min_freqs_map, rng=rng)
-        cls_idx = label_to_class_idx(lbl, resolved_cls2idx)
-        for split, split_paths in split_dict.items():
-            for p in split_paths:
-                p_out = os.path.relpath(p, out_base_dir) if (relative_paths and out_base_dir is not None) else p
-                metadata["path"].append(p_out)
-                metadata["class"].append(cls_idx)
-                metadata["split"].append(split)
-                metadata["label"].append(lbl)
+    if has_presplit:
+        target_splits = ["train", "test"] if (test_proportion is not None and val_proportion == 0.0) else ["train", "validation", "test"]
+        for p, lbl, raw_split in samples:
+            raw_s = str(raw_split).strip().lower()
+            if raw_s.startswith("train") or raw_s == "trn":
+                norm_split = "train"
+            elif raw_s.startswith("test") or raw_s == "tst":
+                norm_split = "test"
+            else:
+                norm_split = "validation"
+            if "validation" not in target_splits and norm_split == "validation":
+                norm_split = "test"
+            cls_idx = label_to_class_idx(lbl, resolved_cls2idx)
+            p_out = os.path.relpath(p, out_base_dir) if (relative_paths and out_base_dir is not None) else p
+            metadata["path"].append(p_out)
+            metadata["class"].append(cls_idx)
+            metadata["split"].append(norm_split)
+            metadata["label"].append(lbl)
+    else:
+        # Group samples by class label
+        class_samples: dict[Any, list[str]] = defaultdict(list)
+        for p, lbl, _ in samples:
+            class_samples[lbl].append(p)
+
+        # Proportions: train, validation, test
+        p_train = float(train_proportion)
+        if test_proportion is not None:
+            p_test = float(test_proportion)
+            p_val = float(val_proportion) if val_proportion < 1.0 else max(0.0, 1.0 - p_train - p_test)
+        else:
+            p_val = float((1.0 - train_proportion) * val_proportion)
+            p_test = max(0.0, 1.0 - p_train - p_val)
+
+        proportions = {"train": p_train, "validation": p_val, "test": p_test}
+        min_freqs_map = min_freqs or {}
+        rng = random.Random(seed) if seed is not None else None
+
+        for lbl, paths in class_samples.items():
+            split_dict, _ = partition_class_samples(paths, proportions=proportions, min_freqs=min_freqs_map, rng=rng)
+            cls_idx = label_to_class_idx(lbl, resolved_cls2idx)
+            for split, split_paths in split_dict.items():
+                for p in split_paths:
+                    p_out = os.path.relpath(p, out_base_dir) if (relative_paths and out_base_dir is not None) else p
+                    metadata["path"].append(p_out)
+                    metadata["class"].append(cls_idx)
+                    metadata["split"].append(split)
+                    metadata["label"].append(lbl)
 
     if output is not None:
         out_file = Path(output)

@@ -1,6 +1,7 @@
 import sys
 from argparse import ArgumentParser
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 from mini_trainer.data import (
@@ -35,6 +36,7 @@ def create_data_index_file(
     min_train: int = 0,
     min_test: int = 1,
     no_gbif: bool = False,
+    levels: str | int | Iterable[str | int] | None = None,
     verbosity: int | str = "info",
     seed: int | None = 42,
     relative_paths: bool = True,
@@ -47,7 +49,7 @@ def create_data_index_file(
         print(f"[INFO] Collecting samples from {len(src_list)} source(s)...")
 
     if verb >= 2:
-        raw_samples: list[tuple[str, str]] = []
+        raw_samples: list[tuple[str, str, str | None]] = []
         for src in src_list:
             items = collect_samples_from_source(src)
             raw_samples.extend(items)
@@ -58,7 +60,7 @@ def create_data_index_file(
     if not raw_samples:
         raise ValueError(f"No samples could be extracted from sources: {sources}")
 
-    unique_raw_classes = sorted(set(lbl for _, lbl in raw_samples))
+    unique_raw_classes = sorted(set(s[1] for s in raw_samples))
     if verb >= 1:
         print(f"[INFO] Loaded {len(raw_samples)} samples across {len(unique_raw_classes)} raw classes.")
 
@@ -69,7 +71,7 @@ def create_data_index_file(
     else:
         if verb >= 1:
             print(f"[INFO] Resolving {len(unique_raw_classes)} classes via GBIF taxonomy...")
-        labels_map, collapsed_classes = resolve_taxonomical_classes(unique_raw_classes)
+        labels_map, collapsed_classes = resolve_taxonomical_classes(unique_raw_classes, levels=levels)
         if collapsed_classes:
             total_collapsed = sum(len(raws) for raws in collapsed_classes.values())
             if verb >= 1:
@@ -77,13 +79,17 @@ def create_data_index_file(
                     f"[INFO] GBIF taxonomy resolution collapsed {total_collapsed} raw classes "
                     f"into {len(collapsed_classes)} canonical classes:"
                 )
-                for resolved, raws in sorted(collapsed_classes.items()):
-                    print(f"  - '{resolved}' <- [{', '.join(repr(r) for r in raws)}]")
+                for resolved, raws in sorted(collapsed_classes.items(), key=lambda x: str(x[0])):
+                    print(f"  - {resolved!r} <- [{', '.join(repr(r) for r in raws)}]")
         elif verb >= 1:
             print("[INFO] No class collapses detected during GBIF resolution.")
 
     min_freqs = {"train": int(min_train), "test": int(min_test)}
-    if verb >= 1:
+    is_presplit = len(raw_samples) > 0 and all(len(s) >= 3 and s[2] is not None for s in raw_samples)
+    if is_presplit and verb >= 1:
+        detected_splits = sorted(set(s[2] for s in raw_samples if len(s) >= 3 and s[2] is not None))
+        print(f"[INFO] Detected pre-split dataset ({', '.join(detected_splits)}). Preserving existing split assignments.")
+    elif not is_presplit and verb >= 1:
         print(
             f"[INFO] Splitting dataset (train={train_proportion:.1%}, test={test_proportion:.1%}, "
             f"min_train={min_train}, min_test={min_test})..."
@@ -107,11 +113,21 @@ def create_data_index_file(
         for p, s, lbl in zip(metadata["path"], metadata["split"], metadata["label"]):
             counts[s][lbl] += 1
 
+        total_samples = len(metadata["path"])
         print("[INFO] Split summary:")
         for s in ("train", "test"):
             total_s = sum(counts[s].values())
             n_classes_s = len(counts[s])
-            print(f"  - {s:>5}: {total_s:>6} samples across {n_classes_s:>5} classes")
+            pct_s = (total_s / total_samples) if total_samples > 0 else 0.0
+            print(f"  - {s:>5}: {total_s:>6} samples ({pct_s:>5.1%}) across {n_classes_s:>5} classes")
+
+        if is_presplit:
+            target_map = {"train": train_proportion, "test": test_proportion}
+            diffs = []
+            for s in ("train", "test"):
+                actual_pct = (sum(counts[s].values()) / total_samples) if total_samples > 0 else 0.0
+                diffs.append(f"{s}: actual={actual_pct:.1%} vs requested target={target_map[s]:.1%}")
+            print(f"[INFO] Pre-split proportion alignment: {'; '.join(diffs)}")
 
         all_classes = sorted(set(metadata["label"]))
         violations = {s: 0 for s in ("train", "test")}
@@ -146,6 +162,7 @@ def main(
     min_train: int = 0,
     min_test: int = 1,
     no_gbif: bool = False,
+    levels: str | int | list[str | int] | None = None,
     verbosity: int | str = "info",
     seed: int | None = 42,
     relative_paths: bool = True,
@@ -158,6 +175,7 @@ def main(
         min_train=min_train,
         min_test=min_test,
         no_gbif=no_gbif,
+        levels=levels,
         verbosity=verbosity,
         seed=seed,
         relative_paths=relative_paths,
@@ -225,6 +243,12 @@ def cli():
         help="Disable GBIF taxonomy resolution. Use raw dataset class labels directly.",
     )
     parser.add_argument(
+        "--levels",
+        nargs="*",
+        default=None,
+        help="Specific taxonomy levels to use (e.g. species, genus). Default: automatic via select_levels.",
+    )
+    parser.add_argument(
         "-v",
         "--verbosity",
         default="info",
@@ -246,6 +270,8 @@ def cli():
     args = vars(parser.parse_args())
     if len(args["sources"]) == 1:
         args["sources"] = args["sources"][0]
+    if args.get("levels") is not None and len(args["levels"]) == 1:
+        args["levels"] = args["levels"][0]
     return args
 
 
