@@ -11,6 +11,7 @@ from typing import Any, cast
 import numpy as np
 
 from mini_trainer.integrations import (
+    cls2idx_from_labels,
     create_taxonomy,
     get_metadata_from_parquet,
     is_taxonomical_cls2idx,
@@ -275,9 +276,11 @@ def label_to_class_idx(
     """Map a label (flat string or hierarchical tuple/list) to class index integer(s)."""
     if isinstance(label, (list, tuple, np.ndarray)):
         cls2idx_hier = cast(dict[str, dict[str, int]], cls2idx)
-        return [cls2idx_hier[str(lvl)].get(str(c), None) for lvl, c in enumerate(label)]
+        if "0" in cls2idx_hier and isinstance(cls2idx_hier["0"], dict):
+            return [cls2idx_hier[str(lvl)].get(str(c), None) for lvl, c in enumerate(label)]
+        return cls2idx.get(tuple(map(str, label)), None) or cls2idx.get(label, None)
     cls2idx_flat = cast(dict[str, int], cls2idx)
-    return cls2idx_flat.get(str(label), None)
+    return cls2idx_flat.get(str(label), None) if str(label) in cls2idx_flat else cls2idx_flat.get(label, None)
 
 
 # TODO: Unfortunately, this function has some functionality for the hierarchical submodule
@@ -316,10 +319,18 @@ def create_metadata(
     if isinstance(labels, list):
         dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
         labels_map = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
-        samples = [(img, cls, None) for d, cls in labels_map.items() for img in find_images(os.path.join(dir_str, str(d)))]
+        samples = [
+            (img, tuple(cls) if isinstance(cls, list) else cls, None)
+            for d, cls in labels_map.items()
+            for img in find_images(os.path.join(dir_str, str(d)))
+        ]
     elif isinstance(labels, OrderedDict):
         dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
-        samples = [(img, cls, None) for d, cls in labels.items() for img in find_images(os.path.join(dir_str, str(d)))]
+        samples = [
+            (img, tuple(cls) if isinstance(cls, list) else cls, None)
+            for d, cls in labels.items()
+            for img in find_images(os.path.join(dir_str, str(d)))
+        ]
     else:
         raw_samples = collect_samples_from_source(directory)
         samples = []
@@ -327,11 +338,19 @@ def create_metadata(
             p, lbl = item[0], item[1]
             s = item[2] if len(item) >= 3 else None
             resolved_lbl = labels.get(lbl, lbl) if isinstance(labels, dict) else lbl
-            samples.append((p, resolved_lbl, s))
+            norm_lbl = tuple(resolved_lbl) if isinstance(resolved_lbl, list) else resolved_lbl
+            samples.append((p, norm_lbl, s))
 
     has_presplit = len(samples) > 0 and all(s[2] is not None for s in samples)
     unique_classes = sorted(set(s[1] for s in samples))
-    resolved_cls2idx = cls2idx if cls2idx is not None else {c: i for i, c in enumerate(unique_classes)}
+    if cls2idx is not None:
+        resolved_cls2idx = cls2idx
+    elif unique_classes and isinstance(unique_classes[0], (list, tuple)):
+        resolved_cls2idx = cls2idx_from_labels(
+            OrderedDict([(f"cls_{i}", tuple(map(str, lab))) for i, lab in enumerate(unique_classes)])
+        )
+    else:
+        resolved_cls2idx = {str(c): i for i, c in enumerate(unique_classes)}
     metadata: dict[str, list] = {"path": [], "class": [], "split": [], "label": []}
     out_base_dir = Path(output).parent if output is not None else None
 
