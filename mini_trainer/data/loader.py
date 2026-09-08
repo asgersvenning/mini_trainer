@@ -8,6 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 from mini_trainer import get_logger
 from mini_trainer.utils import is_dist_avail_and_initialized
 
+from ._prefetch import CUDAPrefetchLoader
 from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
@@ -83,6 +84,7 @@ def get_dataloader(  # noqa: D103
     pin_memory: bool,
     device: torch.device,
     *,
+    cuda_prefetch: bool = False,
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
 ):
@@ -105,8 +107,11 @@ def get_dataloader(  # noqa: D103
 
     sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
 
-    return DataLoader(
+    loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
+    transfer_kwargs = {"device": device} if cuda_prefetch else {}
+    return loader_cls(
         dataset,
+        **transfer_kwargs,
         batch_sampler=sampler,
         collate_fn=_collate_batch,
         num_workers=num_workers,
@@ -130,6 +135,7 @@ def get_dataset_dataloader(  # noqa: D103
     cache: CACHE_MODE | str | int | None = None,
     cache_workers: int | None = None,
     multilabel: bool = False,
+    cuda_prefetch: bool = False,
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -137,6 +143,8 @@ def get_dataset_dataloader(  # noqa: D103
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     if isinstance(device, str):
         device = torch.device(device)
+    if cuda_prefetch and device.type != "cuda":
+        raise ValueError("CUDA batch prefetch requires a CUDA target device.")
 
     if len(metadata) != len(modes):
         raise ValueError(f"Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!")
@@ -179,6 +187,7 @@ def get_dataset_dataloader(  # noqa: D103
             num_workers,
             pin_memory,
             device,
+            cuda_prefetch=cuda_prefetch and cache is not CACHE_MODE.CUDA,
             prefetch_factor=prefetch_factor,
             multiprocessing_context=multiprocessing_context,
         )
@@ -199,11 +208,14 @@ def get_inference_dataloader(  # noqa: D103
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
+    cuda_prefetch: bool = False,
     **kwargs,
 ):
     resize_size = _normalize_resize_size(resize_size)
     if isinstance(device, str):
         device = torch.device(device)
+    if cuda_prefetch and device.type != "cuda":
+        raise ValueError("CUDA batch prefetch requires a CUDA target device.")
 
     if subsample is not None and subsample > 1:
         images = images[::subsample]
@@ -224,6 +236,7 @@ def get_inference_dataloader(  # noqa: D103
         num_workers,
         device.type == "cuda",
         device,
+        cuda_prefetch=cuda_prefetch,
         prefetch_factor=prefetch_factor,
         multiprocessing_context=multiprocessing_context,
     )

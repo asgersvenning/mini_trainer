@@ -43,6 +43,7 @@ def run(
     dataset: str = "synthetic",
     data_root: str | Path | None = None,
     class_spec: str | Path | None = None,
+    cuda_prefetch: bool = False,
     quantized_training: bool = False,
     compile: bool = False,
     hidden: int = 0,
@@ -140,6 +141,7 @@ def run(
             "data_index": str(data_index),
             "cache": cache,
             "cache_workers": cache_workers,
+            "cuda_prefetch": cuda_prefetch,
         },
         optimizer_builder_kwargs={"optimizer_cls": MuonAuxAdamW, "lr": 0.1 if dataset == "synthetic" else 0.01, "weight_decay": 0.0},
         criterion_builder_kwargs={"label_smoothing": 0.0},
@@ -162,6 +164,7 @@ def run(
         images=[str(root / record["path"]) for record in test_records],
         resize_size=size,
         batch_size=batch_size,
+        cuda_prefetch=cuda_prefetch,
         num_workers=0,
         device=target_device,
         dtype=torch.float32,
@@ -210,6 +213,7 @@ def run(
         "hidden": hidden,
         "batch_size": batch_size,
         "cache_workers": cache_workers,
+        "cuda_prefetch": cuda_prefetch,
         "parameter_bytes": sum(
             parameter.int_data.numel() + parameter.scale.numel() * parameter.scale.element_size()
             if getattr(parameter, "_is_quantized_training", False)
@@ -272,6 +276,7 @@ def main():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--cache-workers", type=int)
     parser.add_argument("--quantized-training", action="store_true")
+    parser.add_argument("--cuda-prefetch", action="store_true")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument("--hidden", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -300,6 +305,7 @@ def main():
             dataset=args.dataset,
             data_root=args.data_root,
             class_spec=args.class_spec,
+            cuda_prefetch=args.cuda_prefetch,
             quantized_training=args.quantized_training,
             compile=args.compile,
             hidden=args.hidden,
@@ -317,6 +323,7 @@ def main():
             "cache": args.cache,
             "seed": args.seed,
             "epochs": args.epochs,
+            "cuda_prefetch": args.cuda_prefetch,
             "quantized_training": args.quantized_training,
             "compile": args.compile,
             "hidden": args.hidden,

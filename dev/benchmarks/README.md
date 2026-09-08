@@ -314,3 +314,35 @@ locally but has not been dispatched on a self-hosted runner from this session.
 slower QT training on these small workloads. Whole-model compilation defaults off;
 first-use kernel compilation is still included in wall time. Compare matching
 configurations and compiler cache conditions before making performance claims.
+
+## CUDA transfer overlap
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.transfer
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.transfer --backward
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.transfer --dtype float32
+```
+
+The probe compares the ordinary loader with `cuda_prefetch=True`, using the same
+CPU-cached uint8 images, pinned batches and fixed ResNet18 weights. BatchNorm is
+frozen; the optional backward pass includes gradient computation but no optimizer
+updates. Model/cache construction is excluded, one trial warms both paths, and
+five measured trials alternate order. Every run checks bitwise-identical outputs.
+JSON records timings, hardware, PyTorch version and peak allocated CUDA memory.
+This measures transfer plus model computation, not convergence or complete trainer
+throughput. The dataset harness also accepts `--cuda-prefetch` for actual training,
+checkpoint reload and held-out inference profiles, including INT8 models.
+
+On the RTX 3080 Ti Laptop GPU with PyTorch 2.12.0+cu130, one CPU thread, 512 images
+at 224x224, batch size 32 and FP16 AMP, median throughput increased from 3,206 to
+3,310 images/s for inference (1.03x), and 1,061 to 1,078 images/s for
+forward/backward (1.02x). Peak CUDA allocation increased by 9,569,792 bytes in each
+case, consistent with staging an additional input batch plus small overheads.
+These modest local observations are diagnostic, not portable performance gates.
+
+The matching float32 inference probe was slower with lookahead: 2,002 versus
+1,918 images/s (0.96x). Keep the default off unless measurements on the intended
+workload justify the additional stream and memory. The integrated INT8 synthetic
+training/checkpoint/inference profile passed its 100% oracle gate with prefetch
+and reproduced the earlier QT held-out scores bit for bit; that establishes
+compatibility, not a training speedup.

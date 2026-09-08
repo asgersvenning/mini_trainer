@@ -154,3 +154,26 @@ hardware cases. These are optimizer/AMP tests, not an EMA-functionality claim.
 
 References: [optimizer post-step hooks](https://docs.pytorch.org/docs/2.12/generated/torch.optim.Optimizer.register_step_post_hook.html)
 and [GradScaler](https://docs.pytorch.org/docs/2.12/amp.html).
+
+### CUDA batch transfer lookahead
+
+`mt_train --cuda-prefetch` and `mt_predict --cuda-prefetch` opt into one-batch
+transfer lookahead. Python loader builders accept `cuda_prefetch=True` with a CUDA
+`device`. The returned object still inherits `DataLoader`, with the same sampler,
+length, worker settings and repeated-epoch behavior; its batches are already on
+the requested CUDA device. Shape, dtype and order are preserved. Model
+preprocessing/augmentation stays on the caller's compute stream, so this works
+independently of float32, AMP or INT8 model execution.
+
+The option defaults off, rejects CPU targets, and is bypassed for an already
+CUDA-cached dataset. It stages one additional batch and records stream usage so
+the allocator cannot recycle batch storage before consumption completes. It does
+not increase worker counts or add CPU reader threads. Custom CPU hooks may run a
+batch earlier; stochastic hooks sharing global RNG state can therefore change
+their interleaving with caller code. Returned batches may outlive iteration;
+callers using them on another CUDA stream must establish their own stream handoff.
+See [PyTorch stream semantics](https://docs.pytorch.org/docs/main/notes/cuda.html#cuda-streams).
+
+This is an opt-in throughput/memory tradeoff. Actual gains depend on the balance
+between transfer and compute; compare peak allocation as well as wall time using
+[the transfer probe](benchmarks/README.md#cuda-transfer-overlap).

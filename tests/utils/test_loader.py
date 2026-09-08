@@ -237,3 +237,108 @@ def test_bounded_cuda_cache_matches_cpu_cache(metadata):
     for cpu, gpu in zip(expected, actual, strict=True):
         assert gpu.device == device
         torch.testing.assert_close(gpu.cpu(), cpu, rtol=0, atol=0)
+
+
+def test_cuda_prefetch_rejects_cpu_target(metadata):
+    with pytest.raises(ValueError, match="CUDA target"):
+        get_inference_dataloader(metadata["path"], resize_size=4, num_workers=0, cuda_prefetch=True)
+
+
+def _require_prefetch_cuda():
+    import os
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify CUDA transfer streams")
+    assert torch.cuda.is_available()
+
+
+@pytest.mark.parametrize("workers", [0, 1])
+def test_cuda_prefetch_order_epochs_tail_and_lifetime(metadata, workers):
+    _require_prefetch_cuda()
+    from torch.utils.data import DataLoader
+
+    datasets, loaders = get_dataset_dataloader(
+        metadata,
+        modes=("val",),
+        resize_size=4,
+        batch_size=2,
+        num_workers=workers,
+        device="cuda:0",
+        cache="CPU",
+        cache_workers=0,
+        cuda_prefetch=True,
+        multiprocessing_context="spawn" if workers else None,
+    )
+    loader = loaders[0]
+    assert isinstance(loader, DataLoader)
+    assert loader.dataset is datasets[0] and len(loader) == 3
+    consumer = torch.cuda.Stream()
+    for _ in range(2):
+        outputs = []
+        with torch.cuda.stream(consumer):
+            for images, labels in loader:
+                assert images.device == labels.device == torch.device("cuda:0")
+                assert images.dtype == torch.uint8 and labels.dtype == torch.long
+                # Queue use then release the batch while the allocator may reuse
+                # its copy-stream storage for subsequent batches.
+                outputs.append((images.float().mean((1, 2, 3)), labels + 0))
+                del images, labels
+        consumer.synchronize()
+        assert torch.cat([result[1] for result in outputs]).tolist() == list(range(5))
+        torch.testing.assert_close(torch.cat([result[0] for result in outputs]).cpu(), torch.arange(5).float())
+    iterator = iter(loader)
+    next(iterator)
+    del iterator
+    assert sum(len(images) for images, _ in loader) == 5
+
+
+def test_cuda_prefetch_inference_empty_and_failure(metadata):
+    _require_prefetch_cuda()
+    from mini_trainer.data._prefetch import CUDAPrefetchLoader
+
+    _, loader = get_inference_dataloader(
+        metadata["path"],
+        resize_size=4,
+        batch_size=2,
+        num_workers=0,
+        device="cuda:0",
+        cuda_prefetch=True,
+    )
+    result = torch.cat(list(loader))
+    torch.testing.assert_close(result.float().mean((1, 2, 3)).cpu(), torch.arange(5).float())
+    empty = CUDAPrefetchLoader([], device="cuda:0", batch_size=2)
+    assert list(empty) == []
+
+    class Broken(torch.utils.data.Dataset):
+        def __len__(self):
+            return 3
+
+        def __getitem__(self, index):
+            if index == 1:
+                raise RuntimeError("broken sample")
+            return torch.tensor(index)
+
+    iterator = iter(CUDAPrefetchLoader(Broken(), device="cuda:0", batch_size=1, pin_memory=True))
+    assert next(iterator).item() == 0
+    with pytest.raises(RuntimeError, match="broken sample"):
+        next(iterator)
+
+
+def test_cuda_prefetch_nested_cuda_source():
+    _require_prefetch_cuda()
+    from mini_trainer.data._prefetch import CUDAPrefetchLoader
+
+    class Mixed(torch.utils.data.Dataset):
+        def __len__(self):
+            return 4
+
+        def __getitem__(self, index):
+            return {"value": torch.ones(1024, device="cuda:0") * index, "label": index, "name": str(index)}
+
+    consumer = torch.cuda.Stream()
+    with torch.cuda.stream(consumer):
+        outputs = list(CUDAPrefetchLoader(Mixed(), device="cuda:0", batch_size=2))
+    consumer.synchronize()
+    for index, output in enumerate(outputs):
+        assert output["name"] == [str(2 * index), str(2 * index + 1)]
+        torch.testing.assert_close(output["value"].mean(1), output["label"].float())

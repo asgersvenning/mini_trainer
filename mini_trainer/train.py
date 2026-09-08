@@ -532,6 +532,12 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
+        "--cuda-prefetch",
+        action="store_true",
+        dest="dataloader_builder_kwargs.cuda_prefetch",
+        help="Stage one CPU batch ahead on a CUDA transfer stream (opt-in; uses extra device memory).",
+    )
+    cfg_args.add_argument(
         "--subsample",
         type=int,
         dest="dataloader_builder_kwargs.subsample",

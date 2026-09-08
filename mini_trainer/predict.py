@@ -277,6 +277,12 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
+        "--cuda-prefetch",
+        action="store_true",
+        dest="dataloader_builder_kwargs.cuda_prefetch",
+        help="Stage one CPU batch ahead on a CUDA transfer stream (opt-in; uses extra device memory).",
+    )
+    cfg_args.add_argument(
         "--subsample",
         type=int,
         default=None,
