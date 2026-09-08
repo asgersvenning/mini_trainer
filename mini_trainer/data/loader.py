@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import numpy as np
 import torch
-from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler, default_collate
 from torch.utils.data.distributed import DistributedSampler
 
 from mini_trainer import get_logger
@@ -12,6 +12,7 @@ from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
     LazyDataset,
+    _FetchedBatch,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
@@ -67,8 +68,23 @@ class HookedReader:
         return self.hook(self.reader(x))
 
 
+def _collate_batch(samples):
+    if isinstance(samples, _FetchedBatch):
+        # Match default_collate's tuple-to-list convention for (image, label).
+        return list(samples.data) if isinstance(samples.data, tuple) else samples.data
+    return default_collate(samples)
+
+
 def get_dataloader(  # noqa: D103
-    dataset: torch.utils.data.Dataset, mode: str, batch_size: int, num_workers: int, pin_memory: bool, device: torch.device
+    dataset: torch.utils.data.Dataset,
+    mode: str,
+    batch_size: int,
+    num_workers: int,
+    pin_memory: bool,
+    device: torch.device,
+    *,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
 ):
     assert isinstance(mode, str)
     if mode.strip().lower() == "train":
@@ -84,15 +100,20 @@ def get_dataloader(  # noqa: D103
         base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)  # type: ignore
         mp_context = None
 
+    if num_workers > 0 and multiprocessing_context is not None:
+        mp_context = multiprocessing_context
+
     sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
 
     return DataLoader(
         dataset,
         batch_sampler=sampler,
+        collate_fn=_collate_batch,
         num_workers=num_workers,
         pin_memory=pin_memory,
         persistent_workers=num_workers > 0,
         multiprocessing_context=mp_context,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
     )
 
 
@@ -108,6 +129,8 @@ def get_dataset_dataloader(  # noqa: D103
     dtype: torch.dtype = torch.float32,
     cache: CACHE_MODE | str | int | None = None,
     multilabel: bool = False,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ):
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
@@ -144,8 +167,22 @@ def get_dataset_dataloader(  # noqa: D103
     elif num_workers is None:
         num_workers = _default_worker_count(16)
 
-    pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
-    loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
+    # A gather from a pinned cache allocates an unpinned result. Pin the actual
+    # CPU batch before asynchronous H2D, including for the CPU cache path.
+    pin_memory = device.type == "cuda" and cache is not CACHE_MODE.CUDA
+    loaders = [
+        get_dataloader(
+            dataset,
+            mode,
+            batch_size,
+            num_workers,
+            pin_memory,
+            device,
+            prefetch_factor=prefetch_factor,
+            multiprocessing_context=multiprocessing_context,
+        )
+        for mode, dataset in zip(modes, datasets)
+    ]
 
     return datasets, loaders
 
@@ -159,6 +196,8 @@ def get_inference_dataloader(  # noqa: D103
     device: torch.device | str = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
     **kwargs,
 ):
     resize_size = _normalize_resize_size(resize_size)
@@ -177,6 +216,15 @@ def get_inference_dataloader(  # noqa: D103
     if num_workers is None:
         num_workers = _default_worker_count(32)
 
-    loader = get_dataloader(dataset, "test", batch_size, num_workers, False, device)
+    loader = get_dataloader(
+        dataset,
+        "test",
+        batch_size,
+        num_workers,
+        device.type == "cuda",
+        device,
+        prefetch_factor=prefetch_factor,
+        multiprocessing_context=multiprocessing_context,
+    )
 
     return dataset, loader

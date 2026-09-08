@@ -339,6 +339,16 @@ def _infer_numeric_dtype(seq) -> Any:
     return object
 
 
+class _FetchedBatch(list):
+    """Sample views for standard collators, with the already-stacked batch attached."""
+
+    def __init__(self, data):
+        self.data = data
+        # unbind produces views, not sample copies. An actual list preserves
+        # torch.stack compatibility in external DataLoaders' default collators.
+        super().__init__(data.unbind(0) if isinstance(data, torch.Tensor) else zip(*(value.unbind(0) for value in data)))
+
+
 class LazyDataset(torch.utils.data.Dataset):
     """A general lazy dataset which calls func on items to
     obtain the image (and label) when needed.
@@ -500,6 +510,19 @@ class LazyDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.items[0])
+
+    def __getitems__(self, indices):
+        # PyTorch's batched fetch protocol: one gather for cached tensors, or
+        # one stacking pass for decoded samples. Keep scalar indexing unchanged.
+        if self._cache_mode in (CACHE_MODE.CPU, CACHE_MODE.CUDA):
+            tensors = self._ram_cache.tensors
+            index = torch.as_tensor(indices, dtype=torch.long, device=tensors[0].device)
+            index = torch.where(index < 0, index + len(self), index)
+            # index_select copies whole rows; generic advanced indexing is much
+            # slower for uint8 image batches on CPU. Results own their storage.
+            data = tuple(tensor.index_select(0, index) for tensor in tensors)
+            return _FetchedBatch(data[0] if self._ram_was_single_tensor else data)
+        return _FetchedBatch(self[indices])
 
     def __getitem__(self, index):
         match self._cache_mode:

@@ -154,3 +154,53 @@ def test_distributed_loader_retains_spawn_and_sampler(monkeypatch):
     assert isinstance(loader.batch_sampler.sampler, torch.utils.data.DistributedSampler)
     assert loader.batch_sampler.sampler.num_replicas == 2
     assert loader.batch_sampler.drop_last
+
+
+@pytest.mark.parametrize("cache", ["none", "cpu"])
+@pytest.mark.parametrize("workers", [0, 1])
+def test_batched_fetch_matches_default_collation(metadata, cache, workers):
+    dataset = data_io.LazyDataset(
+        PathLabelProcessor(data_io.make_read_and_resize_fn((4, 4), torch.device("cpu"), torch.uint8), None, False),
+        (metadata["path"], metadata["class"]),
+        cache=cache,
+    )
+    reference = torch.utils.data.DataLoader(
+        dataset, batch_size=2, num_workers=workers, multiprocessing_context="spawn" if workers else None
+    )
+    optimized = data_loader.get_dataloader(
+        dataset, "val", 2, workers, False, torch.device("cpu"), multiprocessing_context="spawn", prefetch_factor=1
+    )
+    for expected, actual in zip(reference, optimized, strict=True):
+        assert isinstance(actual, list) and len(actual) == 2
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    if workers == 0:
+        batch = dataset.__getitems__([4, 1, 1])
+        direct = data_loader._collate_batch(batch)
+        assert direct[0] is batch.data[0]
+        assert direct[1].tolist() == [4, 1, 1]
+
+
+def test_inference_batched_fetch_keeps_tensor_output(metadata):
+    dataset, loader = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0)
+    batches = list(loader)
+    assert all(isinstance(batch, torch.Tensor) for batch in batches)
+    torch.testing.assert_close(torch.cat(batches), dataset[list(range(5))], rtol=0, atol=0)
+    external = torch.utils.data.DataLoader(dataset, batch_size=2)
+    torch.testing.assert_close(torch.cat(list(external)), torch.cat(batches), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cache", ["none", "cpu"])
+def test_cuda_transfer_batches_are_pinned(metadata, cache):
+    import os
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to validate pinned CUDA transfer batches")
+    if not torch.cuda.is_available():
+        pytest.fail("CUDA checks requested but no CUDA device is accessible")
+    device = torch.device("cuda:0")
+    _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("val",), cache=cache, batch_size=2, num_workers=0, device=device)
+    images, labels = next(iter(loaders[0]))
+    assert images.is_pinned() and labels.is_pinned()
+    torch.testing.assert_close(images.to(device, non_blocking=True).cpu(), images)
+    _, inference = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0, device=device)
+    assert next(iter(inference)).is_pinned()
