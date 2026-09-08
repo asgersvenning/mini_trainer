@@ -3,11 +3,12 @@
 Uses INT8 stored weights (no floating-point master copy), INT8 saved linear
 inputs, and scaled INT8 forward/dgrad/wgrad GEMMs. Gradients and SGD update math
 remain floating point. TorchAO stochastic rounding writes updates back to INT8.
-Only zero-decay, zero-momentum SGD is exercised; do not infer AdamW/Muon support.
+SGD and AdamW are available; do not infer support for other optimizers.
 """
 
 import gc
 import json
+import math
 import time
 from argparse import ArgumentParser
 
@@ -15,10 +16,12 @@ import torch
 
 
 def dependencies():
-    from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
+    from torchao.prototype.quantized_training.int8 import quantize_int8_rowwise
     from torchao.prototype.quantized_training.int8_mm import scaled_int8_mm
 
-    return Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise, scaled_int8_mm
+    from ._int8_weight import TrainingWeight
+
+    return TrainingWeight, quantize_int8_rowwise, scaled_int8_mm
 
 
 class IntegerLinear(torch.autograd.Function):
@@ -35,19 +38,22 @@ class IntegerLinear(torch.autograd.Function):
     def backward(ctx, grad_output):
         _, quantize, mm = dependencies()
         inputs, input_scale, weight, weight_scale = ctx.saved_tensors
-        ones = torch.ones(weight.shape[1], device=grad_output.device, dtype=grad_output.dtype)
+        ones = torch.ones(weight.shape[1], device=grad_output.device, dtype=torch.float32)
         grad_input = None
         if ctx.needs_input_grad[0]:
             # Weight scales lie along the contraction axis: absorb them into
             # dY before its row quantization, not into the result columns.
-            quantized_grad, scale = quantize(grad_output * weight_scale)
+            quantized_grad, scale = quantize(grad_output.float() * weight_scale.float())
             grad_input = mm(quantized_grad.contiguous(), weight.contiguous(), scale.contiguous(), ones)
         grad_weight = None
         if ctx.needs_input_grad[1]:
             # Similarly absorb saved activation scales into dY.T for dW.
-            quantized_grad, scale = quantize(grad_output.T * input_scale)
+            quantized_grad, scale = quantize(grad_output.T.float() * input_scale.float())
             grad_weight = mm(quantized_grad.contiguous(), inputs.contiguous(), scale.contiguous(), ones)
-        return grad_input, grad_weight
+        return (
+            grad_input.to(grad_output.dtype) if grad_input is not None else None,
+            grad_weight.to(weight_scale.dtype) if grad_weight is not None else None,
+        )
 
 
 class Layer(torch.nn.Module):
@@ -58,10 +64,21 @@ class Layer(torch.nn.Module):
         self.weight = torch.nn.Parameter(dependencies()[0].from_float(weights) if quantized else weights)
 
     def forward(self, inputs):
-        return IntegerLinear.apply(inputs, self.weight) if self.quantized else torch.nn.functional.linear(inputs, self.weight)
+        return torch.nn.functional.linear(inputs, self.weight)
 
 
-def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compiled=True):
+def run(
+    width=4096,
+    batch_size=2048,
+    layers=4,
+    steps=10,
+    dtype="float16",
+    compiled=True,
+    optimizer_name="sgd",
+    weight_decay=0.0,
+    momentum=0.0,
+    epsilon=1e-4,
+):
     if not torch.cuda.is_available():
         raise RuntimeError("The QT probe requires an accessible CUDA GPU.")
     results = {}
@@ -74,7 +91,9 @@ def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compil
         if compiled:
             model = torch.compile(model, fullgraph=True)
         inputs = torch.randn(batch_size, width, device="cuda", dtype=getattr(torch, dtype))
-        optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, foreach=False)
+        optimizer_cls = {"sgd": torch.optim.SGD, "adamw": torch.optim.AdamW}[optimizer_name]
+        optimizer_options = {"momentum": momentum} if optimizer_name == "sgd" else {"eps": epsilon}
+        optimizer = optimizer_cls(model.parameters(), lr=1e-3, weight_decay=weight_decay, foreach=False, **optimizer_options)
         if compiled:
             optimizer.step = torch.compile(optimizer.step, fullgraph=False)
 
@@ -85,8 +104,16 @@ def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compil
             optimizer.step()
             return loss
 
+        warmup_losses = []
         for _ in range(3):
-            step()
+            warmup_losses.append(float(step().detach()))
+            # This random linear-stack MSE must train every weight. AOT can
+            # otherwise report fast steps while silently dropping gradients
+            # for the experimental tensor subclass.
+            if any(parameter.grad is None or not bool(torch.count_nonzero(parameter.grad)) for parameter in model.parameters()):
+                raise RuntimeError(
+                    "Missing or zero weight gradients in the QT probe; compiled tensor-subclass training is not verified. Try --eager."
+                )
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
         started = time.perf_counter()
@@ -98,6 +125,7 @@ def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compil
             "seconds_per_step": seconds,
             "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
             "loss": float(loss.detach()),
+            "warmup_losses": warmup_losses,
             "weight_bytes": sum(
                 parameter.int_data.numel() + parameter.scale.numel() * parameter.scale.element_size()
                 if quantized
@@ -105,6 +133,8 @@ def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compil
                 for parameter in model.parameters()
             ),
         }
+        if not math.isfinite(results["int8" if quantized else dtype]["loss"]):
+            raise RuntimeError("Nonfinite training loss; check optimizer precision, epsilon and learning rate.")
         del step, model, inputs, optimizer, loss
     return {
         "device": torch.cuda.get_device_name(),
@@ -115,8 +145,13 @@ def run(width=4096, batch_size=2048, layers=4, steps=10, dtype="float16", compil
         "steps": steps,
         "compiled": compiled,
         "seed": 42,
-        "scope": "synthetic square linear stack and MSE; warmed forward/backward/SGD; excludes compilation and loading",
-        "optimizer": {"name": "SGD", "lr": 1e-3, "momentum": 0, "weight_decay": 0},
+        "scope": "synthetic square linear stack and MSE; warmed forward/backward/optimizer; excludes compilation and loading",
+        "optimizer": {
+            "name": optimizer_name,
+            "lr": 1e-3,
+            "weight_decay": weight_decay,
+            **({"momentum": momentum} if optimizer_name == "sgd" else {"eps": epsilon}),
+        },
         "results": results,
     }
 
@@ -129,10 +164,16 @@ def main():
     parser.add_argument("--steps", type=int, default=10)
     parser.add_argument("--dtype", choices=["float32", "float16"], default="float16")
     parser.add_argument("--eager", action="store_true")
+    parser.add_argument("--optimizer-name", choices=["sgd", "adamw"], default="sgd")
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--momentum", type=float, default=0.0)
+    parser.add_argument("--epsilon", type=float, default=1e-4, help="AdamW epsilon; 1e-4 avoids FP16 underflow")
     args = vars(parser.parse_args())
     args["compiled"] = not args.pop("eager")
     if min(args[key] for key in ("width", "batch_size", "layers", "steps")) < 1:
         parser.error("Dimensions, layers and steps must be positive")
+    if args["optimizer_name"] != "sgd" and args["momentum"]:
+        parser.error("--momentum applies only to SGD")
     torch.set_num_threads(1)
     print(json.dumps(run(**args), indent=2))
 

@@ -135,7 +135,7 @@ Two developer probes make the remaining work measurable:
 ```bash
 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.loader
 CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
-    .venv/bin/python -m dev.benchmarks.quantized_training
+    .venv/bin/python -m dev.benchmarks.quantized_training --eager
 # Also test smaller GEMMs and full precision; benefit is workload-dependent:
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --width 2048 --batch-size 512
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --dtype float32
@@ -146,7 +146,11 @@ forward/input-gradient/weight-gradient GEMMs, and writes SGD updates back using
 stochastic rounding. There is no retained floating-point master weight copy.
 Gradients and update arithmetic remain floating point. It uses TorchAO's
 experimental weight storage and Triton kernels with `torch.compile` fusion.
-It currently exercises only SGD without momentum or weight decay, not the
+The experimental parameter dispatch supports SGD (including momentum/Nesterov
+and weight decay) and AdamW. CPU tests check update error against floating-point
+optimizer math and exact next-step continuation when weights, optimizer state
+and RNG are restored together. Foreach parameter updates currently dispatch per
+tensor; no fused-optimizer speed benefit is claimed. This does not establish the
 repository's complete optimizer or checkpoint contracts. It is not an `mt_train`
 feature yet, and a synthetic linear-stack MSE is not a convergence study.
 
@@ -154,7 +158,9 @@ Local RTX 3080 Ti evidence (four 4096-wide layers, batch 2048, FP16 input/output
 three warm-up steps, ten measured forward/backward/SGD steps): FP16 took 29.10 ms
 per step and peaked at 386,139,648 allocated bytes; INT8 took 12.92 ms and peaked
 at 302,302,720 bytes. Stored weight bytes fell from 134,217,728 to 67,141,632.
-These are single-run kernel-probe observations, not general end-to-end speedups.
+These historical measurements predate the backward-scale underflow correction
+and must not be used as evidence for the corrected implementation. They are
+retained to document the investigation, not as valid training speedup claims.
 The smaller 2048-wide/batch-512 probe was slower in INT8, and the unfused prototype
 used more peak memory. Preserve those negative results when choosing dispatch.
 
@@ -182,3 +188,35 @@ This checks baseline checkpoint/manifest/file hashes, selects training-only
 calibration samples, performs two small QAT epochs, then evaluates reloaded native
 integer artifacts on the held-out split. The report and per-level predictions
 retain baseline/PTQ/QAT results. It does not establish QT training speed or memory.
+
+The QT kernel probe also accepts `--optimizer-name adamw --weight-decay 0.1`
+or `--momentum 0.9 --weight-decay 0.1` for SGD. AdamW uses an explicit
+`--epsilon 1e-4` for both compared models: its usual `1e-8` underflows in FP16
+state. Use `--dtype float32 --epsilon 1e-8` to test ordinary float32 optimizer
+state. This changes the experimental recipe, not the training CLI defaults.
+CUDA regression tests exercise ordinary `nn.Linear` dispatch with non-square
+weights, bias and batched inputs. Weight normalization, masked classifier
+weights, convolutional QT, Muon, DDP and `mt_train` resume remain unverified.
+
+The original FP16 backward scale products could underflow before quantization,
+suppressing gradients from mean-reduced losses. The corrected kernel forms
+those products and their row scales in float32 while retaining INT8 GEMMs and
+saved inputs. A CUDA regression compares input/weight gradients at both ordinary
+and `1e-6` upstream gradient magnitudes. This was discovered through the AdamW
+learning probe, beyond the original large-gradient numerical test.
+
+Model compilation currently drops the experimental subclass's parameter gradients
+in the exercised linear-stack probe. Eager execution produces gradients close to
+the floating-point reference and learns; compiling only the optimizer also
+permits learning. The probe now rejects missing/zero parameter gradients during
+warm-up, so a compiled run cannot be reported as successful training. Use
+`--eager` for validated arithmetic while compiler compatibility is investigated.
+No corrected end-to-end memory or speed benefit has yet been established.
+
+After the scale correction, the eager two-layer 2048-wide, batch-512 AdamW probe
+(seed 42, three warm-up and three measured steps, decay 0.1, epsilon 1e-4)
+reduced MSE from 0.99986 to 0.25309 in INT8, versus 0.99959 to 0.25218 in
+FP16. INT8 took 5.85 ms/step and peaked at 171,218,944 bytes, versus 2.39 ms
+and 111,412,224 bytes for FP16. This establishes similar short-run learning in
+that diagnostic, but is a negative speed and peak-memory result. Stored weight
+bytes alone fell from 16,777,216 to 8,396,800; that does not complete the QT goal.
