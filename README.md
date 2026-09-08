@@ -112,3 +112,10 @@ Feel free to contribute, but here are a few tips:
 
 Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
 their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).
+
+## ONNX export
+
+Export trained models with `mt_export --weights weights.pt --output exported-model`
+after installing the `export` extra and the relevant model backend. The generic
+exporter preserves evaluation outputs and verifies ONNX Runtime parity. See the
+[export guide](docs/onnx.md) for the Python API, preprocessing contract and coverage.

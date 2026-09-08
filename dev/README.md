@@ -85,3 +85,16 @@ strict expected-failure regression: evaluation populates nonpersistent classifie
 buffers with shapes that differ from the training model's buffers at the next EMA update.
 See the [roadmap](../docs/roadmap.md) for the follow-up. Expected failures remain visible
 in pytest output and become failures if they unexpectedly pass.
+
+## ONNX checks
+
+`tests/test_onnx.py` requires the `export` extra; optional backend cases additionally
+require `timm`, `transformers` and `bioclip`. CI's `all` extra includes these.
+Tests use randomly initialized offline models and check all classifier head families,
+representative backbones, state preservation, masks and structured outputs.
+
+`bash dev/check-onnx.sh [path/to/export-environment/bin/python]` exports a classifier
+and compares predictions in a disposable environment containing ONNX Runtime and
+its dependencies, with no PyTorch or mini_trainer. It explicitly installs the runtime
+version from the export environment and needs registry access or cached packages.
+It does not synchronize `.venv`. CI runs this in addition to the shared test harness.

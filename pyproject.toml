@@ -40,6 +40,7 @@ Repository = "https://github.com/asgersvenning/mini_trainer"
 [project.scripts]
 mt_train = "mini_trainer.train:run"
 mt_predict = "mini_trainer.predict:run"
+mt_export = "mini_trainer.export:run"
 mt_htrain = "mini_trainer.hierarchical.train:run"
 mt_hpredict = "mini_trainer.hierarchical.predict:run"
 mt_plot_dendrogram = "mini_trainer.visualization.dendrogram:run"
@@ -91,7 +92,9 @@ all = [
   "mini_trainer[timm]",
   "mini_trainer[bioclip]",
   "mini_trainer[transformers]",
+  "mini_trainer[export]",
 ]
+export = ["onnx>=1.17", "onnxscript>=0.3", "onnxruntime>=1.20"]
 minimal = []
 notebook = [
   "ipykernel",

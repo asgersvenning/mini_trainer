@@ -93,6 +93,8 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 f"Supplied classification head input and output dimensions {in_features}x{out_features} "
                 f"should be `int`, not `{type(in_features)}`/`{type(out_features)}`."
             )
+        # Keep the backbone input width separate from the post-hidden embedding width.
+        self.in_features = in_features
         if isinstance(hidden, bool):  # Check boolean first because it is a subclass of int
             self.preclassification_size = in_features
         elif isinstance(hidden, int):
@@ -185,7 +187,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         return self._linear_weight, self._linear_bias
 
     def _reshape_backbone_embeddings(self, x: torch.Tensor) -> torch.Tensor:
-        D = self.preclassification_size
+        D = self.in_features
 
         if x.ndim == 2:
             if x.shape[1] == D:

@@ -66,20 +66,19 @@ contracts remain intact; existing configurations and checkpoints remain usable.
 
 ## 3. ONNX export and Hugging Face integration
 
-Begin with a bounded classifier export API and CLI using an optional export extra.
-Inspect `modeling/classifier.py`, `modeling/checkpoint.py`, and `predict.py` to establish
-which model output is exported and which preprocessing stays outside the graph.
-Start with an explicitly supported architecture, float32, fixed image dimensions,
-and variable batch size. Expand support only with parity evidence.
+Delivered: a generic export API and `mt_export` CLI with optional dependencies.
+The actual evaluation forward is exported without architecture/head allowlists,
+including structured and hierarchical outputs, masks, priors and normalized heads.
+Dynamic batch parity, caller-state preservation, artifact manifests and standalone
+ONNX Runtime inference are checked. See [the export guide](onnx.md) for the input,
+preprocessing and score contract, representative coverage and operator limitations.
 
-Export an artifact manifest with schema version, architecture, input layout/dtype,
-resize/normalization, class-index mapping, output/score semantics, package versions,
-and checkpoint identity. Account for normalized classifiers, priors, wrappers, and
-hierarchical models explicitly; report unsupported cases clearly.
+A separate eager-inference fix uses the backbone embedding width before an explicit
+hidden layer; a core regression covers vector and singleton-spatial embeddings.
 
-Acceptance: ONNX Runtime matches PyTorch on deterministic inputs within a documented
-tolerance at multiple batch sizes; export preserves the caller's model state/device;
-artifacts load in an isolated inference environment without the training stack.
+Acceptance evidence covers CPU float32 on representative offline backbones and all
+head families, not every catalog variant or GPU/quantized provider. Preprocessing
+remains external and requires a caller-supplied deployment recipe.
 
 Then add local Hugging Face bundle preparation: weights/export, manifest, model card,
 evaluation summary, and an inference example. Treat Hub artifact hosting and a live
