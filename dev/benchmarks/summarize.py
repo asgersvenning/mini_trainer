@@ -26,7 +26,13 @@ def summarize(directory: Path) -> str:
         )
         parameter_bytes = report.get("parameter_bytes", "—")
         peak = report.get("peak_cuda_allocated_bytes")
-        peak_memory = f"{peak / 2**20:.2f}" if peak is not None else "—"
+        peak_memory = (
+            f"{peak / 2**20:.2f}"
+            if peak is not None and report.get("peak_cuda_memory_scope")
+            else "unverified"
+            if peak is not None
+            else "—"
+        )
         lines.append(
             f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | {peak_memory} | {duration} |"
         )
@@ -42,7 +48,8 @@ def summarize(directory: Path) -> str:
             "only with matching hardware, dataset/configuration and timing scope. See JSON reports",
             "for provenance, errors and explicit coverage flags. CPU results do not validate GPU behavior.",
             "QT coverage counts quantized Linear modules; other operations may remain floating point.",
-            "Parameter bytes describe stored parameters, while peak CUDA memory covers the full run.",
+            "Parameter bytes describe stored parameters. CUDA peaks cover training, excluding final held-out inference.",
+            "Older CUDA readings without a scope marker are unverified because logger resets could hide earlier peaks.",
         ]
     )
     return "\n".join(lines) + "\n"

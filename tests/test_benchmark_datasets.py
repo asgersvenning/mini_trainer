@@ -98,3 +98,59 @@ def test_shared_harness_records_process_failures(tmp_path):
         assert report["quantized_training"] == profile.endswith("int8")
         assert "test_accuracy" not in report
     assert "requested" in (output / "summary.md").read_text()
+
+
+def test_benchmark_retains_cuda_peaks_across_phase_resets(tmp_path):
+    import os
+
+    import torch
+    from torch.utils.data import DataLoader
+
+    from dev.benchmarks.performance import BenchmarkLogger
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to validate cross-phase CUDA peaks")
+    assert torch.cuda.is_available()
+    torch.cuda.set_device(0)
+    loader = DataLoader(torch.arange(4), batch_size=2)
+    logger = BenchmarkLogger(
+        train_loader=loader,
+        val_loader=loader,
+        epochs=1,
+        output=str(tmp_path),
+        name="measure",
+        logger_cls=[],
+        measurement_device="cuda:0",
+    )
+    large = torch.empty(8 * 1024 * 1024, device="cuda:0")
+    earlier_peak = torch.cuda.max_memory_allocated()
+    logger.update(epoch=0, type="train")
+    del large
+    logger.start_timing()
+    later = torch.empty(4 * 1024 * 1024, device="cuda:0")
+    phase_peak = torch.cuda.max_memory_allocated()
+    logger.step()
+    del later
+    logger.step()
+    logger.stop_timing()
+    logger.update(epoch=0, type="eval")
+    logger.start_timing()
+    logger.stop_timing()
+    logger.finish()
+    report = json.loads((tmp_path / "measure/logs/performance.json").read_text())
+    assert report["peak_cuda_allocated_bytes"] >= earlier_peak
+    assert report["peak_cuda_allocated_bytes"] > torch.cuda.max_memory_allocated()
+    assert [phase["phase"] for phase in report["phases"]] == ["train", "eval"]
+    assert report["phases"][0]["peak_cuda_allocated_bytes"] >= phase_peak
+    assert all(phase["seconds"] >= 0 for phase in report["phases"])
+
+
+def test_summary_marks_legacy_cuda_readings_unverified(tmp_path):
+    path = tmp_path / "legacy"
+    path.mkdir()
+    report = {"status": "completed", "peak_cuda_allocated_bytes": 64 * 2**20}
+    (path / "report.json").write_text(json.dumps(report))
+    assert "unverified" in summarize(tmp_path).splitlines()[4]
+    report["peak_cuda_memory_scope"] = "maximum across logger resets"
+    (path / "report.json").write_text(json.dumps(report))
+    assert "64.00" in summarize(tmp_path).splitlines()[4]

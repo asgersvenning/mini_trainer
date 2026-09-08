@@ -32,6 +32,10 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
     finally:
         torch.set_num_threads(threads)
     assert first["cache"] == second["cache"] == "CPU"
+    assert len(first["phase_measurements"]) == 24
+    assert [phase["phase"] for phase in first["phase_measurements"]] == ["train", "eval"] * 12
+    assert all(phase["seconds"] >= 0 and phase["peak_cuda_allocated_bytes"] is None for phase in first["phase_measurements"])
+    assert first["peak_cuda_allocated_bytes"] is None
     assert first["test_accuracy"] == second["test_accuracy"] == 1.0
     assert first["dataset_manifest_sha256"] == second["dataset_manifest_sha256"]
     with np.load(tmp_path / "first/predictions.npz") as a, np.load(tmp_path / "second/predictions.npz") as b:

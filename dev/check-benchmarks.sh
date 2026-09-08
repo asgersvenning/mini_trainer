@@ -9,7 +9,7 @@ if [[ -e "$results" ]]; then
     echo 'Results directory must be new.' >&2
     exit 2
 fi
-case "$mode" in cpu|gpu|real|qt|qt-real) ;; *) echo 'Mode must be cpu, gpu, real, qt or qt-real.' >&2; exit 2 ;; esac
+case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real or qt-dense.' >&2; exit 2 ;; esac
 mkdir -p -- "$results"
 status=0
 run_profile() {
@@ -46,6 +46,15 @@ elif [[ "$mode" == gpu ]]; then
 elif [[ "$mode" == qt ]]; then
     run_profile synthetic-float --device cuda:0 --dtype float16 --cache CPU --cache-workers 0
     run_profile synthetic-int8 --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --quantized-training
+elif [[ "$mode" == qt-dense ]]; then
+    : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/}"
+    for precision in float int8; do
+        quantization=()
+        if [[ "$precision" == int8 ]]; then quantization=(--quantized-training); fi
+        run_profile "mnist-dense-$precision" --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" \
+            --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 15 --batch-size 128 --compile \
+            --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --allow-nondeterministic "${quantization[@]}"
+    done
 elif [[ "$mode" == qt-real ]]; then
     : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/ and blair/}"
     : "${BLAIR_CLASS_SPEC:?Set BLAIR_CLASS_SPEC to a reviewed Blair class specification}"

@@ -24,10 +24,18 @@ from mini_trainer.training import MuonAuxAdamW
 
 from .datasets import prepare_real
 from .models import NoAugmentationBuilder
+from .performance import BenchmarkLogger
 from .synthetic import generate
 
 
+class BenchmarkBuilder(NoAugmentationBuilder):
+    @staticmethod
+    def build_logger(**kwargs):
+        return BenchmarkLogger(**kwargs)
+
+
 class HierarchicalBenchmarkBuilder(HierarchicalBuilder):
+    build_logger = staticmethod(BenchmarkBuilder.build_logger)
     build_augmentation = staticmethod(NoAugmentationBuilder.build_augmentation)
 
 
@@ -49,7 +57,16 @@ def run(
     hidden: int = 0,
     batch_size: int = 32,
     cache_workers: int | None = None,
+    model_profile: str = "default",
+    optimizer: str = "muon",
+    learning_rate: float | None = None,
 ):
+    if model_profile not in ("default", "dense") or optimizer not in ("muon", "adamw", "sgd"):
+        raise ValueError("Unknown model or optimizer profile.")
+    if learning_rate is None:
+        learning_rate = 0.1 if dataset == "synthetic" else 0.01
+    if not np.isfinite(learning_rate) or learning_rate <= 0:
+        raise ValueError("Learning rate must be finite and positive.")
     matplotlib.use("Agg", force=True)
     cache = "CPU" if cache == "RAM" else cache
     target_device = torch.device(device)
@@ -99,6 +116,8 @@ def run(
         spec_path.write_text(json.dumps(spec, indent=2) + "\n")
         size = 28 if dataset == "mnist" else 64
         model_type = "dev.benchmarks.models:TinyConv"
+    if model_profile == "dense":
+        model_type = "dev.benchmarks.models:DenseImageMLP"
     hierarchical = dataset == "blair"
     records = manifest["records"]
     train_records = [record for record in records if record["split"] != "test"]
@@ -125,7 +144,7 @@ def run(
         epochs=epochs,
         size=size,
         seed=seed,
-        builder=HierarchicalBenchmarkBuilder if hierarchical else NoAugmentationBuilder,
+        builder=HierarchicalBenchmarkBuilder if hierarchical else BenchmarkBuilder,
         ema=False,
         quantized_training=quantized_training,
         compile=compile,
@@ -143,16 +162,26 @@ def run(
             "cache_workers": cache_workers,
             "cuda_prefetch": cuda_prefetch,
         },
-        optimizer_builder_kwargs={"optimizer_cls": MuonAuxAdamW, "lr": 0.1 if dataset == "synthetic" else 0.01, "weight_decay": 0.0},
+        optimizer_builder_kwargs={
+            "optimizer_cls": {"muon": MuonAuxAdamW, "adamw": torch.optim.AdamW, "sgd": torch.optim.SGD}[optimizer],
+            "lr": learning_rate,
+            "weight_decay": 0.0,
+            **({"momentum": 0.9} if optimizer == "sgd" else {}),
+        },
         criterion_builder_kwargs={"label_smoothing": 0.0},
         regularizer_builder_kwargs={"strength": 0.0},
         lr_schedule_builder_kwargs={"warmup_epochs": 0.0},
-        logger_builder_kwargs={"logger_cls": []},
+        logger_builder_kwargs={"logger_cls": [], "measurement_device": device},
     )
     if target_device.type == "cuda":
         torch.cuda.synchronize(target_device)
     elapsed = time.perf_counter() - started
-    peak_memory = torch.cuda.max_memory_allocated(target_device) if target_device.type == "cuda" else None
+    performance = json.loads((output / "training/logs/performance.json").read_text())
+    peak_memory = (
+        max(performance["peak_cuda_allocated_bytes"], torch.cuda.max_memory_allocated(target_device))
+        if target_device.type == "cuda"
+        else None
+    )
     weights = output / "training/weights/last.pt"
     model, preprocess = Classifier.build(weights=str(weights), device=target_device, dtype=torch.float32)
     model.eval()
@@ -208,6 +237,10 @@ def run(
             "onnx": False,
         },
         "dataset": dataset,
+        "model_profile": model_profile,
+        "optimizer": optimizer,
+        "learning_rate": learning_rate,
+        "momentum": 0.9 if optimizer == "sgd" else None,
         "quantization_recipe": quantization_recipe,
         "compile": compile,
         "hidden": hidden,
@@ -228,6 +261,12 @@ def run(
         "chance_accuracy": 1 / scores_by_level[0].shape[1],
         "test_accuracy": accuracy,
         "training_wall_seconds": elapsed,
+        "phase_measurements": performance["phases"],
+        "phase_measurement_scope": performance["phase_scope"],
+        "phase_peak_memory_scope": "maximum across all batch resets within each timed phase",
+        "peak_cuda_memory_scope": (
+            "maximum across logger batch/phase resets and post-training allocation; excludes final held-out inference"
+        ),
         "training_wall_scope": "setup, training, validation, logging and checkpoints; includes first-use compilation/autotuning",
         "num_workers_requested": num_workers,
         "num_workers": 0 if cache == "CUDA" else num_workers,
@@ -278,6 +317,9 @@ def main():
     parser.add_argument("--quantized-training", action="store_true")
     parser.add_argument("--cuda-prefetch", action="store_true")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--model-profile", choices=["default", "dense"], default="default")
+    parser.add_argument("--optimizer", choices=["muon", "adamw", "sgd"], default="muon")
+    parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--hidden", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
@@ -311,6 +353,9 @@ def main():
             hidden=args.hidden,
             batch_size=args.batch_size,
             cache_workers=args.cache_workers,
+            model_profile=args.model_profile,
+            optimizer=args.optimizer,
+            learning_rate=args.learning_rate,
         )
     except Exception as error:
         args.output.mkdir(parents=True, exist_ok=True)
@@ -329,6 +374,9 @@ def main():
             "hidden": args.hidden,
             "batch_size": args.batch_size,
             "cache_workers": args.cache_workers,
+            "model_profile": args.model_profile,
+            "optimizer": args.optimizer,
+            "learning_rate": args.learning_rate,
             "error": {"type": type(error).__name__, "message": str(error)},
         }
         (args.output / "report.json").write_text(json.dumps(failure, indent=2) + "\n")

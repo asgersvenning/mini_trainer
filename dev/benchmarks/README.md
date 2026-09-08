@@ -373,3 +373,33 @@ pinned gathering plus prefetch. FP16 forward/backward measured 1,040, 1,009 and
 1,028 images/s respectively. These compute-inclusive differences are small and
 include regressions despite the clear loader-only improvement. Eliminating the
 CPU copy does not establish a training speedup for compute-bound models.
+
+## Dense real-data QT comparison
+
+```bash
+CUDA_VISIBLE_DEVICES=0 TORCHINDUCTOR_COMPILE_THREADS=1 BENCHMARK_DATA_ROOT=/path/to/datasets \
+    bash dev/check-benchmarks.sh qt-dense /tmp/benchmarks-qt-dense
+```
+
+This profile uses MNIST with a dense spatial image MLP: input pooling to 28x28,
+three 2048-wide Linear/ReLU layers, and the repository's classifier head. It is
+an explicit compute profile, not a proposed CNN replacement. Both paths use
+15 epochs, batch size 128, seed 42, SGD with momentum 0.9, head LR 0.3 (backbone
+LR 0.1), zero weight decay, FP16 AMP and a CPU cache with zero workers. The model
+is compiled; optimizer updates are currently eager. No pretrained weights,
+augmentation or test-set selection is used. The ordinary benchmark defaults
+remain unchanged. `--model-profile`, `--optimizer` and `--learning-rate` also
+allow explicit additional recipes whose configuration is retained in reports.
+
+QT plus real-data Actions profiles now include this pair and retain its reports
+and summaries. This wiring has not been dispatched from this development session.
+
+The benchmark logger preserves CUDA peaks before every batch/phase reset and records
+synchronized train/evaluation batch-loop timing and allocation peaks. The report
+also retains total training-call wall time, including setup, figures, checkpoint
+writes and first-use compilation. Per-phase timing excludes figures/checkpoints;
+first-epoch compilation remains visible. Earlier dataset reports read the peak
+only after the logger's final reset; their CUDA readings are now marked
+`unverified`, and cannot establish whole-run memory reductions. This correction
+does not affect the standalone kernel and transfer probes, which do not use that
+logger. It also does not affect recorded accuracy or physical parameter storage.

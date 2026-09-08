@@ -110,3 +110,11 @@ checkpoint restoration, eager/compiled CUDA training and masked inference.
 Initial zero direction rows are rejected before preparation mutates any weights;
 normalization is undefined for these rows. The mathematical contract follows
 [PyTorch weight normalization](https://docs.pytorch.org/docs/2.12/generated/torch.nn.utils.parametrizations.weight_norm.html).
+
+The [dense MNIST comparison](benchmarks.md#dense-mnist-profile-with-corrected-peak-measurements)
+now exercises a quantized backbone through the compiled trainer. Its accuracy is
+similar for one seed, but QT is slower and uses a higher whole-training peak than
+the floating path despite substantially smaller parameter storage. Corrected
+benchmark logging preserves CUDA peaks across all resets; older dataset-run CUDA
+readings do not establish whole-run memory reductions. Compiled training now saves
+unwrapped model keys so ordinary checkpoint restoration and resume remain valid.

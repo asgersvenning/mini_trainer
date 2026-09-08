@@ -95,6 +95,9 @@ jobs:
       - name: Paired real-data quantized training
         if: (inputs.qt || vars.BENCHMARK_QT == 'true') && (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
         run: bash dev/check-benchmarks.sh qt-real benchmark-qt-real
+      - name: Paired dense MNIST quantized training
+        if: (inputs.qt || vars.BENCHMARK_QT == 'true') && (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
+        run: bash dev/check-benchmarks.sh qt-dense benchmark-qt-dense
       - name: Synthetic GPU precision profiles
         run: bash dev/check-benchmarks.sh gpu benchmark-gpu
       - name: Real-data progression
@@ -104,7 +107,7 @@ jobs:
         if: always()
         run: |
           python3 -m dev.benchmarks.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
-          for qt_results in benchmark-qt benchmark-qt-real; do
+          for qt_results in benchmark-qt benchmark-qt-real benchmark-qt-dense; do
             if [[ -d "$qt_results" ]]; then
               python3 -m dev.benchmarks.summarize "$qt_results" >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -124,6 +127,7 @@ jobs:
             benchmark-real/
             benchmark-qt/
             benchmark-qt-real/
+            benchmark-qt-dense/
             !benchmark-qt/**/data/**/*.png
             !benchmark-gpu/**/data/**/*.png
       - name: Remove the disposable GPU environment

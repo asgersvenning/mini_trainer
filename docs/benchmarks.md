@@ -88,7 +88,7 @@ Local observations on the RTX 3080 Ti Laptop GPU, Python 3.13.7, PyTorch
 zero loader/cache workers and FP16 AMP with float32 optimizer parameters.
 Synthetic uses 12 epochs; MNIST and Blair use 5. No augmentation or EMA is used.
 
-| Dataset / path | Held-out accuracy | Parameter bytes | Peak CUDA MiB | Training wall seconds |
+| Dataset / path | Held-out accuracy | Parameter bytes | Legacy CUDA reading MiB | Training wall seconds |
 | --- | --- | ---: | ---: | ---: |
 | Synthetic float | 100% | 88 | 64.04 | 4.22 |
 | Synthetic INT8, repeat | 100% | 68 | 32.03 | 12.95 |
@@ -109,10 +109,12 @@ sequence used by dropout.
 MNIST quantizes only its final Linear. Blair uses a 64-unit hidden layer in both
 paths and quantizes that layer; convolutions and normalized hierarchical heads
 remain floating point. Parameter bytes exclude buffers, gradients, optimizer
-state and activations. Whole-run peak allocation includes workspaces: the tiny
-synthetic model's roughly 32 MiB difference cannot be explained by its 20-byte
-parameter reduction. Blair's parameter reduction barely changes overall peak
-allocation. None of these dataset runs demonstrates a training speedup.
+state and activations. The legacy CUDA readings in these tables were captured after the logger reset
+its peak counters. They do **not** establish whole-run peak allocation or its
+reduction, and should not be used for that comparison. The corrected benchmark
+now preserves the maximum across every phase reset and the final training call,
+and marks the timing/memory scope in each report. Older reports are rendered as
+`unverified` in summaries. Parameter storage and accuracy measurements are unaffected. None of these dataset runs demonstrates a training speedup.
 
 The initial Blair QT attempt aborted in Tkinter cleanup before reporting; the
 headless fix allowed the successful rerun above. Reports now preserve skipped
@@ -124,7 +126,7 @@ See [the reproduction commands](../dev/benchmarks/README.md#integrated-qt-datase
 With row-wise weight normalization supported, a further matched Blair pair uses
 no hidden layer and quantizes the normalized classifier direction directly:
 
-| Blair path, hidden size 0 | Held-out accuracy | Parameter bytes | Peak CUDA MiB | Training wall seconds |
+| Blair path, hidden size 0 | Held-out accuracy | Parameter bytes | Legacy CUDA reading MiB | Training wall seconds |
 | --- | --- | ---: | ---: | ---: |
 | Float | 64.25% species / 80.45% parent | 75,848 | 64.34 | 11.65 |
 | INT8 normalized direction | 62.62% species / 76.14% parent | 37,548 | 32.25 | 25.32 |
@@ -135,3 +137,41 @@ Convolutions still remain floating point. This establishes real hierarchical
 training and restored-checkpoint inference with normalized integer weights, with
 roughly half the parameter storage. Accuracy is lower in this single run and QT
 is slower; neither convergence parity nor a throughput improvement is established.
+
+## Dense MNIST profile with corrected peak measurements
+
+The dense spatial MLP profile quantizes all four Linear weights, including the
+backbone. Both paths use 15 epochs, batch size 128, seed 42, SGD momentum 0.9,
+head/backbone LR 0.3/0.1, zero weight decay, FP16 AMP, model compilation and a CPU
+cache. The 4,000/1,000/5,000 train/validation/test split is unchanged. Optimizer
+updates are eager. This is a compute-heavy classification profile, not a proposed
+MNIST model-quality baseline or a claim about CNN performance.
+
+| Path | Test accuracy | Parameter bytes | Whole-training peak CUDA MiB | Total training-call seconds | Median train-loop seconds, epochs 2–15 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Float | 93.16% | 52,944,936 | 236.30 | 12.49 | 0.191 |
+| INT8 | 93.36% | 13,291,600 | 373.30 | 99.98 | 0.355 |
+
+A second INT8 run reproduced the accuracy and peak, with total wall time reduced
+to 58.77 seconds after compiler caches were populated. Startup costs and cache
+conditions prevent interpreting the total wall-time ratio as a steady-state
+speed ratio. Batch-loop times include loading, preprocessing, compute and batch
+logging; they exclude figures and checkpoint writes. CUDA measurements now
+preserve maxima across **every batch/phase/finish reset**, rather than reading
+only the counter remaining after training. Early experimental per-phase memory
+fields without `phase_peak_memory_scope` are likewise unverified; the corrected
+logger tracks each phase across its batch resets.
+
+This is a negative performance result: physical parameter storage falls by about
+75%, but total peak memory increases and the timed training loop is slower. The
+small accuracy difference is one seed, not evidence of a quality improvement.
+The standalone fast kernel probe compiled optimizer updates as well as the
+model; this trainer profile compiles only the model. Fusing optimizer updates
+while preserving overflow detection, scheduler advancement and resume semantics
+is therefore a concrete next investigation, together with temporary-allocation
+profiling. Kernel-probe speedups do not establish completion of the QT goal.
+
+Use [`qt-dense`](../dev/benchmarks/README.md#dense-real-data-qt-comparison) to run
+this pair and retain the full reports, checkpoints and predictions in the shared
+pipeline. The optional GPU Actions job includes it when QT and real-data profiles
+are enabled; no self-hosted job was dispatched from this session.
