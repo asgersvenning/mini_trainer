@@ -135,7 +135,8 @@ def test_mixed_muon_adamw_updates_and_counter():
 
 
 @pytest.mark.parametrize("normalized", [False, True])
-def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized):
+@pytest.mark.parametrize("compiled_optimizer", [False, True])
+def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, compiled_optimizer):
     from mini_trainer.modeling import Classifier
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.train import main
@@ -153,6 +154,7 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized):
         "device": device,
         "dtype": "float16",
         "quantized_training": True,
+        "compile_optimizer": compiled_optimizer,
         "seed": 42,
         "builder": DeterministicBuilder,
         "model_builder_kwargs": {"model_type": TinyMockModel(), "hidden": False, "droprate": 0, "normalized": normalized},
@@ -174,6 +176,7 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized):
     # Resume through the ordinary training entry point. This checks state
     # plumbing, not identical stochastic continuation with a changed schedule.
     args["epochs"] = 2
+    args["compile_optimizer"] = False
     args["name"] = "resumed"
     args["checkpoint"] = str(tmp_path / "quantized/weights/checkpoint_last.pth")
     args["model_builder_kwargs"]["model_type"] = TinyMockModel()
@@ -320,3 +323,168 @@ def test_normalized_classifier_integer_training_and_masked_inference(compiled):
         model.set_active_features([0, 2, 3])
         selected = model(inputs[:1])
         torch.testing.assert_close(selected, complete[:, [0, 2, 3]])
+
+
+def test_tensor_scalar_decay_preserves_integer_codes_and_rng():
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    weight = nn.Parameter(TrainingWeight.from_float(torch.randn(5, 17)))
+    codes = weight.int_data.clone()
+    scales = weight.scale.clone()
+    rng = torch.get_rng_state()
+    with torch.no_grad():
+        weight.mul_(torch.tensor(0.97, dtype=torch.float64))
+    assert torch.equal(weight.int_data, codes)
+    assert torch.equal(torch.get_rng_state(), rng)
+    torch.testing.assert_close(weight.scale, scales * 0.97)
+
+
+@pytest.mark.parametrize("operation", ["add", "addcdiv"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_cuda_storage_update_rounding_versions_and_rng(operation, dtype):
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify fused storage updates")
+    assert torch.cuda.is_available()
+    torch.manual_seed(29)
+    weight = nn.Parameter(TrainingWeight.from_float(torch.randn(33, 67, device="cuda", dtype=dtype)))
+    update = torch.randn_like(weight.dequantize())
+    denominator = update.abs() + 1
+
+    def apply(target):
+        with torch.no_grad():
+            if operation == "add":
+                return target.add_(update, alpha=-0.03)
+            return target.addcdiv_(update, denominator, value=-0.03)
+
+    # Warm compilation before saving RNG; compilation itself is outside the
+    # update's reproducibility contract.
+    apply(nn.Parameter(weight.detach().clone()))
+    represented = weight.dequantize().detach()
+    expected = represented.add(update, alpha=-0.03) if operation == "add" else represented.addcdiv(update, denominator, value=-0.03)
+    replica = nn.Parameter(weight.detach().clone())
+    before_version = weight._version
+    before_codes_version = weight.int_data._version
+    rng = torch.cuda.get_rng_state()
+    assert apply(weight) is weight
+    torch.cuda.set_rng_state(rng)
+    apply(replica)
+    assert weight._version > before_version
+    assert weight.int_data._version > before_codes_version
+    assert torch.equal(weight.int_data, replica.int_data)
+    assert torch.equal(weight.scale, replica.scale)
+    # Stochastic rounding differs by at most one code interval, plus the
+    # floating arithmetic's precision. There is no floating master parameter.
+    bound = expected.abs().amax(1, keepdim=True) / 127 + 4 * torch.finfo(dtype).eps
+    assert torch.all((weight.dequantize() - expected).abs() <= bound)
+    assert weight.int_data.dtype == torch.int8
+    assert weight.scale.shape == (33,)
+
+
+def test_cuda_storage_update_invalidates_saved_weight():
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify saved-tensor invalidation")
+    assert torch.cuda.is_available()
+    weight = nn.Parameter(TrainingWeight.from_float(torch.randn(16, 32, device="cuda")))
+    inputs = torch.randn(8, 32, device="cuda", requires_grad=True)
+    output = nn.functional.linear(inputs, weight)
+    with torch.no_grad():
+        weight.add_(torch.ones_like(weight.dequantize()), alpha=-0.01)
+    with pytest.raises(RuntimeError, match="modified by an inplace operation"):
+        output.sum().backward()
+
+
+def test_cuda_storage_kernel_reused_across_parameter_objects_and_rates(monkeypatch):
+    from torch._dynamo.testing import CompileCounterWithBackend
+
+    from mini_trainer.modeling import _quantized_training as backend
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify storage-kernel reuse")
+    assert torch.cuda.is_available()
+    counter = CompileCounterWithBackend("inductor")
+    operation = backend.update_int8_rows_
+
+    def update_rows(codes, scales, update, alpha, denominator):
+        operation(codes, scales, update, alpha, denominator)
+
+    kernel = torch.compile(update_rows, backend=counter, fullgraph=True, dynamic=True)
+    monkeypatch.setattr(backend, "update_int8_rows_", kernel)
+    weights = [nn.Parameter(backend.TrainingWeight.from_float(torch.randn(33, 67, device="cuda"))) for _ in range(12)]
+    optimizer = torch.optim.SGD([{"params": [weight], "lr": 0.01 / (index + 1)} for index, weight in enumerate(weights)], momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.93)
+    after_warmup = None
+    for step in range(4):
+        for weight in weights:
+            weight.grad = torch.ones(weight.shape, device="cuda")
+        optimizer.step()
+        scheduler.step()
+        if step == 0:
+            after_warmup = counter.frame_count
+    assert after_warmup and counter.frame_count == after_warmup
+
+
+def test_cuda_local_matmul_tuning_bounds_temporary_memory(monkeypatch):
+    from torchao.prototype.quantized_training.int8_mm import _scaled_int8_mm_kernel as upstream
+
+    from mini_trainer.modeling._quantized_matmul import _kernel
+    from mini_trainer.modeling._quantized_training import scaled_int8_mm
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify first-use tuning memory")
+    assert torch.cuda.is_available()
+    assert _kernel is not upstream and _kernel.fn is upstream.fn
+    # Force actual tuning rather than accepting an earlier process's disk cache.
+    monkeypatch.setattr(_kernel, "cache", {})
+    monkeypatch.setattr(_kernel, "cache_results", False)
+    left = torch.randint(-127, 128, (17, 129), dtype=torch.int8, device="cuda")
+    right = torch.randint(-127, 128, (19, 129), dtype=torch.int8, device="cuda").T
+    rows = torch.rand(17, device="cuda")
+    columns = torch.rand(19, device="cuda")
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    before = torch.cuda.memory_allocated()
+    result = scaled_int8_mm(left, right, rows, columns)
+    torch.cuda.synchronize()
+    extra_peak = torch.cuda.max_memory_allocated() - before
+    # This tiny product must not trigger the old tuner's 256 MiB flush buffer.
+    assert extra_peak < 16 * 1024**2
+    product = left.cpu().to(torch.int64) @ right.cpu().to(torch.int64)
+    expected = product.float().to("cuda") * rows[:, None] * columns[None, :]
+    torch.testing.assert_close(result, expected)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=torch._dynamo.exc.FailOnRecompileLimitHit,
+    reason="Dynamo still specializes outer SGD groups on TrainingWeight identities",
+)
+def test_cuda_compiled_optimizer_handles_many_quantized_groups():
+    from torch._dynamo.testing import CompileCounterWithBackend
+
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify many-group optimizer compilation")
+    assert torch.cuda.is_available()
+    weights = [nn.Parameter(TrainingWeight.from_float(torch.randn(64, 128, device="cuda"))) for _ in range(12)]
+    optimizer = torch.optim.SGD([{"params": [weight], "lr": 0.01 / (index + 1)} for index, weight in enumerate(weights)], momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.93)
+    counter = CompileCounterWithBackend("inductor")
+    compile_optimizer(optimizer, backend=counter)
+    after_warmup = None
+    # Fail on fallback; some compiled frames alone would not establish that
+    # every parameter group can execute without exhausting Dynamo's cache.
+    with torch._dynamo.config.patch(fail_on_recompile_limit_hit=True):
+        for step in range(6):
+            for weight in weights:
+                weight.grad = torch.ones(weight.shape, device="cuda")
+            optimizer.step()
+            scheduler.step()
+            if step == 2:
+                after_warmup = counter.frame_count
+    assert after_warmup and counter.frame_count == after_warmup

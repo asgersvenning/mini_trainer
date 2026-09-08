@@ -53,6 +53,34 @@ the developer probe. Eager SGD, AdamW and the repository's MuonAuxAdamW update
 paths are covered; fused optimizer variants are not established. Quantized
 regularization uses a differentiable floating view of the represented weights.
 
+CUDA SGD/AdamW-style `add_` and `addcdiv_` updates fuse dequantization,
+the weight update and stochastic requantization over the underlying storage
+tensors. This kernel compiles on first use even when the outer optimizer is
+eager. It retains INT8 codes and row scales, advances tensor version counters,
+and preserves explicit intermediate precision casts. Scalar tensor weight decay
+rescales rows without another stochastic rounding pass. CPU inspection/update
+tests use the ordinary floating calculation and copy path. The fused row kernel
+covers matching FP32/FP16/BF16 update tensors and rows up to 16,384 elements;
+broadcasting, mixed dtypes and wider rows retain the ordinary update path.
+No floating master weight is retained by either path. The new kernel uses CUDA
+RNG seeds with Triton stochastic rounding, so exact trajectories differ from the
+earlier floating update even when starting from the same seed.
+
+Matrix products reuse TorchAO's INT8 kernel with a separate local tuner. CUDA
+graph timing avoids the default tuner's 256 MiB cache-flushing allocation, and
+selected configurations are cached on disk. TorchAO's global operators and tuner
+are unchanged. The explicit update and matrix operators provide fake execution
+implementations for model compilation.
+
+Keep `--compile-optimizer` off for general QT workloads for now. Although small
+integrated cases pass, compiling an outer optimizer with many quantized parameter
+groups can specialize on weight identities and fall back to eager execution.
+That outer-optimizer limitation remains a strict CUDA expected-failure regression.
+The earlier storage prototype's fake-tensor and dtype-cache failures are resolved
+by an explicit Triton kernel and custom-operator boundary; the storage kernel
+does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
+separate option. See the [measured results](benchmarks.md#explicit-cuda-kernels-and-local-tuning).
+
 ## Checkpoints and inference
 
 Prepared models include their recipe in `state_dict`. Ordinary `mt_train`

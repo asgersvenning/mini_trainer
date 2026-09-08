@@ -219,3 +219,41 @@ also preventing the twelve-parameter reuse regression from running successfully.
 Raising that global limit would conceal the underlying dispatch/cache design
 problem. The next implementation needs a storage kernel that handles these
 variants without depending on per-frame Dynamo specialization.
+
+### Explicit CUDA kernels and local tuning
+
+The replacement uses a row-wise Triton update behind a custom operator with fake
+execution support. It avoids the failed prototype's per-frame compilation cache.
+INT8 matrix multiplication retains TorchAO's kernel/configurations, but a separate
+local tuner measures kernels with CUDA graphs and caches selected configurations
+on disk. This avoids the 256 MiB cache-flushing buffer without changing global
+TorchAO or Triton behavior.
+
+The dense MNIST pair was rerun with the same dataset, seed 42, 15 epochs, batch
+128, model compilation and eager optimizers. Both report source hash
+`0175e5a8d8e8998e98e57288478b4adc5fd5645e93f0855ab3ef1b9bef55bd2f`
+and the same dataset manifest. These are single runs, not statistical estimates.
+
+| Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–15 | Training wall s |
+| --- | ---: | ---: | ---: | ---: |
+| Float | 93.16% | 236.30 | 0.237 | 14.13 |
+| INT8, explicit kernels | 92.42% | 154.00 | 0.242 | 24.74 |
+
+This demonstrates approximately 35% lower **whole-run** peak allocation for the
+INT8 profile, including first-use tuning. It does not establish a training speed
+win: later-epoch times are similar and total wall time remains higher. First-use
+compilation and cache state affect the wall comparison, and one seed cannot
+establish equivalent model quality. The original QT speed objective remains open.
+
+The combined CUDA kernel/model regressions now pass the previously failing
+normalized checkpoint and dtype/operation cases. Coverage includes stochastic
+rounding bounds, CUDA RNG replay, saved-tensor invalidation, and reuse across
+twelve distinct weights with changing learning rates. A forced-cold matrix tuning
+test compares against integer reference arithmetic and requires less than 16 MiB
+temporary allocation for a tiny product, so a cached tuning result cannot mask a
+return of the old 256 MiB allocation.
+
+Outer optimizer compilation still falls back when sufficiently many quantized
+groups specialize on wrapper identities. A separate strict expected-failure test
+enables hard failure on that fallback; it must be removed when the outer path is
+fixed. This limitation is distinct from the now-working compiled storage operator.

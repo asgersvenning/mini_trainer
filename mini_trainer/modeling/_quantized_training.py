@@ -9,7 +9,9 @@ from pathlib import Path
 import torch
 from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
-from torchao.prototype.quantized_training.int8_mm import scaled_int8_mm as _native_scaled_int8_mm
+
+from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
+from ._quantized_update import update_int8_rows_
 
 # Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
 # graph key. Include the backend implementation so changing backward math cannot
@@ -77,7 +79,7 @@ def multiply_inplace(func, types, args, kwargs):
     original, multiplier = args
     # AdamW's decoupled decay is a scalar rescale. Preserve the integer codes
     # exactly instead of adding a second stochastic rounding to every update.
-    if isinstance(multiplier, (float, int)):
+    if isinstance(multiplier, (float, int)) or isinstance(multiplier, torch.Tensor) and multiplier.ndim == 0:
         original.scale.mul_(multiplier)
         return original
     return original.copy_(original.dequantize() * multiplier)
@@ -147,14 +149,15 @@ class IntegerLinear(torch.autograd.Function):
 
 
 def scaled_int8_mm(left, right, row_scale, column_scale):
-    # TorchAO's Python validation squeezes the row scale, rejecting M=1 even
-    # though its native kernel supports it. Validate that case without squeeze.
-    if left.shape[0] == 1:
-        if row_scale.shape != (1,) or column_scale.shape != (right.shape[1],):
-            raise ValueError("Invalid INT8 matrix scales.")
-        if left.shape[1] != right.shape[0] or row_scale.dtype != column_scale.dtype:
-            raise ValueError("Incompatible INT8 matrix shapes or scale dtypes.")
-        return torch.ops.torchao.scaled_int8_mm(left, right, row_scale, column_scale)
+    # Validate row scales without squeeze, which would reject a single sample.
+    if row_scale.shape != (left.shape[0],) or column_scale.numel() not in (1, right.shape[1]):
+        raise ValueError("Invalid INT8 matrix scales.")
+    if left.shape[1] != right.shape[0] or row_scale.dtype != column_scale.dtype:
+        raise ValueError("Incompatible INT8 matrix shapes or scale dtypes.")
+    if left.dtype != torch.int8 or right.dtype != torch.int8:
+        raise ValueError("INT8 matrix products require integer inputs.")
+    if not row_scale.is_contiguous() or not column_scale.is_contiguous():
+        raise ValueError("INT8 matrix scales must be contiguous.")
     return _native_scaled_int8_mm(left, right, row_scale, column_scale)
 
 
@@ -210,3 +213,50 @@ class _WeightNorm(torch.autograd.Function):
         projection = (gradient.float() * unit).sum(dim=1, keepdim=True)
         direction_gradient = (gradient.float() - projection * unit) * (magnitude.float() / (scales.float().abs() * norm).unsqueeze(1))
         return direction_gradient.to(scales.dtype), projection.to(magnitude.dtype)
+
+
+@TrainingWeight.implements_torch_function(torch.Tensor.add_)
+def add_update(func, types, args, kwargs):
+    original = args[0]
+    update = args[1] if len(args) > 1 else kwargs["other"]
+    alpha = kwargs.get("alpha", 1)
+    # Tensor learning rates must stay tensor inputs. Passing them through the
+    # aten alpha scalar overload can specialize dispatch on Python objects.
+    return _apply_weight_update(original, update, alpha)
+
+
+@TrainingWeight.implements_torch_function(torch.Tensor.addcdiv_)
+def addcdiv_update(func, types, args, kwargs):
+    original = args[0]
+    numerator = args[1] if len(args) > 1 else kwargs["tensor1"]
+    denominator = args[2] if len(args) > 2 else kwargs["tensor2"]
+    value = kwargs.get("value", 1)
+    return _apply_weight_update(original, numerator, value, denominator)
+
+
+def _apply_weight_update(original, update, alpha, denominator=None):
+    supported = (
+        original.device.type == "cuda"
+        and original.dtype in (torch.float32, torch.float16, torch.bfloat16)
+        and 0 < original.shape[1] <= 16384
+        and isinstance(update, torch.Tensor)
+        and update.shape == original.shape
+        and update.dtype == original.dtype
+        and update.device == original.device
+        and (
+            denominator is None
+            or denominator.shape == original.shape
+            and denominator.dtype == original.dtype
+            and denominator.device == original.device
+        )
+    )
+    if not supported or torch.is_grad_enabled() and original.requires_grad:
+        change = update if denominator is None else update / denominator
+        return original.copy_(original.dequantize() + change * alpha)
+    if not isinstance(alpha, torch.Tensor):
+        alpha = torch.tensor(alpha, dtype=torch.float64)
+    update_int8_rows_(original.int_data, original.scale, update, alpha, denominator)
+    # The kernel mutates storage tensors directly; also advance the wrapper's
+    # version counter for cache invalidation and saved-tensor safety.
+    torch.autograd.graph.increment_version(original)
+    return original
