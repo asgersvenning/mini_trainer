@@ -1,7 +1,8 @@
 # INT8 quantization: initial x86 backend
 
 This is an opt-in Python API for **static 8-bit weights and 8-bit activations**,
-using TorchAO PT2E. It supports post-training calibration (PTQ) and
+using TorchAO PT2E. Actual quantized training with reduced memory and training
+time is separate ongoing work; see the [QT/loader probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance). It supports post-training calibration (PTQ) and
 quantization-aware training (QAT). QAT uses fake quantization with float32 master
 parameters/gradients; it does not promise integer backward computation or reduced
 training memory. Converted inference executes native oneDNN integer Conv/Linear
@@ -21,6 +22,7 @@ ONNX export are unchanged. The new API is in `mini_trainer.modeling.quantization
 ## Calibration and inference
 
 ```python
+import torch
 from mini_trainer.modeling.quantization import prepare_int8, load_int8
 
 # model is a loaded floating-point mini_trainer model. All inputs below are
@@ -57,7 +59,7 @@ as native integer inference.
 
 The bundle contains a reference `model.pt2` graph, checksum, input shape, class
 metadata, structured output mapping, bit widths, dependency versions,
-preprocessing/calibration provenance, and verified lowering coverage. Packing
+preprocessing/calibration provenance, and verified lowering coverage. Real calibration tensors are excluded from the saved program. Packing
 is performed again on the deployment CPU. A reference graph alone is not an
 accelerated runtime. Existing output directories are never overwritten.
 

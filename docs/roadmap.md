@@ -88,7 +88,13 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
-The primary implementation target is **deeper quantization in training and inference**.
+The primary implementation target is **actual quantized training and faster data loading**.
+QT must reduce retained training storage and demonstrate lower peak memory and faster
+training on supported workloads. QAT with floating-point master weights is a separate
+capability and does not complete this target. The initial CUDA integer forward/backward
+kernel probe and cached-loader benchmark are documented in [the benchmark guide](../dev/benchmarks/README.md).
+Optimizer support, checkpoint integration, real-data convergence and end-to-end
+measurements remain required before claiming a supported QT training path.
 Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
 that target. The implementation and comparison plan is in
 [training feature validation](training-feature-validation.md).

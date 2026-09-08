@@ -124,3 +124,61 @@ from this development session; the equivalent local commands have been exercised
 
 References: [Actions job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary)
 and [artifact retention](https://github.com/actions/upload-artifact#retention-period).
+
+## Quantized training and loader performance
+
+Actual quantized training is the next implementation target. PTQ/QAT and AMP do
+not establish reduced training memory or faster training.
+
+Two developer probes make the remaining work measurable:
+
+```bash
+OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.loader
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
+    .venv/bin/python -m dev.benchmarks.quantized_training
+# Also test smaller GEMMs and full precision; benefit is workload-dependent:
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --width 2048 --batch-size 512
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --dtype float32
+```
+
+The QT probe stores weights and saved linear inputs in INT8, uses scaled INT8
+forward/input-gradient/weight-gradient GEMMs, and writes SGD updates back using
+stochastic rounding. There is no retained floating-point master weight copy.
+Gradients and update arithmetic remain floating point. It uses TorchAO's
+experimental weight storage and Triton kernels with `torch.compile` fusion.
+It currently exercises only SGD without momentum or weight decay, not the
+repository's complete optimizer or checkpoint contracts. It is not an `mt_train`
+feature yet, and a synthetic linear-stack MSE is not a convergence study.
+
+Local RTX 3080 Ti evidence (four 4096-wide layers, batch 2048, FP16 input/output,
+three warm-up steps, ten measured forward/backward/SGD steps): FP16 took 29.10 ms
+per step and peaked at 386,139,648 allocated bytes; INT8 took 12.92 ms and peaked
+at 302,302,720 bytes. Stored weight bytes fell from 134,217,728 to 67,141,632.
+These are single-run kernel-probe observations, not general end-to-end speedups.
+The smaller 2048-wide/batch-512 probe was slower in INT8, and the unfused prototype
+used more peak memory. Preserve those negative results when choosing dispatch.
+
+The loader probe compares identical uint8 cached batches against the previous
+scalar-fetch/default-collate route. Batched `index_select` avoids restacking and
+measured about 1.5x faster locally at 2048 RGB 64x64 images, batch 64, one thread,
+zero workers. It excludes cache construction, preprocessing, GPU copies and model
+compute; no end-to-end training gain is implied.
+
+Loaders retain their sampling/drop-last policies and worker caps. CPU batches
+bound for CUDA are pinned after gathering, including CPU-cached and inference
+batches. Optional `prefetch_factor` and `multiprocessing_context="spawn"` pass
+through loader builders; both are inactive with zero workers. Spawn is useful
+when parent code already has background threads, because fork may deadlock.
+Use importable/pickleable readers and hooks with spawn.
+
+For the separate PTQ/QAT baseline comparison:
+
+```bash
+.venv/bin/python -m dev.benchmarks.quantization --baseline /path/to/synthetic-cpu --output /tmp/int8-synthetic
+.venv/bin/python -m dev.benchmarks.quantization --baseline /path/to/mnist-cpu --data-root examples/mnist --output /tmp/int8-mnist
+```
+
+This checks baseline checkpoint/manifest/file hashes, selects training-only
+calibration samples, performs two small QAT epochs, then evaluates reloaded native
+integer artifacts on the held-out split. The report and per-level predictions
+retain baseline/PTQ/QAT results. It does not establish QT training speed or memory.
