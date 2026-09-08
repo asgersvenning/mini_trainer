@@ -119,3 +119,10 @@ Export trained models with `mt_export --weights weights.pt --output exported-mod
 after installing the `export` extra and the relevant model backend. The generic
 exporter preserves evaluation outputs and verifies ONNX Runtime parity. See the
 [export guide](docs/onnx.md) for the Python API, preprocessing contract and coverage.
+
+## Temporarily unsupported feature
+
+EMA (`--ema` / `ema=True`) is currently nonfunctional: classifier caches populated
+by evaluation can break later EMA updates. Leave it disabled. Enabling it emits a
+runtime warning; its API and checkpoint compatibility are retained, and repair is
+deferred. See [known limitations](docs/roadmap.md).

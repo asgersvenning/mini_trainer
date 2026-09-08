@@ -162,3 +162,17 @@ def test_ema_state_restored_before_continuation(tmp_path, monkeypatch):
     args["model_builder_kwargs"] = {**args["model_builder_kwargs"], "model_type": TinyMockModel()}
     train_module.main(**args)
     assert restored
+
+
+def test_ema_status_warning_only_when_enabled():
+    import warnings
+
+    from mini_trainer.modeling import EMATeacher
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        disabled = EMATeacher(enable=False, total_steps=1)
+    assert not disabled
+    assert not caught
+    with pytest.warns(RuntimeWarning, match="temporarily nonfunctional"):
+        EMATeacher(enable=True, total_steps=1, model=torch.nn.Linear(2, 2))

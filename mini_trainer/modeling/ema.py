@@ -1,3 +1,5 @@
+import warnings
+
 import torch
 from torch.optim.swa_utils import AveragedModel
 
@@ -9,7 +11,13 @@ def ema_lambda_per_update(half_life_steps: int | float, update_interval: int) ->
     return lam_step**update_interval
 
 
-class EMATeacher(AveragedModel):  # noqa: D101 TODO
+class EMATeacher(AveragedModel):
+    """Temporarily nonfunctional EMA teacher, retained for checkpoint compatibility.
+
+    Evaluation-populated classifier caches can break subsequent EMA updates.
+    Leave EMA disabled until this feature has been repaired and revalidated.
+    """
+
     def __init__(  # noqa: D107
         self, enable: bool, total_steps: int, distill_start: int = 0, update_rate: int = 1, temperature: float = 1.0, *args, **kwargs
     ):
@@ -21,6 +29,13 @@ class EMATeacher(AveragedModel):  # noqa: D101 TODO
             temperature,
         )
         if self._enabled:
+            warnings.warn(
+                "EMA is temporarily nonfunctional and unsupported: classifier caches populated during evaluation "
+                "can break subsequent EMA updates. Leave ema=False / omit --ema. "
+                "The API is retained for checkpoint compatibility; repair is deferred.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             super().__init__(*args, **kwargs)
 
     def __bool__(self):

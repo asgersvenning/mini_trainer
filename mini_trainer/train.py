@@ -98,7 +98,7 @@ def main(  # noqa: D417
         dtype: PyTorch data type for images during training and validation (e.g., ``'float16'``).
             The model parameters are always stored in float32 with training AMP.
             Default is ``'float16'``.
-        ema: Flag to enable EMA (default=False).
+        ema: Temporarily nonfunctional/unsupported EMA feature. Leave disabled (default=False).
         seed: Initial seed for Python's random number generator to ensure reproducibility,
             especially for train/validation splits. Default is ``None``.
         builder: An object inheriting from ``mini_trainer.builders.BaseBuilder``.
@@ -489,7 +489,7 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         action="store_true",
         dest="ema",
         required=False,
-        help="Enable EMA (opt-in) including self-distillation and semi-supervised learning.",
+        help="Temporarily nonfunctional/unsupported: EMA updates can fail after evaluation. Leave disabled; repair is deferred.",
     )
     train_args.add_argument(
         "--class_weighted",
