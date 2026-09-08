@@ -6,6 +6,10 @@ nonfunctional and excluded from these experiments; repair is deferred.
 
 ## Quantization is the primary implementation target
 
+The initial [INT8 PTQ/QAT Python backend](quantization.md) is implemented on the
+`quant` branch. Its CPU tests establish a training-to-integer-inference path;
+user-facing checkpoint integration, other backends and quality studies remain open.
+
 Deliver two distinct paths through the existing builders, checkpoint and export
 interfaces, with optional dependencies:
 

@@ -133,3 +133,9 @@ EMA (`--ema` / `ema=True`) is currently nonfunctional: classifier caches populat
 by evaluation can break later EMA updates. Leave it disabled. Enabling it emits a
 runtime warning; its API and checkpoint compatibility are retained, and repair is
 deferred. See [known limitations](docs/roadmap.md).
+
+## INT8 quantization
+
+An opt-in [PTQ and QAT Python API](docs/quantization.md) targets native x86 INT8
+inference. This is an initial backend increment; CPU float32 QAT, integer inference
+and ordinary AMP are distinct capabilities.
