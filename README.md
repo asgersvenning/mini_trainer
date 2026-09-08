@@ -11,7 +11,7 @@ This is an attempt to create a minimal extendable framework for development and 
 
 All code in `mini_trainer` should follow the following core principles:
 
-* There should be **NO** additional dependencies beyond core `Python`, `PyTorch` (`torch`, `torchvision`, etc.), `matplotlib` and `tqdm`.
+* Keep core dependencies minimal (see `pyproject.toml` for the current set); third-party integrations should remain optional.
 * The required portion of any API should be as minimal as possible (i.e. to train a model we only require `mt_train -i <TRAINING_DATA>`)
 * All hyperparameters and system configuration should have smart defaults that are as general as possible
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
@@ -87,5 +87,10 @@ This repository draws inspiration from https://github.com/pytorch/vision/tree/ma
 Feel free to contribute, but here are a few tips:
 
 * Follow the installation guide to setup a proper dev environment.
-* Setup linting via `ruff`; verify with: `ruff check mini_trainer`.
+* Run `bash dev/check.sh static` for lint, formatting, and architecture checks.
+* Run `bash dev/check.sh test` for the test suite; see the [development guide](dev/README.md) for focused checks and environment details.
+* Run `bash dev/check-wheel.sh` to validate a minimal wheel installation in a disposable CPU environment.
 * Please avoid adding new dependencies 🙂
+
+Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
+their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).

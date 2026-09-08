@@ -82,10 +82,7 @@ def collect_samples_from_source(source: str | Path | dict | Sequence[Any]) -> li
     """Collect (image_path, raw_class_label, split) tuples from various dataset formats."""
     if isinstance(source, (list, tuple)):
         if len(source) > 0 and isinstance(source[0], (tuple, list)):
-            return [
-                (s[0], s[1], s[2] if len(s) >= 3 else None)
-                for s in source
-            ]
+            return [(s[0], s[1], s[2] if len(s) >= 3 else None) for s in source]
         return [s for src in source for s in collect_samples_from_source(src)]
 
     if isinstance(source, dict):
@@ -346,9 +343,7 @@ def create_metadata(
     if cls2idx is not None:
         resolved_cls2idx = cls2idx
     elif unique_classes and isinstance(unique_classes[0], (list, tuple)):
-        resolved_cls2idx = cls2idx_from_labels(
-            OrderedDict([(f"cls_{i}", tuple(map(str, lab))) for i, lab in enumerate(unique_classes)])
-        )
+        resolved_cls2idx = cls2idx_from_labels(OrderedDict([(f"cls_{i}", tuple(map(str, lab))) for i, lab in enumerate(unique_classes)]))
     else:
         resolved_cls2idx = {str(c): i for i, c in enumerate(unique_classes)}
     metadata: dict[str, list] = {"path": [], "class": [], "split": [], "label": []}
