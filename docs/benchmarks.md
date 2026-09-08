@@ -175,3 +175,47 @@ Use [`qt-dense`](../dev/benchmarks/README.md#dense-real-data-qt-comparison) to r
 this pair and retain the full reports, checkpoints and predictions in the shared
 pipeline. The optional GPU Actions job includes it when QT and real-data profiles
 are enabled; no self-hosted job was dispatched from this session.
+
+### Fused INT8 storage updates (2026-09-09)
+
+The same dense MNIST profile was exercised with experimental fused CUDA storage updates.
+This implementation has not passed the full CUDA regression set and is not a
+delivered feature; the results below guide the next implementation attempt.
+These are individual runs on the same RTX 3080 Ti, seed 42, data split, SGD
+settings and 15-epoch budget used above. All compile the model. The floating
+comparison also compiles the optimizer; INT8 is shown both ways to expose the
+effect of compiling the outer update wrapper. Later-epoch figures below cover
+epochs 3–15, after first-use compilation and optimizer initialization.
+
+| Execution | Test accuracy | Whole-run peak MiB | Later training peak MiB | Median later training epoch s | Training wall s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Float, compiled optimizer | 92.44% | 236.30 | 236.30 | 0.185 | 14.91 |
+| INT8 fused storage, eager optimizer | 93.32% | 373.30 | 164.58 | 0.273 | 44.26 |
+| INT8 fused storage, compiled optimizer | 93.12% | 423.79 | 164.35 | 0.271 | 47.01 |
+
+Fusing the storage update lowers later-phase allocation and runtime relative to
+the earlier INT8 update, but does **not** establish a whole-run memory or speed
+win over float. Accuracy differences remain single-seed observations. Wall times
+include compilation/autotuning and depend on cache state; they are not controlled
+cold-cache comparisons. The corresponding report source hashes begin
+`8fce9ea8fe3c`, `4f88ebf5632d`, and `a4e805ebe5c4a` respectively.
+
+A separate two-epoch CUDA allocation trace identified a 268,435,456-byte buffer
+allocated by Triton's `get_empty_cache_for_benchmark` during TorchAO INT8 matrix
+kernel autotuning. This occurs during first-use training and evaluation, and
+explains why steady-state storage savings do not translate to a lower whole-run
+peak. Reducing this tuning overhead remains necessary; excluding it from the
+reported peak would conceal a real allocation that users must accommodate.
+
+The four-weight dense run emitted no recompilation-limit fallback, but a separate
+twelve-group SGD stress test did: outer optimizer compilation specialized on
+`TrainingWeight` object identities. Keep that option off for general QT workloads
+until the wrapper path is fixed. Seven isolated storage tests passed rounding
+bounds, CUDA RNG replay and saved-tensor invalidation checks. However, the combined
+CUDA suite finished with 40 passing and three failing tests: fake-tensor execution
+reached the real storage kernel during normalized Adam updates, and the storage
+compiler exhausted its eight-variant cache across dtype/operation combinations,
+also preventing the twelve-parameter reuse regression from running successfully.
+Raising that global limit would conceal the underlying dispatch/cache design
+problem. The next implementation needs a storage kernel that handles these
+variants without depending on per-frame Dynamo specialization.
