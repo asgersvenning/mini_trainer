@@ -36,8 +36,9 @@ Active AMP, GPU execution, and arbitrary RNG/sampler continuation are not covere
 Known failure discovered by this coverage: full EMA continuation fails after evaluation
 populates `Classifier._linear_weight` and `_linear_bias` caches. These nonpersistent
 buffers can have different shapes on the EMA and training models, breaking the next
-averaging update. A strict expected-failure test records the problem; fix cache/EMA
-interaction in a focused behavior-fix change before relying on EMA continuation.
+averaging update. A strict expected-failure test records the problem. EMA is temporarily nonfunctional
+and unsupported, with a runtime warning when enabled. Repair is explicitly deferred;
+leave it disabled and exclude it from current feature comparisons.
 The validation increment changed no training behavior.
 
 Loader increment delivered: shared resize validation and worker-selection helpers,
@@ -87,7 +88,31 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
-First establish repeatable measurements for loader wait time, images/second, host/GPU
+The primary implementation target is **deeper quantization in training and inference**.
+Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
+that target. The implementation and comparison plan is in
+[training feature validation](training-feature-validation.md).
+
+Deliver quantization-aware training and post-training inference quantization as
+separate opt-in capabilities, recording actual weight/activation bit widths,
+calibration data, backend kernels, checkpoint/resume and export/runtime support.
+FP8 or other reduced-precision compute is a separate hardware-dependent profile.
+Keep unsupported model/backend combinations explicit; do not silently run an
+unquantized model while reporting a quantized result. EMA support is not a gate
+for this work while the feature is declared defunct.
+
+Improve the default augmentation pipeline after paired task-aware experiments,
+retaining a reproducible legacy recipe. Respect label semantics: digit tasks,
+color-based synthetic tasks and biological imagery need different invariances.
+Document uint8 input and augmentation-before-preprocessing behavior accurately.
+
+Benchmark foundation delivered: the [continuous dataset benchmark suite](benchmarks.md)
+uses a synthetic oracle, MNIST and hierarchical Blair, with CPU and GPU/AMP/cache
+profiles, explicit split/provenance records, Actions summaries and retained artifacts.
+This is a verifiable milestone, not a CPU-only scope boundary. Add durable hosted
+history, repeated comparisons and coverage of the remaining training features next.
+
+Next establish repeatable measurements for loader wait time, images/second, host/GPU
 memory, and validation quality on fixed configurations. Existing code already uses
 autocast, optional compilation, persistent workers, cache modes, and DDP spawn handling.
 
@@ -98,13 +123,23 @@ existing builder interface, documenting label and dtype requirements.
 
 Evaluate lower-precision training, quantization-aware training, and inference
 quantization as distinct paths. Keep current defaults and checkpoint compatibility;
-validate optimizer/EMA/resume behavior, numerical stability, hardware support, export
+validate optimizer/resume behavior (EMA is deferred), numerical stability, hardware support, export
 compatibility, memory, throughput, and quality before recommending a configuration.
 
 Acceptance: reproducible baseline and comparison results, explicit supported hardware
 and backends, opt-in configuration, and no regression in default training behavior.
 
 ## 5. mini_metrics and continuous model evaluation
+
+Document measured effects of MuonAuxAdamW versus AdamW/SGD, `normalized`,
+EMLACrossEntropy, class-weight distribution regularization, automatic label smoothing,
+and hierarchical versus flat classifiers. Use the same datasets/splits and paired
+seeds; retain negative and null results. See the [comparison protocol](training-feature-validation.md).
+Optimizer step tracking for AdamW/SGD is now fixed, including native fused AMP skips.
+CPU/CUDA regressions preserve scheduler/EMA gating and batch-based EMA indices;
+checkpoint continuation is covered for MuonAuxAdamW, AdamW and SGD. Comparative
+quality experiments remain planned; EMA itself remains unsupported.
+
 
 Use `publication/experiments/statistics/boot_metrics.py` and prediction CSV output as
 the current integration boundary. The adjacent `../mini_metrics` checkout currently

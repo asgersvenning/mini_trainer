@@ -188,9 +188,11 @@ class BaseBuilder:
 
     @staticmethod
     def build_augmentation(dtype: torch.dtype):
-        """Returns a training augmentation pipeline for normalized tensors.
+        """Return augmentations applied before model-specific preprocessing.
 
-        Assumes the input tensor is already normalized (e.g., in the range [0, 1] or standardized).
+        The default loader supplies batched RGB uint8 images. The training loop
+        applies this pipeline before scaling/normalization in ``preprocess``.
+        Custom loaders and builders must agree on their input dtype and range.
 
         Returns:
             A composition of augmentations.
