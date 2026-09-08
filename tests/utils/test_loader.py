@@ -128,7 +128,7 @@ def test_cuda_cache_still_disables_loader_workers(metadata, monkeypatch, workers
     assert not loaders[0].persistent_workers
 
 
-@pytest.mark.parametrize("available,expected", [(0, 1), (1, 1), (2, 1), (8, 6), (256, 128)])
+@pytest.mark.parametrize("available,expected", [(0, 0), (1, 0), (2, 0), (4, 0), (8, 4), (256, 16)])
 def test_ram_cache_thread_budget_and_contents(monkeypatch, available, expected):
     monkeypatch.setattr(_workers, "_available_cpu_count", lambda: available)
     executor = data_io.ThreadPoolExecutor
@@ -139,9 +139,9 @@ def test_ram_cache_thread_budget_and_contents(monkeypatch, available, expected):
         return executor(**kwargs)
 
     monkeypatch.setattr(data_io, "ThreadPoolExecutor", capture_executor)
-    dataset = data_io.LazyDataset(lambda item: torch.tensor([item[0]]), (list(range(5)),), cache="cpu")
-    assert selected == [expected]
-    torch.testing.assert_close(dataset[:], torch.arange(5).reshape(5, 1))
+    dataset = data_io.LazyDataset(lambda item: torch.tensor([item[0]]), (list(range(33)),), cache="cpu")
+    assert selected == ([expected] if expected else [])
+    torch.testing.assert_close(dataset[:], torch.arange(33).reshape(33, 1))
 
 
 def test_distributed_loader_retains_spawn_and_sampler(monkeypatch):
@@ -204,3 +204,36 @@ def test_cuda_transfer_batches_are_pinned(metadata, cache):
     torch.testing.assert_close(images.to(device, non_blocking=True).cpu(), images)
     _, inference = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0, device=device)
     assert next(iter(inference)).is_pinned()
+
+
+def test_cache_worker_override_reaches_dataset(metadata, monkeypatch):
+    def unexpected_pool(*args, **kwargs):
+        pytest.fail("cache_workers=0 must bypass the reader thread pool")
+
+    monkeypatch.setattr(data_io, "ThreadPoolExecutor", unexpected_pool)
+    _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("val",), cache="cpu", cache_workers=0, num_workers=0, batch_size=5)
+    _, labels = next(iter(loaders[0]))
+    assert labels.tolist() == list(range(5))
+
+
+def test_bounded_cuda_cache_matches_cpu_cache(metadata):
+    import os
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to validate CUDA cache construction")
+    if not torch.cuda.is_available():
+        pytest.fail("CUDA checks requested but no CUDA device is accessible")
+    device = torch.device("cuda:0")
+    _, cpu_loaders = get_dataset_dataloader(
+        metadata, resize_size=4, modes=("val",), cache="cpu", cache_workers=0, num_workers=0, batch_size=5
+    )
+    with pytest.warns(UserWarning, match="CUDA caching"):
+        _, gpu_loaders = get_dataset_dataloader(
+            metadata, resize_size=4, modes=("val",), cache="cuda", cache_workers=2, num_workers=3, batch_size=5, device=device
+        )
+    assert gpu_loaders[0].num_workers == 0
+    expected = next(iter(cpu_loaders[0]))
+    actual = next(iter(gpu_loaders[0]))
+    for cpu, gpu in zip(expected, actual, strict=True):
+        assert gpu.device == device
+        torch.testing.assert_close(gpu.cpu(), cpu, rtol=0, atol=0)

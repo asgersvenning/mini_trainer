@@ -237,3 +237,42 @@ peak allocated memory on this RTX 3080 Ti workload. Weight storage remained
 small SGD updates in this probe do not establish convergence. This replaces the
 pre-correction large-workload timing above. Real-model training, optimizer-state
 memory, data loading and task quality still require end-to-end validation.
+
+## Bounded cache construction
+
+CPU/CUDA cache construction now reserves four available CPUs and caps automatic
+reader threads at 16 (previously up to 128, reserving two). Four or fewer CPUs
+select synchronous construction. `LazyDataset(..., cache_workers=0)` and
+`get_dataset_dataloader(..., cache_workers=0)` explicitly disable cache reader
+threads; positive values override the automatic selection. Existing builder
+keyword forwarding supports this option. DataLoader worker selection is separate.
+
+At most twice the selected reader count is submitted ahead, plus a write batch
+of at most 64 samples. There is no unbounded reorder/write queue or daemon writer.
+Readers run once per sample, including the first shape probe. Read errors,
+inconsistent sample shapes/structures and write errors propagate to the caller;
+pending work is cancelled and active readers finish before construction returns.
+Cached ordering, labels and dtypes remain unchanged for valid inputs.
+
+Compare against the previous implementation using the developer benchmark:
+
+```bash
+git show 7a095a2:mini_trainer/data/io.py > /tmp/cache-baseline.py
+OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m dev.benchmarks.cache --baseline-source /tmp/cache-baseline.py
+# Explicit synchronous cache construction:
+OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m dev.benchmarks.cache --workers 0
+```
+
+`--baseline-source` executes developer-supplied Python source. The benchmark uses
+seed 42, 2048 samples cycling through 64 generated RGB 128x128 PNGs, a warm
+filesystem cache, one PyTorch thread and five measured repeats in alternating
+order. File generation is excluded. It verifies image and label output and
+records source hashes. This is cache-construction timing, not training throughput.
+
+On the local 20-CPU allocation, automatic construction used 16 reader threads
+versus the previous 18. The final comparison measured 1,722 versus 1,686 samples
+per second (about 1.02x); an earlier repeat was effectively tied. Treat this as
+similar throughput, not evidence of a meaningful speedup. The concrete gain is
+bounded read-ahead and reliable failure handling, with explicit synchronous
+construction available for shared-node environments. CUDA checks also verify
+pinned CPU transfer batches and exact CPU/CUDA cache contents.

@@ -3,11 +3,12 @@ import math
 import operator
 import os
 import warnings
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from enum import Enum
-from queue import Queue
-from threading import Thread
+from itertools import batched
 from typing import Any, TypeVar, cast
 
 import numpy as np
@@ -365,9 +366,16 @@ class LazyDataset(torch.utils.data.Dataset):
         func: Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]],
         items: Sequence[Sequence],
         cache: str | int | CACHE_MODE | None = None,
+        *,
+        cache_workers: int | None = None,
     ):
+        if cache_workers is not None and (isinstance(cache_workers, bool) or not isinstance(cache_workers, int) or cache_workers < 0):
+            raise ValueError("cache_workers must be a nonnegative integer or None.")
+        self._cache_workers = cache_workers
         self.func = func
         self.items = tuple(np.asarray(seq, dtype=_infer_numeric_dtype(seq)) if len(seq) > 0 else np.empty((0,)) for seq in items)
+        if self.items and any(len(seq) != len(self.items[0]) for seq in self.items):
+            raise ValueError("Dataset input sequences must have equal lengths.")
         self._init_cache(CACHE_MODE(cache))
 
     @staticmethod
@@ -420,7 +428,7 @@ class LazyDataset(torch.utils.data.Dataset):
             self._ram_was_single_tensor = False
             templates = [e.new_empty(e.shape) for e in first_item_processed]
         else:
-            raise TypeError(f"The provided function must return a tensor ora tuple/list of tensors, but got {type(first_item_processed)}")
+            raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
 
         stacked_tensors = [
             torch.empty(
@@ -432,79 +440,56 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        max_workers = _default_worker_count(128, reserve=2, minimum=1)
-        batch_size = min(256, 4 * max_workers)
-        fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor] | Exception]] = Queue(max(32, batch_size * 4))
-        insert_buffer: dict[int, torch.Tensor | Sequence[torch.Tensor]] = dict()
-        insert_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue()
+        max_workers = _default_worker_count(16) if self._cache_workers is None else self._cache_workers
+        max_workers = min(max_workers, len(self) - 1)
+        batch_size = min(64, max(1, 4 * max_workers))
 
-        def _fetch_one(idx_item):
-            idx, item = idx_item
-            try:
-                data = self.func(item)
-                fetched_queue.put((idx, data))
-            except Exception as e:
-                fetched_queue.put((idx, e))
-
-        def _contiguous_write(idx: list[int], data: list[torch.Tensor] | list[list[torch.Tensor]]) -> None:
-            """Write data to indexes.
-
-            Args:
-                idx: A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
-                data: A list of torch.Tensor with the same length as `idx`.
-            """
-            if len(idx) == 0:
+        def processed_items():
+            # Reuse the shape probe: every reader/hook runs exactly once.
+            yield first_item_processed
+            items = iter(zip(*self.items))
+            next(items)
+            if max_workers == 0:
+                yield from map(self.func, items)
                 return
-            slc = slice(idx[0], idx[-1] + 1)
-            # Insert data into slice along first dimension in dst (in-place)
-            if self._ram_was_single_tensor:
-                assert not data or isinstance(data[0], torch.Tensor)
-                data = cast(list[torch.Tensor], data)
-                torch.stack(data, out=stacked_tensors[0][slc])
-            else:
-                for i, elements in enumerate(zip(*data)):
-                    torch.stack(elements, out=stacked_tensors[i][slc])
-
-        def _write():
-            end_idx = len(self) - 1
-            with TQDM(range(len(self)), desc=desc, leave=False) as pbar:
-                batch = ([], [])
-                while True:
-                    idx, data = insert_queue.get()
-                    batch[0].append(idx)
-                    batch[1].append(data)
-                    if len(batch[0]) >= batch_size:
-                        _contiguous_write(*batch)
-                        batch = ([], [])
-                    pbar.update()
-                    if idx == end_idx:
+            pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="mini-trainer-cache")
+            pending = deque()
+            try:
+                # Bound both submitted work and decoded samples even when an
+                # early reader or the cache writer is slower than later reads.
+                for _ in range(2 * max_workers):
+                    item = next(items, None)
+                    if item is None:
                         break
-                _contiguous_write(*batch)
+                    pending.append(pool.submit(self.func, item))
+                while pending:
+                    yield pending.popleft().result()
+                    item = next(items, None)
+                    if item is not None:
+                        pending.append(pool.submit(self.func, item))
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
 
-        write_thread = Thread(target=_write, daemon=True)
-        write_thread.start()
-
-        try:
-            fetch_pool.map(_fetch_one, enumerate(zip(*self.items)))
-
-            nxt_idx = 0
-            for _ in range(len(self)):
-                idx, data = fetched_queue.get()
-                if isinstance(data, Exception):
-                    raise data
-                if idx == nxt_idx:
-                    insert_queue.put((idx, data))
-                    nxt_idx += 1
-                    while nxt_idx in insert_buffer:
-                        insert_queue.put((nxt_idx, insert_buffer.pop(nxt_idx)))
-                        nxt_idx += 1
+        # Writes happen here so shape/type errors reach the caller. Closing the
+        # generator also shuts down readers when stacking a batch fails.
+        with closing(processed_items()) as records, TQDM(total=len(self), desc=desc, leave=False) as pbar:
+            offset = 0
+            for batch in batched(records, batch_size):
+                for index, record in enumerate(batch, offset):
+                    values = (record,) if self._ram_was_single_tensor else record
+                    if not isinstance(values, (tuple, list)) or len(values) != len(templates):
+                        raise ValueError(f"Cached sample {index} has an inconsistent tensor structure.")
+                    for value, template in zip(values, templates, strict=True):
+                        if not isinstance(value, torch.Tensor) or value.shape != template.shape:
+                            raise ValueError(f"Cached sample {index} has an inconsistent tensor shape.")
+                destination = slice(offset, offset + len(batch))
+                if self._ram_was_single_tensor:
+                    torch.stack(batch, out=stacked_tensors[0][destination])
                 else:
-                    insert_buffer[idx] = data
-
-            write_thread.join()
-        finally:
-            fetch_pool.shutdown(wait=False)
+                    for target, values in zip(stacked_tensors, zip(*batch, strict=True), strict=True):
+                        torch.stack(values, out=target[destination])
+                offset += len(batch)
+                pbar.update(len(batch))
 
         self._ram_cache = torch.utils.data.TensorDataset(*[t for t in stacked_tensors])
 

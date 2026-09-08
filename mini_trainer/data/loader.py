@@ -128,6 +128,7 @@ def get_dataset_dataloader(  # noqa: D103
     device: torch.device | str = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     cache: CACHE_MODE | str | int | None = None,
+    cache_workers: int | None = None,
     multilabel: bool = False,
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
@@ -158,7 +159,7 @@ def get_dataset_dataloader(  # noqa: D103
     for mode, data in zip(modes, metadata):
         if mode.strip().lower() == "train" and resample:
             raise NotImplementedError("Resampling is currently not supported.")
-        dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache)
+        dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache, cache_workers=cache_workers)
         datasets.append(dset)
 
     if cache is CACHE_MODE.CUDA:
