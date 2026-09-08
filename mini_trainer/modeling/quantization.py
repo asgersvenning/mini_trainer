@@ -215,6 +215,13 @@ class Int8Model:
         if platform.machine().lower() not in ("x86_64", "amd64"):
             raise RuntimeError("This quantization backend requires x86 CPU hardware.")
         lowered = _backend()[4](copy.deepcopy(self.graph), (example_input,))
+        # oneDNN returns channels-last activations. PT2E lowering decomposes
+        # flatten to view before that layout change, which fails on spatial
+        # outputs. Match flatten's copy-if-needed semantics in the lowered graph.
+        for node in lowered.graph.nodes:
+            if node.target == torch.ops.aten.view.default:
+                node.target = torch.ops.aten.reshape.default
+        lowered.recompile()
         operators = Counter(str(n.target) for n in lowered.graph.nodes if n.op == "call_function")
         integer = {op: count for op, count in operators.items() if op.startswith("onednn.q") and "pointwise" in op}
         floating = [
@@ -249,6 +256,18 @@ class Int8Model:
             bundle.mkdir()
             path = bundle / "model.pt2"
             program = torch.export.export(self.graph, (example_input,))
+            # torch.export.save otherwise embeds the real calibration batch.
+            # Rebuild without example inputs: deployment needs shapes, not images.
+            program = torch.export.ExportedProgram(
+                root=program.graph_module,
+                graph=program.graph,
+                graph_signature=program.graph_signature,
+                state_dict=program.state_dict,
+                range_constraints=program.range_constraints,
+                module_call_graph=program.module_call_graph,
+                constants=program.constants,
+                verifiers=program.verifiers,
+            )
             torch.export.save(program, path)
             restored = torch.export.load(path).module()
             torch.testing.assert_close(restored(example_input), self.graph(example_input), rtol=0, atol=0)

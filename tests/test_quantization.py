@@ -49,6 +49,7 @@ def test_heads_quantize_functional_parametrized_and_masked_linears(tmp_path, qat
         expected = lowered(x)
     assert "onednn::qlinear_pointwise" in {e.key for e in profile.key_averages()}
     path = converted.save(tmp_path / "int8", x, preprocessing={"input": "embeddings"}, calibration={"split": "train", "seed": 42})
+    assert torch.export.load(path / "model.pt2").example_inputs is None
     reloaded, _ = load_int8(path).lower(x)
     with torch.no_grad():
         torch.testing.assert_close(reloaded(x), expected, rtol=0, atol=0)
@@ -149,9 +150,9 @@ def test_convolution_batchnorm_hidden_head_and_artifact_integrity(tmp_path, qat)
         torch.nn.Conv2d(3, 8, 3, padding=1),
         torch.nn.BatchNorm2d(8),
         torch.nn.ReLU(),
-        torch.nn.AdaptiveAvgPool2d(1),
+        torch.nn.AdaptiveAvgPool2d(2),
         torch.nn.Flatten(),
-        Classifier(8, 4, hidden=6, droprate=0.1, normalized=True),
+        Classifier(32, 4, hidden=6, droprate=0.1, normalized=True),
     )
     x = torch.randn(4, 3, 8, 8)
     prepared = prepare_int8(original, x, qat=qat)
