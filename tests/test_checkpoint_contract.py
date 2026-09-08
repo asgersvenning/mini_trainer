@@ -37,11 +37,14 @@ def assert_state_equal(actual, expected):
 
 
 @pytest.mark.parametrize(
-    "ema",
+    "ema, optimizer_kind",
     [
-        False,
+        (False, "muon"),
+        (False, "adamw"),
+        (False, "sgd"),
         pytest.param(
             True,
+            "muon",
             marks=pytest.mark.xfail(
                 strict=True,
                 raises=RuntimeError,
@@ -50,7 +53,7 @@ def assert_state_equal(actual, expected):
         ),
     ],
 )
-def test_checkpoint_restore_and_continuation(tmp_path, monkeypatch, ema):
+def test_checkpoint_restore_and_continuation(tmp_path, monkeypatch, ema, optimizer_kind):
     torch.manual_seed(42)
     for label in ("class_a", "class_b"):
         (tmp_path / "data" / label).mkdir(parents=True)
@@ -71,6 +74,13 @@ def test_checkpoint_restore_and_continuation(tmp_path, monkeypatch, ema):
         "ema_builder_kwargs": {"decay_rate": 0.8, "update_rate": 1, "distill_start": 100},
         "logger_builder_kwargs": {"verbose": False},
     }
+    if optimizer_kind != "muon":
+        args["optimizer_builder_kwargs"] = {
+            "optimizer_cls": torch.optim.AdamW if optimizer_kind == "adamw" else torch.optim.SGD,
+            "lr": 0.001,
+            "weight_decay": 0.01,
+            **({"momentum": 0.9} if optimizer_kind == "sgd" else {}),
+        }
     original_train = train_module.train
     captured = {}
 
@@ -84,7 +94,10 @@ def test_checkpoint_restore_and_continuation(tmp_path, monkeypatch, ema):
     checkpoint = torch.load(weights / "checkpoint_0.pth", weights_only=True)
     expected = torch.load(weights / "checkpoint_last.pth", weights_only=True)
     assert checkpoint["epoch"] == 0
-    assert all(state["state"] for state in checkpoint["optimizer"].values())
+    if optimizer_kind == "muon":
+        assert all(state["state"] for state in checkpoint["optimizer"].values())
+    else:
+        assert checkpoint["optimizer"]["state"]
     assert checkpoint["lr_scheduler"]["last_epoch"] > 0
     if ema:
         assert checkpoint["model_ema"]["n_averaged"].item() > 0

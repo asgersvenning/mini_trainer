@@ -1,4 +1,5 @@
 import datetime
+import inspect
 import os
 import time
 from collections.abc import Callable
@@ -29,6 +30,40 @@ from mini_trainer.utils import (
 # from mini_trainer.contrastive import SupConLoss
 
 # contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
+
+
+def _optimizer_step(optimizer: Optimizer, scaler: GradScaler) -> bool:
+    """Step and update the scaler; report a completed, non-overflow optimizer step.
+
+    Ordinary GradScaler skips the step call on overflow. Native fused optimizers
+    instead receive a transient ``found_inf`` tensor and skip inside their kernel.
+    Capture that signal while the post-hook can still see it, before GradScaler
+    removes it. No scale comparison (or extra scale readback) is needed.
+    """
+    amp_aware = scaler.is_enabled() and getattr(optimizer, "_step_supports_amp_scaling", False)
+    if amp_aware and "grad_scaler" in inspect.signature(optimizer.step).parameters:
+        raise NotImplementedError(
+            "Legacy AMP optimizers accepting grad_scaler cannot reliably report skipped updates here. "
+            "Use the current GradScaler found_inf contract or an ordinary optimizer."
+        )
+    completed = False
+    found_inf = None
+
+    def record_step(opt, args, kwargs):
+        nonlocal completed, found_inf
+        completed = True
+        if amp_aware:
+            # This is the PyTorch GradScaler/native fused-optimizer contract.
+            # Fail explicitly if that contract changes rather than advance LR/EMA.
+            found_inf = opt.found_inf
+
+    handle = optimizer.register_step_post_hook(record_step)
+    try:
+        scaler.step(optimizer)
+    finally:
+        handle.remove()
+    scaler.update()
+    return completed and (found_inf is None or not bool(found_inf))
 
 
 def train_one_epoch(
@@ -115,17 +150,8 @@ def train_one_epoch(
         if clip_grad_norm is not None:
             nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
 
-        # 1. Record the step count before
-        opt_steps_before = optimizer._step_count
-
-        # 2. Step the scaler (this internally handles the Inf/NaN check)
-        scaler.step(optimizer)
-        scaler.update()
-
-        # 3. Check if the step count actually increased
-        _any_opt_stepped = optimizer._step_count > opt_steps_before
-
-        if _any_opt_stepped:
+        # Advance dependent state only when AMP allowed the optimizer update.
+        if _optimizer_step(optimizer, scaler):
             raw_model = model.module if isinstance(model, nn.parallel.DistributedDataParallel) else model
             model_ema.update_parameters(step, raw_model)
             lr_scheduler.step()

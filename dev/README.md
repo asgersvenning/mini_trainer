@@ -101,3 +101,48 @@ and compares predictions in a disposable environment containing ONNX Runtime and
 its dependencies, with no PyTorch or mini_trainer. It explicitly installs the runtime
 version from the export environment and needs registry access or cached packages.
 It does not synchronize `.venv`. CI runs this in addition to the shared test harness.
+
+## Optimizer step contract
+
+`trainer._optimizer_step` preserves the successful-step gate previously supplied
+by MuonAuxAdamW's `_step_count`. The scheduler and EMA averaging update advance only
+after a completed step that AMP did not reject. EMA still receives the original
+batch-based index (`batches_per_epoch * epoch + batch_index`); its update-rate and
+distillation schedules have not been redefined. EMA's separate cache bug is not fixed.
+
+The trainer uses a temporary public optimizer post-step hook. Ordinary GradScaler
+omits `optimizer.step()` on overflow, so that hook does not run. Native fused AdamW
+and SGD enter `step()` even on overflow and skip inside the kernel: the hook captures
+GradScaler's transient `optimizer.found_inf` tensor before it is removed. Only this
+AMP-aware path reads the device flag for the Python scheduler/EMA decision. The
+ordinary Muon/AdamW/SGD path adds no scaler-value readback or parameter comparison.
+
+A completed step is not defined by whether parameters changed: zero learning rate
+or zero gradients still count. Scale equality and the optimizer's return value
+cannot establish success. Temporary hooks are removed even if the step raises,
+and no new counter enters optimizer checkpoints. MuonAuxAdamW retains its own counter.
+
+Custom optimizers must follow the ordinary Optimizer/GradScaler step contract or
+the native `found_inf` AMP contract. The deprecated `step(..., grad_scaler=...)`
+protocol is rejected before execution when scaling is enabled because its internal
+skip cannot be observed reliably. Arbitrary custom internal no-ops are not inferred
+by inspecting parameters. This boundary must be rechecked when PyTorch changes its
+fused AMP contract.
+
+`tests/test_optimizer_steps.py` uses real GradScaler overflow, scale growth and
+recovery on CPU and optionally CUDA, including native fused AdamW/SGD. It checks
+parameters, optimizer state, scheduler state and EMA call indices, as well as
+zero-LR steps, scale underflow and hook cleanup. Checkpoint regressions additionally
+compare uninterrupted/resumed MuonAuxAdamW, AdamW and momentum SGD training.
+
+```bash
+bash dev/check.sh test tests/test_optimizer_steps.py tests/test_checkpoint_contract.py
+RUN_CUDA_TESTS=1 CUDA_VISIBLE_DEVICES=0 bash dev/check.sh test tests/test_optimizer_steps.py -k cuda
+```
+
+The configured GPU benchmark workflow runs these CUDA regressions too. An explicitly
+requested CUDA test fails when no device is available; ordinary CPU CI skips those
+hardware cases. These are optimizer/AMP tests, not an EMA-functionality claim.
+
+References: [optimizer post-step hooks](https://docs.pytorch.org/docs/2.12/generated/torch.optim.Optimizer.register_step_post_hook.html)
+and [GradScaler](https://docs.pytorch.org/docs/2.12/amp.html).
