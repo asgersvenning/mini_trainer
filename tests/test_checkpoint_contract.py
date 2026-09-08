@@ -189,3 +189,40 @@ def test_ema_status_warning_only_when_enabled():
     assert not caught
     with pytest.warns(RuntimeWarning, match="temporarily nonfunctional"):
         EMATeacher(enable=True, total_steps=1, model=torch.nn.Linear(2, 2))
+
+
+def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatch):
+    # Exercise Dynamo's real OptimizedModule wrapper without testing CPU
+    # Inductor performance. Its state_dict adds _orig_mod unless unwrapped.
+    compile_model = torch.compile
+    monkeypatch.setattr(torch, "compile", lambda model: compile_model(model, backend="eager"))
+    for label in ("class_a", "class_b"):
+        (tmp_path / "data" / label).mkdir(parents=True)
+    args = {
+        "input": str(tmp_path / "data"),
+        "output": str(tmp_path),
+        "name": "compiled",
+        "epochs": 1,
+        "device": "cpu",
+        "dtype": "float32",
+        "seed": 42,
+        "compile": True,
+        "ema": False,
+        "builder": DeterministicBuilder,
+        "model_builder_kwargs": {"model_type": TinyMockModel(), "hidden": False, "droprate": 0, "normalized": False},
+        "dataloader_builder_kwargs": {"batch_size": 4},
+        "lr_schedule_builder_kwargs": {"warmup_epochs": 0},
+        "logger_builder_kwargs": {"verbose": False},
+    }
+    train_module.main(**args)
+    path = tmp_path / "compiled/weights/checkpoint_last.pth"
+    state = torch.load(path, weights_only=True)
+    assert not any(key.startswith("_orig_mod.") for key in state["model"])
+    eager = torch.load(tmp_path / "compiled/weights/last.pt", weights_only=True)
+    assert_state_equal(state["model"], eager)
+    args.update(name="resumed", epochs=2, checkpoint=str(path))
+    args["model_builder_kwargs"]["model_type"] = TinyMockModel()
+    train_module.main(**args)
+    resumed = torch.load(tmp_path / "resumed/weights/checkpoint_last.pth", weights_only=True)
+    assert resumed["epoch"] == 1
+    assert not any(key.startswith("_orig_mod.") for key in resumed["model"])

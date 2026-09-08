@@ -353,7 +353,11 @@ def train(
         if is_best_eval:
             best_epoch = epoch
         if output_dir is not None:
-            raw_model = model.module if hasattr(model, "module") else model
+            raw_model = model
+            # Serialize architecture state, not compile/distribution wrappers.
+            # This also leaves the QT recipe at its original module path.
+            while isinstance(raw_model, (nn.DataParallel, DDP)) or hasattr(raw_model, "_orig_mod"):
+                raw_model = raw_model._orig_mod if hasattr(raw_model, "_orig_mod") else raw_model.module
             assert isinstance(raw_model, nn.Module)
             checkpoint = {
                 "model": raw_model.state_dict(),
