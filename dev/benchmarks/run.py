@@ -54,6 +54,7 @@ def run(
     cuda_prefetch: bool = False,
     quantized_training: bool = False,
     compile: bool = False,
+    compile_optimizer: bool = False,
     hidden: int = 0,
     batch_size: int = 32,
     cache_workers: int | None = None,
@@ -148,6 +149,7 @@ def run(
         ema=False,
         quantized_training=quantized_training,
         compile=compile,
+        compile_optimizer=compile_optimizer,
         model_builder_kwargs={
             "model_type": model_type,
             "hidden": hidden if hidden else False,
@@ -243,6 +245,7 @@ def run(
         "momentum": 0.9 if optimizer == "sgd" else None,
         "quantization_recipe": quantization_recipe,
         "compile": compile,
+        "compile_optimizer": compile_optimizer,
         "hidden": hidden,
         "batch_size": batch_size,
         "cache_workers": cache_workers,
@@ -317,6 +320,7 @@ def main():
     parser.add_argument("--quantized-training", action="store_true")
     parser.add_argument("--cuda-prefetch", action="store_true")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--compile-optimizer", action="store_true")
     parser.add_argument("--model-profile", choices=["default", "dense"], default="default")
     parser.add_argument("--optimizer", choices=["muon", "adamw", "sgd"], default="muon")
     parser.add_argument("--learning-rate", type=float)
@@ -350,6 +354,7 @@ def main():
             cuda_prefetch=args.cuda_prefetch,
             quantized_training=args.quantized_training,
             compile=args.compile,
+            compile_optimizer=args.compile_optimizer,
             hidden=args.hidden,
             batch_size=args.batch_size,
             cache_workers=args.cache_workers,
@@ -371,6 +376,7 @@ def main():
             "cuda_prefetch": args.cuda_prefetch,
             "quantized_training": args.quantized_training,
             "compile": args.compile,
+            "compile_optimizer": args.compile_optimizer,
             "hidden": args.hidden,
             "batch_size": args.batch_size,
             "cache_workers": args.cache_workers,

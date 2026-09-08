@@ -192,3 +192,30 @@ Raw `LazyDataset` users can request `pin_batches=True` for the same behavior.
 Worker processes always use the ordinary gather path and DataLoader's parent-side
 pinning; this option never initializes the CUDA pin allocator in a worker. CPU
 training, CUDA-cached datasets and scalar indexing keep their existing behavior.
+
+### Optimizer compilation
+
+`mt_train --compile-optimizer` opts into compiling optimizer updates independently
+of model `--compile`. The benchmark runner accepts the same option and records it
+in result and failure reports. It defaults off; compilation overhead and graph
+breaks can outweigh any steady-state benefit, so measure the intended workload.
+
+The first real optimizer call initializes lazy state eagerly. Subsequent calls
+use compilation with tensor learning rates, allowing scheduler changes without
+specializing a graph for every numeric rate. AMP overflow handling and scheduler
+advancement remain controlled by the trainer. MuonAuxAdamW compiles its child
+optimizers while keeping its outer step counter in Python; Muon's compilation
+preserves the explicit BF16 casts in its Newton-Schulz iterations.
+
+For custom training, call `mini_trainer.training.compilation.compile_optimizer`
+after constructing the scheduler and restoring checkpoint state. Saved learning
+rates remain ordinary scalars, so a checkpoint can resume without compilation.
+Explicit `foreach=True` Adam/AdamW requires `capturable=True`; unsupported
+combinations fail before the helper changes the optimizer. Default and explicit
+`foreach=False` updates do not need that setting.
+
+Regression coverage compares eager and compiled SGD, AdamW, their native fused
+variants, and MuonAuxAdamW on CUDA, including overflow skips, scheduler changes,
+parameter updates and optimizer state. This does not establish support for every
+custom optimizer or a real-workload INT8 speedup. Quantized update dispatch and
+its performance remain a separate validation boundary.

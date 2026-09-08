@@ -75,6 +75,7 @@ def main(  # noqa: D417
     lr_schedule_builder_kwargs: dict[str, Any] = {"warmup_epochs": 2.0},
     logger_builder_kwargs: dict[str, Any] = {"verbose": False},
     ddp_info: dict | None = None,
+    compile_optimizer: bool = False,
 ):
     """Train a classifier.
 
@@ -289,6 +290,12 @@ def main(  # noqa: D417
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
         log.info(f"Training restarted from checkpoint(s): {checkpoint}")
+
+    if compile_optimizer:
+        from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
+
+        prepare_compiled_optimizer(optimizer)
+        log.info("Optimizer updates compiled; scheduler and AMP step gating remain active.")
 
     # Instantiate logger
     logger_output = None if get_rank() > 0 else output
@@ -531,6 +538,12 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
     )
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
+    cfg_args.add_argument(
+        "--compile-optimizer",
+        action="store_true",
+        dest="compile_optimizer",
+        help="Compile optimizer updates with tensor learning rates; model compilation is controlled separately.",
+    )
     cfg_args.add_argument(
         "--cuda-prefetch",
         action="store_true",

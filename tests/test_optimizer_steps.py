@@ -35,11 +35,16 @@ def device(request):
 
 @pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("scaled", [False, True])
-def test_epoch_only_advances_scheduler_and_ema_after_updates(kind, scaled, device):
+@pytest.mark.parametrize("compiled", [False, True])
+def test_epoch_only_advances_scheduler_and_ema_after_updates(kind, scaled, device, compiled):
     torch.manual_seed(42)
     model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(2, 2)).to(device)
     optimizer = make_optimizer(kind, model.parameters())
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    if compiled:
+        from mini_trainer.training.compilation import compile_optimizer
+
+        compile_optimizer(optimizer, backend="eager" if device.type == "cpu" else None)
     scaler = torch.amp.GradScaler(device.type, enabled=scaled, init_scale=8, growth_interval=1)
     images = torch.tensor([[[[1.0, 2.0]]]]).repeat(3, 1, 1, 1)
     loader = DataLoader(TensorDataset(images, torch.tensor([0, 1, 0])), batch_size=1)
@@ -147,3 +152,97 @@ def test_overflow_detected_even_when_scale_cannot_back_off_further(kind):
     assert scaler.get_scale() == 0.0
     torch.testing.assert_close(parameter, torch.ones_like(parameter), rtol=0, atol=0)
     assert not optimizer._optimizer_step_post_hooks
+
+
+def test_compiled_optimizer_scheduler_does_not_recompile_every_step():
+    from torch._dynamo.testing import CompileCounter
+
+    from mini_trainer.training.compilation import compile_optimizer
+
+    torch._dynamo.reset()
+    parameter = torch.nn.Parameter(torch.ones(4, 4))
+    optimizer = torch.optim.SGD([parameter], lr=0.1, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 0.93**step)
+    counter = CompileCounter()
+    compile_optimizer(optimizer, backend=counter)
+    scaler = torch.amp.GradScaler("cpu", enabled=False)
+    frames_after_warmup = None
+    for step in range(12):
+        optimizer.zero_grad()
+        parameter.square().sum().backward()
+        assert _optimizer_step(optimizer, scaler)
+        scheduler.step()
+        if step == 2:
+            frames_after_warmup = counter.frame_count
+    assert frames_after_warmup and counter.frame_count == frames_after_warmup
+    state = optimizer.state_dict()
+    assert isinstance(state["param_groups"][0]["lr"], float)
+    assert isinstance(optimizer.param_groups[0]["lr"], torch.Tensor)
+    optimizer.load_state_dict(state)
+    assert isinstance(optimizer.param_groups[0]["lr"], torch.Tensor)
+    fresh = torch.optim.SGD([torch.nn.Parameter(parameter.detach().clone())], lr=1.0, momentum=0.9)
+    fresh.load_state_dict(state)
+    assert isinstance(fresh.param_groups[0]["lr"], float)
+
+
+def test_compiled_foreach_adamw_requires_capturable_before_mutation():
+    from mini_trainer.training.compilation import compile_optimizer
+
+    parameter = torch.nn.Parameter(torch.ones(4, 4))
+    optimizer = torch.optim.AdamW([parameter], lr=0.01, foreach=True)
+    before = optimizer.step
+    with pytest.raises(ValueError, match="requires capturable=True"):
+        compile_optimizer(optimizer, backend="eager")
+    assert optimizer.step == before
+    assert isinstance(optimizer.param_groups[0]["lr"], float)
+    assert not optimizer.state
+
+
+def _assert_compiled_optimizer_state(actual, expected, key=None):
+    if isinstance(actual, torch.Tensor):
+        # Dynamo moves Adam's scalar step counter to CUDA. Check its exact
+        # numeric state; all non-counter tensor devices must remain unchanged.
+        if key == "step" and actual.numel() == expected.numel() == 1:
+            expected = expected.to(actual.device)
+        torch.testing.assert_close(actual, expected, rtol=1e-5, atol=2e-6)
+    elif isinstance(actual, dict):
+        assert actual.keys() == expected.keys()
+        for name in actual:
+            _assert_compiled_optimizer_state(actual[name], expected[name], name)
+    elif isinstance(actual, (list, tuple)):
+        assert type(actual) is type(expected) and len(actual) == len(expected)
+        for left, right in zip(actual, expected, strict=True):
+            _assert_compiled_optimizer_state(left, right)
+    else:
+        assert actual == expected
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_cuda_compiled_optimizer_matches_eager_updates(kind):
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to compare compiled CUDA updates")
+    assert torch.cuda.is_available()
+    torch.manual_seed(71)
+    initial = torch.randn(8, 8, device="cuda")
+    parameters = [torch.nn.Parameter(initial.clone()) for _ in range(2)]
+    optimizers = [make_optimizer(kind, [parameter]) for parameter in parameters]
+    schedulers = [torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=0.93) for opt in optimizers]
+    compile_optimizer(optimizers[1])
+    scalers = [torch.amp.GradScaler("cuda", init_scale=8, growth_interval=100) for _ in optimizers]
+    for step in range(6):
+        gradient = torch.randn_like(initial)
+        decisions = []
+        for parameter, optimizer, scheduler, scaler in zip(parameters, optimizers, schedulers, scalers, strict=True):
+            optimizer.zero_grad()
+            scaler.scale((parameter * gradient).sum()).backward()
+            if step == 2:
+                parameter.grad.fill_(float("inf"))
+            updated = _optimizer_step(optimizer, scaler)
+            decisions.append(updated)
+            if updated:
+                scheduler.step()
+        assert decisions[0] == decisions[1] == (step != 2)
+        torch.testing.assert_close(parameters[0], parameters[1], rtol=1e-5, atol=2e-6)
+        _assert_compiled_optimizer_state(optimizers[0].state_dict(), optimizers[1].state_dict())

@@ -207,6 +207,7 @@ def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatc
         "dtype": "float32",
         "seed": 42,
         "compile": True,
+        "compile_optimizer": True,
         "ema": False,
         "builder": DeterministicBuilder,
         "model_builder_kwargs": {"model_type": TinyMockModel(), "hidden": False, "droprate": 0, "normalized": False},
@@ -220,7 +221,7 @@ def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatc
     assert not any(key.startswith("_orig_mod.") for key in state["model"])
     eager = torch.load(tmp_path / "compiled/weights/last.pt", weights_only=True)
     assert_state_equal(state["model"], eager)
-    args.update(name="resumed", epochs=2, checkpoint=str(path))
+    args.update(name="resumed", epochs=2, checkpoint=str(path), compile_optimizer=False)
     args["model_builder_kwargs"]["model_type"] = TinyMockModel()
     train_module.main(**args)
     resumed = torch.load(tmp_path / "resumed/weights/checkpoint_last.pth", weights_only=True)
