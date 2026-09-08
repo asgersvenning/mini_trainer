@@ -139,3 +139,7 @@ deferred. See [known limitations](docs/roadmap.md).
 An opt-in [PTQ and QAT Python API](docs/quantization.md) targets native x86 INT8
 inference. This is an initial backend increment; CPU float32 QAT, integer inference
 and ordinary AMP are distinct capabilities.
+
+Opt-in [CUDA INT8 training](docs/quantized-training.md) now has an initial Linear
+model/checkpoint integration. Its documented coverage and performance limits are
+separate from [x86 PTQ/QAT inference](docs/quantization.md).

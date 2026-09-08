@@ -150,7 +150,7 @@ def test_integer_linear_module_cuda(dtype, epsilon):
 
 def test_integer_compiler_key_tracks_code_and_metadata(monkeypatch):
     pytest.importorskip("torchao")
-    from dev.benchmarks import _int8_weight
+    from mini_trainer.modeling import _quantized_training as _int8_weight
 
     weight = _int8_weight.TrainingWeight.from_float(torch.randn(8, 16))
     key = weight._stable_hash_for_caching()

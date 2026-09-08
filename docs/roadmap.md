@@ -93,8 +93,10 @@ QT must reduce retained training storage and demonstrate lower peak memory and f
 training on supported workloads. QAT with floating-point master weights is a separate
 capability and does not complete this target. The initial CUDA integer forward/backward
 kernel probe and cached-loader benchmark are documented in [the benchmark guide](../dev/benchmarks/README.md).
-Optimizer support, checkpoint integration, real-data convergence and end-to-end
-measurements remain required before claiming a supported QT training path.
+An initial [CUDA INT8 Linear integration](quantized-training.md) connects model
+preparation and checkpoint loading to the training entry point. Broader operator
+and optimizer coverage, real-data convergence and end-to-end measurements remain
+required to complete this target.
 Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
 that target. The implementation and comparison plan is in
 [training feature validation](training-feature-validation.md).

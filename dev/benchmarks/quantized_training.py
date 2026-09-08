@@ -1,4 +1,4 @@
-"""Experimental CUDA QT kernel probe; not yet integrated with mt_train.
+"""CUDA QT kernel probe using the opt-in model backend.
 
 Uses INT8 stored weights (no floating-point master copy), INT8 saved linear
 inputs, and scaled INT8 forward/dgrad/wgrad GEMMs. Gradients and SGD update math
@@ -14,46 +14,13 @@ from argparse import ArgumentParser
 
 import torch
 
+from mini_trainer.modeling.quantized_training import IntegerLinear as IntegerLinear
+
 
 def dependencies():
-    from torchao.prototype.quantized_training.int8 import quantize_int8_rowwise
-    from torchao.prototype.quantized_training.int8_mm import scaled_int8_mm
-
-    from ._int8_weight import TrainingWeight
+    from mini_trainer.modeling._quantized_training import TrainingWeight, quantize_int8_rowwise, scaled_int8_mm
 
     return TrainingWeight, quantize_int8_rowwise, scaled_int8_mm
-
-
-class IntegerLinear(torch.autograd.Function):
-    """Row-scaled INT8 GEMMs, including approximate input and weight gradients."""
-
-    @staticmethod
-    def forward(ctx, inputs, weight):
-        _, quantize, mm = dependencies()
-        quantized, scale = quantize(inputs)
-        ctx.save_for_backward(quantized, scale, weight.int_data, weight.scale)
-        return mm(quantized.contiguous(), weight.int_data.T, scale.contiguous(), weight.scale.contiguous())
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        _, quantize, mm = dependencies()
-        inputs, input_scale, weight, weight_scale = ctx.saved_tensors
-        ones = torch.ones(weight.shape[1], device=grad_output.device, dtype=torch.float32)
-        grad_input = None
-        if ctx.needs_input_grad[0]:
-            # Weight scales lie along the contraction axis: absorb them into
-            # dY before its row quantization, not into the result columns.
-            quantized_grad, scale = quantize(grad_output.float() * weight_scale.float())
-            grad_input = mm(quantized_grad.contiguous(), weight.contiguous(), scale.contiguous(), ones)
-        grad_weight = None
-        if ctx.needs_input_grad[1]:
-            # Similarly absorb saved activation scales into dY.T for dW.
-            quantized_grad, scale = quantize(grad_output.T.float() * input_scale.float())
-            grad_weight = mm(quantized_grad.contiguous(), inputs.contiguous(), scale.contiguous(), ones)
-        return (
-            grad_input.to(grad_output.dtype) if grad_input is not None else None,
-            grad_weight.to(weight_scale.dtype) if grad_weight is not None else None,
-        )
 
 
 class Layer(torch.nn.Module):

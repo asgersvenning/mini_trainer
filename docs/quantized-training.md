@@ -1,0 +1,97 @@
+# CUDA INT8 training integration
+
+The opt-in training path stores eligible Linear weights and saved linear inputs
+in INT8 and uses integer matrix products for forward, input gradients and weight
+gradients. It retains no floating-point master copy of those weights. Gradients,
+optimizer state, biases, normalization, convolutions and auxiliary regularization
+remain floating point. This is separate from fake-quantized QAT and x86 PTQ.
+
+Install the optional `quantization` extra while explicitly retaining the intended
+PyTorch CUDA backend, as described in the README. The current implementation uses
+TorchAO's experimental Triton kernels. It has been exercised on an RTX 3080 Ti;
+CPU preparation and checkpoint inspection do not establish CPU execution support.
+
+```bash
+mt_train -i /path/to/data --device cuda --quantized-training --dtype float16 --cache cpu --cache-workers 0
+```
+
+`--quantized-training` prepares weights before building the optimizer and logs
+coverage. `--cache-workers 0` makes cache construction synchronous; its selection
+is separate from DataLoader workers. Ordinary training defaults are unchanged.
+
+The Python API also supports explicit module selection:
+
+```python
+import torch
+from mini_trainer.modeling.quantized_training import prepare_quantized_training
+
+# Load floating weights and move the model to its intended device first.
+coverage = prepare_quantized_training(model)  # in place, before optimizer creation
+# Or: prepare_quantized_training(model, module_names=["encoder.projection"])
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+```
+
+The returned recipe lists quantized modules, skipped operations, remaining
+floating-point parameters and physical versus reference weight storage. Automatic
+selection covers ordinary `nn.Linear` modules, including their functional use by
+Classifier heads. It preserves shared weights when every owner is selected.
+Parametrized weights (including normalized heads) and weights shared with an
+unselected operation stay floating point and are reported. Explicit unsupported
+selections and models with no eligible weights fail before changing weights.
+Quantizing the hidden linear layer of a convolutional classifier does not make
+its convolutions integer operations.
+
+CUDA execution supports batched inputs, bias, masked classifier rows,
+single-sample inference and float16/bfloat16 autocast with float32 parameters.
+Float32 optimizer parameters avoid the FP16 AdamW epsilon underflow discussed in
+the developer probe. Eager SGD, AdamW and the repository's MuonAuxAdamW update
+paths are covered; fused optimizer variants are not established. Quantized
+regularization uses a differentiable floating view of the represented weights.
+
+## Checkpoints and inference
+
+Prepared models include their recipe in `state_dict`. Ordinary `mt_train`
+checkpoints retain INT8 parameter storage, and `Classifier.build(weights=...)`
+restores the parameter types before loading weights. Known tensor classes are
+allowed only within a scoped `weights_only=True` load. To resume through
+`mt_train`, enable `--quantized-training` again so optimizer construction sees
+the correct parameters. Existing stochastic-resume limitations still apply:
+the trainer does not generally persist sampler or RNG state.
+
+For a custom architecture outside `Classifier.build`:
+
+```python
+from mini_trainer.modeling.quantized_training import load_training_weights, restore_quantized_training
+
+state = load_training_weights("weights.pt", map_location="cpu")
+restore_quantized_training(model, state)
+model.load_state_dict(state)
+```
+
+Use the same architecture and intended dtype. This restores model state; create
+and restore optimizer/scheduler/scaler state in their normal order separately.
+The same model supports CUDA inference with `eval()` and `inference_mode()`.
+ONNX export, checkpoint averaging, DDP/FSDP, quantized normalization and integer
+convolution training are not established for this path. Distributed training and
+EMA are rejected by the training entry point.
+
+## Evidence and remaining work
+
+The [developer probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance)
+record both positive and negative workload-dependent results. Compiler cache keys
+include backend source and tensor metadata to avoid reusing obsolete backward
+graphs. Numerical checks include small gradients, compiled/eager agreement,
+weight storage, optimizer updates, regularization and model-state restoration.
+
+Kernel-probe results do not establish a real-model speedup or convergence. The
+integrated path still needs paired synthetic-oracle, MNIST and hierarchical Blair
+runs, complete optimizer/resume coverage, end-to-end memory and throughput
+measurements, and broader quantized operation coverage. These are requirements
+for the overall QT goal, not conclusions implied by this initial integration.
+
+The integrated backend was rerun on the four-layer, 4096-wide, batch-2048 compiled
+SGD probe: 15.61 ms/step and 319,063,552 peak allocated bytes for INT8, versus
+30.05 ms and 386,139,648 bytes for FP16. These single-run numbers are about
+1.93x faster and 17% lower peak memory for that workload, with nonzero gradients
+checked before timing. They remain kernel-probe evidence, not a claim about
+MNIST, Blair or typical convolutional models.

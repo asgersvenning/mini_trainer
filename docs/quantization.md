@@ -2,7 +2,7 @@
 
 This is an opt-in Python API for **static 8-bit weights and 8-bit activations**,
 using TorchAO PT2E. Actual quantized training with reduced memory and training
-time is separate ongoing work; see the [QT/loader probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance). It supports post-training calibration (PTQ) and
+time now has an initial [CUDA model integration](quantized-training.md); see the [QT/loader probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance). It supports post-training calibration (PTQ) and
 quantization-aware training (QAT). QAT uses fake quantization with float32 master
 parameters/gradients; it does not promise integer backward computation or reduced
 training memory. Converted inference executes native oneDNN integer Conv/Linear

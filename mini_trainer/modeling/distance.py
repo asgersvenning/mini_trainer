@@ -7,6 +7,8 @@ from .classifier import classification_module
 
 
 def _class_similarity(W: torch.Tensor, cdf: bool = True) -> torch.Tensor:
+    if getattr(W, "_is_quantized_training", False):
+        W = W.dequantize()
     W = W.detach().clone().float()
     WN = W.norm(2, 1, True)
     Z = cosine_to_zscore((W @ W.T) / (WN @ WN.T), W.shape[1])

@@ -151,8 +151,10 @@ and weight decay) and AdamW. CPU tests check update error against floating-point
 optimizer math and exact next-step continuation when weights, optimizer state
 and RNG are restored together. Foreach parameter updates currently dispatch per
 tensor; no fused-optimizer speed benefit is claimed. This does not establish the
-repository's complete optimizer or checkpoint contracts. It is not an `mt_train`
-feature yet, and a synthetic linear-stack MSE is not a convergence study.
+repository's complete optimizer or checkpoint contracts. The backend now has an
+initial [model and trainer integration](../../docs/quantized-training.md), including
+checkpoint restoration. The linear-stack MSE remains a kernel probe, not a
+convergence study.
 
 Local RTX 3080 Ti evidence (four 4096-wide layers, batch 2048, FP16 input/output,
 three warm-up steps, ten measured forward/backward/SGD steps): FP16 took 29.10 ms

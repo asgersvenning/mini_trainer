@@ -49,6 +49,7 @@ def main(  # noqa: D417
     dtype: str | torch.dtype = "float16",
     ema: bool = False,
     compile: bool = False,
+    quantized_training: bool = False,
     seed: int | None = None,
     builder: type[BaseBuilder] = BaseBuilder,
     spec_model_dataloader_kwargs: dict[str, Any] = {},
@@ -195,6 +196,17 @@ def main(  # noqa: D417
             **{**class_spec_data, **model_builder_kwargs},
         )
         validate_type(nn_model, torch.nn.Module)
+        if quantized_training or getattr(nn_model, "_quantized_training_recipe", None):
+            from mini_trainer.modeling.quantized_training import prepare_quantized_training
+
+            if device.type != "cuda":
+                raise ValueError("Quantized training requires a CUDA device.")
+            if ddp_info and ddp_info.get("world_size", 1) > 1:
+                raise NotImplementedError("Distributed INT8 training is not validated yet.")
+            if ema:
+                raise ValueError("EMA is not supported for quantized training.")
+            coverage = prepare_quantized_training(nn_model)
+            log.info(f"INT8 training coverage: {coverage}")
         log.info(f"Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`")
 
     # Resolve input size if not explicitly set
@@ -256,6 +268,8 @@ def main(  # noqa: D417
         else:
             checkpoint_data = average_checkpoints(checkpoint_files, map_location=device, weights_only=False)
         assert checkpoint_data is not None
+        if "_quantized_training" in checkpoint_data["model"] and not getattr(nn_model, "_quantized_training_recipe", None):
+            raise ValueError("Resume an INT8 training checkpoint with --quantized-training enabled.")
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])
@@ -535,7 +549,20 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         'Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet).\n'
         "Mainly relevant for inefficiently stored training data or slow filesystems.",
     )
+    cfg_args.add_argument(
+        "--cache-workers",
+        type=int,
+        default=None,
+        dest="dataloader_builder_kwargs.cache_workers",
+        help="Cache construction reader threads; 0 is synchronous, automatic selection is capped at 16.",
+    )
     cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda").')
+    cfg_args.add_argument(
+        "--quantized-training",
+        action="store_true",
+        dest="quantized_training",
+        help="Opt into CUDA INT8 linear training; reports remaining floating-point operations.",
+    )
     cfg_args.add_argument(
         "--compile",
         action="store_true",

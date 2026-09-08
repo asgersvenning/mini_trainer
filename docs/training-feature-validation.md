@@ -9,8 +9,9 @@ nonfunctional and excluded from these experiments; repair is deferred.
 The priority is now QT that lowers training memory and increases speed, together
 with faster data loading for floating-point and quantized workloads. PTQ/QAT do
 not satisfy that objective. See the [QT and loader probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance);
-optimizer integration, checkpoint/resume, convergence and end-to-end measurement
-remain requirements, not optional follow-ups.
+an initial [model/trainer integration](quantized-training.md) is available, while
+broader optimizer/resume coverage, convergence and end-to-end measurement remain
+requirements, not optional follow-ups.
 
 The initial [INT8 PTQ/QAT Python backend](quantization.md) is implemented on the
 `quant` branch. Its CPU tests establish a training-to-integer-inference path;
