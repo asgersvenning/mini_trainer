@@ -205,7 +205,7 @@ def main(  # noqa: D417
                 raise NotImplementedError("Distributed INT8 training is not validated yet.")
             if ema:
                 raise ValueError("EMA is not supported for quantized training.")
-            coverage = prepare_quantized_training(nn_model)
+            coverage = getattr(nn_model, "_quantized_training_recipe", None) or prepare_quantized_training(nn_model)
             log.info(f"INT8 training coverage: {coverage}")
         log.info(f"Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`")
 

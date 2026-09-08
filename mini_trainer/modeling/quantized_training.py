@@ -133,7 +133,10 @@ def restore_quantized_training(model: nn.Module, state_dict: dict) -> None:
             if not isinstance(recipe, dict) or recipe.get("schema_version") != 1 or recipe.get("backend") != "cuda-int8-linear":
                 raise ValueError("Unsupported quantized training checkpoint recipe.")
             target = model if key == "_quantized_training" else model.get_submodule(key.removesuffix("._quantized_training"))
-            prepare_quantized_training(target, module_names=recipe["quantized_modules"])
+            restored = prepare_quantized_training(target, module_names=recipe["quantized_modules"])
+            # Explicit restoration selects only recorded weights, so keep the
+            # original reasons why other modules were not selected.
+            restored["skipped_modules"] = dict(recipe.get("skipped_modules", {}))
 
 
 def load_training_weights(path, *, map_location="cpu"):

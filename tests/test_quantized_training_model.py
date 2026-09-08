@@ -217,3 +217,13 @@ def test_quantized_class_similarity_uses_represented_values():
         actual = _class_similarity(model.weight)
         expected = _class_similarity(model.weight.dequantize())
     torch.testing.assert_close(actual, expected)
+
+
+def test_restoration_preserves_skipped_operation_reasons():
+    original = nn.ModuleDict({"conv": nn.Conv2d(3, 4, 1), "linear": nn.Linear(4, 2)})
+    prepare_quantized_training(original)
+    state = original.state_dict()
+    restored = nn.ModuleDict({"conv": nn.Conv2d(3, 4, 1), "linear": nn.Linear(4, 2)})
+    restore_quantized_training(restored, state)
+    restored.load_state_dict(state)
+    assert restored._quantized_training_recipe["skipped_modules"] == original._quantized_training_recipe["skipped_modules"]
