@@ -17,6 +17,9 @@ bash dev/check-wheel.sh
 The script resolves the repository relative to itself, so it also works when invoked
 by absolute path from another directory. With no arguments it runs static checks.
 `static` checks lint, formatting, and the dependency contracts in `pyproject.toml`.
+Formatting failures include the proposed diff; apply it with
+`.venv/bin/python -m ruff format mini_trainer tests dev`, then rerun static checks.
+CI uses the locked formatter; local checks use the installed version without syncing.
 It does not import training code. `test` passes remaining arguments to pytest;
 `all` runs static checks first and stops if they fail.
 
