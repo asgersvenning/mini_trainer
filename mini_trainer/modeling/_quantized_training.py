@@ -14,9 +14,14 @@ from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
 from ._quantized_update import update_int8_rows_
 
 # Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
-# graph key. Include the backend implementation so changing backward math cannot
-# reuse a graph compiled for an earlier version. Compute once when importing.
-_IMPLEMENTATION_HASH = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+# graph key. Include the backend and kernel implementations so changing hidden
+# backward math or operator decomposition cannot reuse an earlier graph.
+# Compute once when importing.
+_IMPLEMENTATION_HASH = hashlib.sha256(
+    b"".join(
+        Path(__file__).with_name(name).read_bytes() for name in ("_quantized_training.py", "_quantized_matmul.py", "_quantized_update.py")
+    )
+).hexdigest()
 
 
 class TrainingWeight(Int8QuantizedTrainingLinearWeight):

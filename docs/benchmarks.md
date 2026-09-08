@@ -333,3 +333,33 @@ retained the same held-out labels and paths. Independent shuffled-loader tests
 require exact batches and identical CPU RNG consumption over multiple epochs.
 The accuracy variation means these single-seed observations do not establish
 quality parity; multi-seed convergence and broader workload validation remain open.
+
+### Graph-visible matmul experiment (not retained)
+
+An experimental replacement of the opaque INT8 matrix operator with
+`torch.library.triton_op` made its launch visible inside compiled graphs. A
+profiler regression confirmed that Python custom-operator dispatch disappeared,
+and 53 CUDA numerical/model regressions passed. Graph capture initially lost the
+upstream kernel's default `GROUP_M` argument; passing it explicitly fixed that
+compilation error. These results were insufficient to establish a usable change.
+
+The batch-128, 15-epoch dense MNIST control ran from an isolated copy of commit
+`2bcc32f`, preserving the direct loader and all training settings. It reached
+92.16% accuracy with a 0.221-second median later training epoch and 12.33-second
+training call. The graph-visible experiment initially measured 0.211 seconds per
+later epoch, but required 78.44 seconds overall. With the final experiment source
+hash `335c9dd82b854dd199f7d838b5595a312d46a6b57580e86dff2835b378e7474b`,
+two runs produced 76.18% and 62.82% accuracy; their training-call times were
+75.39 and 11.32 seconds, and later-epoch medians 0.209 and 0.166 seconds. All
+retained the same 182.97 MiB whole-run allocation peak.
+
+The cached speed result cannot justify the quality degradation, and the numerical
+tests did not identify its cause. The graph-visible path was therefore removed;
+the opaque operator remains in use. This is an unresolved experimental result,
+not evidence that the operator API itself is incorrect.
+
+One necessary safeguard is retained: the training tensor's compiler fingerprint
+now includes the matrix and update kernel source files as well as the backend
+file. The previous fingerprint could allow an old opaque graph to hide a changed
+operator implementation during validation. First-use compilation must be measured
+again after any of these source files change.
