@@ -119,3 +119,19 @@ headless fix allowed the successful rerun above. Reports now preserve skipped
 operation reasons across reload. These local artifacts remain outside the checkout;
 the shared workflow retains future reports, predictions and logs in Actions.
 See [the reproduction commands](../dev/benchmarks/README.md#integrated-qt-dataset-profiles).
+
+
+With row-wise weight normalization supported, a further matched Blair pair uses
+no hidden layer and quantizes the normalized classifier direction directly:
+
+| Blair path, hidden size 0 | Held-out accuracy | Parameter bytes | Peak CUDA MiB | Training wall seconds |
+| --- | --- | ---: | ---: | ---: |
+| Float | 64.25% species / 80.45% parent | 75,848 | 64.34 | 11.65 |
+| INT8 normalized direction | 62.62% species / 76.14% parent | 37,548 | 32.25 | 25.32 |
+
+The environment, seed, five-epoch budget, batch size and CPU cache settings match
+the preceding comparisons. Dataset manifest hashes agree between the two runs.
+Convolutions still remain floating point. This establishes real hierarchical
+training and restored-checkpoint inference with normalized integer weights, with
+roughly half the parameter storage. Accuracy is lower in this single run and QT
+is slower; neither convergence parity nor a throughput improvement is established.

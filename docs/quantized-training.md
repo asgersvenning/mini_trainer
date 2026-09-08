@@ -3,7 +3,7 @@
 The opt-in training path stores eligible Linear weights and saved linear inputs
 in INT8 and uses integer matrix products for forward, input gradients and weight
 gradients. It retains no floating-point master copy of those weights. Gradients,
-optimizer state, biases, normalization, convolutions and auxiliary regularization
+optimizer state, biases, activation normalization, convolutions and auxiliary regularization
 remain floating point. This is separate from fake-quantized QAT and x86 PTQ.
 
 Install the optional `quantization` extra while explicitly retaining the intended
@@ -35,8 +35,13 @@ The returned recipe lists quantized modules, skipped operations, remaining
 floating-point parameters and physical versus reference weight storage. Automatic
 selection covers ordinary `nn.Linear` modules, including their functional use by
 Classifier heads. It preserves shared weights when every owner is selected.
-Parametrized weights (including normalized heads) and weights shared with an
-unselected operation stay floating point and are reported. Explicit unsupported
+Row-wise PyTorch weight normalization (`dim=0`) quantizes the direction parameter
+while retaining its scalar magnitude per output row in floating point. Effective
+normalized weights reuse the integer codes with new row scales; normalization
+backward applies its Jacobian to the approximate Linear gradient. No floating
+weight matrix is retained for this operation. Other parametrizations, normalization
+dimensions and weights shared with an unselected operation stay floating point
+and are reported. Explicit unsupported
 selections and models with no eligible weights fail before changing weights.
 Quantizing the hidden linear layer of a convolutional classifier does not make
 its convolutions integer operations.
@@ -71,8 +76,8 @@ model.load_state_dict(state)
 Use the same architecture and intended dtype. This restores model state; create
 and restore optimizer/scheduler/scaler state in their normal order separately.
 The same model supports CUDA inference with `eval()` and `inference_mode()`.
-ONNX export, checkpoint averaging, DDP/FSDP, quantized normalization and integer
-convolution training are not established for this path. Distributed training and
+ONNX export, checkpoint averaging, DDP/FSDP, quantized activation normalization
+and integer convolution training are not established for this path. Distributed training and
 EMA are rejected by the training entry point.
 
 ## Evidence and remaining work
@@ -96,3 +101,12 @@ SGD probe: 15.61 ms/step and 319,063,552 peak allocated bytes for INT8, versus
 1.93x faster and 17% lower peak memory for that workload, with nonzero gradients
 checked before timing. They remain kernel-probe evidence, not a claim about
 MNIST, Blair or typical convolutional models.
+
+
+Row-wise normalization is checked against PyTorch's represented-value forward
+and backward results, including signed scales and zero magnitudes. Tests inspect
+saved tensors to exclude a retained floating direction matrix, and exercise
+checkpoint restoration, eager/compiled CUDA training and masked inference.
+Initial zero direction rows are rejected before preparation mutates any weights;
+normalization is undefined for these rows. The mathematical contract follows
+[PyTorch weight normalization](https://docs.pytorch.org/docs/2.12/generated/torch.nn.utils.parametrizations.weight_norm.html).

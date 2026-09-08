@@ -1,6 +1,6 @@
-"""Opt-in CUDA INT8 weight/activation training for ordinary linear modules.
+"""Opt-in CUDA INT8 weight/activation training for linear modules.
 
-Prepare before constructing an optimizer. Biases, normalization, convolutions,
+Prepare before constructing an optimizer. Biases, activation normalization, convolutions,
 and unselected weights remain floating point and are reported explicitly.
 """
 
@@ -30,8 +30,9 @@ def prepare_quantized_training(model: nn.Module, *, module_names=None) -> dict:
     No floating master weights are retained. Recreate optimizers after this call.
     CPU preparation supports checkpoint inspection; execution requires CUDA.
     Explicitly selected unsupported modules raise instead of silently skipping.
-    Parametrized weights and weights shared with unselected operations remain
-    floating point until their quantized training contracts are implemented.
+    Row-wise weight normalization retains a floating magnitude and quantizes its
+    direction. Other parametrizations and weights shared with unselected
+    operations remain floating point.
     """
     backend = _backend()
     modules = dict(model.named_modules(remove_duplicate=False))
@@ -43,27 +44,36 @@ def prepare_quantized_training(model: nn.Module, *, module_names=None) -> dict:
         if requested is not None and name not in requested:
             continue
         reason = None
+        owner, attribute = module, "weight"
         if not isinstance(module, nn.Linear):
             if requested is not None or isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
                 reason = "integer training is currently implemented for Linear"
             else:
                 continue
         elif nn.utils.parametrize.is_parametrized(module, "weight"):
-            reason = "parametrized weights require a separate quantized gradient contract"
-        elif not isinstance(module.weight, nn.Parameter) or module.weight.numel() == 0:
+            parametrizations = module.parametrizations.weight
+            if (
+                len(parametrizations) == 1
+                and type(parametrizations[0]) is nn.utils.parametrizations._WeightNorm
+                and parametrizations[0].dim == 0
+            ):
+                owner, attribute = parametrizations, "original1"
+            else:
+                reason = "only row-wise weight normalization is supported among parametrized weights"
+        if reason is None and (not isinstance(getattr(owner, attribute), nn.Parameter) or getattr(owner, attribute).numel() == 0):
             reason = "requires a nonempty weight Parameter"
-        elif module.weight.dtype not in (torch.float16, torch.bfloat16, torch.float32):
+        elif reason is None and getattr(owner, attribute).dtype not in (torch.float16, torch.bfloat16, torch.float32):
             reason = "requires float16, bfloat16 or float32 compute metadata"
         if reason:
             skipped[name] = reason
         else:
-            candidates[name] = (module, module.weight)
-    selected_owners = {(id(module), "weight") for module, _ in candidates.values()}
+            candidates[name] = (owner, attribute, getattr(owner, attribute))
+    selected_owners = {(id(owner), attribute) for owner, attribute, _ in candidates.values()}
     owners = {}
     for module in modules.values():
         for name, parameter in module.named_parameters(recurse=False):
             owners.setdefault(id(parameter), set()).add((id(module), name))
-    for name, (_, parameter) in list(candidates.items()):
+    for name, (_, _, parameter) in list(candidates.items()):
         if owners[id(parameter)] - selected_owners:
             skipped[name] = "weight is shared with an unselected operation"
             del candidates[name]
@@ -72,19 +82,22 @@ def prepare_quantized_training(model: nn.Module, *, module_names=None) -> dict:
     if not candidates:
         raise ValueError(f"No eligible Linear weights for quantized training. Unsupported modules: {skipped}")
     # Validate before mutating the caller's model.
-    for _, parameter in candidates.values():
+    for owner, attribute, parameter in candidates.values():
         values = parameter.dequantize() if isinstance(parameter, backend.TrainingWeight) else parameter
         if not torch.isfinite(values).all():
             raise ValueError("Quantized training requires finite initial weights.")
+        if attribute == "original1":
+            if not torch.isfinite(owner.original0).all() or (values.float().norm(dim=1) == 0).any():
+                raise ValueError("Quantized weight normalization requires finite magnitudes and nonzero directions.")
     replacements = {}
-    for module, parameter in candidates.values():
+    for owner, attribute, parameter in candidates.values():
         if id(parameter) not in replacements:
             replacements[id(parameter)] = (
                 parameter
                 if isinstance(parameter, backend.TrainingWeight)
                 else nn.Parameter(backend.TrainingWeight.from_float(parameter), requires_grad=parameter.requires_grad)
             )
-        module.weight = replacements[id(parameter)]
+        setattr(owner, attribute, replacements[id(parameter)])
     for module in modules.values():
         invalidate = getattr(module, "_on_quantized_training_prepared", None)
         if invalidate is not None:

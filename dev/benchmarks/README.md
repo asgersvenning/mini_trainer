@@ -199,7 +199,7 @@ state. Use `--dtype float32 --epsilon 1e-8` to test ordinary float32 optimizer
 state. This changes the experimental recipe, not the training CLI defaults.
 CUDA regression tests exercise ordinary `nn.Linear` dispatch with non-square
 weights, bias, batched inputs and masked classifier rows. Model tests also cover
-MuonAuxAdamW and controlled `mt_train` resume. Weight normalization, convolutional
+MuonAuxAdamW and controlled `mt_train` resume. Row-wise weight normalization is now covered separately. Convolutional
 QT, DDP and arbitrary stochastic continuation remain unverified.
 
 The original FP16 backward scale products could underflow before quantization,
@@ -297,8 +297,8 @@ CUDA_VISIBLE_DEVICES=0 TORCHINDUCTOR_COMPILE_THREADS=1 \
 The first command pairs floating and INT8 synthetic training. The second pairs
 MNIST and hierarchical Blair, using a reviewed existing Blair class specification.
 Both use FP16 AMP, CPU caching and zero cache/loader workers; Blair uses hidden
-size 64 in both paths to exercise an eligible Linear while normalized heads remain
-floating point. The runner exposes `--hidden`, `--batch-size`, `--compile` and
+size 64 in both paths to exercise both a hidden Linear and its normalized head. Earlier recorded
+profiles quantized only the hidden layer; inspect each report for actual coverage. The runner exposes `--hidden`, `--batch-size`, `--compile` and
 `--cache-workers` for explicit additional profiles. Defaults remain unchanged.
 `--cache RAM` is retained as an alias for `CPU`.
 

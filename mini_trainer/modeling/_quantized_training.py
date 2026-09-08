@@ -176,3 +176,37 @@ class _Dequantize(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gradient):
         return gradient
+
+
+@TrainingWeight.implements_torch_function(torch._weight_norm)
+def weight_norm(func, types, args, kwargs):
+    direction = args[0] if args else kwargs["v"]
+    magnitude = args[1] if len(args) > 1 else kwargs["g"]
+    dimension = args[2] if len(args) > 2 else kwargs.get("dim", 0)
+    if dimension != 0:
+        raise ValueError("INT8 weight normalization supports Linear output rows (dim=0) only.")
+    return _WeightNorm.apply(direction, magnitude)
+
+
+class _WeightNorm(torch.autograd.Function):
+    """Normalize represented directions without retaining floating weight matrices.
+
+    w = g * v / ||v||. The codes are unchanged; only their row scales change.
+    Backward applies the ordinary normalization Jacobian to the approximate dW
+    supplied by IntegerLinear. Float intermediates are transient, never masters.
+    """
+
+    @staticmethod
+    def forward(ctx, direction, magnitude):
+        codes, scales = direction.int_data, direction.scale
+        norm = torch.linalg.vector_norm(codes.float(), dim=1)
+        ctx.save_for_backward(codes, scales, magnitude, norm)
+        return TrainingWeight(codes, (scales.sign() * magnitude.flatten().float() / norm).to(scales.dtype))
+
+    @staticmethod
+    def backward(ctx, gradient):
+        codes, scales, magnitude, norm = ctx.saved_tensors
+        unit = codes.float() * (scales.sign() / norm).unsqueeze(1)
+        projection = (gradient.float() * unit).sum(dim=1, keepdim=True)
+        direction_gradient = (gradient.float() - projection * unit) * (magnitude.float() / (scales.float().abs() * norm).unsqueeze(1))
+        return direction_gradient.to(scales.dtype), projection.to(magnitude.dtype)
