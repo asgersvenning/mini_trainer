@@ -340,14 +340,40 @@ def _infer_numeric_dtype(seq) -> Any:
     return object
 
 
+class _DirectBatchIndices(list):
+    """Index list for the repository collator, which accepts stacked tensors."""
+
+
 class _FetchedBatch(list):
     """Sample views for standard collators, with the already-stacked batch attached."""
 
-    def __init__(self, data):
+    def __init__(self, data, *, sample_views=True):
         self.data = data
-        # unbind produces views, not sample copies. An actual list preserves
-        # torch.stack compatibility in external DataLoaders' default collators.
-        super().__init__(data.unbind(0) if isinstance(data, torch.Tensor) else zip(*(value.unbind(0) for value in data)))
+        self._sample_views = False
+        super().__init__()
+        if sample_views:
+            self._materialize()
+
+    def _materialize(self):
+        if not self._sample_views:
+            data = self.data
+            super().extend(data.unbind(0) if isinstance(data, torch.Tensor) else zip(*(value.unbind(0) for value in data)))
+            self._sample_views = True
+
+    def __getitem__(self, index):
+        # An external default collator starts with batch[0]. Materialize here
+        # if it reuses our tagged batch sampler with a different collator.
+        self._materialize()
+        return super().__getitem__(index)
+
+    def __iter__(self):
+        self._materialize()
+        return super().__iter__()
+
+    def __len__(self):
+        if self._sample_views:
+            return super().__len__()
+        return len(self.data) if isinstance(self.data, torch.Tensor) else len(self.data[0])
 
 
 class LazyDataset(torch.utils.data.Dataset):
@@ -360,6 +386,8 @@ class LazyDataset(torch.utils.data.Dataset):
         * "cuda" : Cache in VRAM as CUDA tensor.
         * "guess" : Select a caching strategy via heuristic.
     """
+
+    _supports_direct_batches = True
 
     def __init__(  # noqa: D107
         self,
@@ -523,8 +551,13 @@ class LazyDataset(torch.utils.data.Dataset):
                 )
             else:
                 data = tuple(tensor.index_select(0, index) for tensor in tensors)
-            return _FetchedBatch(data[0] if self._ram_was_single_tensor else data)
-        return _FetchedBatch(self[indices])
+            data = data[0] if self._ram_was_single_tensor else data
+        else:
+            data = self[indices]
+        # Ordinary external batched fetches still return actual sample lists,
+        # including direct torch.stack compatibility. Our sampler marks only
+        # batches whose collator can consume the stacked storage directly.
+        return _FetchedBatch(data, sample_views=not isinstance(indices, _DirectBatchIndices))
 
     def __getitem__(self, index):
         match self._cache_mode:

@@ -379,3 +379,70 @@ def test_pinned_cache_gather_never_pins_inside_worker(monkeypatch):
     result = data_loader._collate_batch(dataset.__getitems__([2, 0]))
     assert not result.is_pinned()
     assert result.tolist() == [2, 0]
+
+
+def test_cached_repository_loader_does_not_unpack_sample_views():
+    from torch.utils._python_dispatch import TorchDispatchMode
+
+    images = torch.arange(96).reshape(8, 3, 2, 2)
+    dataset = data_io.LazyDataset(lambda item: (images[item[0]], torch.tensor(item[0])), (list(range(8)),), cache="cpu", cache_workers=0)
+    loader = data_loader.get_dataloader(dataset, "val", 4, 0, False, torch.device("cpu"))
+    unpacked = []
+
+    class ObserveUnpacking(TorchDispatchMode):
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            if func in (torch.ops.aten.unbind.int, torch.ops.aten.select.int):
+                unpacked.append(func)
+            return func(*args, **(kwargs or {}))
+
+    with ObserveUnpacking():
+        actual = list(loader)
+    assert not unpacked
+    assert loader.dataset is dataset
+    torch.testing.assert_close(torch.cat([batch[0] for batch in actual]), images)
+    assert torch.cat([batch[1] for batch in actual]).tolist() == list(range(8))
+
+
+def test_direct_batches_preserve_shuffled_sampling_and_rng():
+    dataset = data_io.LazyDataset(lambda item: torch.tensor(item[0]), (list(range(19)),), cache="cpu", cache_workers=0)
+    optimized = data_loader.get_dataloader(dataset, "train", 4, 0, False, torch.device("cpu"))
+    reference = torch.utils.data.DataLoader(
+        dataset, batch_sampler=torch.utils.data.BatchSampler(RandomSampler(dataset), batch_size=4, drop_last=True)
+    )
+    torch.manual_seed(31)
+    for _ in range(3):
+        rng = torch.get_rng_state()
+        expected = list(reference)
+        expected_rng = torch.get_rng_state()
+        torch.set_rng_state(rng)
+        actual = list(optimized)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        assert torch.equal(torch.get_rng_state(), expected_rng)
+
+
+@pytest.mark.parametrize("cache", ["none", "cpu"])
+@pytest.mark.parametrize("workers", [0, 1])
+@pytest.mark.parametrize("labels", [False, True])
+def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, workers, labels):
+    if labels:
+        datasets, loaders = get_dataset_dataloader(
+            metadata, resize_size=4, modes=("val",), cache=cache, cache_workers=0, batch_size=2, num_workers=0
+        )
+        dataset, optimized = datasets[0], loaders[0]
+    else:
+        dataset, optimized = get_inference_dataloader(
+            metadata["path"], resize_size=4, cache=cache, cache_workers=0, batch_size=2, num_workers=0
+        )
+    external = torch.utils.data.DataLoader(
+        dataset,
+        batch_sampler=optimized.batch_sampler,
+        num_workers=workers,
+        multiprocessing_context="spawn" if workers else None,
+    )
+    for expected, actual in zip(optimized, external, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    if not labels:
+        # Ordinary direct batched fetches remain real Tensor lists, including
+        # torch.stack's C-level sequence handling (which bypasses list methods).
+        direct = dataset.__getitems__([4, 1, 1])
+        torch.testing.assert_close(torch.stack(direct), dataset[[4, 1, 1]])

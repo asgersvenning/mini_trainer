@@ -293,3 +293,43 @@ Different stochastic rounding trajectories and accumulation over training requir
 further investigation. Neither this single seed nor compilation success establishes
 model-quality parity or completion of the QT goal. Wall times still include
 first-use compilation and depend on cache state.
+
+### Larger batches and direct collation
+
+The dense MNIST profile was also evaluated at batch size 512 for 60 epochs,
+using the same data split, seed 42, model, SGD learning rate and model/optimizer
+compilation. This is a separate workload, not a replacement for the unfavorable
+batch-128 results. Before the loader change, the float/INT8 pair reached
+93.06%/92.84% accuracy, with median later training epochs of 0.0809/0.0756 seconds
+and whole-run peaks of 254.26/190.86 MiB. Initial wall times were 33.00/48.02 seconds,
+including INT8 first-use compilation and tuning.
+
+A warmed-up epoch trace showed the cached loader creating per-sample views of
+already-stacked tensors before the repository collator returned those same batch
+tensors. Direct collation removes this work. In the separate one-thread cache
+probe (4,096 RGB uint8 28×28 images, batch 128, seven trials), cached iteration
+increased from 520,193 to 2,219,771 samples/s; the scalar-fetch control measured
+281,768 and 293,087 samples/s respectively. These are loader-only measurements.
+
+The integrated pair with direct collation and an unchanged INT8 repeat produced:
+
+| Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–60 | Training wall s |
+| --- | ---: | ---: | ---: | ---: |
+| Float | 93.06% | 254.26 | 0.0802 | 30.61 |
+| INT8 | 93.00% | 184.32 | 0.0711 | 27.13 |
+| INT8, unchanged repeat | 92.54% | 184.32 | 0.0684 | 26.02 |
+
+These runs share source hash
+`60773b54432fcbe6a9f8f5ee6b9f40186d1a4d2b3d33760136a5187205ef6a13`
+and the same dataset manifest. They provide evidence of lower whole-run memory
+and faster training for this workload, including total wall time with previously
+populated compiler/tuner caches. They do not establish a cold-start advantage or
+a speedup for other batch sizes, architectures or hardware.
+
+Float predictions matched the pre-loader-change run exactly. INT8 predictions
+varied both across the loader change and between two runs of identical code and
+seed; these CUDA profiles explicitly allow nondeterministic execution. All runs
+retained the same held-out labels and paths. Independent shuffled-loader tests
+require exact batches and identical CPU RNG consumption over multiple epochs.
+The accuracy variation means these single-seed observations do not establish
+quality parity; multi-seed convergence and broader workload validation remain open.

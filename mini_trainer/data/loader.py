@@ -13,6 +13,7 @@ from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
     LazyDataset,
+    _DirectBatchIndices,
     _FetchedBatch,
     guess_cache_mode,
     make_read_and_resize_fn,
@@ -69,6 +70,14 @@ class HookedReader:
         return self.hook(self.reader(x))
 
 
+class _DirectBatchSampler(BatchSampler):
+    """Retain normal sampling while requesting stacked batches from LazyDataset."""
+
+    def __iter__(self):
+        for indices in super().__iter__():
+            yield _DirectBatchIndices(indices)
+
+
 def _collate_batch(samples):
     if isinstance(samples, _FetchedBatch):
         # Match default_collate's tuple-to-list convention for (image, label).
@@ -105,7 +114,8 @@ def get_dataloader(  # noqa: D103
     if num_workers > 0 and multiprocessing_context is not None:
         mp_context = multiprocessing_context
 
-    sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
+    sampler_cls = _DirectBatchSampler if getattr(dataset, "_supports_direct_batches", False) else BatchSampler
+    sampler = sampler_cls(base_sampler, batch_size=batch_size, drop_last=drop_last)
 
     loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
     transfer_kwargs = {"device": device} if cuda_prefetch else {}

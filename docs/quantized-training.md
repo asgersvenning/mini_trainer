@@ -76,7 +76,10 @@ implementations for model compilation.
 learning-rate updates. The formerly failing twelve-group SGD regression passes,
 as does twelve-group AdamW, with hard failure enabled on compiler-cache fallback.
 This establishes compilation compatibility, not a performance recommendation:
-the current dense MNIST comparison is slower and less accurate with QT than float.
+the batch-128 dense MNIST comparison is slower and less accurate with QT than float.
+The [larger-batch profile](benchmarks.md#larger-batches-and-direct-collation) shows
+lower memory and faster training after compiler caches are populated, but still
+needs multi-seed quality validation.
 Compiled stochastic requantization can follow a different random trajectory from
 the eager row kernel, so a matching seed does not establish identical training.
 The earlier storage prototype's fake-tensor and dtype-cache failures are resolved

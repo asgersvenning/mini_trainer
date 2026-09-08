@@ -193,6 +193,25 @@ Worker processes always use the ordinary gather path and DataLoader's parent-sid
 pinning; this option never initializes the CUDA pin allocator in a worker. CPU
 training, CUDA-cached datasets and scalar indexing keep their existing behavior.
 
+### Direct collation of stacked batches
+
+Repository loaders now retain the gathered batch tensors through collation,
+avoiding creation of one image/label view per sample. Their batch sampler tags
+index lists for this internal path; dataset identity, shuffle/drop-last behavior,
+distributed sampler access and RNG consumption are preserved.
+
+Ordinary external `LazyDataset.__getitems__` calls still return actual sample
+lists, including direct `torch.stack` compatibility. An external DataLoader that
+reuses the repository batch sampler with its default collator materializes sample
+views on demand. Tests cover image-only and image/label batches with both direct
+loading and CPU caches, including spawned workers and CUDA prefetch.
+
+A one-thread cache benchmark with 4,096 uint8 RGB 28×28 images, batch size 128,
+and seven alternating trials measured approximately 0.52 million samples/s before
+this change and 2.22 million afterward. This isolates cached iteration; larger
+images, decoding, transfer and model compute change the overall benefit. See the
+[integrated measurements](../docs/benchmarks.md#larger-batches-and-direct-collation).
+
 ### Optimizer compilation
 
 `mt_train --compile-optimizer` opts into compiling optimizer updates independently
