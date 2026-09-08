@@ -177,3 +177,18 @@ See [PyTorch stream semantics](https://docs.pytorch.org/docs/main/notes/cuda.htm
 This is an opt-in throughput/memory tradeoff. Actual gains depend on the balance
 between transfer and compute; compare peak allocation as well as wall time using
 [the transfer probe](benchmarks/README.md#cuda-transfer-overlap).
+
+### Direct pinned cache batches
+
+For a CUDA target with `cache="CPU"` and `num_workers=0`, the shared training
+loader now gathers cached rows directly into pinned batch storage. This removes
+the intermediate pageable batch and its second copy during pinning. Batches own
+their storage: modifying one cannot change the cache, and keeping an older batch
+cannot cause it to be overwritten by a later iteration. Sampling, label order,
+shape and dtype are unchanged.
+
+This applies automatically with either ordinary transfer or `--cuda-prefetch`.
+Raw `LazyDataset` users can request `pin_batches=True` for the same behavior.
+Worker processes always use the ordinary gather path and DataLoader's parent-side
+pinning; this option never initializes the CUDA pin allocator in a worker. CPU
+training, CUDA-cached datasets and scalar indexing keep their existing behavior.

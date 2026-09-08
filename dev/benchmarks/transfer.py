@@ -19,9 +19,22 @@ def run(samples=512, size=224, batch_size=32, repeats=5, backward=False, dtype="
     device = torch.device("cuda:0")
     images = torch.randint(0, 256, (samples, 3, size, size), dtype=torch.uint8)
     dataset = LazyDataset(lambda item: images[item[0]], (list(range(samples)),), cache="cpu", cache_workers=0)
+    direct = LazyDataset(
+        lambda item: images[item[0]],
+        (list(range(samples)),),
+        cache="cpu",
+        cache_workers=0,
+        pin_batches=True,
+    )
+    variants = {
+        "same_stream": (dataset, False),
+        "prefetch": (dataset, True),
+        "pinned_gather": (direct, False),
+        "pinned_gather_prefetch": (direct, True),
+    }
     loaders = {
-        name: get_dataloader(dataset, "val", batch_size, 0, True, device, cuda_prefetch=prefetch)
-        for name, prefetch in (("same_stream", False), ("prefetch", True))
+        name: get_dataloader(data, "val", batch_size, 0, True, device, cuda_prefetch=prefetch)
+        for name, (data, prefetch) in variants.items()
     }
     model = resnet18(weights=None).eval().to(device)
     precision = getattr(torch, dtype)
@@ -72,6 +85,7 @@ def run(samples=512, size=224, batch_size=32, repeats=5, backward=False, dtype="
         "peak_cuda_allocated_bytes": peaks,
         "median_samples_per_second": {name: samples / statistics.median(values) for name, values in timings.items()},
         "speedup": statistics.median(timings["same_stream"]) / statistics.median(timings["prefetch"]),
+        "speedups": {name: statistics.median(timings["same_stream"]) / statistics.median(values) for name, values in timings.items()},
     }
 
 

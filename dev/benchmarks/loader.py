@@ -25,7 +25,7 @@ class ScalarFetch(Dataset):
         return self.dataset[index]
 
 
-def run(samples=2048, size=64, batch_size=64, repeats=5):
+def run(samples=2048, size=64, batch_size=64, repeats=5, pin_batches=False):
     generator = torch.Generator().manual_seed(42)
     images = torch.randint(0, 256, (samples, 3, size, size), dtype=torch.uint8, generator=generator)
     dataset = LazyDataset(lambda item: (images[item[0]], torch.tensor(item[0])), (list(range(samples)),), cache="cpu")
@@ -33,7 +33,22 @@ def run(samples=2048, size=64, batch_size=64, repeats=5):
         "scalar": DataLoader(ScalarFetch(dataset), batch_size=batch_size, num_workers=0),
         "batched": get_dataloader(dataset, "val", batch_size, 0, False, torch.device("cpu")),
     }
-    for expected, actual in zip(loaders["scalar"], loaders["batched"], strict=True):
+    if pin_batches:
+        if not torch.cuda.is_available():
+            raise RuntimeError("Pinned batch comparison requires an accessible CUDA device.")
+        direct = LazyDataset(
+            lambda item: (images[item[0]], torch.tensor(item[0])),
+            (list(range(samples)),),
+            cache="cpu",
+            cache_workers=0,
+            pin_batches=True,
+        )
+        loaders = {
+            "gather_then_pin": get_dataloader(dataset, "val", batch_size, 0, True, torch.device("cuda:0")),
+            "pinned_gather": get_dataloader(direct, "val", batch_size, 0, True, torch.device("cuda:0")),
+        }
+    baseline, candidate = list(loaders)
+    for expected, actual in zip(loaders[baseline], loaders[candidate], strict=True):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
     timings = {name: [] for name in loaders}
     for trial in range(repeats + 1):
@@ -53,10 +68,11 @@ def run(samples=2048, size=64, batch_size=64, repeats=5):
         "workers": 0,
         "threads": torch.get_num_threads(),
         "identical_batches": True,
+        "pin_batches": pin_batches,
         "scope": "cached CPU loader iteration; excludes cache construction, preprocessing, H2D and model compute",
         "seconds": timings,
         "median_samples_per_second": {name: samples / statistics.median(values) for name, values in timings.items()},
-        "speedup": statistics.median(timings["scalar"]) / statistics.median(timings["batched"]),
+        "speedup": statistics.median(timings[baseline]) / statistics.median(timings[candidate]),
     }
 
 
@@ -66,8 +82,9 @@ def main():
     parser.add_argument("--size", type=int, default=64)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--pin-batches", action="store_true")
     args = parser.parse_args()
-    if min(vars(args).values()) < 1:
+    if min(args.samples, args.size, args.batch_size, args.repeats) < 1:
         parser.error("All sizes and repeat counts must be positive")
     torch.set_num_threads(1)
     print(json.dumps(run(**vars(args)), indent=2))

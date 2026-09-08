@@ -342,3 +342,40 @@ def test_cuda_prefetch_nested_cuda_source():
     for index, output in enumerate(outputs):
         assert output["name"] == [str(2 * index), str(2 * index + 1)]
         torch.testing.assert_close(output["value"].mean(1), output["label"].float())
+
+
+def test_pinned_cache_gather_storage_and_indices(metadata):
+    _require_prefetch_cuda()
+    datasets, loaders = get_dataset_dataloader(
+        metadata,
+        modes=("val",),
+        resize_size=4,
+        batch_size=2,
+        num_workers=0,
+        device="cuda:0",
+        cache="CPU",
+        cache_workers=0,
+    )
+    dataset = datasets[0]
+    assert dataset._pin_batches
+    fetched = dataset.__getitems__([4, 1, 1, -1])
+    images, labels = data_loader._collate_batch(fetched)
+    assert images.is_pinned() and labels.is_pinned()
+    assert images.pin_memory().data_ptr() == images.data_ptr()
+    assert labels.tolist() == [4, 1, 1, 4]
+    before = dataset[1][0].clone()
+    images[1].zero_()
+    torch.testing.assert_close(dataset[1][0], before)
+    retained = next(iter(loaders[0]))[0]
+    copied = retained.clone()
+    list(loaders[0])
+    torch.testing.assert_close(retained, copied)
+
+
+def test_pinned_cache_gather_never_pins_inside_worker(monkeypatch):
+    dataset = data_io.LazyDataset(lambda item: torch.tensor(item[0]), ([0, 1, 2],), cache="CPU", cache_workers=0, pin_batches=True)
+    monkeypatch.setattr(torch.utils.data, "get_worker_info", lambda: object())
+    # CPU-only execution also proves this branch does not need a pin allocator.
+    result = data_loader._collate_batch(dataset.__getitems__([2, 0]))
+    assert not result.is_pinned()
+    assert result.tolist() == [2, 0]

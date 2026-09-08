@@ -346,3 +346,30 @@ workload justify the additional stream and memory. The integrated INT8 synthetic
 training/checkpoint/inference profile passed its 100% oracle gate with prefetch
 and reproduced the earlier QT held-out scores bit for bit; that establishes
 compatibility, not a training speedup.
+
+### Direct pinned gathering
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.loader \
+    --pin-batches --samples 512 --size 224 --batch-size 32 --repeats 7
+```
+
+This compares gathering into pageable memory followed by pinning against gathering
+directly into pinned storage. Both return identical pinned batches; measurements
+exclude cache construction, H2D and model compute. On the RTX 3080 Ti Laptop host,
+seven alternating measured trials after warmup gave 30,983 versus 72,680 images/s
+(2.35x). This is a loader-only result, not a claim of a 2.35x training speedup.
+The shared CUDA-target CPU-cache loader enables direct pinned gathering when
+`num_workers=0`; workers retain parent-side pinning.
+
+The transfer probe now measures four variants in the same run: the former
+same-stream path, transfer prefetch, direct pinned gathering, and their combination.
+This separates the effects of eliminating a CPU copy and overlapping H2D with
+compute. Each variant still checks exact output equality against the others.
+
+In the four-way ResNet probe on the same host, float32 inference measured 2,050
+images/s for the former path, 2,063 for direct pinned gathering, and 2,107 for
+pinned gathering plus prefetch. FP16 forward/backward measured 1,040, 1,009 and
+1,028 images/s respectively. These compute-inclusive differences are small and
+include regressions despite the clear loader-only improvement. Eliminating the
+CPU copy does not establish a training speedup for compute-bound models.

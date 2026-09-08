@@ -163,21 +163,27 @@ def get_dataset_dataloader(  # noqa: D103
 
     proc_path_label = PathLabelProcessor(reader, hook, multilabel)
 
-    datasets = []
-    for mode, data in zip(modes, metadata):
-        if mode.strip().lower() == "train" and resample:
-            raise NotImplementedError("Resampling is currently not supported.")
-        dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache, cache_workers=cache_workers)
-        datasets.append(dset)
-
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
     elif num_workers is None:
         num_workers = _default_worker_count(16)
 
-    # A gather from a pinned cache allocates an unpinned result. Pin the actual
-    # CPU batch before asynchronous H2D, including for the CPU cache path.
+    datasets = []
+    for mode, data in zip(modes, metadata):
+        if mode.strip().lower() == "train" and resample:
+            raise NotImplementedError("Resampling is currently not supported.")
+        dset = LazyDataset(
+            func=proc_path_label,
+            items=(data["path"], data["class"]),
+            cache=cache,
+            cache_workers=cache_workers,
+            pin_batches=device.type == "cuda" and cache is CACHE_MODE.CPU and num_workers == 0,
+        )
+        datasets.append(dset)
+
+    # Main-process CPU cache gathers are already pinned. Decoded and worker
+    # batches are pinned by DataLoader before asynchronous H2D.
     pin_memory = device.type == "cuda" and cache is not CACHE_MODE.CUDA
     loaders = [
         get_dataloader(

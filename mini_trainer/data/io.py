@@ -368,10 +368,12 @@ class LazyDataset(torch.utils.data.Dataset):
         cache: str | int | CACHE_MODE | None = None,
         *,
         cache_workers: int | None = None,
+        pin_batches: bool = False,
     ):
         if cache_workers is not None and (isinstance(cache_workers, bool) or not isinstance(cache_workers, int) or cache_workers < 0):
             raise ValueError("cache_workers must be a nonnegative integer or None.")
         self._cache_workers = cache_workers
+        self._pin_batches = pin_batches
         self.func = func
         self.items = tuple(np.asarray(seq, dtype=_infer_numeric_dtype(seq)) if len(seq) > 0 else np.empty((0,)) for seq in items)
         if self.items and any(len(seq) != len(self.items[0]) for seq in self.items):
@@ -505,7 +507,22 @@ class LazyDataset(torch.utils.data.Dataset):
             index = torch.where(index < 0, index + len(self), index)
             # index_select copies whole rows; generic advanced indexing is much
             # slower for uint8 image batches on CPU. Results own their storage.
-            data = tuple(tensor.index_select(0, index) for tensor in tensors)
+            pin = self._pin_batches and tensors[0].device.type == "cpu" and torch.utils.data.get_worker_info() is None
+            if pin:
+                # Gather directly into the final pinned batch. DataLoader's
+                # pinning pass then returns the same allocation, without a
+                # second full image copy. Never initialize CUDA in workers.
+                data = tuple(
+                    torch.index_select(
+                        tensor,
+                        0,
+                        index,
+                        out=torch.empty((len(index), *tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device, pin_memory=True),
+                    )
+                    for tensor in tensors
+                )
+            else:
+                data = tuple(tensor.index_select(0, index) for tensor in tensors)
             return _FetchedBatch(data[0] if self._ram_was_single_tensor else data)
         return _FetchedBatch(self[indices])
 
