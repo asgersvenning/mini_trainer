@@ -114,8 +114,11 @@ under QT; throughput and convergence work remain required.
 Direct collation removes redundant per-sample views from repository loaders while
 preserving external default collation and shuffle RNG. A [larger-batch MNIST
 profile](benchmarks.md#larger-batches-and-direct-collation) now shows lower memory
-and faster training with populated compiler caches. Multi-seed quality comparisons,
-cold-start cost, and broader workloads still need validation.
+and faster training with populated compiler caches in individual runs. The first
+[three-seed comparison](benchmarks.md#continuous-multi-seed-large-batch-profile)
+confirms 26–28% lower peak memory but mixed speed results and 0.10–0.54 percentage
+points lower accuracy. Quality parity, reliable speed gains, cold-start cost, and
+broader workloads still need validation.
 
 Deliver quantization-aware training and post-training inference quantization as
 separate opt-in capabilities, recording actual weight/activation bit widths,

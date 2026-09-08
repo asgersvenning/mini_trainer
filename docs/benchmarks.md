@@ -363,3 +363,52 @@ now includes the matrix and update kernel source files as well as the backend
 file. The previous fingerprint could allow an old opaque graph to hide a changed
 operator implementation during validation. First-use compilation must be measured
 again after any of these source files change.
+
+### Continuous multi-seed large-batch profile
+
+The shared [`qt-large-batch` profile](../dev/benchmarks/README.md#multi-seed-large-batch-comparison)
+adds seeds 42, 43 and 44 to the dense MNIST batch-512, 60-epoch comparison, with
+both model and optimizer compilation. Run order alternates float/INT8 between
+seeds. The optional QT plus real-data Actions job retains all six reports and
+shows later-epoch timing alongside accuracy, peak memory and whole training-call
+time. The original small-batch comparison remains in the pipeline.
+
+Each seed controls both initialization and the training/validation split; paired
+float/INT8 runs use the same manifest. The test set is fixed and evaluates the
+final checkpoint. These runs allow nondeterministic CUDA execution, and compiler
+caches are not cleared between runs. Three seeds are a useful regression signal,
+not a quality-equivalence test or a controlled cold-start benchmark.
+
+The first local run on the RTX 3080 Ti Laptop GPU produced the following results.
+All six reports share runtime source hash
+`27184f27cd4158db5ad94cdd10776b6d94b2c2dd8ec0248a4712120374298deb`
+and lock hash `43ad5c7df81212b3bcd536220201f8888666723507c317e8c86dd538fb595745`.
+Each pair's manifest, held-out labels and paths were verified equal. These are
+sequential runs with one compiler worker and no concurrent GPU tests.
+
+| Seed | Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–60 | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 42 | Float | 93.06% | 254.26 | 0.074 | 28.65 |
+| 42 | INT8 | 92.52% | 184.32 | 0.071 | 34.72 |
+| 43 | Float | 92.76% | 249.13 | 0.076 | 35.44 |
+| 43 | INT8 | 92.42% | 184.32 | 0.071 | 28.49 |
+| 44 | Float | 92.74% | 249.13 | 0.074 | 33.22 |
+| 44 | INT8 | 92.64% | 184.32 | 0.078 | 28.98 |
+
+INT8 reduces whole-run peak allocation by 26–28% in every pair, while held-out
+accuracy is lower by 0.10–0.54 percentage points (mean difference −0.33 points).
+Later training phases are faster in two pairs and slower in one; whole training
+calls likewise show mixed results. The first INT8 run follows a kernel fingerprint
+change, which can trigger recompilation. This supports the memory improvement,
+but does not establish a reliable speed win or quality parity. Convergence and
+startup profiling remain necessary before recommending QT for this workload.
+
+Local reports, logs, checkpoints and predictions were retained under
+`/tmp/mini-trainer-qt-large-batch-multiseed`; these temporary artifacts are not
+committed. Future enabled Actions runs retain the corresponding artifacts for
+90 days and publish the table in the job summary. No remote job was dispatched
+for this local validation.
+
+The synthetic CUDA float/INT8 oracle pair was rerun with the retained kernels;
+both reached the required 100% accuracy after training and checkpoint reload.
+This verifies the simple task, not convergence equivalence on MNIST or Blair.

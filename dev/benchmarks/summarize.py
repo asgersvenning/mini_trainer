@@ -1,6 +1,7 @@
 """Render retained JSON benchmark reports as a repository/Actions summary."""
 
 import json
+import statistics
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -9,8 +10,9 @@ def summarize(directory: Path) -> str:
     lines = [
         "# Dataset benchmark results",
         "",
-        "| Run | Status | Device / precision | QT coverage | Accuracy by level | Parameter bytes | Peak CUDA MiB | Training wall time |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Run | Status | Device / precision | QT coverage | Accuracy by level | Parameter bytes | Peak CUDA MiB | "
+        "Median train epoch 3+ | Training wall time |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     reports = sorted(directory.rglob("report.json"))
     for path in reports:
@@ -18,6 +20,16 @@ def summarize(directory: Path) -> str:
         accuracy = ", ".join(f"{value:.2%}" for value in report.get("level_accuracies", [])) or "—"
         seconds = report.get("training_wall_seconds")
         duration = f"{seconds:.2f}s" if seconds is not None else "—"
+        later_epochs = [
+            phase["seconds"] for phase in report.get("phase_measurements", []) if phase["phase"] == "train" and phase["epoch"] >= 2
+        ]
+        later_duration = (
+            f"{statistics.median(later_epochs):.3f}s"
+            if later_epochs and report.get("phase_measurement_scope")
+            else "unverified"
+            if later_epochs
+            else "—"
+        )
         name = path.parent.relative_to(directory).as_posix()
         device = f"{report.get('device', '?')} / {report.get('dtype', '?')}"
         recipe = report.get("quantization_recipe")
@@ -34,10 +46,11 @@ def summarize(directory: Path) -> str:
             else "—"
         )
         lines.append(
-            f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | {peak_memory} | {duration} |"
+            f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | "
+            f"{peak_memory} | {later_duration} | {duration} |"
         )
     if not reports:
-        lines.append("| No reports produced | incomplete | — | — | — | — | — | — |")
+        lines.append("| No reports produced | incomplete | — | — | — | — | — | — | — |")
     lines.extend(
         [
             "",
@@ -50,6 +63,8 @@ def summarize(directory: Path) -> str:
             "QT coverage counts quantized Linear modules; other operations may remain floating point.",
             "Parameter bytes describe stored parameters. CUDA peaks cover training, excluding final held-out inference.",
             "Older CUDA readings without a scope marker are unverified because logger resets could hide earlier peaks.",
+            "Later-epoch medians use timed training phases from epoch 3 onward, including loading, preprocessing and batch logging.",
+            "They exclude validation/figures/checkpoints, but may still include later compilation; they do not replace total wall time.",
         ]
     )
     return "\n".join(lines) + "\n"

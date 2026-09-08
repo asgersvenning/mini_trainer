@@ -70,7 +70,8 @@ def test_summary_preserves_failures_and_unmeasured_fields(tmp_path):
     assert "No reports produced" in summarize(Path(tmp_path / "missing"))
 
 
-def test_shared_harness_records_process_failures(tmp_path):
+@pytest.mark.parametrize("mode", ["qt", "qt-large-batch"])
+def test_shared_harness_records_process_failures(tmp_path, mode):
     import os
     import shlex
     import subprocess
@@ -84,18 +85,23 @@ def test_shared_harness_records_process_failures(tmp_path):
     runner.chmod(0o755)
     output = tmp_path / "reports"
     result = subprocess.run(
-        ["bash", "dev/check-benchmarks.sh", "qt", str(output)],
-        env={**os.environ, "BENCHMARK_PYTHON": str(runner)},
+        ["bash", "dev/check-benchmarks.sh", mode, str(output)],
+        env={**os.environ, "BENCHMARK_PYTHON": str(runner), "BENCHMARK_DATA_ROOT": str(tmp_path)},
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode == 1
-    for profile in ("synthetic-float", "synthetic-int8"):
+    profiles = (
+        ("synthetic-float", "synthetic-int8")
+        if mode == "qt"
+        else tuple(f"mnist-large-batch-{precision}-seed{seed}" for seed in (42, 43, 44) for precision in ("float", "int8"))
+    )
+    for profile in profiles:
         report = json.loads((output / profile / "report.json").read_text())
         assert report["status"] == "failed"
         assert report["error"]["exit_code"] == 134
-        assert report["quantized_training"] == profile.endswith("int8")
+        assert report["quantized_training"] == ("int8" in profile)
         assert "test_accuracy" not in report
     assert "requested" in (output / "summary.md").read_text()
 
@@ -154,3 +160,26 @@ def test_summary_marks_legacy_cuda_readings_unverified(tmp_path):
     report["peak_cuda_memory_scope"] = "maximum across logger resets"
     (path / "report.json").write_text(json.dumps(report))
     assert "64.00" in summarize(tmp_path).splitlines()[4]
+
+
+def test_summary_later_epoch_median_requires_timing_scope(tmp_path):
+    report = {
+        "status": "completed",
+        "training_wall_seconds": 123,
+        "phase_measurements": [
+            {"epoch": 0, "phase": "train", "seconds": 80},
+            {"epoch": 1, "phase": "train", "seconds": 20},
+            {"epoch": 2, "phase": "train", "seconds": 2},
+            {"epoch": 3, "phase": "train", "seconds": 4},
+            {"epoch": 3, "phase": "eval", "seconds": 10},
+        ],
+    }
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report))
+    assert "| unverified | 123.00s |" in summarize(tmp_path)
+    report["phase_measurement_scope"] = "synchronized batch loop"
+    path.write_text(json.dumps(report))
+    assert "| 3.000s | 123.00s |" in summarize(tmp_path)
+    report["phase_measurements"] = report["phase_measurements"][:2]
+    path.write_text(json.dumps(report))
+    assert "| — | 123.00s |" in summarize(tmp_path)

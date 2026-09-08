@@ -9,13 +9,14 @@ if [[ -e "$results" ]]; then
     echo 'Results directory must be new.' >&2
     exit 2
 fi
-case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real or qt-dense.' >&2; exit 2 ;; esac
+case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense|qt-large-batch) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real, qt-dense or qt-large-batch.' >&2; exit 2 ;; esac
 mkdir -p -- "$results"
 status=0
 run_profile() {
     local profile="$1"
     shift
-    if OMP_NUM_THREADS=1 MPLBACKEND=Agg "$benchmark_python" -m dev.benchmarks.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
+    if OMP_NUM_THREADS=1 MPLBACKEND=Agg TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-1}" \
+        "$benchmark_python" -m dev.benchmarks.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
         return
     else
         local exit_code="$?"
@@ -54,6 +55,20 @@ elif [[ "$mode" == qt-dense ]]; then
         run_profile "mnist-dense-$precision" --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" \
             --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 15 --batch-size 128 --compile \
             --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --allow-nondeterministic "${quantization[@]}"
+    done
+elif [[ "$mode" == qt-large-batch ]]; then
+    : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/}"
+    for seed in 42 43 44; do
+        precisions=(float int8)
+        if (( seed % 2 )); then precisions=(int8 float); fi
+        for precision in "${precisions[@]}"; do
+            quantization=()
+            if [[ "$precision" == int8 ]]; then quantization=(--quantized-training); fi
+            run_profile "mnist-large-batch-$precision-seed$seed" --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" \
+                --seed "$seed" --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 60 --batch-size 512 \
+                --compile --compile-optimizer --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 \
+                --allow-nondeterministic "${quantization[@]}"
+        done
     done
 elif [[ "$mode" == qt-real ]]; then
     : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/ and blair/}"

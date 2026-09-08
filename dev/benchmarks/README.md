@@ -403,3 +403,25 @@ only after the logger's final reset; their CUDA readings are now marked
 `unverified`, and cannot establish whole-run memory reductions. This correction
 does not affect the standalone kernel and transfer probes, which do not use that
 logger. It also does not affect recorded accuracy or physical parameter storage.
+
+### Multi-seed large-batch comparison
+
+```bash
+CUDA_VISIBLE_DEVICES=0 BENCHMARK_DATA_ROOT=/path/to/datasets \
+    bash dev/check-benchmarks.sh qt-large-batch /tmp/benchmarks-qt-large-batch
+```
+
+This additional profile uses the same dense model, optimizer, learning rates and
+data preparation with batch size 512, 60 epochs and both model and optimizer
+compilation. It runs matched float/INT8 pairs for seeds 42, 43 and 44, alternating
+their order. All six reports and failures are retained. The shared runner defaults
+to one Inductor compiler worker; an explicit `TORCHINDUCTOR_COMPILE_THREADS`
+overrides this, and reports record the environment setting.
+
+QT plus real-data Actions runs include this profile alongside the original
+small-batch pair. Summaries show median training-phase time from epoch 3 onward
+separately from total training-call wall time. The former includes loading,
+preprocessing and batch logging, excludes validation/figures/checkpoints, and
+may still contain later compilation. Compiler caches are not cleared between
+runs: neither column establishes fresh-cache performance. Real-data completion
+still has no quality acceptance threshold; inspect accuracy for every seed.

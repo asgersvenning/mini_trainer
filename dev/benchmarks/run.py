@@ -281,6 +281,7 @@ def run(
         "amp_exercised": precision != torch.float32,
         "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
         "torch_threads": torch.get_num_threads(),
+        "torchinductor_compile_threads_env": os.environ.get("TORCHINDUCTOR_COMPILE_THREADS"),
         "python": platform.python_version(),
         "platform": platform.platform(),
         "cuda_version": torch.version.cuda,
