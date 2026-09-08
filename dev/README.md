@@ -102,6 +102,14 @@ its dependencies, with no PyTorch or mini_trainer. It explicitly installs the ru
 version from the export environment and needs registry access or cached packages.
 It does not synchronize `.venv`. CI runs this in addition to the shared test harness.
 
+## Reproducible dataset benchmarks
+
+The [benchmark progression](benchmarks/README.md) starts with a fast synthetic
+classification task with a known oracle and independent train/validation/test
+splits. Its runner uses the actual training, checkpoint and inference paths.
+MNIST and hierarchical Blair have explicit real-data profiles; their test data must
+remain separate from configuration and checkpoint selection.
+
 ## Optimizer step contract
 
 `trainer._optimizer_step` preserves the successful-step gate previously supplied

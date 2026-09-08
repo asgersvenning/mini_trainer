@@ -120,6 +120,13 @@ after installing the `export` extra and the relevant model backend. The generic
 exporter preserves evaluation outputs and verifies ONNX Runtime parity. See the
 [export guide](docs/onnx.md) for the Python API, preprocessing contract and coverage.
 
+## Continuous benchmarks
+
+Follow the [benchmark results and coverage](docs/benchmarks.md) and
+[continuous run history](https://github.com/asgersvenning/mini_trainer/actions/workflows/benchmarks.yml).
+The suite progresses from an exact synthetic oracle to MNIST and hierarchical Blair,
+with separate CPU and GPU profiles, visible summaries, and retained reproduction artifacts.
+
 ## Temporarily unsupported feature
 
 EMA (`--ema` / `ema=True`) is currently nonfunctional: classifier caches populated

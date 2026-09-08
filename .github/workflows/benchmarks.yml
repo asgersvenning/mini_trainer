@@ -1,0 +1,108 @@
+name: Dataset benchmarks
+
+on:
+  pull_request:
+    branches: ["master"]
+  push:
+    branches: ["master"]
+  schedule:
+    - cron: "0 5 * * 4"
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: Run GPU profiles on a configured self-hosted GPU runner
+        type: boolean
+        default: false
+      real_data:
+        description: Also run MNIST and Blair using configured runner data paths
+        type: boolean
+        default: false
+      cuda_backend:
+        description: Explicit PyTorch backend for the disposable GPU environment
+        type: choice
+        options: [cu130, cu126, cu132]
+        default: cu130
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate manual profile selection
+        if: github.event_name == 'workflow_dispatch' && inputs.real_data && !inputs.gpu
+        run: |
+          echo 'The real_data profile requires gpu=true.' >&2
+          exit 2
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra cpu --python 3.13
+      - name: Synthetic oracle baseline
+        run: bash dev/check-benchmarks.sh cpu benchmark-results
+      - name: Visible run summary
+        if: always()
+        run: python3 -m dev.benchmarks.summarize benchmark-results >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain reports and reproduction artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmarks-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            benchmark-results/
+            !benchmark-results/**/data/**/*.png
+
+  gpu:
+    if: (github.event_name == 'workflow_dispatch' && inputs.gpu) || (github.event_name == 'schedule' && vars.ENABLE_GPU_BENCHMARKS == 'true')
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 45
+    env:
+      BENCHMARK_DATA_ROOT: ${{ vars.BENCHMARK_DATA_ROOT }}
+      BLAIR_CLASS_SPEC: ${{ vars.BLAIR_CLASS_SPEC }}
+      CUDA_BACKEND: ${{ inputs.cuda_backend || vars.BENCHMARK_CUDA_BACKEND || 'cu130' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Install a disposable GPU environment
+        run: |
+          export UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/benchmark-env-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf 'UV_PROJECT_ENVIRONMENT=%s\nBENCHMARK_PYTHON=%s/bin/python\n' "$UV_PROJECT_ENVIRONMENT" "$UV_PROJECT_ENVIRONMENT" >> "$GITHUB_ENV"
+          uv sync --locked --extra "$CUDA_BACKEND" --python 3.13
+      - name: CUDA optimizer and AMP step regressions
+        env:
+          RUN_CUDA_TESTS: "1"
+        run: '"$BENCHMARK_PYTHON" -m pytest tests/test_optimizer_steps.py -k cuda'
+      - name: Synthetic GPU precision profiles
+        run: bash dev/check-benchmarks.sh gpu benchmark-gpu
+      - name: Real-data progression
+        if: (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
+        run: bash dev/check-benchmarks.sh real benchmark-real
+      - name: Visible run summaries
+        if: always()
+        run: |
+          python3 -m dev.benchmarks.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
+          if [[ -d benchmark-real ]]; then
+            python3 -m dev.benchmarks.summarize benchmark-real >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain reports, failures and reproduction artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmarks-gpu-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            benchmark-gpu/
+            benchmark-real/
+            !benchmark-gpu/**/data/**/*.png
+      - name: Remove the disposable GPU environment
+        if: always()
+        run: |
+          if [[ -n "${UV_PROJECT_ENVIRONMENT:-}" && "$UV_PROJECT_ENVIRONMENT" == "$RUNNER_TEMP"/benchmark-env-* ]]; then
+            rm -rf -- "$UV_PROJECT_ENVIRONMENT"
+          fi
