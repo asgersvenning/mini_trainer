@@ -257,3 +257,39 @@ Outer optimizer compilation still falls back when sufficiently many quantized
 groups specialize on wrapper identities. A separate strict expected-failure test
 enables hard failure on that fallback; it must be removed when the outer path is
 fixed. This limitation is distinct from the now-working compiled storage operator.
+
+### Optimizer FMA dispatch
+
+Tracing the outer optimizer failure identified missing `prims.fma` dispatch.
+Dynamo rewrites tensor-learning-rate `add_`/`addcdiv_` updates as an out-of-place
+fused multiply-add followed by `copy_`. The missing operation broke the optimizer
+loop into per-weight frames, eventually exhausting the compilation cache.
+The quantized weight now supplies its represented floating values for this
+out-of-place primitive; the following copy performs stochastic requantization.
+No floating master weight is retained.
+
+The twelve-group SGD probe now stabilizes at two compiled graphs after warmup.
+SGD and AdamW regressions pass with hard failure enabled for compiler-cache
+fallback, replacing the prior strict expected failure. Additional checks compare
+optimizer state and update error against floating arithmetic, verify that FMA
+itself neither mutates weights nor consumes RNG, and confirm that quarter-code
+updates retain their expected average while CUDA RNG and rounding masks advance.
+
+Both dense MNIST paths were rerun with model **and optimizer** compilation, the
+same seed/split and 15-epoch, batch-128 budget. Both report source hash
+`b31568d70b4d48a60e3d03a0c1016a06e7f49d31bbedeb134f4b50489db6ddc7`.
+
+| Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–15 | Training wall s |
+| --- | ---: | ---: | ---: | ---: |
+| Float | 92.44% | 236.30 | 0.167 | 11.49 |
+| INT8 | 87.38% | 182.97 | 0.227 | 25.11 |
+
+Compilation compatibility is fixed, but this is still a negative speed/quality
+result. Whole-run allocation remains lower than float, but rises relative to
+the explicit eager-optimizer row kernel. The INT8 checkpoint records 464 completed
+updates versus 465 for float, reflecting one AMP overflow skip; gating remains
+active. The accuracy drop is not explained by the passed single-update checks.
+Different stochastic rounding trajectories and accumulation over training require
+further investigation. Neither this single seed nor compilation success establishes
+model-quality parity or completion of the QT goal. Wall times still include
+first-use compilation and depend on cache state.

@@ -457,12 +457,8 @@ def test_cuda_local_matmul_tuning_bounds_temporary_memory(monkeypatch):
     torch.testing.assert_close(result, expected)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=torch._dynamo.exc.FailOnRecompileLimitHit,
-    reason="Dynamo still specializes outer SGD groups on TrainingWeight identities",
-)
-def test_cuda_compiled_optimizer_handles_many_quantized_groups():
+@pytest.mark.parametrize("kind", ["sgd", "adamw"])
+def test_cuda_compiled_optimizer_handles_many_quantized_groups(kind):
     from torch._dynamo.testing import CompileCounterWithBackend
 
     from mini_trainer.modeling._quantized_training import TrainingWeight
@@ -472,7 +468,8 @@ def test_cuda_compiled_optimizer_handles_many_quantized_groups():
         pytest.skip("Set RUN_CUDA_TESTS=1 to verify many-group optimizer compilation")
     assert torch.cuda.is_available()
     weights = [nn.Parameter(TrainingWeight.from_float(torch.randn(64, 128, device="cuda"))) for _ in range(12)]
-    optimizer = torch.optim.SGD([{"params": [weight], "lr": 0.01 / (index + 1)} for index, weight in enumerate(weights)], momentum=0.9)
+    groups = [{"params": [weight], "lr": 0.01 / (index + 1)} for index, weight in enumerate(weights)]
+    optimizer = torch.optim.SGD(groups, momentum=0.9, weight_decay=0.1) if kind == "sgd" else torch.optim.AdamW(groups, foreach=False)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.93)
     counter = CompileCounterWithBackend("inductor")
     compile_optimizer(optimizer, backend=counter)
@@ -488,3 +485,95 @@ def test_cuda_compiled_optimizer_handles_many_quantized_groups():
             if step == 2:
                 after_warmup = counter.frame_count
     assert after_warmup and counter.frame_count == after_warmup
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+def test_fma_uses_represented_weights_without_mutation_or_rounding(position):
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    values = [torch.randn(4, 7) for _ in range(3)]
+    weight = nn.Parameter(TrainingWeight.from_float(values[position]))
+    values[position] = weight
+    codes = weight.int_data.clone()
+    scales = weight.scale.clone()
+    version = weight._version
+    rng = torch.get_rng_state()
+    with torch.no_grad():
+        expected = torch.ops.prims.fma(*(value.dequantize() if value is weight else value for value in values))
+        actual = torch.ops.prims.fma(*values)
+    assert not isinstance(actual, TrainingWeight)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert torch.equal(weight.int_data, codes) and torch.equal(weight.scale, scales)
+    assert weight._version == version
+    assert torch.equal(torch.get_rng_state(), rng)
+
+
+@pytest.mark.parametrize("kind", ["sgd", "adamw"])
+def test_cuda_compiled_quantized_update_matches_float_before_rounding(kind):
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify compiled QT update arithmetic")
+    assert torch.cuda.is_available()
+    torch.manual_seed(107)
+    weight = nn.Parameter(TrainingWeight.from_float(torch.randn(32, 64, device="cuda")))
+    reference = nn.Parameter(weight.dequantize().detach().clone())
+    cls = torch.optim.SGD if kind == "sgd" else torch.optim.AdamW
+    options = {"lr": 0.03, "weight_decay": 0.1, "foreach": False}
+    if kind == "sgd":
+        options.update(momentum=0.9, nesterov=True)
+    optimizer, eager = cls([weight], **options), cls([reference], **options)
+    schedulers = [torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=0.93) for opt in (optimizer, eager)]
+    compile_optimizer(optimizer)
+    for _ in range(6):
+        with torch.no_grad():
+            reference.copy_(weight.dequantize())
+        gradient = torch.randn_like(reference)
+        weight.grad, reference.grad = gradient.clone(), gradient.clone()
+        optimizer.step()
+        eager.step()
+        for scheduler in schedulers:
+            scheduler.step()
+        bound = reference.detach().abs().amax(1, keepdim=True) / 127 + 1e-6
+        assert torch.all((weight.dequantize() - reference).abs() <= bound)
+        for key, value in optimizer.state[weight].items():
+            expected = eager.state[reference][key]
+            if isinstance(value, torch.Tensor):
+                torch.testing.assert_close(value, expected.to(value.device), rtol=1e-5, atol=2e-6)
+            else:
+                assert value == expected
+
+
+def test_cuda_compiled_stochastic_rounding_preserves_sub_code_updates():
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify sub-code compiled QT updates")
+    assert torch.cuda.is_available()
+    torch.manual_seed(109)
+    weight = nn.Parameter(TrainingWeight.from_float(torch.ones(128, 1024, device="cuda")))
+    optimizer = torch.optim.SGD([weight], lr=1, foreach=False)
+    compile_optimizer(optimizer)
+    gradient = torch.full(weight.shape, -0.25 / 127, device="cuda")
+    gradient[:, 0] = 0
+    previous_codes = None
+    for _ in range(4):
+        # Hold each row's maximum fixed, then request a quarter-code increase
+        # elsewhere. Rounding must retain that signal statistically rather than
+        # deterministically dropping it or biasing it upward.
+        with torch.no_grad():
+            weight.int_data.zero_()
+            weight.int_data[:, 0] = 127
+            weight.scale.fill_(1 / 127)
+        weight.grad = gradient
+        rng = torch.cuda.get_rng_state()
+        optimizer.step()
+        codes = weight.int_data[:, 1:]
+        assert torch.all((codes == 0) | (codes == 1))
+        assert abs(codes.float().mean().item() - 0.25) < 0.01
+        assert not torch.equal(rng, torch.cuda.get_rng_state())
+        if previous_codes is not None:
+            assert not torch.equal(codes, previous_codes)
+        previous_codes = codes.clone()

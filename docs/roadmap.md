@@ -105,9 +105,11 @@ that target. The implementation and comparison plan is in
 The explicit CUDA storage-update kernel and local matrix tuner now reduce
 whole-run peak allocation in the dense MNIST comparison by approximately 35%;
 [training speed remains unproven](benchmarks.md#explicit-cuda-kernels-and-local-tuning).
-A strict CUDA expected-failure regression records outer optimizer compilation
-falling back after specializing on many quantized parameter-group identities.
-Keep that limit visible while improving optimizer dispatch and throughput.
+The outer optimizer fallback was traced to missing FMA dispatch for tensor
+learning rates. Twelve-group SGD and AdamW now compile without cache fallback,
+and the former expected-failure marker is removed. The [paired compiled-optimizer
+result](benchmarks.md#optimizer-fma-dispatch) is still slower and less accurate
+under QT; throughput and convergence work remain required.
 
 Deliver quantization-aware training and post-training inference quantization as
 separate opt-in capabilities, recording actual weight/activation bit widths,

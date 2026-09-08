@@ -72,14 +72,17 @@ selected configurations are cached on disk. TorchAO's global operators and tuner
 are unchanged. The explicit update and matrix operators provide fake execution
 implementations for model compilation.
 
-Keep `--compile-optimizer` off for general QT workloads for now. Although small
-integrated cases pass, compiling an outer optimizer with many quantized parameter
-groups can specialize on weight identities and fall back to eager execution.
-That outer-optimizer limitation remains a strict CUDA expected-failure regression.
+`--compile-optimizer` now supports the FMA primitive that Dynamo uses for tensor
+learning-rate updates. The formerly failing twelve-group SGD regression passes,
+as does twelve-group AdamW, with hard failure enabled on compiler-cache fallback.
+This establishes compilation compatibility, not a performance recommendation:
+the current dense MNIST comparison is slower and less accurate with QT than float.
+Compiled stochastic requantization can follow a different random trajectory from
+the eager row kernel, so a matching seed does not establish identical training.
 The earlier storage prototype's fake-tensor and dtype-cache failures are resolved
 by an explicit Triton kernel and custom-operator boundary; the storage kernel
 does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
-separate option. See the [measured results](benchmarks.md#explicit-cuda-kernels-and-local-tuning).
+separate option. See the [measured results](benchmarks.md#optimizer-fma-dispatch).
 
 ## Checkpoints and inference
 

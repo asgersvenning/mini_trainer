@@ -74,6 +74,15 @@ def add(func, types, args, kwargs):
     return func(*(value.dequantize() if isinstance(value, TrainingWeight) else value for value in args), **kwargs)
 
 
+@TrainingWeight.implements(torch.ops.prims.fma.default)
+def fused_multiply_add(func, types, args, kwargs):
+    # Dynamo lowers add_/addcdiv_ with tensor learning rates to fma + copy_.
+    # The out-of-place result is floating; copy_ performs the ordinary single
+    # stochastic requantization. Leaving fma unsupported breaks optimizer loops
+    # into per-weight frames and eventually exhausts the compilation cache.
+    return func(*(value.dequantize() if isinstance(value, TrainingWeight) else value for value in args), **kwargs)
+
+
 @TrainingWeight.implements(torch.ops.aten.mul_.Tensor)
 def multiply_inplace(func, types, args, kwargs):
     original, multiplier = args
