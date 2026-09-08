@@ -64,7 +64,13 @@ in its disposable checkout, then the same checks. It does not update the committ
 To propose an upgrade locally, run `uv lock --upgrade` (or `uv lock --upgrade-package NAME`),
 inspect the lock diff, explicitly sync the desired backend, and validate before committing.
 
-## Checkpoint coverage and known limits
+## Behavioral coverage and known limits
+
+Loader regressions live in `tests/utils/test_loader.py`. They simulate restricted
+CPU affinity, Python/platform fallbacks, and explicit worker counts without starting
+large worker pools. Small image and RAM-cache fixtures check output compatibility,
+and the distributed loader check verifies sampler/spawn configuration. The full CPU
+DDP integration test remains the runtime check for distributed training.
 
 `tests/test_checkpoint_contract.py` compares live and reloaded predictions, verifies
 model/optimizer/scheduler/scaler state at the continuation boundary, and compares final

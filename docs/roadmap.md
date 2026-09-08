@@ -38,12 +38,23 @@ populates `Classifier._linear_weight` and `_linear_bias` caches. These nonpersis
 buffers can have different shapes on the EMA and training models, breaking the next
 averaging update. A strict expected-failure test records the problem; fix cache/EMA
 interaction in a focused behavior-fix change before relying on EMA continuation.
-The current increment changes no training behavior.
+The validation increment changed no training behavior.
 
-Start with `mini_trainer/data/loader.py`, then the orchestration boundaries in
-`builders.py`, `train.py`, and `trainer.py`. The loader repeats image-size validation
-and worker-count calculation; preserve its distinct training/inference defaults
-when extracting common code. Review checkpoint and metadata boundaries separately.
+Loader increment delivered: shared resize validation and worker-selection helpers,
+removal of an unreachable label-conversion branch and obsolete resampling comments,
+and regression coverage for shapes, labels, sampling, subsampling, and worker settings.
+Resize tuple ordering and existing error messages are preserved.
+
+The accompanying worker-selection fix uses process CPU availability and affinity
+instead of the whole node's CPU count when available. Existing training/inference
+caps and headroom are retained, as are explicit counts and the CUDA-cache override.
+RAM-cache preloading uses the same CPU detection and now always selects at least one
+thread, including on one-CPU systems. This does not account for every CPU quota or
+competing job; shared unrestricted allocations still need explicit worker settings.
+
+Next, review the orchestration boundaries in `builders.py`, `train.py`, and `trainer.py`
+only where an extraction has a concrete benefit. Review checkpoint and metadata
+boundaries separately.
 
 Before each extraction, cover observable behavior: class order, labels, shapes,
 dtypes, device placement, sampling, errors, return values, and public imports.

@@ -21,6 +21,8 @@ from torchvision.transforms import functional as TF
 from mini_trainer import get_logger
 from mini_trainer.utils import TQDM, make_convert_dtype, memory_proportion, multithread_vectorize
 
+from ._workers import _default_worker_count
+
 T = TypeVar("T")
 V = TypeVar("V")
 
@@ -420,7 +422,7 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        max_workers = max(0, min(128, (((os.cpu_count() or 0) - 2) // 2) * 2 or 1))
+        max_workers = _default_worker_count(128, reserve=2, minimum=1)
         batch_size = min(256, 4 * max_workers)
         fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
         fetched_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor] | Exception]] = Queue(max(32, batch_size * 4))

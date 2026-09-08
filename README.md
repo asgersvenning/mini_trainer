@@ -64,6 +64,24 @@ source .venv/bin/activate
 > Using `uv run ...` is likely to automatically install CUDA-incompatible wheels. If you really want to use `uv run`, we suggest using the `--no-sync` flag every time.
 > Note that if you are *"lucky"* you might have the default CUDA version on your system, meaning that `uv run` might in fact use the correct wheels. This is, however, not guaranteed.
 
+## Data loading on shared machines
+
+Automatic DataLoader worker selection uses the CPUs available to the process when
+the OS exposes that information, including CPU affinity. It reserves four CPUs,
+rounds down to an even worker count, and caps workers at 16 for training and 32 for
+prediction. For example, an 8-CPU affinity limit selects four workers, even on a
+larger shared machine. Four or fewer available CPUs selects zero workers.
+
+Set `--num_workers 2` to choose a count explicitly, or `--num_workers 0` to load in
+the main process. CUDA-cached datasets always use zero DataLoader workers.
+RAM-cache preloading uses a separate thread pool that also respects process CPU
+availability, reserves two CPUs, and uses between 1 and 128 threads.
+
+Affinity does not describe all container CPU quotas or competition from other jobs.
+If an allocation shares an unrestricted CPU set, choose a conservative explicit
+worker count per training process. `--num_workers` does not control RAM-cache
+preloading; use uncached loading when you need that explicit bound.
+
 ## Weights & Biases Integration
 
 `mini_trainer` supports logging your training runs, including metrics, confusion matrices, and the probabilistic dendrogram, directly to [Weights & Biases](https://wandb.ai). 

@@ -1,0 +1,156 @@
+import numpy as np
+import pytest
+import torch
+from PIL import Image
+from torch.utils.data import RandomSampler, SequentialSampler
+
+from mini_trainer.data import _workers
+from mini_trainer.data import io as data_io
+from mini_trainer.data import loader as data_loader
+from mini_trainer.data.loader import PathLabelProcessor, get_dataset_dataloader, get_inference_dataloader
+
+
+@pytest.fixture
+def metadata(tmp_path):
+    paths = []
+    for index in range(5):
+        path = tmp_path / f"{index}.png"
+        Image.new("RGB", (8, 8), (index, index, index)).save(path)
+        paths.append(str(path))
+    return {"path": paths, "class": list(range(5))}
+
+
+@pytest.mark.parametrize("size", [4, (4, 6), [4, 6]])
+def test_loader_shapes_sampling_and_subsampling(metadata, size):
+    datasets, loaders = get_dataset_dataloader(metadata, metadata, resize_size=size, batch_size=2, num_workers=0, cache="none", subsample=2)
+    train, val = loaders
+    assert isinstance(train.batch_sampler.sampler, RandomSampler)
+    assert isinstance(val.batch_sampler.sampler, SequentialSampler)
+    assert train.batch_sampler.drop_last and not val.batch_sampler.drop_last
+    assert len(train) == 1 and len(val) == 2
+    assert not train.persistent_workers
+    images, labels = next(iter(val))
+    # Existing resize tuples are (width, height).
+    assert images.shape == (2, 3, 4 if isinstance(size, int) else 6, 4)
+    assert images.dtype == torch.uint8
+    assert labels.dtype == torch.long and labels.device.type == "cpu"
+    assert labels.tolist() == [0, 2]
+    assert len(datasets[0]) == 3
+    dataset, inference = get_inference_dataloader(metadata["path"], resize_size=size, batch_size=2, num_workers=0, subsample=2)
+    assert len(dataset) == 3
+    assert not inference.pin_memory and not inference.persistent_workers
+    assert isinstance(inference.batch_sampler.sampler, SequentialSampler)
+    torch.testing.assert_close(next(iter(inference)), images)
+
+
+@pytest.mark.parametrize("size", [None, 1.5, "4", (4,), (4, "6"), (4, 6, 8)])
+def test_invalid_resize_errors(size):
+    message = f"Invalid resize size passed, found {size}, but expected an integer or a tuple of two integers"
+    with pytest.raises(TypeError) as error:
+        get_dataset_dataloader(resize_size=size)
+    assert str(error.value) == message + "."
+    with pytest.raises(TypeError) as error:
+        get_inference_dataloader([], resize_size=size)
+    assert str(error.value) == message
+
+
+@pytest.mark.parametrize("label", [2, [2, 3], (2, 3), np.array([2, 3]), torch.tensor([2, 3])])
+@pytest.mark.parametrize("multilabel", [False, True])
+def test_label_processing_and_hook(label, multilabel):
+    image = torch.zeros(3, 4, 4, dtype=torch.uint8)
+    processor = PathLabelProcessor(lambda _: image, lambda value: value + 1, multilabel)
+    result, target = processor(("unused", label))
+    expected = torch.as_tensor(label).long()
+    if not multilabel and expected.numel() > 1:
+        expected = expected[0]
+    torch.testing.assert_close(target, expected)
+    assert target.device.type == "cpu"
+    torch.testing.assert_close(result, image + 1)
+    if isinstance(label, torch.Tensor):
+        target.fill_(99)
+        assert label.tolist() == [2, 3]
+
+
+@pytest.mark.parametrize("available,expected", [(1, 0), (4, 0), (7, 2), (8, 4), (64, 16)])
+def test_automatic_training_workers_respect_affinity(metadata, monkeypatch, available, expected):
+    monkeypatch.setattr(_workers.os, "cpu_count", lambda: 256)
+    monkeypatch.setattr(_workers.os, "process_cpu_count", lambda: 256, raising=False)
+    monkeypatch.setattr(_workers.os, "sched_getaffinity", lambda _: set(range(available)), raising=False)
+    _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("train",), cache="none")
+    assert loaders[0].num_workers == expected
+    assert loaders[0].persistent_workers == (expected > 0)
+
+
+@pytest.mark.parametrize("process_count,affinity_count,expected", [(6, 128, 2), (128, 8, 4), (80, 80, 32)])
+def test_inference_uses_smaller_process_limit(metadata, monkeypatch, process_count, affinity_count, expected):
+    monkeypatch.setattr(_workers.os, "process_cpu_count", lambda: process_count, raising=False)
+    monkeypatch.setattr(_workers.os, "sched_getaffinity", lambda _: set(range(affinity_count)), raising=False)
+    _, loader = get_inference_dataloader(metadata["path"], resize_size=4)
+    assert loader.num_workers == expected
+
+
+@pytest.mark.parametrize("host_count", [None, 1, 8])
+def test_worker_detection_fallbacks(monkeypatch, host_count):
+    monkeypatch.delattr(_workers.os, "process_cpu_count", raising=False)
+    monkeypatch.delattr(_workers.os, "sched_getaffinity", raising=False)
+    monkeypatch.setattr(_workers.os, "cpu_count", lambda: host_count)
+    assert _workers._available_cpu_count() == (host_count or 0)
+
+
+def test_worker_detection_failed_affinity_and_unknown_process_count(monkeypatch):
+    def unavailable(_):
+        raise OSError("Affinity unavailable")
+
+    monkeypatch.setattr(_workers.os, "process_cpu_count", lambda: None, raising=False)
+    monkeypatch.setattr(_workers.os, "sched_getaffinity", unavailable, raising=False)
+    monkeypatch.setattr(_workers.os, "cpu_count", lambda: 8)
+    assert _workers._available_cpu_count() == 8
+
+
+@pytest.mark.parametrize("workers", [0, 1, 3])
+def test_explicit_worker_counts_are_preserved(metadata, monkeypatch, workers):
+    def unexpected_detection():
+        pytest.fail("Explicit worker selection must not trigger automatic detection")
+
+    monkeypatch.setattr(_workers, "_available_cpu_count", unexpected_detection)
+    _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("train",), cache="none", num_workers=workers)
+    _, inference = get_inference_dataloader(metadata["path"], resize_size=4, num_workers=workers)
+    assert loaders[0].num_workers == inference.num_workers == workers
+
+
+@pytest.mark.parametrize("workers", [None, 3])
+def test_cuda_cache_still_disables_loader_workers(metadata, monkeypatch, workers):
+    # Exercise loader configuration without allocating GPU storage.
+    monkeypatch.setattr(data_loader, "LazyDataset", lambda **_: torch.utils.data.TensorDataset(torch.zeros(5, 1)))
+    _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("train",), cache="cuda", num_workers=workers)
+    assert loaders[0].num_workers == 0
+    assert not loaders[0].pin_memory
+    assert not loaders[0].persistent_workers
+
+
+@pytest.mark.parametrize("available,expected", [(0, 1), (1, 1), (2, 1), (8, 6), (256, 128)])
+def test_ram_cache_thread_budget_and_contents(monkeypatch, available, expected):
+    monkeypatch.setattr(_workers, "_available_cpu_count", lambda: available)
+    executor = data_io.ThreadPoolExecutor
+    selected = []
+
+    def capture_executor(**kwargs):
+        selected.append(kwargs["max_workers"])
+        return executor(**kwargs)
+
+    monkeypatch.setattr(data_io, "ThreadPoolExecutor", capture_executor)
+    dataset = data_io.LazyDataset(lambda item: torch.tensor([item[0]]), (list(range(5)),), cache="cpu")
+    assert selected == [expected]
+    torch.testing.assert_close(dataset[:], torch.arange(5).reshape(5, 1))
+
+
+def test_distributed_loader_retains_spawn_and_sampler(monkeypatch):
+    monkeypatch.setattr(data_loader, "is_dist_avail_and_initialized", lambda: True)
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2)
+    monkeypatch.setattr(torch.distributed, "get_rank", lambda: 0)
+    dataset = torch.utils.data.TensorDataset(torch.arange(8))
+    loader = data_loader.get_dataloader(dataset, "train", 2, 1, False, torch.device("cpu"))
+    assert loader.multiprocessing_context.get_start_method() == "spawn"
+    assert isinstance(loader.batch_sampler.sampler, torch.utils.data.DistributedSampler)
+    assert loader.batch_sampler.sampler.num_replicas == 2
+    assert loader.batch_sampler.drop_last

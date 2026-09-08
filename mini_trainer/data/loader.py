@@ -1,4 +1,3 @@
-import os
 from collections.abc import Callable
 
 import numpy as np
@@ -9,12 +8,23 @@ from torch.utils.data.distributed import DistributedSampler
 from mini_trainer import get_logger
 from mini_trainer.utils import is_dist_avail_and_initialized
 
+from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
     LazyDataset,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
+
+
+def _normalize_resize_size(resize_size, *, error_suffix=""):
+    if isinstance(resize_size, int):
+        resize_size = (resize_size, resize_size)
+    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(isinstance(x, int) for x in resize_size)):
+        raise TypeError(
+            f"Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers{error_suffix}"
+        )
+    return resize_size
 
 
 def label_to_tensor(label: int | list[int] | tuple[int, ...] | np.ndarray | torch.Tensor) -> torch.Tensor:
@@ -39,10 +49,7 @@ class PathLabelProcessor:
         label = label_to_tensor(label)
         if not self.multilabel and label.numel() > 1:
             label = label[0]
-        if not isinstance(label, torch.Tensor):
-            label = torch.tensor(label, dtype=torch.long)
-        else:
-            label = label.detach().cpu().clone().long()
+        label = label.detach().cpu().clone().long()
         image = self.reader(path)
         if self.hook is not None:
             image = self.hook(image)
@@ -103,10 +110,7 @@ def get_dataset_dataloader(  # noqa: D103
     multilabel: bool = False,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ):
-    if isinstance(resize_size, int):
-        resize_size = (resize_size, resize_size)
-    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x: isinstance(x, int), resize_size))):
-        raise TypeError(f"Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers.")
+    resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     if isinstance(device, str):
         device = torch.device(device)
 
@@ -129,30 +133,16 @@ def get_dataset_dataloader(  # noqa: D103
 
     datasets = []
     for mode, data in zip(modes, metadata):
-        # items = list(zip(data["path"], data["class"]))
-        # TODO: Abstract and modularize
         if mode.strip().lower() == "train" and resample:
             raise NotImplementedError("Resampling is currently not supported.")
-            # if cache != CACHE_MODE.NONE:
-            #     raise NotImplementedError("Resampling with caching is not supported.")
-            # labs = data["class"]
-            # if isinstance(labs[0], (list, tuple)):
-            #     labs = [lab[0] for lab in labs]
-            # cc = Counter(labs)
-            # resample_kwargs = {}
-            # if isinstance(resample, str):
-            #     resample_kwargs["transform"] = resample
-            # items = Reindexed(items, [cc.get(k, 0) for k in labs], inflation=2, **resample_kwargs)
         dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache)
         datasets.append(dset)
 
-    if num_workers is None:
-        num_workers = (os.cpu_count() or 0) - 4
-        num_workers -= num_workers % 2
-        num_workers = min(16, max(0, num_workers))
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
+    elif num_workers is None:
+        num_workers = _default_worker_count(16)
 
     pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
     loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
@@ -171,10 +161,7 @@ def get_inference_dataloader(  # noqa: D103
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
     **kwargs,
 ):
-    if isinstance(resize_size, int):
-        resize_size = (resize_size, resize_size)
-    if not (isinstance(resize_size, (tuple, list)) and len(resize_size) == 2 and all(map(lambda x: isinstance(x, int), resize_size))):
-        raise TypeError(f"Invalid resize size passed, found {resize_size}, but expected an integer or a tuple of two integers")
+    resize_size = _normalize_resize_size(resize_size)
     if isinstance(device, str):
         device = torch.device(device)
 
@@ -188,9 +175,7 @@ def get_inference_dataloader(  # noqa: D103
     dataset = LazyDataset(func=reader, items=(images,), cache=CACHE_MODE.NONE)
 
     if num_workers is None:
-        num_workers = (os.cpu_count() or 0) - 4
-        num_workers -= num_workers % 2
-        num_workers = min(32, max(0, num_workers))
+        num_workers = _default_worker_count(32)
 
     loader = get_dataloader(dataset, "test", batch_size, num_workers, False, device)
 

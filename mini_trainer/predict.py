@@ -298,7 +298,7 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         dest="dataloader_builder_kwargs.num_workers",
         default=None,
         required=False,
-        help="Number of workers used for the dataloaders. Default is between 0 and 32 based on the number of CPU cores on your machine.",
+        help="DataLoader workers. Default: 0-32 based on CPUs available to this process; use 0 to load in the main process.",
     )
     cfg_args.add_argument(
         "--seed",
