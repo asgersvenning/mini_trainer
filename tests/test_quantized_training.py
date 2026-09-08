@@ -146,3 +146,44 @@ def test_integer_linear_module_cuda(dtype, epsilon):
     optimizer.step()
     assert isinstance(layer.weight, TrainingWeight)
     assert torch.isfinite(layer.weight.dequantize()).all()
+
+
+def test_integer_compiler_key_tracks_code_and_metadata(monkeypatch):
+    pytest.importorskip("torchao")
+    from dev.benchmarks import _int8_weight
+
+    weight = _int8_weight.TrainingWeight.from_float(torch.randn(8, 16))
+    key = weight._stable_hash_for_caching()
+    other_values = _int8_weight.TrainingWeight.from_float(torch.randn(8, 16))
+    assert other_values._stable_hash_for_caching() == key
+    assert weight.to(torch.float64)._stable_hash_for_caching() != key
+    weight.requires_grad_(True)
+    assert weight._stable_hash_for_caching() != key
+    weight.requires_grad_(False)
+    monkeypatch.setattr(_int8_weight, "_IMPLEMENTATION_HASH", "changed-backward-implementation")
+    assert weight._stable_hash_for_caching() != key
+
+
+def test_compiled_integer_parameter_gradients():
+    import copy
+
+    pytest.importorskip("torchao")
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 for compiled INT8 gradient validation")
+    if not torch.cuda.is_available():
+        pytest.fail("CUDA requested but unavailable")
+    from dev.benchmarks.quantized_training import Layer
+
+    torch.manual_seed(42)
+    eager = torch.nn.Sequential(Layer(64, True, torch.float16), Layer(64, True, torch.float16))
+    compiled = torch.compile(copy.deepcopy(eager), fullgraph=True)
+    # Ordinary training input does not require gradients. A small mean-reduced
+    # loss exercises scale products below FP16's representable range.
+    inputs = torch.randn(32, 64, device="cuda", dtype=torch.float16)
+    for model in (eager, compiled):
+        (model(inputs).float().square().mean() / 1000).backward()
+    for expected, actual in zip(eager.parameters(), compiled.parameters(), strict=True):
+        assert actual.grad is not None
+        assert torch.count_nonzero(actual.grad) > 0
+        error = (actual.grad.float() - expected.grad.float()).norm() / expected.grad.float().norm()
+        assert error < 0.04

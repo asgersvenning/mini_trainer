@@ -4,13 +4,30 @@ Kept outside the runtime package until optimizer, checkpoint and model coverage
 are established. Changes are local to this subclass, never TorchAO's dispatch.
 """
 
+import hashlib
+from pathlib import Path
+
 import torch
 from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight
 
+# Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
+# graph key. Include both implementation files so changing backward math cannot
+# reuse a graph compiled for an earlier version. Compute once when importing.
+_IMPLEMENTATION_HASH = hashlib.sha256(
+    Path(__file__).read_bytes() + Path(__file__).with_name("quantized_training.py").read_bytes()
+).hexdigest()
+
 
 class TrainingWeight(Int8QuantizedTrainingLinearWeight):
     """INT8 storage with integer linear arithmetic and ordinary optimizer updates."""
+
+    def _stable_hash_for_caching(self):
+        metadata = [
+            (tuple(value.shape), tuple(value.stride()), str(value.dtype), str(value.device), value.requires_grad)
+            for value in (self, self.int_data, self.scale)
+        ]
+        return hashlib.sha256(repr((_IMPLEMENTATION_HASH, metadata)).encode()).hexdigest()
 
 
 @TrainingWeight.implements_torch_function(torch.nn.functional.linear)

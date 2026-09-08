@@ -135,7 +135,7 @@ Two developer probes make the remaining work measurable:
 ```bash
 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.loader
 CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
-    .venv/bin/python -m dev.benchmarks.quantized_training --eager
+    .venv/bin/python -m dev.benchmarks.quantized_training
 # Also test smaller GEMMs and full precision; benefit is workload-dependent:
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --width 2048 --batch-size 512
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.quantized_training --dtype float32
@@ -205,13 +205,20 @@ saved inputs. A CUDA regression compares input/weight gradients at both ordinary
 and `1e-6` upstream gradient magnitudes. This was discovered through the AdamW
 learning probe, beyond the original large-gradient numerical test.
 
-Model compilation currently drops the experimental subclass's parameter gradients
-in the exercised linear-stack probe. Eager execution produces gradients close to
-the floating-point reference and learns; compiling only the optimizer also
-permits learning. The probe now rejects missing/zero parameter gradients during
-warm-up, so a compiled run cannot be reported as successful training. Use
-`--eager` for validated arithmetic while compiler compatibility is investigated.
-No corrected end-to-end memory or speed benefit has yet been established.
+The apparent compiled zero-gradient failure was traced to an AOT disk-cache hit
+for the old FP16 backward scale products, not the corrected source. The
+experimental tensor now supplies a stable key containing its implementation
+source digest and tensor metadata. Changing backward/dispatch code invalidates
+that key; changing weight values does not. CUDA tests compare compiled and eager
+parameter gradients for a small mean-reduced loss. The probe retains its
+missing/zero-gradient gate, and records warm-up loss trajectories before timing.
+
+With the versioned key, the compiled two-layer 2048-wide, batch-512 AdamW run
+(decay 0.1, epsilon 1e-4, three warm-up and three measured steps) ended at MSE
+0.36759 for INT8 versus 0.36605 for FP16. INT8 took 2.16 ms/step and peaked at
+103,033,344 bytes versus 1.53 ms and 92,539,392 bytes. Compilation improves on
+the eager INT8 result below, but this remains a negative speed and memory result
+against compiled FP16. Larger-workload and end-to-end gains require measurement.
 
 After the scale correction, the eager two-layer 2048-wide, batch-512 AdamW probe
 (seed 42, three warm-up and three measured steps, decay 0.1, epsilon 1e-4)
@@ -220,3 +227,13 @@ FP16. INT8 took 5.85 ms/step and peaked at 171,218,944 bytes, versus 2.39 ms
 and 111,412,224 bytes for FP16. This establishes similar short-run learning in
 that diagnostic, but is a negative speed and peak-memory result. Stored weight
 bytes alone fell from 16,777,216 to 8,396,800; that does not complete the QT goal.
+
+Repeating the original large compiled SGD probe after both corrections (four
+4096-wide layers, batch 2048, three warm-up and ten measured steps) passed the
+nonzero-gradient gate. INT8 took 18.12 ms/step and peaked at 319,063,552 bytes,
+versus 30.39 ms and 386,139,648 bytes for FP16: about 1.68x faster and 17% less
+peak allocated memory on this RTX 3080 Ti workload. Weight storage remained
+67,141,632 versus 134,217,728 bytes. Final MSE was 0.99880 versus 0.99870; the
+small SGD updates in this probe do not establish convergence. This replaces the
+pre-correction large-workload timing above. Real-model training, optimizer-state
+memory, data loading and task quality still require end-to-end validation.
