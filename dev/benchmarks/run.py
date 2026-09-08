@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import torch
 
@@ -42,15 +43,24 @@ def run(
     dataset: str = "synthetic",
     data_root: str | Path | None = None,
     class_spec: str | Path | None = None,
+    quantized_training: bool = False,
+    compile: bool = False,
+    hidden: int = 0,
+    batch_size: int = 32,
+    cache_workers: int | None = None,
 ):
+    matplotlib.use("Agg", force=True)
+    cache = "CPU" if cache == "RAM" else cache
     target_device = torch.device(device)
     precision = getattr(torch, dtype)
     if target_device.type not in ("cpu", "cuda") or dtype not in ("float32", "float16", "bfloat16"):
         raise ValueError("Benchmark profiles support CPU/CUDA with float32, float16 or bfloat16.")
     if target_device.type == "cpu" and (dtype == "float16" or cache == "CUDA"):
         raise ValueError("Use CUDA for the float16 or CUDA-cache profiles.")
-    if num_workers < 0 or epochs < 1:
-        raise ValueError("Workers must be nonnegative and epochs positive.")
+    if num_workers < 0 or epochs < 1 or hidden < 0 or batch_size < 2:
+        raise ValueError("Workers/hidden must be nonnegative, epochs positive and batch size at least two.")
+    if quantized_training and target_device.type != "cuda":
+        raise ValueError("Quantized training benchmark profiles require CUDA.")
     if target_device.type == "cuda":
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA profile requested but no accessible CUDA device is available.")
@@ -59,6 +69,14 @@ def run(
             raise RuntimeError("The selected CUDA device does not support bfloat16.")
         torch.cuda.synchronize(target_device)
         torch.cuda.reset_peak_memory_stats(target_device)
+    repository = Path(__file__).resolve().parents[2]
+    revision = (
+        subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=False).stdout.strip() or None
+    )
+    code_digest = hashlib.sha256()
+    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted(Path(__file__).parent.glob("*.py")):
+        code_digest.update(str(source.relative_to(repository)).encode())
+        code_digest.update(source.read_bytes())
     output = Path(output).absolute()
     if output.exists():
         raise FileExistsError(output)
@@ -108,13 +126,21 @@ def run(
         seed=seed,
         builder=HierarchicalBenchmarkBuilder if hierarchical else NoAugmentationBuilder,
         ema=False,
+        quantized_training=quantized_training,
+        compile=compile,
         model_builder_kwargs={
             "model_type": model_type,
-            "hidden": False,
+            "hidden": hidden if hidden else False,
             "normalized": hierarchical,
             "cls": HierarchicalClassifier if hierarchical else Classifier,
         },
-        dataloader_builder_kwargs={"batch_size": 32, "num_workers": num_workers, "data_index": str(data_index), "cache": cache},
+        dataloader_builder_kwargs={
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "data_index": str(data_index),
+            "cache": cache,
+            "cache_workers": cache_workers,
+        },
         optimizer_builder_kwargs={"optimizer_cls": MuonAuxAdamW, "lr": 0.1 if dataset == "synthetic" else 0.01, "weight_decay": 0.0},
         criterion_builder_kwargs={"label_smoothing": 0.0},
         regularizer_builder_kwargs={"strength": 0.0},
@@ -128,11 +154,14 @@ def run(
     weights = output / "training/weights/last.pt"
     model, preprocess = Classifier.build(weights=str(weights), device=target_device, dtype=torch.float32)
     model.eval()
+    quantization_recipe = getattr(model, "_quantized_training_recipe", None)
+    if quantized_training and not quantization_recipe:
+        raise RuntimeError("Quantized training recipe was not restored from the checkpoint.")
     test_records = [record for record in records if record["split"] == "test"]
     _, loader = get_inference_dataloader(
         images=[str(root / record["path"]) for record in test_records],
         resize_size=size,
-        batch_size=32,
+        batch_size=batch_size,
         num_workers=0,
         device=target_device,
         dtype=torch.float32,
@@ -154,14 +183,6 @@ def run(
     arrays.update({f"scores_{level}": scores for level, scores in enumerate(scores_by_level)})
     arrays.update({f"labels_{level}": labels for level, labels in enumerate(labels_by_level)})
     np.savez(output / "predictions.npz", **arrays)
-    repository = Path(__file__).resolve().parents[2]
-    revision = (
-        subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=False).stdout.strip() or None
-    )
-    code_digest = hashlib.sha256()
-    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted(Path(__file__).parent.glob("*.py")):
-        code_digest.update(str(source.relative_to(repository)).encode())
-        code_digest.update(source.read_bytes())
     result = {
         "schema_version": 1,
         "status": "passed" if dataset == "synthetic" and accuracy == 1.0 else "failed" if dataset == "synthetic" else "completed",
@@ -179,11 +200,22 @@ def run(
             "cuda_cache": cache == "CUDA",
             "ema": False,
             "distributed": False,
-            "quantization": False,
+            "quantization": bool(quantization_recipe),
             "augmentation": False,
             "onnx": False,
         },
         "dataset": dataset,
+        "quantization_recipe": quantization_recipe,
+        "compile": compile,
+        "hidden": hidden,
+        "batch_size": batch_size,
+        "cache_workers": cache_workers,
+        "parameter_bytes": sum(
+            parameter.int_data.numel() + parameter.scale.numel() * parameter.scale.element_size()
+            if getattr(parameter, "_is_quantized_training", False)
+            else parameter.numel() * parameter.element_size()
+            for parameter in model.parameters()
+        ),
         "level_accuracies": accuracies,
         "split_counts": {split: sum(record["split"] == split for record in records) for split in ("train", "val", "test")},
         "seed": seed,
@@ -192,7 +224,7 @@ def run(
         "chance_accuracy": 1 / scores_by_level[0].shape[1],
         "test_accuracy": accuracy,
         "training_wall_seconds": elapsed,
-        "training_wall_scope": "setup, training, validation, logging and checkpoints",
+        "training_wall_scope": "setup, training, validation, logging and checkpoints; includes first-use compilation/autotuning",
         "num_workers_requested": num_workers,
         "num_workers": 0 if cache == "CUDA" else num_workers,
         "cache": cache,
@@ -207,7 +239,14 @@ def run(
         "platform": platform.platform(),
         "cuda_version": torch.version.cuda,
         "cudnn_version": torch.backends.cudnn.version() if target_device.type == "cuda" else None,
-        "versions": {name: version(name) for name in ("torch", "torchvision", "numpy", "mini_trainer")},
+        "versions": {
+            name: version(name)
+            for name in (
+                ("torch", "torchvision", "numpy", "mini_trainer", "torchao")
+                if quantization_recipe
+                else ("torch", "torchvision", "numpy", "mini_trainer")
+            )
+        },
         "dataset_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "checkpoint_sha256": hashlib.sha256(weights.read_bytes()).hexdigest(),
         "score_semantics": "model_eval_forward",
@@ -229,8 +268,13 @@ def main():
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--dtype", choices=["float32", "float16", "bfloat16"], default="float32")
-    parser.add_argument("--cache", choices=["NONE", "RAM", "CUDA"], default="NONE")
+    parser.add_argument("--cache", choices=["NONE", "CPU", "RAM", "CUDA"], default="NONE")
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--cache-workers", type=int)
+    parser.add_argument("--quantized-training", action="store_true")
+    parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--hidden", type=int, default=0)
+    parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
         "--allow-nondeterministic",
         action="store_true",
@@ -256,6 +300,11 @@ def main():
             dataset=args.dataset,
             data_root=args.data_root,
             class_spec=args.class_spec,
+            quantized_training=args.quantized_training,
+            compile=args.compile,
+            hidden=args.hidden,
+            batch_size=args.batch_size,
+            cache_workers=args.cache_workers,
         )
     except Exception as error:
         args.output.mkdir(parents=True, exist_ok=True)
@@ -268,6 +317,11 @@ def main():
             "cache": args.cache,
             "seed": args.seed,
             "epochs": args.epochs,
+            "quantized_training": args.quantized_training,
+            "compile": args.compile,
+            "hidden": args.hidden,
+            "batch_size": args.batch_size,
+            "cache_workers": args.cache_workers,
             "error": {"type": type(error).__name__, "message": str(error)},
         }
         (args.output / "report.json").write_text(json.dumps(failure, indent=2) + "\n")

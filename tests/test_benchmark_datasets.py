@@ -63,8 +63,38 @@ def test_blair_requires_explicit_covering_taxonomy(tmp_path):
 def test_summary_preserves_failures_and_unmeasured_fields(tmp_path):
     path = tmp_path / "failed"
     path.mkdir()
-    (path / "report.json").write_text(json.dumps({"status": "failed", "device": "cuda:0", "dtype": "float16"}))
+    (path / "report.json").write_text(json.dumps({"status": "failed", "device": "cuda:0", "dtype": "float16", "quantized_training": True}))
     summary = summarize(tmp_path)
-    assert "| failed | failed | cuda:0 / float16 | — | — |" in summary
+    assert "| failed | failed | cuda:0 / float16 | requested | — | — | — | — |" in summary
     assert "CPU results do not validate GPU" in summary
     assert "No reports produced" in summarize(Path(tmp_path / "missing"))
+
+
+def test_shared_harness_records_process_failures(tmp_path):
+    import os
+    import shlex
+    import subprocess
+    import sys
+
+    runner = tmp_path / "python-wrapper"
+    runner.write_text(
+        '#!/usr/bin/env bash\nif [[ "$1" == "-m" && "$2" == "dev.benchmarks.run" ]]; then exit 134; fi\n'
+        + f'exec {shlex.quote(sys.executable)} "$@"\n'
+    )
+    runner.chmod(0o755)
+    output = tmp_path / "reports"
+    result = subprocess.run(
+        ["bash", "dev/check-benchmarks.sh", "qt", str(output)],
+        env={**os.environ, "BENCHMARK_PYTHON": str(runner)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 1
+    for profile in ("synthetic-float", "synthetic-int8"):
+        report = json.loads((output / profile / "report.json").read_text())
+        assert report["status"] == "failed"
+        assert report["error"]["exit_code"] == 134
+        assert report["quantized_training"] == profile.endswith("int8")
+        assert "test_accuracy" not in report
+    assert "requested" in (output / "summary.md").read_text()

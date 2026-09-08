@@ -84,9 +84,10 @@ graphs. Numerical checks include small gradients, compiled/eager agreement,
 weight storage, optimizer updates, regularization and model-state restoration.
 
 Kernel-probe results do not establish a real-model speedup or convergence. The
-integrated path still needs paired synthetic-oracle, MNIST and hierarchical Blair
-runs, complete optimizer/resume coverage, end-to-end memory and throughput
-measurements, and broader quantized operation coverage. These are requirements
+integrated path now has paired synthetic-oracle, MNIST and hierarchical Blair
+smoke runs, recorded in [the dataset benchmark results](benchmarks.md#integrated-int8-training).
+Complete optimizer/resume coverage, demonstrated real-workload speedups and broader
+quantized operation coverage remain outstanding. These are requirements
 for the overall QT goal, not conclusions implied by this initial integration.
 
 The integrated backend was rerun on the four-layer, 4096-wide, batch-2048 compiled

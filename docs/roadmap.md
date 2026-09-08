@@ -95,8 +95,9 @@ capability and does not complete this target. The initial CUDA integer forward/b
 kernel probe and cached-loader benchmark are documented in [the benchmark guide](../dev/benchmarks/README.md).
 An initial [CUDA INT8 Linear integration](quantized-training.md) connects model
 preparation and checkpoint loading to the training entry point. Broader operator
-and optimizer coverage, real-data convergence and end-to-end measurements remain
-required to complete this target.
+and optimizer coverage, stronger convergence evidence and real-workload speedups
+remain required. Paired synthetic, MNIST and hierarchical Blair smoke runs now
+record quality, storage and timing; [these small workloads are slower under QT](benchmarks.md#integrated-int8-training).
 Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
 that target. The implementation and comparison plan is in
 [training feature validation](training-feature-validation.md).

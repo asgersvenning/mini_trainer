@@ -127,8 +127,9 @@ and [artifact retention](https://github.com/actions/upload-artifact#retention-pe
 
 ## Quantized training and loader performance
 
-Actual quantized training is the next implementation target. PTQ/QAT and AMP do
-not establish reduced training memory or faster training.
+Actual quantized training has an initial Linear integration. PTQ/QAT and AMP do
+not establish reduced training memory or faster training. Broader coverage and
+real-workload speedups remain implementation targets.
 
 Two developer probes make the remaining work measurable:
 
@@ -197,8 +198,9 @@ or `--momentum 0.9 --weight-decay 0.1` for SGD. AdamW uses an explicit
 state. Use `--dtype float32 --epsilon 1e-8` to test ordinary float32 optimizer
 state. This changes the experimental recipe, not the training CLI defaults.
 CUDA regression tests exercise ordinary `nn.Linear` dispatch with non-square
-weights, bias and batched inputs. Weight normalization, masked classifier
-weights, convolutional QT, Muon, DDP and `mt_train` resume remain unverified.
+weights, bias, batched inputs and masked classifier rows. Model tests also cover
+MuonAuxAdamW and controlled `mt_train` resume. Weight normalization, convolutional
+QT, DDP and arbitrary stochastic continuation remain unverified.
 
 The original FP16 backward scale products could underflow before quantization,
 suppressing gradients from mean-reduced losses. The corrected kernel forms
@@ -278,3 +280,37 @@ similar throughput, not evidence of a meaningful speedup. The concrete gain is
 bounded read-ahead and reliable failure handling, with explicit synchronous
 construction available for shared-node environments. CUDA checks also verify
 pinned CPU transfer batches and exact CPU/CUDA cache contents.
+
+## Integrated QT dataset profiles
+
+Install the optional `quantization` extra with the intended CUDA backend explicitly
+selected (see the repository README), then use new output directories:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 TORCHINDUCTOR_COMPILE_THREADS=1 \
+    bash dev/check-benchmarks.sh qt /tmp/benchmarks-qt
+CUDA_VISIBLE_DEVICES=0 TORCHINDUCTOR_COMPILE_THREADS=1 \
+    BENCHMARK_DATA_ROOT=/path/to/datasets BLAIR_CLASS_SPEC=/path/to/class_spec.json \
+    bash dev/check-benchmarks.sh qt-real /tmp/benchmarks-qt-real
+```
+
+The first command pairs floating and INT8 synthetic training. The second pairs
+MNIST and hierarchical Blair, using a reviewed existing Blair class specification.
+Both use FP16 AMP, CPU caching and zero cache/loader workers; Blair uses hidden
+size 64 in both paths to exercise an eligible Linear while normalized heads remain
+floating point. The runner exposes `--hidden`, `--batch-size`, `--compile` and
+`--cache-workers` for explicit additional profiles. Defaults remain unchanged.
+`--cache RAM` is retained as an alias for `CPU`.
+
+For Actions, enable `gpu=true` and `qt=true`, adding `real_data=true` for both
+real datasets. Scheduled GPU runs can enable `BENCHMARK_QT=true` together with the
+existing GPU and real-data variables described above. The disposable GPU
+environment installs the quantization extra only when QT is enabled. CUDA model
+regressions precede the paired profiles; summaries and artifacts retain measured
+coverage, storage, timing and failures. This workflow wiring has been checked
+locally but has not been dispatched on a self-hosted runner from this session.
+
+[Local measured results](../../docs/benchmarks.md#integrated-int8-training) include
+slower QT training on these small workloads. Whole-model compilation defaults off;
+first-use kernel compilation is still included in wall time. Compare matching
+configurations and compiler cache conditions before making performance claims.

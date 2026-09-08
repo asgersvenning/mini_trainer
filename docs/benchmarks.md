@@ -58,8 +58,9 @@ inference quantization or quantization-aware training.
 
 ## Coverage still needed
 
-The reports currently mark EMA, distributed training, augmentation, quantization
-and ONNX integration as unexercised by this benchmark suite. Existing focused tests
+The baseline reports mark EMA, distributed training, augmentation, quantization
+and ONNX integration as unexercised. The explicit QT profiles below establish
+limited quantization coverage; the other capabilities remain unexercised by this suite. Existing focused tests
 provide other evidence, but do not make those boxes true for these dataset runs.
 Add explicit profiles and comparison criteria before claiming coverage or improvement.
 The known EMA continuation failure remains recorded in the roadmap.
@@ -72,3 +73,49 @@ it does not yet measure their relative model quality. See the [step contract](..
 
 See the [benchmark guide](../dev/benchmarks/README.md) for local commands, GPU runner
 configuration, real-data inputs and reproduction details.
+
+## Integrated INT8 training
+
+The shared runner now offers paired `qt` (synthetic) and `qt-real` (MNIST/Blair)
+profiles. Each pair uses the same architecture, dataset manifest, seed, optimizer,
+AMP setting and CPU cache with synchronous construction. QT coverage is checked
+after checkpoint reload and reported by operation, alongside parameter storage,
+peak CUDA allocation and training-call wall time. Runs are headless; the wrapper
+also records process failures that cannot produce a Python exception report.
+
+Local observations on the RTX 3080 Ti Laptop GPU, Python 3.13.7, PyTorch
+2.12.0+cu130 and TorchAO 0.17.0 use seed 42, batch size 32, one CPU thread,
+zero loader/cache workers and FP16 AMP with float32 optimizer parameters.
+Synthetic uses 12 epochs; MNIST and Blair use 5. No augmentation or EMA is used.
+
+| Dataset / path | Held-out accuracy | Parameter bytes | Peak CUDA MiB | Training wall seconds |
+| --- | --- | ---: | ---: | ---: |
+| Synthetic float | 100% | 88 | 64.04 | 4.22 |
+| Synthetic INT8, repeat | 100% | 68 | 32.03 | 12.95 |
+| MNIST float | 97.12% | 44,968 | 64.18 | 6.06 |
+| MNIST INT8 | 97.00% | 29,648 | 32.17 | 43.08 |
+| Blair float | 66.41% species / 80.28% parent | 158,792 | 64.50 | 10.64 |
+| Blair INT8 | 64.86% species / 79.59% parent | 60,744 | 64.40 | 26.51 |
+
+Synthetic INT8 repeated with bitwise-identical held-out scores. Its first run
+required 80.43 seconds, showing how compiler/autotuning cache state affects these
+short runs even without whole-model compilation. Wall time includes setup,
+training, validation, logging, checkpoints and first-use compilation; it excludes
+final held-out inference. These are single-seed smoke comparisons, not isolated
+causal estimates or steady-state throughput measurements. Real-data runs permit
+nondeterministic CUDA pooling. QT stochastic rounding can also change the RNG
+sequence used by dropout.
+
+MNIST quantizes only its final Linear. Blair uses a 64-unit hidden layer in both
+paths and quantizes that layer; convolutions and normalized hierarchical heads
+remain floating point. Parameter bytes exclude buffers, gradients, optimizer
+state and activations. Whole-run peak allocation includes workspaces: the tiny
+synthetic model's roughly 32 MiB difference cannot be explained by its 20-byte
+parameter reduction. Blair's parameter reduction barely changes overall peak
+allocation. None of these dataset runs demonstrates a training speedup.
+
+The initial Blair QT attempt aborted in Tkinter cleanup before reporting; the
+headless fix allowed the successful rerun above. Reports now preserve skipped
+operation reasons across reload. These local artifacts remain outside the checkout;
+the shared workflow retains future reports, predictions and logs in Actions.
+See [the reproduction commands](../dev/benchmarks/README.md#integrated-qt-dataset-profiles).

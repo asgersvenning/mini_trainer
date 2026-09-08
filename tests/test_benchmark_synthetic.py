@@ -27,10 +27,11 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
     threads = torch.get_num_threads()
     try:
         torch.set_num_threads(1)
-        first = run(tmp_path / "first")
-        second = run(tmp_path / "second")
+        first = run(tmp_path / "first", cache="CPU", cache_workers=0)
+        second = run(tmp_path / "second", cache="RAM", cache_workers=0)
     finally:
         torch.set_num_threads(threads)
+    assert first["cache"] == second["cache"] == "CPU"
     assert first["test_accuracy"] == second["test_accuracy"] == 1.0
     assert first["dataset_manifest_sha256"] == second["dataset_manifest_sha256"]
     with np.load(tmp_path / "first/predictions.npz") as a, np.load(tmp_path / "second/predictions.npz") as b:
@@ -73,3 +74,13 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     assert report["device"] == "cuda:0"
     assert report["error"]["type"] == "RuntimeError"
     assert "test_accuracy" not in report
+
+
+def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
+    import pytest
+
+    from dev.benchmarks.run import run
+
+    with pytest.raises(ValueError, match="require CUDA"):
+        run(tmp_path / "qt", quantized_training=True)
+    assert not (tmp_path / "qt").exists()

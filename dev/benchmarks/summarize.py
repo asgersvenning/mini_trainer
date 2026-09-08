@@ -9,8 +9,8 @@ def summarize(directory: Path) -> str:
     lines = [
         "# Dataset benchmark results",
         "",
-        "| Run | Status | Device / precision | Accuracy by level | Training wall time |",
-        "| --- | --- | --- | --- | --- |",
+        "| Run | Status | Device / precision | QT coverage | Accuracy by level | Parameter bytes | Peak CUDA MiB | Training wall time |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     reports = sorted(directory.rglob("report.json"))
     for path in reports:
@@ -20,9 +20,18 @@ def summarize(directory: Path) -> str:
         duration = f"{seconds:.2f}s" if seconds is not None else "—"
         name = path.parent.relative_to(directory).as_posix()
         device = f"{report.get('device', '?')} / {report.get('dtype', '?')}"
-        lines.append(f"| {name} | {report['status']} | {device} | {accuracy} | {duration} |")
+        recipe = report.get("quantization_recipe")
+        quantization = (
+            f"INT8 ({len(recipe['quantized_modules'])} Linear)" if recipe else "requested" if report.get("quantized_training") else "off"
+        )
+        parameter_bytes = report.get("parameter_bytes", "—")
+        peak = report.get("peak_cuda_allocated_bytes")
+        peak_memory = f"{peak / 2**20:.2f}" if peak is not None else "—"
+        lines.append(
+            f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | {peak_memory} | {duration} |"
+        )
     if not reports:
-        lines.append("| No reports produced | incomplete | — | — | — |")
+        lines.append("| No reports produced | incomplete | — | — | — | — | — | — |")
     lines.extend(
         [
             "",
@@ -32,6 +41,8 @@ def summarize(directory: Path) -> str:
             "Wall times include setup, training, validation, logging and checkpoints. Compare timings",
             "only with matching hardware, dataset/configuration and timing scope. See JSON reports",
             "for provenance, errors and explicit coverage flags. CPU results do not validate GPU behavior.",
+            "QT coverage counts quantized Linear modules; other operations may remain floating point.",
+            "Parameter bytes describe stored parameters, while peak CUDA memory covers the full run.",
         ]
     )
     return "\n".join(lines) + "\n"

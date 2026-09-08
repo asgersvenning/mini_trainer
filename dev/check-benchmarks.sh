@@ -9,15 +9,32 @@ if [[ -e "$results" ]]; then
     echo 'Results directory must be new.' >&2
     exit 2
 fi
-case "$mode" in cpu|gpu|real) ;; *) echo 'Mode must be cpu, gpu or real.' >&2; exit 2 ;; esac
+case "$mode" in cpu|gpu|real|qt|qt-real) ;; *) echo 'Mode must be cpu, gpu, real, qt or qt-real.' >&2; exit 2 ;; esac
 mkdir -p -- "$results"
 status=0
 run_profile() {
     local profile="$1"
     shift
-    if ! OMP_NUM_THREADS=1 "$benchmark_python" -m dev.benchmarks.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
+    if OMP_NUM_THREADS=1 MPLBACKEND=Agg "$benchmark_python" -m dev.benchmarks.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
+        return
+    else
+        local exit_code="$?"
         echo "Benchmark failed: $profile; see $results/$profile.log" >&2
         status=1
+        if [[ ! -f "$results/$profile/report.json" ]]; then
+            "$benchmark_python" - "$results/$profile/report.json" "$exit_code" "$@" <<'PY_REPORT'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps({
+    "schema_version": 1, "status": "failed", "arguments": sys.argv[3:],
+    "quantized_training": "--quantized-training" in sys.argv[3:],
+    "error": {"type": "ProcessFailure", "exit_code": int(sys.argv[2]), "message": "Process exited without a report; see profile log."},
+}, indent=2) + "\n")
+PY_REPORT
+        fi
     fi
 }
 if [[ "$mode" == cpu ]]; then
@@ -25,6 +42,25 @@ if [[ "$mode" == cpu ]]; then
 elif [[ "$mode" == gpu ]]; then
     for precision in float32 float16 bfloat16; do
         run_profile "synthetic-cuda-$precision" --device cuda:0 --dtype "$precision" --cache CUDA
+    done
+elif [[ "$mode" == qt ]]; then
+    run_profile synthetic-float --device cuda:0 --dtype float16 --cache CPU --cache-workers 0
+    run_profile synthetic-int8 --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --quantized-training
+elif [[ "$mode" == qt-real ]]; then
+    : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/ and blair/}"
+    : "${BLAIR_CLASS_SPEC:?Set BLAIR_CLASS_SPEC to a reviewed Blair class specification}"
+    for dataset in mnist blair; do
+        extra=()
+        if [[ "$dataset" == blair ]]; then
+            extra=(--class-spec "$BLAIR_CLASS_SPEC" --hidden 64)
+        fi
+        for precision in float int8; do
+            quantization=()
+            if [[ "$precision" == int8 ]]; then quantization=(--quantized-training); fi
+            run_profile "$dataset-$precision" --dataset "$dataset" --data-root "$BENCHMARK_DATA_ROOT/$dataset" \
+                --epochs 5 --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --allow-nondeterministic \
+                "${extra[@]}" "${quantization[@]}"
+        done
     done
 else
     : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/ and blair/}"

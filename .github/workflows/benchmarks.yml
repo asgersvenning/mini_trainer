@@ -13,6 +13,10 @@ on:
         description: Run GPU profiles on a configured self-hosted GPU runner
         type: boolean
         default: false
+      qt:
+        description: Also run paired float and INT8 training profiles (requires gpu)
+        type: boolean
+        default: false
       real_data:
         description: Also run MNIST and Blair using configured runner data paths
         type: boolean
@@ -32,9 +36,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Validate manual profile selection
-        if: github.event_name == 'workflow_dispatch' && inputs.real_data && !inputs.gpu
+        if: github.event_name == 'workflow_dispatch' && (inputs.real_data || inputs.qt) && !inputs.gpu
         run: |
-          echo 'The real_data profile requires gpu=true.' >&2
+          echo 'The real_data and qt profiles require gpu=true.' >&2
           exit 2
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
@@ -64,6 +68,7 @@ jobs:
     env:
       BENCHMARK_DATA_ROOT: ${{ vars.BENCHMARK_DATA_ROOT }}
       BLAIR_CLASS_SPEC: ${{ vars.BLAIR_CLASS_SPEC }}
+      QT_ENABLED: ${{ inputs.qt || vars.BENCHMARK_QT == 'true' }}
       CUDA_BACKEND: ${{ inputs.cuda_backend || vars.BENCHMARK_CUDA_BACKEND || 'cu130' }}
     steps:
       - uses: actions/checkout@v6
@@ -72,11 +77,24 @@ jobs:
         run: |
           export UV_PROJECT_ENVIRONMENT="$RUNNER_TEMP/benchmark-env-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           printf 'UV_PROJECT_ENVIRONMENT=%s\nBENCHMARK_PYTHON=%s/bin/python\n' "$UV_PROJECT_ENVIRONMENT" "$UV_PROJECT_ENVIRONMENT" >> "$GITHUB_ENV"
-          uv sync --locked --extra "$CUDA_BACKEND" --python 3.13
+          qt_extras=()
+          if [[ "$QT_ENABLED" == "true" ]]; then qt_extras=(--extra quantization); fi
+          uv sync --locked --extra "$CUDA_BACKEND" "${qt_extras[@]}" --python 3.13
       - name: CUDA optimizer and AMP step regressions
         env:
           RUN_CUDA_TESTS: "1"
         run: '"$BENCHMARK_PYTHON" -m pytest tests/test_optimizer_steps.py -k cuda'
+      - name: CUDA INT8 model and checkpoint regressions
+        if: inputs.qt || vars.BENCHMARK_QT == 'true'
+        env:
+          RUN_CUDA_TESTS: "1"
+        run: '"$BENCHMARK_PYTHON" -m pytest tests/test_quantized_training.py tests/test_quantized_training_model.py'
+      - name: Paired synthetic quantized training
+        if: (inputs.qt || vars.BENCHMARK_QT == 'true') && !cancelled()
+        run: bash dev/check-benchmarks.sh qt benchmark-qt
+      - name: Paired real-data quantized training
+        if: (inputs.qt || vars.BENCHMARK_QT == 'true') && (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
+        run: bash dev/check-benchmarks.sh qt-real benchmark-qt-real
       - name: Synthetic GPU precision profiles
         run: bash dev/check-benchmarks.sh gpu benchmark-gpu
       - name: Real-data progression
@@ -86,6 +104,11 @@ jobs:
         if: always()
         run: |
           python3 -m dev.benchmarks.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
+          for qt_results in benchmark-qt benchmark-qt-real; do
+            if [[ -d "$qt_results" ]]; then
+              python3 -m dev.benchmarks.summarize "$qt_results" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
           if [[ -d benchmark-real ]]; then
             python3 -m dev.benchmarks.summarize benchmark-real >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -99,6 +122,9 @@ jobs:
           path: |
             benchmark-gpu/
             benchmark-real/
+            benchmark-qt/
+            benchmark-qt-real/
+            !benchmark-qt/**/data/**/*.png
             !benchmark-gpu/**/data/**/*.png
       - name: Remove the disposable GPU environment
         if: always()
