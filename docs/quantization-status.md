@@ -70,8 +70,13 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    replays for both heads. Maintained
    [image preparation](../dev/benchmarks/README.md#maintained-image-input-preparation)
    now reproduces every retained calibration and validation NPZ hash for both
-   heads from source images and export metadata. Automate the composed pipeline
-   and package its explicit optional environments. The default preparation factory
+   heads from source images and export metadata. A
+   [paired quality pipeline](../dev/benchmarks/README.md#paired-inference-quality-pipeline)
+   now runs both collectors and the evaluator in fresh processes, retaining logs,
+   failure reports and a Markdown summary, with separately selectable runtime and
+   metric interpreters. Compose preparation, calibration, builds, placement and
+   performance checks with it, and package the explicit optional environments.
+   The default preparation factory
    uses current architecture-loader transforms; custom preprocessing still needs
    an explicit reviewed factory and input verification.
    Preserve calibration records, class/preprocessing contracts, hashes, failures

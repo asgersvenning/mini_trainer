@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from dev.benchmarks.dataset_inference import collect, inference_manifest, pair_bundle, predictions
+from dev.benchmarks.inference_pair import run_pair
 from dev.benchmarks.quality_compare import read_manifest, read_predictions
 
 
@@ -72,6 +73,44 @@ def test_score_semantics_and_shape_are_explicit():
     for values in (np.array([[1.0, 1.0]]), np.array([[-0.1, 1.1]]), np.array([[np.nan, 1]]), np.zeros((1, 3)), np.ones((1, 2), dtype=int)):
         with pytest.raises(ValueError):
             predictions(values, probability, 1)
+
+
+def test_pair_pipeline_runs_real_children_and_preserves_evidence(example, tmp_path):
+    pytest.importorskip("onnxruntime")
+    pytest.importorskip("mini_metrics")
+    model, manifest, _ = example
+    output = tmp_path / "paired"
+    report = run_pair(manifest, model, model, output, candidate_runtime={"save_scores": True})
+    assert report["status"] == "evaluated"
+    assert [stage["status"] for stage in report["stages"]] == ["inferred", "inferred", "evaluated"]
+    assert report["stages"][0]["command"][0] == sys.executable
+    assert all(level["prediction_changes"] == 0 for level in report["levels"])
+    assert all(value == 0 for level in report["levels"] for value in level["candidate_minus_baseline"].values())
+    assert (output / "candidate/scores-00001.npz").is_file()
+    assert "Theil U delta" in (output / "summary.md").read_text()
+    with pytest.raises(FileExistsError):
+        run_pair(manifest, model, model, output)
+
+
+def test_pair_pipeline_retains_failure_and_stops_before_candidate(example, tmp_path):
+    model, manifest, _ = example
+    output = tmp_path / "failed-pair"
+    with pytest.raises(RuntimeError, match="baseline failed"):
+        run_pair(manifest, model, model, output, baseline_runtime={"backend": "invalid"})
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "failed"
+    assert len(report["stages"]) == 1
+    assert report["stages"][0]["returncode"] != 0
+    assert (output / "baseline.log").stat().st_size > 0
+    assert not (output / "candidate").exists()
+
+
+def test_pair_pipeline_rejects_unknown_options_before_creating_output(example, tmp_path):
+    model, manifest, _ = example
+    output = tmp_path / "invalid-pair"
+    with pytest.raises(ValueError, match="Unknown candidate"):
+        run_pair(manifest, model, model, output, candidate_runtime={"typo": True})
+    assert not output.exists()
 
 
 def test_cpu_collection_handles_multiple_inputs_levels_and_partial_batch(example, tmp_path):

@@ -1145,3 +1145,45 @@ collection manifests continue to support manually prepared multiple inputs.
 The default factory requires the repository's PyTorch/Torchvision environment.
 The resulting NPZs can be transferred to the lighter ONNX CPU collection environment
 without reconstructing preprocessing on the edge device.
+
+### Paired inference quality pipeline
+
+`dev.benchmarks.inference_pair` composes the maintained dataset collectors and
+`mini_metrics` evaluator. Each stage runs in a fresh process, sequentially, so
+baseline and candidate runtimes do not coexist in GPU memory. It accepts the
+same prepared held-out manifest for both models and retains prediction CSVs,
+source hashes, runtime reports, subprocess logs, five-metric comparisons and a
+`summary.md` suitable for a CI job summary. It installs nothing.
+
+```bash
+.venv/bin/python -m dev.benchmarks.inference_pair \
+  --manifest prepared-val/manifest.json \
+  --baseline float/model.onnx --candidate int8/model.onnx \
+  --output paired-quality \
+  --baseline-runtime '{"backend":"onnx","threads":1}' \
+  --candidate-runtime '{"backend":"onnx","threads":1}' \
+  --metrics-python /path/to/metrics-env/bin/python
+```
+
+Use `{"backend":"tensorrt","python":"/path/to/gpu-env/bin/python"}` for an
+engine artifact, independently on either side. ONNX options include `provider`,
+`provider_options`, `optimization` and `threads`; TensorRT accepts `device`.
+`save_scores: true` retains batch score arrays when needed. Interpreter paths
+must name actual executables; virtual-environment symlinks are preserved. All
+input paths are resolved from the calling directory. Child commands run from
+this checkout, inheriting the explicitly prepared environment, with
+`PYTHONHASHSEED=0` for repeatable metric evaluation. No local sibling package is
+required; install a compatible `mini_metrics` in the chosen metrics environment.
+
+An existing output directory is rejected. A failed stage stops the pipeline,
+returns a nonzero exit status and retains its log and the top-level failure
+report; later stages do not run. Use a new output directory for retries. Reports
+record metric deltas in units of 0–1, not percentage points, and preserve undefined
+metrics. `evaluated` means collection and metric calculation completed, not that
+the candidate passed a production gate.
+
+This command composes **quality evaluation only**. Preparation, calibration,
+engine builds, integer-placement inspection and paired performance measurement
+remain separate maintained commands. In particular, collector process duration
+is not a latency benchmark. Run the ONNX recipe on the actual ARM device and the
+TensorRT recipe on the intended GPU before making target support claims.

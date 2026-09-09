@@ -1930,6 +1930,36 @@ provides a distinct, measured QT-checkpoint-to-INT8-GPU route. It does not estab
 unchanged native quantization, distributed training, million-class capacity,
 ARM execution or target-machine cost benefits.
 
+### Paired inference quality orchestration
+
+`dev.benchmarks.inference_pair` now composes baseline collection, candidate
+collection and the five-metric comparison in sequential fresh processes. Separate
+Python interpreters can supply the inference and metric dependencies. It retains
+commands, logs, child report hashes, failure status and a Markdown summary, and
+rejects existing output directories. See the
+[command documentation](../dev/benchmarks/README.md#paired-inference-quality-pipeline).
+
+Four full 912-image Blair comparisons replayed the retained artifacts above:
+native integer ONNX versus materialized ONNX on CPU, and TensorRT FP16 versus
+INT8, each for flat and hierarchical heads. Both CPU pairs and the flat TensorRT
+pair reproduced prediction CSVs byte-for-byte. The hierarchical TensorRT baseline
+had one confidence value differ by 4.28e-12; all other CSV fields and the candidate
+CSV were unchanged. All four pairs reproduced every discrete prediction, metric
+value and metric delta exactly. This is orchestration reproducibility evidence,
+not a new quality improvement, timing result or target-hardware qualification.
+
+Ignored outputs are `tmp-inference-pair-{flat,hierarchical}/` and
+`tmp-inference-pair-trt-{flat,hierarchical}/`. The replays reuse existing models,
+engines and prepared inputs and do not duplicate them or retain full score arrays.
+The small hierarchical oracle also exercises the real subprocess pipeline;
+failure and output-reuse regressions verify that incomplete runs cannot report
+successful evaluation. Preparation, calibration, engine building, placement and
+performance still need orchestration before this is a complete deployment pipeline.
+Validation: `bash dev/check.sh all` passed static checks and 473 tests, with
+152 skips and one known EMA expected failure. The focused collector/pipeline
+suite passed 12 tests with one optional CUDA skip. The real TensorRT replays
+were separate intentional GPU runs; ordinary CPU checks do not establish GPU support.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
