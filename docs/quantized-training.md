@@ -140,8 +140,11 @@ model.load_state_dict(state)
 Use the same architecture and intended dtype. This restores model state; create
 and restore optimizer/scheduler/scaler state in their normal order separately.
 The same model supports CUDA inference with `eval()` and `inference_mode()`.
-ONNX export, checkpoint averaging, DDP/FSDP, quantized activation normalization
-and integer convolution training are not established for this path. Distributed training and
+An opt-in [ONNX export path](onnx.md#native-int8-training-checkpoints) captures
+the integer forward using a full-FP32 CUDA reference and verifies ONNX Runtime CPU
+parity. Target-provider performance remains unverified. Checkpoint averaging,
+DDP/FSDP, quantized activation normalization and integer convolution training
+are not established for this path. Distributed training and
 EMA are rejected by the training entry point.
 
 ## Model compilation modes

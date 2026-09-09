@@ -1366,3 +1366,40 @@ This verifies the shared runner on a real model, not repeatability across machin
 or a new quality comparison. Regression tests cover external weight provenance,
 retained input-contract failures, unavailable providers and an advertised GPU
 provider whose graph actually executes entirely on CPU.
+
+### Native INT8 training checkpoint export
+
+The native CUDA QT checkpoints from `tmp-normalization-blair/` now export their
+captured integer forward through the generic ONNX API with
+`reference_device="cuda:0"`. The private export copy freezes parameters so
+PyTorch's tensor-subclass decomposition does not try to assign gradients to
+integer storage. The training model and optimizer parameters remain untouched.
+The custom scaled INT8 product lowers to MatMulInteger with INT32 accumulation,
+retaining the existing row quantizer and floating scales. There is no calibration
+set or conversion to a floating-weight classifier.
+
+An initial trained flat export failed the unchanged parity gate: maximum score
+error was 0.01264 on the first real image with TF32 allowed. Disabling TF32 in the
+CUDA reference removed that failure. The exporter now scopes full-FP32 reference
+execution and records this precision choice; it restores caller settings. The
+failure is retained in `tmp-native-int8-onnx/export.log`, and the successful
+explicit-precision diagnostic in `export-no-tf32.log`.
+
+Both final trained exports passed rtol=1e-4/atol=1e-5 at batches 1, 2, 4 and 8,
+using the same eight preprocessed validation images as the preceding portable
+runtime check. The maximum observed absolute score difference was 1.72e-5 for
+flat and 1.29e-5 for hierarchical fine/parent. A separate runtime profile confirms
+two MatMulInteger and 170 floating Conv operations for each model on the local
+ONNX Runtime CPU provider. These are native training head products, not the
+170-quantized-convolution Percentile recipe from floating checkpoints.
+
+Seven focused tests passed with intentional CUDA access: explicit-device failure,
+normalized symmetric flat/hierarchical heads on tiny and actual EfficientNetV2-S
+backbones, active-class filtering, dynamic batches, caller-state/TF32 restoration,
+restricted checkpoint CLI loading, and zero/tiny-input and zero/negative-scale
+numerical cases. Exported bundles, source checkpoint hashes, parity manifests and
+runtime profiles are retained under ignored `tmp-native-int8-onnx/verified/`.
+The documented export command is in the [ONNX guide](onnx.md#native-int8-training-checkpoints).
+Full-dataset quality comparison with `mini_metrics`, AMP/TF32 versus full-FP32
+quality differences, target-provider execution and speed, and million-class
+export capacity remain open. No new test-set evaluation was used in this work.

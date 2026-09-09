@@ -10,6 +10,7 @@ import torch
 from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.modeling.architectures.load import get_dynamic_model, resolve_backbone_getter
 from mini_trainer.modeling.onnx import export_onnx
+from mini_trainer.modeling.quantized_training import load_training_weights
 
 
 def main(
@@ -20,13 +21,13 @@ def main(
     model_args: dict | None = None,
     dynamic_batch: bool = True,
     batch_size: int = 2,
+    reference_device: str = "cpu",
 ):
     if batch_size < 1:
         raise ValueError("batch_size must be positive.")
     with Path(weights).open("rb") as handle:
         checkpoint_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-        handle.seek(0)
-        state = torch.load(handle, map_location="cpu", weights_only=True)
+    state = load_training_weights(weights, map_location="cpu")
     state = state.get("model", state)
     metadata = Classifier.extract_metadata(state)
     model_type = metadata.get("backbone_class")
@@ -45,7 +46,15 @@ def main(
         if not input_shape or any(size < 1 for size in input_shape):
             raise ValueError("input_shape must contain positive non-batch dimensions.")
         sample = torch.zeros(batch_size, *input_shape)
-    return export_onnx(model, sample, output, preprocessing=preprocessing, dynamic_batch=dynamic_batch, checkpoint_sha256=checkpoint_hash)
+    return export_onnx(
+        model,
+        sample,
+        output,
+        preprocessing=preprocessing,
+        dynamic_batch=dynamic_batch,
+        checkpoint_sha256=checkpoint_hash,
+        reference_device=reference_device,
+    )
 
 
 def run():
@@ -57,6 +66,7 @@ def run():
     parser.add_argument("--model-args", type=json.loads, help="JSON constructor arguments for the existing architecture loader.")
     parser.add_argument("--static-batch", action="store_false", dest="dynamic_batch", help="Export a fixed batch size.")
     parser.add_argument("--batch-size", type=int, default=2, help="Example/static batch size (default: 2).")
+    parser.add_argument("--reference-device", default="cpu", help="PyTorch parity device; native INT8 training requires cuda.")
     args = vars(parser.parse_args())
     if args["preprocessing"] is not None:
         args["preprocessing"] = json.loads(args["preprocessing"].read_text())

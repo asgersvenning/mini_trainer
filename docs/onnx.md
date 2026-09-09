@@ -38,7 +38,7 @@ other score conversion is added: output semantics are those of `model.eval()`.
 Classifier metadata includes the effective class mappings after masking. In
 particular, hierarchical outputs remain separate tensors in their original order.
 
-A private CPU copy uses the example tensor's dtype. The source model's weights,
+A private copy uses the example tensor's dtype and `reference_device` (CPU by default). The source model's weights,
 training modes, device and classifier caches remain untouched. Root DataParallel,
 DDP and compiled wrappers are unwrapped. Use float32 examples for portable CPU
 verification, including when the source was trained in bfloat16. Float16/float64
@@ -109,8 +109,53 @@ convolutions as QLinearConv and roughly halved warm local CPU inference latency,
 with remaining quality losses measured through `mini_metrics`; see the
 [calibration and metric results](benchmarks.md#onnx-activation-calibration-execution-coverage-and-macro-metrics).
 It remains exploratory, with no agreed production quality gate or target-device
-verification. Native CUDA QT checkpoints remain a separate backend
-and are not made ONNX-exportable by these floating-checkpoint experiments.
+verification. Native CUDA QT checkpoint export is a separate path described below;
+these floating-checkpoint PTQ experiments do not validate it.
 
 These local bundles are a foundation for Hugging Face hosting. Model cards,
 evaluation attachments and Hub upload commands remain separate roadmap work.
+
+
+## Native INT8 training checkpoints
+
+Native `cuda-int8-linear` checkpoints can export their captured integer forward
+with an explicit CUDA reference. This requires the existing quantization and
+export extras in a compatible CUDA environment; deployment itself needs only
+ONNX Runtime, NumPy and external preprocessing.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/mt_export --weights native-int8-weights.pt \
+    --output native-int8-onnx --reference-device cuda:0
+```
+
+The Python API uses `export_onnx(model, float32_images, destination,
+reference_device="cuda:0")`. Float32 inputs and a CUDA reference are required for
+this backend. The CLI uses the scoped native-weight loader, retaining restricted
+checkpoint loading. The export copy is frozen to let the exporter unpack integer
+parameter storage; the caller's weights and gradient flags are preserved.
+
+The graph retains the training backend's dynamic symmetric row quantization,
+including clipping, ties-to-even rounding and zero-row behavior. Its scaled INT8
+products lower to `MatMulInteger` with INT32 accumulation and floating row/column
+scales. Activation codes are represented as unsigned codes with zero point 128;
+this preserves the signed values exactly. Weights stay signed INT8. No calibration
+set, floating-weight substitution or replacement classifier is used. Convolutions
+remain floating, as they do in native QT training. This is distinct from the
+static Percentile recipe that also quantizes convolutions.
+
+CUDA reference execution temporarily disables CUDA autocast and TF32 in cuDNN
+and floating matrix products, restoring the caller settings afterward. Real trained images exposed a parity
+failure with TF32 enabled; full-FP32 reference execution passed the original
+rtol=1e-4/atol=1e-5 checks. The manifest records the reference device and TF32 choice.
+This does not promise matching scores against AMP or TF32 evaluation of the same
+checkpoint, whose rounding can change the subsequent integer activation codes.
+
+Tests cover normalized symmetric flat/hierarchical heads, EfficientNetV2-S,
+active-class filtering, dynamic batches, checkpoint CLI loading and numerical
+edge cases. Trained Blair checkpoints also passed checks on eight real validation
+images at batches 1, 2, 4 and 8. An exported graph still needs runtime profiling
+and quality evaluation on the intended provider. CUDA/ARM ONNX execution,
+full-dataset quality equivalence, million-class export capacity and production
+performance of this native path remain unverified. The generic exporter does not
+impose a model allowlist; configurations outside this tested coverage must pass
+the same export and parity checks before a bundle is published.

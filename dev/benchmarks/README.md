@@ -352,10 +352,11 @@ manifest, checkpoints and commands, with a separately selected compatible backen
   samples to the ARM device. Verify scores before measuring batch-one latency,
   sustained throughput and process memory under explicit thread counts.
 
-The current native QT checkpoint is not ONNX-exportable. Establish floating
-EfficientNetV2 export parity first, then implement and validate an appropriate
-deployment quantization path for each provider. Export/runtime work and target
-machine verification remain open; these commands do not establish those results.
+Floating and native INT8 EfficientNetV2 checkpoints now have locally verified
+[ONNX export paths](../../docs/onnx.md). Native export requires an explicit CUDA
+reference; it retains floating convolutions and integer head products. Deployment
+quantization and runtime placement must still be validated for each target
+provider; these training commands do not establish those results.
 Retain reports, logs, failures and predictions with the existing benchmark
 summary/artifact workflow so external runs can be reviewed without machine access.
 

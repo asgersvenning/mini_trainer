@@ -42,8 +42,10 @@ million-class training run remains unverified.
 These are acceptance targets, not claims of hardware or backend support. Laptop
 measurements remain useful for debugging but cannot establish gains on these
 systems. Do not assume a single quantized artifact or kernel recipe works across
-CUDA PyTorch, ONNX GPU and ONNX ARM CPU. The current native QT checkpoint cannot
-be exported directly through the ONNX path. ONNX Runtime training/fine-tuning
+CUDA PyTorch, ONNX GPU and ONNX ARM CPU. Native QT now has an opt-in
+[integer-forward ONNX export](onnx.md#native-int8-training-checkpoints), verified
+against a full-FP32 CUDA reference on the local CPU provider. This does not
+establish ONNX GPU/ARM execution or performance. ONNX Runtime training/fine-tuning
 would be a separate integration; an inference export does not provide it.
 
 The shared dataset harness now selects backbone and head independently while
