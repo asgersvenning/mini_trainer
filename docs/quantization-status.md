@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the checkpoint conversion study](benchmarks.md#native-int8-checkpoint-to-calibrated-tensorrt-deployment).
+recorded in [the CPU recipe study](benchmarks.md#cpu-specific-activation-and-bias-calibration).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -18,7 +18,7 @@ or integer operator count sufficient evidence of production readiness.
 | Native QT ONNX export | Generic integer-forward export; full Blair predictions and five metrics preserved on the tested hybrid CUDA/CPU path, with strict score differences | Integer head execution on GPU: CUDA falls back to CPU for MatMulInteger; TensorRT rejects the native representation |
 | QT checkpoint to calibrated GPU deployment | Explicit materialization of the matched trained INT8 checkpoints, training-only calibration, TensorRT INT8 convolution/head execution, and full Blair comparison against native and FP16 baselines | Broader configuration/large-head qualification; target-machine quality and cost/runtime-memory benefit; exact native dynamic quantization is not preserved |
 | Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained input preparation, calibration, build/inspection/smoke, paired timing, full-dataset collection and paired quality commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; composed continuous orchestration |
-| CPU/edge inference | Calibrated ONNX CPU execution and full Blair metrics on x86; isolated process-memory/timing probe; about 45% lower resident memory but slower batch-one inference for the tested candidate | CPU-specific recipe/fusion tuning; Raspberry Pi/ARM numerical behavior, sustained latency, throughput, process memory and deployment packaging |
+| CPU/edge inference | Full Blair metrics and isolated process-memory/timing on x86; unsigned CPU recipe executes 170 integer convolutions and two head GEMMs, with 44–54% lower warm batch-one latency and 45–48% lower resident memory in three trials per head | Raspberry Pi/ARM numerical behavior, sustained latency, throughput, process memory and deployment packaging; larger-class qualification |
 | Continuous validation/reporting | CPU safeguards, optional GPU training workflow, visible job summaries and 90-day artifacts | Latest TensorRT/paired-engine experiments in maintained commands and continuous profiles; durable cross-device result history and acceptance gates |
 
 Native training currently leaves convolutions, gradients and optimizer states
@@ -120,9 +120,11 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    dependency set; neither x86 CPU results nor CUDA results establish ARM support.
    The [isolated Linux CPU study](benchmarks.md#isolated-linux-cpu-memory-and-inference-study)
    now supplies a maintained RSS/PSS/peak and load/first/warm inference probe.
-   Its local candidate saves resident memory but retains 107 floating convolutions
-   and is slower; investigate CPU-specific calibration/fusion before selecting the
-   edge recipe. Repeat on real ARM hardware with preprocessing and sustained-load
+   The initial signed candidate saved memory but retained 107 floating convolutions
+   and was slower. A [CPU-specific unsigned recipe](benchmarks.md#cpu-specific-activation-and-bias-calibration)
+   now executes all 170 convolutions as integer operations locally, with substantial
+   latency/memory savings and a largest observed quality loss of 2.956 percentage
+   points in hierarchical leaf precision. Repeat on real ARM hardware with preprocessing and sustained-load
    conditions, rather than extrapolating the local memory percentage.
 
 6. **Turn the accepted trade-offs into continuous release evidence.** Select

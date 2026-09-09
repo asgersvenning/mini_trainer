@@ -1236,3 +1236,39 @@ reports. `measured` is not deployment acceptance. Pair results with the maintain
 quality evaluator and separate operator-placement probe. Timing excludes image IO
 and preprocessing; CPU/x86 measurements do not establish ARM kernels, memory,
 quality or speed, and this probe does not measure GPU memory.
+
+### CPU-specific QDQ candidate for EfficientNetV2
+
+The native-checkpoint CPU follow-up found that the TensorRT-oriented signed,
+floating-bias recipe left 107 convolutions floating under the tested x86 ONNX
+Runtime. Quantizing biases alone did not change that coverage. The maintained
+calibrator's unsigned-activation, INT32-bias defaults instead produced 170
+`QLinearConv` and two `QGemm` executions for both normalized symmetric flat and
+hierarchical EfficientNetV2-S heads in that environment.
+
+```bash
+.venv/bin/python -m dev.benchmarks.onnx_calibration \
+  --model materialized/model.onnx --manifest prepared-train/manifest.json \
+  --output cpu-qdq --activation-type uint8 \
+  --method percentile --percentile 99.9 --threads 1
+
+.venv/bin/python -m dev.benchmarks.onnx_inference \
+  --model cpu-qdq/model.onnx --inputs batch-one.npz --output cpu-placement \
+  --provider CPUExecutionProvider --threads 1 \
+  --require-provider-op QLinearConv --require-provider-op QGemm
+```
+
+This recipe uses asymmetric activation ranges, symmetric per-channel INT8 weights
+and quantized INT32 biases; omit `--symmetric-activations` and `--float-bias`.
+It is a separate CPU deployment candidate, not a replacement for the signed
+TensorRT recipe. Required operator names in the example reflect these tested
+models; inspect the actual optimized execution for other architectures. The
+presence of required integer types does not by itself prove that all weighted
+operations use them: also inspect the counts and remaining floating operators.
+
+Use the paired quality pipeline for the complete held-out split and the isolated
+CPU memory probe in separate fresh processes for resource measurements. Keep the
+same input files, explicit threads and floating baseline. This x86 result does
+not establish ARM fusion, kernel behavior or performance; run the full procedure
+on the intended edge device before accepting that profile. See the
+[measured comparison](../../docs/benchmarks.md#cpu-specific-activation-and-bias-calibration).

@@ -2035,6 +2035,85 @@ passed; `bash dev/check.sh all` passed static checks and 476 tests, with 152 ski
 and one known EMA expected failure. Hardware-specific validation, sustained-load
 thermal behavior and end-to-end preprocessing costs remain unverified.
 
+### CPU-specific activation and bias calibration
+
+This follow-up isolates the previous CPU recipe's incomplete integer coverage.
+It uses the same native-trained checkpoints, materialized floating exports,
+128 training calibration images, percentile 99.9 histograms and 912 validation
+images. Both new candidates reproduce the previous **parsed calibration ranges
+exactly**; JSON file hashes differ because of key ordering. No validation data
+or metric thresholds were used to select ranges.
+
+1. Signed symmetric INT8 activations with INT32 biases changed only the bias
+   option from the previous TensorRT-oriented recipe. It still executed 63
+   QLinearConv, 107 floating Conv and two QGemm operations on CPU. Bias quantization
+   alone did not resolve the coverage gap. Its full-data quality results are
+   retained rather than discarded.
+2. Unsigned asymmetric UINT8 activations with symmetric per-channel INT8 weights
+   and INT32 biases used the maintained calibrator's CPU defaults. Both models
+   executed **170 QLinearConv and two QGemm operations, with no floating Conv**,
+   under the local CPU provider. This is a separate recipe from the TensorRT
+   candidate, not a change to the package's training/export defaults.
+
+The paired quality runner evaluated both candidates independently against the
+same materialized float baseline. Candidate metric values are below; the float
+values are in the preceding CPU study.
+
+| Candidate / output | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Signed, INT32 bias / flat | 0.764407 | 0.756174 | 0.786411 | 1.000000 | 0.802939 |
+| Signed, INT32 bias / hierarchical leaf | 0.735748 | 0.730662 | 0.772329 | 1.000000 | 0.792383 |
+| Signed, INT32 bias / hierarchical parent | 0.867726 | 0.845839 | 0.912249 | 1.000000 | 0.856400 |
+| Unsigned, INT32 bias / flat | 0.764523 | 0.761055 | 0.783247 | 1.000000 | 0.805098 |
+| Unsigned, INT32 bias / hierarchical leaf | 0.733602 | 0.727803 | 0.771896 | 1.000000 | 0.793045 |
+| Unsigned, INT32 bias / hierarchical parent | 0.868766 | 0.848444 | 0.913857 | 1.000000 | 0.857750 |
+
+For the unsigned candidate, Macro-F1 changes against float are −0.626, −0.186 and
+−0.149 percentage points for flat, leaf and parent outputs. Hierarchical leaf
+precision decreases 2.956 points, despite a small recall increase. Coverage remains
+one. The unsigned candidate changes 66, 60 and 18 predictions respectively;
+the signed/INT32-bias candidate changes 67, 59 and 17. These remain single-trained-
+checkpoint comparisons, not a general quality-improvement claim.
+
+After calibration, profiling and quality processes finished, three fresh-process
+trials per model measured the unsigned candidate against newly run float
+baselines. Settings match the preceding CPU study: batch one, 128px, one intra-op
+and inter-op thread, three warmups and 31 timings, reversing recipe order in the
+middle trial. Input hashes, settings and reported environments match within
+every pair. The i7-12800H WSL x86 CPU affinity remained 0–19; no claim of controlled
+thermals, disk-cold startup or ARM emulation is made.
+
+| Head / model | Warm median ms, trials 1/2/3 | Final RSS MiB, trials 1/2/3 | Approximate peak RSS MiB, trials 1/2/3 |
+| --- | --- | --- | --- |
+| Flat / float | 23.484 / 25.838 / 24.330 | 196.812 / 191.426 / 191.430 | 198.230 / 192.855 / 192.848 |
+| Flat / unsigned INT8 | 11.022 / 12.236 / 11.983 | 103.586 / 103.852 / 103.137 | 102.738 / 103.059 / 102.273 |
+| Hierarchical / float | 22.611 / 27.651 / 22.634 | 198.129 / 191.621 / 191.625 | 199.609 / 193.039 / 194.797 |
+| Hierarchical / unsigned INT8 | 12.703 / 12.605 / 12.049 | 103.414 / 103.242 / 104.441 | 102.551 / 102.453 / 103.645 |
+
+Candidate/baseline median latency ratios are 0.469/0.474/0.493 for flat and
+0.562/0.456/0.532 for hierarchical: **44–54% lower warm latency**, with **45–48%
+lower final resident memory** across the six pairs. These are separate-process
+median ratios, not adjacent timing pairs. Session load was usually slower for
+INT8 (139–181 ms versus 109–150 ms for float), so this supports repeated inference
+after startup rather than a universal end-to-end speed claim. Memory sources and
+their different accuracy are as documented in the preceding study.
+
+This establishes a useful local x86 quality/resource trade-off and a concrete
+candidate for target-device validation. It does not establish ARM execution,
+sustained thermal behavior, image/preprocessing throughput, large-class heads,
+GPU inference speed or HPC training benefits. Do not extrapolate these percentages
+to Raspberry Pi, Spark/RTX or A40/A100/B300 systems.
+
+Reproduction uses the maintained [CPU recipe](../dev/benchmarks/README.md#cpu-specific-qdq-candidate-for-efficientnetv2),
+paired quality runner and isolated memory probe. Retained ignored artifacts are
+`tmp-cpu-bias-{flat,hierarchical}/`, `tmp-cpu-u8-{flat,hierarchical}/` and
+`tmp-cpu-u8-trials/`, including calibration reports/ranges, placement profiles,
+all prediction CSVs and five metrics, raw timing/memory reports and the trial
+driver. Batch-one inputs and source provenance are reused from
+`tmp-edge-process-probe/`. All four calibration and quality cases, four placement
+checks, and twelve timing processes completed successfully. Static checks passed;
+this increment changes documentation only, so the full runtime suite was not rerun.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
