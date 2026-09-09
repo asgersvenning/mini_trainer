@@ -1065,3 +1065,83 @@ does not publish an evaluation bundle. Existing directories are refused. Tests
 cover multiple inputs, mapped levels, changing batch sizes, full CPU collection
 through mini_metrics, saved scores, failures and CPU dependency isolation; the
 intentional GPU test checks both batch sizes against CPU outputs.
+
+### Maintained image input preparation
+
+`dev.benchmarks.prepare_inputs` replaces the local image-to-NPZ preparation
+scripts. It reads a version-1 benchmark dataset manifest and an ONNX export
+manifest, checks class ordering and source image hashes, and writes the calibration
+or held-out input contract used by the commands above. It uses the existing
+repository image reader on CPU with **zero workers** and an explicit thread limit.
+
+```bash
+# Reproduce the training-split calibration selection:
+OMP_NUM_THREADS=1 python -m dev.benchmarks.prepare_inputs \
+    --dataset-manifest benchmark/dataset_manifest.json --data-root examples/blair \
+    --export-manifest exported-float/manifest.json --output /tmp/calibration-inputs-1 \
+    --split train --count 128 --seed 42 --batch-size 8 --score-semantics logits
+
+# Complete held-out validation input set, without subsampling:
+OMP_NUM_THREADS=1 python -m dev.benchmarks.prepare_inputs \
+    --dataset-manifest benchmark/dataset_manifest.json --data-root examples/blair \
+    --export-manifest exported-float/manifest.json --output /tmp/validation-inputs-1 \
+    --split val --batch-size 8 --score-semantics logits
+```
+
+Pass the resulting `manifest.json` to `onnx_calibration` for `train` or
+`dataset_inference` for `val`/`test`. Omitting `--count` preserves the complete
+split in dataset-manifest order. Supplying it uses
+`random.Random(seed).sample(split_records, count)` with explicit cardinality
+checks. IDs are assigned in selected-record order; filenames and labels preserve
+source identity. The full source records, their hashes and selection are retained
+in `report.json`. Declared cross-split duplicate image hashes are rejected, and
+each selected source image is rehashed before and after preparation. This does
+not independently re-inventory unselected files or prove the supplied split policy.
+
+The source manifest is the existing benchmark format: `class_spec.cls2idx` is a
+flat mapping or numbered level mappings, and each record includes `path`, `split`,
+`targets` (one integer per source level) and `sha256`. Paths must resolve under
+`--data-root`. Export metadata must contain matching class indices, the image
+input shape/dtype, ordered outputs, and the image-reader `resize_size`. Ambiguous
+classifier metadata requires `--classifier-module`. Default source levels are
+the first N levels for N exported levels; `--source-levels` selects others
+explicitly. Class ordering must match exactly. `--level-names` replaces the default
+`level_0`, `level_1`, ... names.
+
+`--score-semantics` is required, because arbitrary exported forward outputs do
+not establish whether they are logits or probabilities. Supply one value for all
+levels or one per level. The exporter must declare preprocessing outside the
+graph. Prepared batches must match its floating image-input shape and dtype,
+including fixed batch dimensions; a partial batch is rejected if the graph does
+not support it.
+
+The default factory is
+`dev.benchmarks.prepare_inputs:repository_preprocess`. It uses the existing
+architecture resolver and recorded resize/preprocessing dtype, with pretrained
+weights disabled and local-only configuration loading where the backend supports
+it. It does not load checkpoint tensors or construct the trained classifier head;
+the architecture getter may still construct a backbone to resolve its transforms.
+It does not interpret the export recipe's descriptive text as executable transforms.
+
+For custom transforms/configuration, provide a trusted importable Python factory
+with `--preprocess-factory package.module:function` and JSON `--factory-args`.
+The factory receives classifier metadata as its first argument and returns a
+callable from the repository's resized RGB uint8 batch to one image tensor.
+The callable must preserve row identity. The default factory accepts `model_args`
+inside factory arguments for existing backend options. Factory and transform
+execution each receive the declared seed for Python, legacy NumPy and CPU Torch
+RNGs, with caller RNGs restored; custom generators or external randomness remain
+the factory's responsibility. Use deterministic inference preprocessing and verify
+input hashes. Factory source hash, arguments, representation and Torch/NumPy
+versions are recorded. Current architecture defaults are not proof that an
+unrecorded custom training transform has been reconstructed correctly.
+
+A new directory receives batch NPZs, `manifest.json` and `report.json`. Failures
+after output creation retain diagnostics and any completed batches; existing
+directories are refused. Preparation processes one batch at a time, but its
+architecture loader and source inventory still consume memory. This image helper
+currently produces one floating image input; the lower-level calibration and
+collection manifests continue to support manually prepared multiple inputs.
+The default factory requires the repository's PyTorch/Torchvision environment.
+The resulting NPZs can be transferred to the lighter ONNX CPU collection environment
+without reconstructing preprocessing on the edge device.

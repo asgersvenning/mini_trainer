@@ -1845,6 +1845,51 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Maintained image preparation reproduction
+
+`dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
+manifests from source images, the benchmark dataset inventory and export metadata.
+It uses existing image decoding/resizing with zero workers and one CPU thread by
+default. Class ordering, selected source levels, source hashes, declared split
+separation, output bindings, tensor shape/dtype and explicit score semantics are
+checked. A trusted preprocessing factory handles custom transforms; the default
+uses existing architecture loaders without loading the trained classifier head.
+See the [commands and scope](../dev/benchmarks/README.md#maintained-image-input-preparation).
+
+The real reproduction used the retained EfficientNetV2-S flat/hierarchical export
+manifests and Blair source inventory. Calibration selection used
+`random.Random(42).sample(train_records, 128)`; validation retained all 912 records
+in manifest order. Source image hashes were checked before and after preparation.
+
+| Head / split | Images | Batches of eight | Retained NPZ file hashes reproduced |
+| --- | ---: | ---: | --- |
+| Flat / calibration train | 128 | 16 | Every batch |
+| Flat / validation | 912 | 114 | Every batch |
+| Hierarchical / calibration train | 128 | 16 | Every batch |
+| Hierarchical / validation | 912 | 114 | Every batch |
+
+Calibration filenames and selection order matched the historical calibration
+records. Validation samples, class labels and level/output bindings matched the
+maintained collector's previous input manifests exactly. Calibration IDs are now
+canonical integer strings; that metadata change does not change the input tensors.
+The new files are retained in `tmp-prepared-real/{flat,hierarchical}-{train,val}/`,
+with reports and reproduction checks. These exact input bytes already passed the
+preceding calibration and full-dataset inference replays, so those downstream
+GPU/CPU runs were not repeated for this preparation-only milestone.
+
+Ten focused regressions passed, including byte-reproducible preparation, a partial
+final batch, class-order and source-hash failures, declared cross-split duplicates,
+and preservation of caller RNG state. The default loader receives backbone
+metadata without constructing a million-class trained head; the regression checks
+that loader boundary without allocating such a head. This does not remove the
+backbone construction cost of the current architecture getters or establish
+reproduction of an unrecorded custom preprocessing transform. Continuous job
+orchestration and target-hardware verification remain outstanding.
+
+Static checks and the full CPU-default suite passed: 458 passed, 152 skipped and
+the known EMA expected failure. No new GPU correctness or performance claim is
+made by this input-preparation milestone.
+
 ### Maintained full-dataset inference reproduction
 
 `dev.benchmarks.dataset_inference` now collects complete held-out prediction
