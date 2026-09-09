@@ -38,6 +38,16 @@ a general quality improvement. Local allocated peaks were 17.8% lower, but CPU
 checks overlapped the runs, so no timing benefit is claimed. This regime retains
 training-mode BatchNorm/dropout, unlike the synthetic evaluation-mode backbone.
 
+An [isolated three-seed flat-head study](benchmarks.md#isolated-three-seed-flat-head-training-comparison)
+now compares full and parameter-frozen pretrained training in twelve fresh
+processes. Full-training INT8 was tied with or slower than BF16 and saved 3.4%
+allocated peak memory. Parameter-frozen INT8 saved 17.8%, with mixed timings and
+a largest observed quality loss of 2.082 points in Macro-Precision. All five
+metrics and checkpoint step counts were checked. The absolute frozen-model
+quality remained well below full training at five epochs, and timing drift
+prevents claiming a stable speedup. Hierarchical and target-hardware replication
+and time-to-useful-quality evidence remain outstanding.
+
 The earlier floating-checkpoint TensorRT timing comparison uses matched builder settings and three fresh
 paired processes per head. At batches 1 and 8, INT8 did not beat FP16 in local
 host latency. Engines are approximately 43% smaller, while reported execution
@@ -114,9 +124,11 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    [corrected allocation comparison](benchmarks.md#correcting-the-frozen-head-allocation-comparison)
    shows a 6.6% local peak reduction for both heads. Repeat the corrected probe
    across seeds and with realistic pretrained features and longer integrated training.
-   The initial parameter-frozen pretrained Blair study now provides execution and
-   quality evidence; repeat it in isolated processes across seeds alongside matched
-   full-backbone baselines to establish time to useful quality.
+   The flat pretrained Blair profile now has isolated three-seed comparisons
+   against full-backbone baselines. Extend that comparison to hierarchical models
+   and longer matched-quality budgets; the current five-epoch frozen models do
+   not reach the full-training quality level. Investigate measured execution costs
+   and larger-head regimes rather than inferring a general speedup from these runs.
 
 3. **Qualify the trained-checkpoint-to-deployment contract.** Explicit conversion
    and calibration now connect the matched native QT checkpoints to distinct

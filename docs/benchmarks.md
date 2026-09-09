@@ -2326,6 +2326,84 @@ the known EMA expected failure. Five additional focused summary/CLI checks passe
 after adding the visible backbone-policy column. All four real GPU training and
 reload runs and both five-metric evaluations completed successfully.
 
+### Isolated three-seed flat-head training comparison
+
+At revision `393a4fa`, twelve fresh-process Blair runs compared full and
+parameter-frozen pretrained EfficientNetV2-S training, each in BF16 and native
+INT8, for seeds 42/43/44. All use the flat symmetric normalized head, five epochs,
+batch 32, image size 128, MuonAuxAdamW with learning rate 0.01, CPU image caching,
+zero loader/cache workers and one PyTorch thread. The parameter-frozen mode
+retains normal BatchNorm/dropout training behavior. There were no overlapping
+benchmark or test jobs. Seeds 42/44 run float before INT8 and full before frozen;
+seed 43 reverses both orders. GPU clocks, thermals and background OS activity were
+not controlled, so this is an isolated-job local study, not target certification.
+
+All twelve runs completed training and checkpoint-reloaded inference. Final
+checkpoints record epoch 4, scheduler position 575 and Adam state step 575 in
+every run. All six quality pairs passed the maintained adapter's checks, including
+matched source/configuration within each pair. The ordered class mappings and
+1,161 held-out image identities, labels and recorded hashes also agree across
+all seeds and both training modes. Evaluation uses all five mini_metrics metrics,
+fixed argmax predictions and threshold zero; no held-out threshold or seed selection.
+
+Median training phases below use epochs 3–5 and include loading, preprocessing,
+compute and batch logging. Whole training calls also include setup, validation,
+figures and checkpoints; they exclude final held-out prediction collection.
+
+| Mode | Seed | Float train epoch (s) | INT8 train epoch (s) | INT8 / float | Float training call (s) | INT8 training call (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Full | 42 | 14.179 | 14.181 | 1.000 | 85.953 | 85.788 |
+| Full | 43 | 16.622 | 17.388 | 1.046 | 97.105 | 105.722 |
+| Full | 44 | 18.841 | 23.201 | 1.231 | 107.971 | 132.295 |
+| Parameter frozen | 42 | 6.074 | 6.339 | 1.043 | 42.132 | 45.838 |
+| Parameter frozen | 43 | 6.904 | 6.354 | 0.920 | 48.911 | 44.307 |
+| Parameter frozen | 44 | 9.321 | 8.304 | 0.891 | 65.718 | 64.139 |
+
+Full-training INT8 was tied with or slower than BF16 in every pair. Frozen-mode
+timings were mixed. Substantial duration changes between seeds/runs remain even
+without overlapping tests; these measurements do not establish a stable speedup.
+The median paired train-phase ratios were 1.046 for full training and 0.920 for
+parameter-frozen training; whole-call ratios were 1.089 and 0.976 respectively.
+
+Allocated peaks were identical across the three seeds within each configuration:
+full training used 1,230.655 MiB float versus 1,189.362 MiB INT8 (**3.4% lower**);
+parameter-frozen training used 206.898 versus 170.032 MiB (**17.8% lower**).
+These are the runner's scoped PyTorch allocator peaks, not total process/device
+memory. Coverage remains the hidden and final Linear layers; convolution training,
+gradients and optimizer states remain floating.
+
+The table records the observed range of INT8-minus-float metric differences,
+multiplied by 100. Ranges span three paired seeds; they are not confidence intervals.
+Coverage was 1.0 for every model.
+
+| Mode | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full | −0.438 to +1.848 | −0.774 to +2.999 | −0.950 to +1.168 | 0 | −0.298 to +2.386 |
+| Parameter frozen | −1.461 to +0.281 | −1.525 to +0.051 | −2.082 to +0.293 | 0 | −1.382 to −0.080 |
+
+There is no uniform quality improvement: the frozen INT8 models lose Macro-F1
+in two seeds and Theil's U in all three. Absolute Macro-F1 is approximately
+0.715–0.748 float / 0.734–0.759 INT8 for full training, versus 0.476–0.480 /
+0.465–0.483 for frozen training. The faster frozen regime therefore does not
+provide the same quality at this fixed epoch budget and must not be presented
+as an equivalent replacement for full training or a time-to-useful-quality gain.
+
+The within-mode quality losses are small enough to remain candidate trade-offs
+under the user's stated tolerance, but full-training memory savings are modest
+and a reliable speed benefit is unproven. Next prioritize measured execution costs
+and larger-head regimes, complete the corresponding hierarchical study, and
+verify the target training hardware. This does not justify making native INT8 a
+default for small-head convolutional training.
+
+Ignored `tmp-isolated-flat-training/` retains the exact command protocol, driver,
+logs, final/resume checkpoints, predictions, six portable quality bundles, all
+mini_metrics reports, `comparison.json` and `checkpoint-checks.json`. Completed
+runs' epoch-zero checkpoints were removed to limit temporary disk use. No library
+code changed in this study; validation consists of the twelve real training runs,
+six metric evaluations, cross-run identity/configuration checks and checkpoint
+step checks described above. Hierarchical, larger-class and target-hardware
+conclusions require their own corresponding measurements.
+
 ### Maintained training prediction quality inputs
 
 `dev.benchmarks.training_predictions` now connects saved dataset benchmark runs
