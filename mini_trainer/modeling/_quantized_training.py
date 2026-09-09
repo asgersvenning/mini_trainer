@@ -306,7 +306,12 @@ def _apply_weight_update(original, update, alpha, denominator=None):
         and 0 < original.shape[1] <= 16384
         and isinstance(update, torch.Tensor)
         and update.shape == original.shape
-        and update.dtype == original.dtype
+        and (
+            update.dtype == original.dtype
+            or denominator is None
+            and original.dtype == torch.float32
+            and update.dtype in (torch.float16, torch.bfloat16)
+        )
         and update.device == original.device
         and (
             denominator is None

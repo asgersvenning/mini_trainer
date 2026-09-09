@@ -40,7 +40,9 @@ def _update_rows(
         if DIVIDE:
             divisor = tl.load(denominator + row * denominator_row_stride + column * denominator_column_stride, valid, 1).to(tl.float32)
             change = (change / divisor).to(dtype).to(tl.float32)
-        change = (change * alpha).to(dtype).to(tl.float32)
+        # Muon produces BF16 updates for FP32 parameters. Match the eager
+        # update * alpha rounding before promotion in the weight addition.
+        change = (change * alpha).to(update.dtype.element_ty).to(tl.float32)
         values = (represented + change).to(dtype).to(tl.float32)
     maximum = tl.max(tl.where(valid, tl.abs(values), 0), 0)
     next_scale = (maximum / 127).to(dtype)

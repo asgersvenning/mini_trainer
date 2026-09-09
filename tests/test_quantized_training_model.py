@@ -389,6 +389,44 @@ def test_cuda_storage_update_rounding_versions_and_rng(operation, dtype):
     assert weight.scale.shape == (33,)
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("transposed", [False, True])
+def test_cuda_mixed_update_matches_materialized_trajectory(dtype, transposed, monkeypatch):
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify mixed-dtype storage updates")
+    assert torch.cuda.is_available()
+    torch.manual_seed(29)
+    weight = nn.Parameter(TrainingWeight.from_float(torch.randn(33, 67, device="cuda")))
+    reference = nn.Parameter(weight.detach().clone())
+    update = torch.randn((67, 33) if transposed else (33, 67), device="cuda", dtype=dtype)
+    if transposed:
+        update = update.T
+    with torch.no_grad():
+        # Warm both kernels before comparing RNG consumption and trajectories.
+        warm = nn.Parameter(weight.detach().clone())
+        warm.add_(update, alpha=-0.03)
+        warm.copy_(reference.dequantize())
+        for alpha in (-0.03, 0.001, -0.1):
+            rng = torch.cuda.get_rng_state()
+            reference.copy_(reference.dequantize() + update * alpha)
+            expected_rng = torch.cuda.get_rng_state()
+            torch.cuda.set_rng_state(rng)
+            version = weight._version
+
+            def forbidden_dequantize(self):
+                raise AssertionError("Mixed update materialized a floating weight matrix")
+
+            with monkeypatch.context() as patch:
+                patch.setattr(TrainingWeight, "dequantize", forbidden_dequantize)
+                assert weight.add_(update, alpha=alpha) is weight
+            assert weight._version > version
+            assert torch.equal(torch.cuda.get_rng_state(), expected_rng)
+            assert torch.equal(weight.int_data, reference.int_data)
+            assert torch.equal(weight.scale, reference.scale)
+
+
 def test_cuda_storage_update_invalidates_saved_weight():
     from mini_trainer.modeling._quantized_training import TrainingWeight
 
