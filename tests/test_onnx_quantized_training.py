@@ -107,3 +107,18 @@ def test_native_linear_zero_tiny_and_negative_scale_rows(tmp_path):
         assert torch.is_autocast_enabled("cuda")
     manifest = json.loads((path / "manifest.json").read_text())
     assert manifest["outputs"][0]["dtype"] == "float32"
+
+
+def test_wide_linear_onnx_avoids_int32_saturation(tmp_path):
+    device = cuda()
+    model = torch.nn.Linear(150000, 2, bias=False).to(device)
+    with torch.no_grad():
+        model.weight.fill_(1)
+    prepare_quantized_training(model)
+    sample = torch.ones(2, 150000)
+    path = export_onnx(model, sample, tmp_path / "bundle", reference_device=device)
+    graph = onnx.load(path / "model.onnx")
+    assert sum(node.op_type == "MatMulInteger" for node in graph.graph.node) > 1
+    with torch.inference_mode():
+        actual = model(sample.to(device))
+    torch.testing.assert_close(actual, torch.full((2, 2), 150000.0, device=device), rtol=1e-6, atol=1e-3)

@@ -1470,3 +1470,41 @@ metric JSON and the diagnostic are retained under ignored
 not target GPU or ARM verification, and no latency claim is derived from this
 quality run. Confidence-thresholded evaluation, repeated-seed training quality,
 large-vocabulary quality and the intended target-machine runs remain open.
+
+### Long-contraction INT8 accumulator correctness
+
+Reviewing the million-class training envelope exposed a correctness issue before
+full-model capacity testing: an INT8 input-gradient product contracts over the
+number of output classes. INT32 accumulation is not safe for arbitrary signed
+INT8 values once the contraction exceeds 131,071 elements. Checking only finite
+losses or gradients cannot detect saturation.
+
+A bounded local CUDA probe with contraction 150,000 and every operand equal to
+127 returned 2,147,483,648 instead of the expected FP32 value 2,419,350,016. The
+result was finite. The exact integer product is 2,419,350,000 before FP32 rounding.
+This is an adversarial arithmetic regression, not a claim that every large-class
+training batch previously saturated.
+
+The backend now keeps the existing tuned kernel for contractions within the
+INT32-safe bound. Longer products periodically transfer bounded INT32 partial
+sums into INT64 storage inside the kernel, then convert the total to floating
+point and apply row/column scales once. This avoids both integer saturation and
+the loss of small residuals when large opposite-signed partial sums are converted
+to float before cancellation. No floating weight master or floating matrix
+multiplication is introduced. The new long-contraction kernel has a fixed tile;
+its throughput on the intended accelerators still needs measurement.
+
+ONNX lowering likewise combines bounded MatMulInteger results in INT64 before
+scaling. Its conservative chunk limit also bounds raw unsigned-activation times
+signed-weight products before zero-point compensation. Ordinary 1280-wide
+EfficientNetV2 forward head products retain one MatMulInteger per Linear; the
+large-class risk primarily concerns the training input gradient.
+
+Regression coverage includes signed extrema around the 131,071/131,072 boundary,
+150k and 1M contractions, strided weights, per-row and scalar/per-column scales,
+large-sum cancellation, compiled execution and a 150k-input ONNX Linear. A separate
+one-million-output, eight-input Linear with unit weights/inputs verifies both the
+input gradient (1,000,000 per element) and weight gradient (2 per element for a
+two-sample sum loss). This is a bounded gradient correctness check, **not** a
+million-class EfficientNetV2 training, optimizer-memory or deployment benchmark.
+Full-model initialization and training capacity remain open.

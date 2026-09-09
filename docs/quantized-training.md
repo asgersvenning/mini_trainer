@@ -210,3 +210,15 @@ the floating path despite substantially smaller parameter storage. Corrected
 benchmark logging preserves CUDA peaks across all resets; older dataset-run CUDA
 readings do not establish whole-run memory reductions. Compiled training now saves
 unwrapped model keys so ordinary checkpoint restoration and resume remain valid.
+
+## Large-class accumulator bounds
+
+Input-gradient products contract over the output class count. For contractions
+above 131,071, the backend now combines bounded INT32 dot products in INT64 before
+converting and scaling the result. This prevents finite but saturated gradients
+for large vocabularies. Shorter contractions keep the existing tuned kernel.
+ONNX export also bounds integer partial products and combines them in INT64.
+See the [arithmetic regression and limits](benchmarks.md#long-contraction-int8-accumulator-correctness).
+A million-output Linear gradient test does not establish that a full million-class
+EfficientNetV2 training configuration fits the available GPU; parameter,
+initialization, gradient and optimizer storage still require separate measurement.

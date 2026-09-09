@@ -136,8 +136,9 @@ parameter storage; the caller's weights and gradient flags are preserved.
 
 The graph retains the training backend's dynamic symmetric row quantization,
 including clipping, ties-to-even rounding and zero-row behavior. Its scaled INT8
-products lower to `MatMulInteger` with INT32 accumulation and floating row/column
-scales. Activation codes are represented as unsigned codes with zero point 128;
+products lower to `MatMulInteger` with bounded INT32 partial accumulation and
+floating row/column scales. Long contractions combine partial sums in INT64
+before converting and applying scales, preventing accumulator saturation. Activation codes are represented as unsigned codes with zero point 128;
 this preserves the signed values exactly. Weights stay signed INT8. No calibration
 set, floating-weight substitution or replacement classifier is used. Convolutions
 remain floating, as they do in native QT training. This is distinct from the
