@@ -1731,3 +1731,47 @@ Locally, supply `BENCHMARK_RUN_ID`, `BENCHMARK_REVISION`, `BENCHMARK_PROFILE`, a
 optionally `BENCHMARK_RUN_URL`, `BENCHMARK_NOTE`, `BENCHMARK_PERFORMANCE_VALID`.
 These artifacts still expire after 90 days: this wiring prepares publisher input,
 but does not yet provide persistent storage or a public historical website.
+
+### Draft release storage client
+
+`dev.benchmarks.release_history` can restore compact history from GitHub release
+assets and optionally append incoming records. It requires Python 3.12+ and
+GitHub CLI `gh`, authenticated for the explicit repository. For automation, set
+`GH_TOKEN` in the environment with repository contents write permission; never
+include the token in command arguments or reports. Only github.com is supported.
+
+```bash
+# Restore existing remote history and preview the incoming records locally.
+.venv/bin/python -m dev.benchmarks.release_history \
+  --repository OWNER/REPO --records tensorrt-results/history/records \
+  --output tmp-history-preview
+
+# Explicitly store the incoming records, then verify each upload by readback.
+# Use a fresh output directory for every invocation, including retries.
+.venv/bin/python -m dev.benchmarks.release_history \
+  --repository OWNER/REPO --records tensorrt-results/history/records \
+  --output tmp-history-stored --upload
+```
+
+Omit `--records` for restore only. Each record belongs to its UTC creation month
+under `benchmark-history-YYYY-MM`. New storage releases are drafts/prereleases
+and are never marked latest. This namespace does not match this repository's
+PyPI workflow trigger, `v*`. Keep an active month's release in draft: the client
+can restore published archives, but refuses to append to them. Draft assets are
+maintainer storage, not a public dashboard; publish the restored HTML separately.
+
+The client paginates both releases and assets, validates and renders all merged
+records before remote writes, rejects conflicting bytes, and never replaces or
+deletes assets. An interrupted upload may leave partial remote progress; retry
+with the same input records and a fresh output directory. Authentication errors
+fail instead of being interpreted as an empty archive. Monthly release limits
+and API failures remain visible errors, with existing records retained.
+
+This avoids Actions artifact expiration when explicitly used, but maintainers can
+still alter/delete draft assets. Keep an independent backup for stronger retention.
+Tests simulate the GitHub CLI boundary, pagination, conflicts, interrupted uploads,
+readback corruption and authentication failures. No live release upload has yet
+been verified, and the client is not connected to an automatic publisher or Pages.
+See the [GitHub CLI API options](https://cli.github.com/manual/gh_api) and
+[release API](https://docs.github.com/en/rest/releases/releases) for the underlying
+pagination and draft-release contract.

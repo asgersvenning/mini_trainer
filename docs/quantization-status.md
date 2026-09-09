@@ -55,8 +55,8 @@ render the real flat/hierarchical smoke reports locally. Hash-verified runtime
 metadata, input identities, quality and resource scope survive the projection;
 local paths and prediction rows do not. Resource comparisons are excluded by
 default and remain excluded for these smokes. This prepares a reviewable reporting
-format, but persistent storage, public hosting and CPU/training adapters are still
-unimplemented.
+format, but live persistent storage and public hosting remain unverified;
+CPU/training adapters are still unimplemented.
 
 The target workflow now prepares the compact record and standalone page as a
 separate small artifact, including early failures. Its shared command was checked
@@ -64,6 +64,12 @@ against a retained real Blair evaluation; failure handling and repeated archival
 have subprocess regressions. This does not extend the 90-day artifact lifetime
 or establish that the workflow has run remotely. Durable storage and public
 history remain the next reporting steps.
+
+A draft-release storage client now restores monthly compact archives and can
+explicitly append new records with byte-for-byte readback. Its simulated GitHub
+CLI tests cover pagination, immutable run identities and interrupted retries.
+Live storage verification, automated publication and public hosting remain open;
+the client alone is not evidence that results have been durably hosted.
 
 ## Current evidence
 
