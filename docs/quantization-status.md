@@ -50,6 +50,14 @@ using explicitly configured environments, ONNX sources and held-out inputs.
 Its job summary and 90-day artifacts provide per-run visibility; remote execution,
 durable cross-run reporting and production acceptance remain unverified.
 
+A compact immutable TensorRT report archive and standalone HTML history now
+render the real flat/hierarchical smoke reports locally. Hash-verified runtime
+metadata, input identities, quality and resource scope survive the projection;
+local paths and prediction rows do not. Resource comparisons are excluded by
+default and remain excluded for these smokes. This prepares a reviewable reporting
+format, but persistent storage, public hosting and CPU/training adapters are still
+unimplemented.
+
 ## Current evidence
 
 | Workstream | Verified locally | What remains unproven |

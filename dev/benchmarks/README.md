@@ -1665,3 +1665,51 @@ Artifacts are named by run ID and attempt and retained for 90 days. This supplie
 visible per-run evidence, **not durable cross-run history**; permanent publication
 and target acceptance still require additional work. Source models, datasets and
 prepared environments are not uploaded by the workflow.
+
+### Compact report history and local dashboard
+
+`dev.benchmarks.report_history` archives version-one composed TensorRT reports as
+immutable, compact JSON records and renders a standalone HTML history. Use the
+repository's supported Python (3.12 or newer); the command itself only needs the
+standard library and does not load PyTorch, TensorRT or datasets.
+
+```bash
+.venv/bin/python -m dev.benchmarks.report_history archive \
+  --report tensorrt-results/evaluation/report.json --history tmp-report-history \
+  --run-id run-123-attempt-1 --revision FULL_SOURCE_COMMIT_HASH \
+  --profile 'Blair flat / target GPU / batch 8' \
+  --run-url https://github.com/OWNER/REPO/actions/runs/123 \
+  --note 'Describe workload and measurement conditions'
+.venv/bin/python -m dev.benchmarks.report_history render --history tmp-report-history
+```
+
+Open `tmp-report-history/index.html`. Every record retains the source report
+hash, source revision, input/manifest hashes, matching build settings, aggregate
+quality values/deltas, engine identities and resource snapshots. Runtime identity
+comes from a retained latency report whose hash must match the evaluation report.
+Keep that child report beside the source evaluation report when archiving.
+Prediction rows, class/sample labels, local artifact paths and exception text are
+not copied into the compact record. Profile/note/run URL are explicitly supplied
+publication metadata; review them before hosting.
+
+Run IDs accept a restricted filename-safe alphabet. Repeating the identical run
+is idempotent; changing its evidence or metadata under the same ID fails without
+overwriting the record. New records are published with a no-overwrite filesystem
+operation. The HTML page is derived and can be regenerated from `records/`.
+Retain that directory in persistent storage; creating these files alone is not a
+backup or permanent hosting service. Original reproduction artifacts remain
+necessary; compact records do not replace engine files, inputs or raw reports.
+
+Resource comparisons are **excluded by default**. Supply `--performance-valid`
+only when the run's conditions justify their use, and describe those conditions
+in `--note`. This is a publisher declaration, not an automatic certification.
+Failed runs never display eligible performance comparisons. For a preflight/build
+failure before an evaluation report exists, pass the shared command's nonzero
+`status.json` instead. A successful top-level status alone is insufficient:
+archive its detailed evaluation report. Missing quality and undefined metrics
+remain visible, and completed evaluation is not displayed as production acceptance.
+
+The renderer currently supports TensorRT deployment records. CPU/ARM and training
+history adapters, persistent hosted storage and publication automation remain
+unfinished. No remote uploads occur from either command. Local HTML structure
+and escaping have tests; browser rendering still needs visual qualification.

@@ -3535,3 +3535,41 @@ The full CPU-default suite passed: 527 tests passed, 162 skipped and the known
 EMA expected failure, alongside the local real-data GPU workflow-command run.
 Static repository checks passed. The workflow itself has only local YAML/shell
 validation; execution by GitHub Actions on the intended runner is still required.
+
+### Compact deployment history records
+
+A standard-library archive/renderer now creates immutable compact TensorRT
+comparison records and a standalone HTML history. It preserves baseline/candidate
+quality and deltas, input/manifest hashes, engine identities, build settings and
+resource snapshots. Runtime metadata is taken from hash-verified retained latency
+evidence. Prediction rows, local paths and exception details are excluded from
+the public projection. Identical archive retries preserve the existing record;
+conflicting evidence under the same run ID fails without overwriting it.
+
+The two completed flat/hierarchical Blair smoke reports were archived and rendered
+locally under ignored `tmp-report-history-final/`. The page contains two runs and
+three quality tables with explicit macro metric labels. Resource comparisons are
+excluded, matching the overlapping CPU-check conditions of those runs. Input
+identities and build settings remain available in each compact JSON record, and
+checks confirm local filesystem paths are absent. This is local report packaging,
+not evidence that a public history service has been deployed.
+
+Ten focused tests cover immutable/idempotent records, conflicting IDs, malformed
+or nonfinite metric evidence, undefined values, changed runtime evidence, early
+failures, unsafe names/links and HTML escaping. Local HTML parsing and content
+checks passed; no browser renderer is available in this environment, so visual
+browser qualification is not claimed. The system Python here is 3.10 and cannot
+run this repository's supported-runtime code; the maintained `.venv` invocation
+succeeds and is documented. See the [history commands](../dev/benchmarks/README.md#compact-report-history-and-local-dashboard).
+
+Persistent storage, hosted publication and CPU/training adapters remain necessary.
+The archive's default exclusion of resource comparisons prevents these correctness
+smokes from being presented as new performance evidence. Explicitly enabling
+resource display remains a publisher assertion, not target-hardware or production
+acceptance.
+
+Validation passed static checks, the ten focused tests on the final recorder and
+renderer, and the full CPU-default suite: 537 passed, 162 skipped and the known
+EMA expected failure. The real-report projection/render checks passed using the
+maintained Python environment. No new GPU inference or hosting claim accompanies
+this reporting milestone.
