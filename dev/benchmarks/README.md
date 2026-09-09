@@ -975,3 +975,93 @@ floating results. Do not alter metric definitions to force exact historical
 bytes. Correctness tests cover synthetic oracle metrics, literal class identities,
 reordered predictions, invalid contracts and undefined Theil's U; tests requiring
 mini_metrics skip explicitly when that optional evaluation package is absent.
+
+### Maintained full-dataset prediction collection
+
+`dev.benchmarks.dataset_inference` connects preprocessed held-out input batches to
+the paired quality evaluator. ONNX Runtime supports the CPU/edge collection path
+and explicit GPU providers; a separate TensorRT backend executes built engines.
+The CPU path imports neither PyTorch, TensorRT nor mini_metrics. Prepare ONNX,
+ONNX Runtime and NumPy explicitly for that path; TensorRT collection uses the
+existing compatible TensorRT/CUDA PyTorch environment. The command installs nothing.
+
+Extend the quality manifest's `schema_version`, `split`, `provenance`, `samples`
+and `levels` fields with input batches and explicit output bindings. Baseline and
+candidate artifact fields are produced by collection rather than supplied here:
+
+```json
+{
+  "schema_version": 1,
+  "split": "val",
+  "provenance": {"dataset": "manifest hash and held-out selection", "preprocessing": "exact transforms"},
+  "levels": [{"name": "leaf", "classes": ["cat", "dog"], "output": "output_0", "score_semantics": "logits"}],
+  "samples": [
+    {"instance_id": 0, "filename": "cat.jpg", "labels": ["cat"]},
+    {"instance_id": 1, "filename": "dog.jpg", "labels": ["dog"]}
+  ],
+  "batch_input": "images",
+  "batches": [{"path": "batch-000.npz", "sample_ids": ["0", "1"]}]
+}
+```
+
+Each NPZ contains all named model inputs; static/unbatched inputs are permitted.
+The leading dimension of `batch_input` must match the batch's `sample_ids`, which
+are canonical string forms of the manifest's integer IDs. Batches must cover every
+sample exactly once. Paths are relative to the manifest, optional batch `sha256`
+values are checked, and hashes of the loaded bytes are always recorded. Batch
+order may differ from sample declaration order. Different batch sizes, including
+the final partial batch, must fit the runtime graph/engine profile.
+
+Each mapped output must be finite floating scores of shape `[batch, classes]`.
+Declare either `logits` (confidence computed by stable softmax) or `probabilities`
+(checked to lie in [0,1] and sum to one). Class lists follow score-column order;
+the collector cannot infer a trustworthy mapping from an opaque engine or prove
+the input preprocessing matches the checkpoint. Bind these from reviewed export
+metadata and preserve provenance. Add one mapping per hierarchical level; no
+backbone/head allowlist is used.
+
+```bash
+# CPU/edge collection, using an explicit ONNX candidate:
+OMP_NUM_THREADS=1 python -m dev.benchmarks.dataset_inference \
+    --model calibrated/model.onnx --manifest heldout-inputs/manifest.json \
+    --output /tmp/heldout-cpu-1 --threads 1
+
+# GPU baseline, then candidate and a ready-to-evaluate comparison manifest:
+OMP_NUM_THREADS=1 python -m dev.benchmarks.dataset_inference \
+    --backend tensorrt --model fp16/model.engine \
+    --manifest heldout-inputs/manifest.json --output /tmp/heldout-fp16-1
+OMP_NUM_THREADS=1 python -m dev.benchmarks.dataset_inference \
+    --backend tensorrt --model int8/model.engine \
+    --manifest heldout-inputs/manifest.json --output /tmp/heldout-int8-1 \
+    --baseline-bundle /tmp/heldout-fp16-1/evaluation.json
+PYTHONHASHSEED=0 OMP_NUM_THREADS=1 python -m dev.benchmarks.quality_compare \
+    --manifest /tmp/heldout-int8-1/comparison.json --output /tmp/heldout-quality-1
+```
+
+ONNX collection defaults to `CPUExecutionProvider`, one intra-op thread, one
+inter-op thread and full graph optimization. `--provider`, JSON
+`--provider-options` and `--optimization disable` support explicit alternatives.
+The requested provider must be available and activated, but registered providers
+do not establish per-operator placement; use the maintained placement/inspection
+commands separately. CPU fallback within a GPU partitioned graph is not ruled out.
+TensorRT uses `--device` and profile 0, with standard plugins registered. Its
+current linear device-IO and shape-tensor limitations match the paired runner.
+
+The new output directory receives `predictions.csv`, `evaluation.json` and
+`report.json`. Supplying `--baseline-bundle` additionally creates `comparison.json`
+after checking matching split, samples, labels and ordered level mappings.
+Different backend artifacts can be compared this way. CSV paths in generated
+bundles are absolute; update them if moving artifacts, retaining their hashes.
+`--save-scores` retains each batch's named arrays and hashes for numerical
+reproduction checks. Without it, only predictions and provenance are retained,
+avoiding a full-dataset score matrix for large heads.
+
+Collection holds one batch's inputs/outputs at a time and streams CSV rows. It is
+a correctness/quality path with per-batch buffer allocation, not an inference
+performance benchmark. Confidence calculation may use higher precision than a
+previous producer; raw scores and discrete predictions are separate contracts.
+Failures retain completed batches and partial CSVs, while incomplete collection
+does not publish an evaluation bundle. Existing directories are refused. Tests
+cover multiple inputs, mapped levels, changing batch sizes, full CPU collection
+through mini_metrics, saved scores, failures and CPU dependency isolation; the
+intentional GPU test checks both batch sizes against CPU outputs.

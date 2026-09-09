@@ -1845,6 +1845,60 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Maintained full-dataset inference reproduction
+
+`dev.benchmarks.dataset_inference` now collects complete held-out prediction
+tables with ONNX Runtime or TensorRT and produces the paired quality evaluator's
+manifest directly. It validates the shared dataset identity contract before
+execution, binds named outputs to ordered class lists and explicit score semantics,
+checks every batch's identity/hash/shape, and optionally retains batch scores.
+The CPU path imports neither PyTorch, TensorRT nor mini_metrics. See the
+[input schema and composed commands](../dev/benchmarks/README.md#maintained-full-dataset-prediction-collection).
+
+For the Blair replay, all 912 validation source images were checked against their
+recorded dataset hashes. Inputs were regenerated with each retained floating
+checkpoint's preprocessing at 128px, after checking checkpoint class mappings
+against the dataset manifest. Each head produced 114 batches of eight; the
+synthetic regression separately exercises a final partial batch and static
+secondary inputs. Real inputs/manifests are retained in `tmp-heldout-inputs/`.
+
+Both heads were then executed through the maintained collector using the retained
+FP16 TensorRT engine, retained signed-QDQ INT8 TensorRT engine, and the maintained
+calibration command's signed-QDQ ONNX model on CPU. All six runs evaluated all
+912 images. They were correctness runs; CPU tests were active during part of the
+work, so no timing or memory-benefit claim is made.
+
+| Head/backend | Discrete predictions versus retained results | Maximum leaf score difference | Maximum parent score difference |
+| --- | --- | ---: | ---: |
+| Flat TensorRT FP16 | All identical | 0 | — |
+| Flat TensorRT INT8 | All identical | 0 | — |
+| Flat ONNX CPU INT8 | All identical | 0 | — |
+| Hierarchical TensorRT FP16 | All identical | 0 | 1.19e−7 |
+| Hierarchical TensorRT INT8 | All identical | 0 | 1.19e−7 |
+| Hierarchical ONNX CPU INT8 | All identical | 0 | 0 |
+
+The small TensorRT parent-score differences mean full bitwise score reproduction
+is not established; they remain below the earlier absolute parity tolerance of
+1e−5 and cause no argmax changes. Four generated comparison manifests (INT8 GPU
+and CPU versus FP16 for each head) ran through the maintained mini_metrics
+evaluator. Candidate metrics matched the retained reports within 3.33e−16.
+Confidence is now computed with a float64 softmax for declared logits; CSV bytes
+are therefore a separate contract from raw scores and discrete predictions.
+
+Collection reports, scores, bundles, paired metric reports and reproduction
+checks are retained under `tmp-heldout-collection/{flat,hierarchical}-{fp16,int8,cpu_int8}/`.
+These results verify the maintained collection/evaluation connection on the local
+x86 CPU and laptop GPU. They do not establish ARM runtime behavior, target GPU
+performance, native QT checkpoint deployment or production acceptance. Source
+image preprocessing/batch preparation for this replay still used a local script;
+promoting that preparation and composing continuous jobs remain necessary.
+
+Static checks and the full CPU-default suite passed: 447 passed, 152 skipped and
+the known EMA expected failure. A subsequent focused run including the new CPU
+dependency-isolation regression passed 23 tests with one GPU skip. All nine
+focused tests present in the prepared TensorRT run passed, including real
+multi-input/two-level execution at both batch sizes.
+
 ### Maintained paired mini_metrics reproduction
 
 `dev.benchmarks.quality_compare` now validates prediction CSVs against an explicit

@@ -16,7 +16,7 @@ or integer operator count sufficient evidence of production readiness.
 | --- | --- | --- |
 | Native PyTorch INT8 training | INT8 Linear weights and saved inputs, normalized symmetric flat/hierarchical heads, optimizer/AMP/checkpoint regressions, full EfficientNetV2-S updates at 100k classes; bounded preparation and initialization | Benefit on A40/A100/B300-class hardware; representative end-to-end training gains; integer convolution training; distributed QT |
 | Native QT ONNX export | Generic integer-forward export; full Blair predictions and five metrics preserved on the tested hybrid CUDA/CPU path, with strict score differences | Integer head execution on GPU: CUDA falls back to CPU for MatMulInteger; TensorRT rejects the native representation |
-| Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained calibration, build/inspection/smoke, paired timing and paired prediction-quality commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; maintained full-dataset inference collection |
+| Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained calibration, build/inspection/smoke, paired timing, full-dataset collection and paired quality commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; automated source-dataset preparation and orchestration |
 | CPU/edge inference | Calibrated ONNX CPU execution and quality measurements on x86; portable provider/timing runner | Raspberry Pi/ARM numerical behavior, sustained latency, throughput, process memory and deployment packaging |
 | Continuous validation/reporting | CPU safeguards, optional GPU training workflow, visible job summaries and 90-day artifacts | Latest TensorRT/paired-engine experiments in maintained commands and continuous profiles; durable cross-device result history and acceptance gates |
 
@@ -53,9 +53,12 @@ production acceptance study.
    pageable/pinned IO regimes. A maintained
    [quality comparison](../dev/benchmarks/README.md#maintained-paired-quality-comparison)
    validates paired prediction CSVs against an explicit held-out manifest and
-   evaluates all five requested mini_metrics metrics. Connect full-dataset
-   inference collection to that contract and dataset preparation to the calibration
-   manifest contract; the evaluator itself does not run model inference.
+   evaluates all five requested mini_metrics metrics. Maintained
+   [full-dataset collection](../dev/benchmarks/README.md#maintained-full-dataset-prediction-collection)
+   now feeds that evaluator for ONNX Runtime and TensorRT, with complete Blair
+   replays for both heads. Connect source-dataset preparation to the calibration
+   and held-out input contracts and automate the composed pipeline. Input batches
+   for the real-data replay were still prepared with a local script.
    Preserve calibration records, class/preprocessing contracts, hashes, failures
    and raw timing samples. Resolve or exclude inconsistent timing sources. The
    current detailed probes and engines are retained locally under ignored `tmp-*`

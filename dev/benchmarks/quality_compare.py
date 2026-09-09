@@ -20,6 +20,18 @@ COLUMNS = ("instance_id", "filename", "level", "label", "prediction", "confidenc
 def read_manifest(path):
     payload = Path(path).read_bytes()
     manifest = json.loads(payload)
+    validate_dataset(manifest)
+    for mode in ("baseline", "candidate"):
+        artifact = manifest.get(mode, {})
+        if not isinstance(artifact.get("path"), str) or not artifact["path"] or not artifact.get("provenance"):
+            raise ValueError(f"Declare prediction path and model/preprocessing provenance for {mode}")
+        if artifact.get("classes") != [level["classes"] for level in manifest["levels"]]:
+            raise ValueError(f"{mode} class mappings must match the ordered level mappings")
+    return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def validate_dataset(manifest):
+    """Validate the shared held-out identity contract before inference or evaluation."""
     if manifest.get("schema_version") != 1 or manifest.get("split") not in ("val", "test"):
         raise ValueError("Require schema_version=1 and a declared val/test split")
     if not isinstance(manifest.get("provenance"), dict) or not manifest["provenance"]:
@@ -57,13 +69,6 @@ def read_manifest(path):
             raise ValueError("Each sample needs one label per level")
         if any(label not in classes for label, classes in zip(labels, class_sets, strict=True)):
             raise ValueError("Sample labels must belong to the declared classes")
-    for mode in ("baseline", "candidate"):
-        artifact = manifest.get(mode, {})
-        if not isinstance(artifact.get("path"), str) or not artifact["path"] or not artifact.get("provenance"):
-            raise ValueError(f"Declare prediction path and model/preprocessing provenance for {mode}")
-        if artifact.get("classes") != [level["classes"] for level in levels]:
-            raise ValueError(f"{mode} class mappings must match the ordered level mappings")
-    return manifest, hashlib.sha256(payload).hexdigest()
 
 
 def read_predictions(path, artifact, manifest):
