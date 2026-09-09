@@ -1845,6 +1845,48 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Maintained ONNX calibration reproduction
+
+`dev.benchmarks.onnx_calibration` now regenerates QDQ artifacts from explicit
+ordered NPZ batches and a provenance manifest. It supports MinMax/Percentile
+calibration, signed/unsigned activations, separate calibration/quantizer symmetry,
+per-channel weights and floating/quantized biases. All calibration sessions use
+explicit CPU thread limits from creation, and ORT's shape-inference sidecars stay
+inside a private source snapshot in the output directory. See the
+[manifest and commands](../dev/benchmarks/README.md#maintained-onnx-calibration-command).
+
+The local reproduction used ONNX 1.22.0 and ONNX Runtime 1.29.0, one CPU thread,
+and the exact retained 128 Blair training samples in their original 16 batches
+of eight. Inputs were regenerated with each floating checkpoint's preprocessing
+at 128px. Neither validation nor test samples were used. Both heads used the
+signed symmetric activation/per-channel weight, floating-bias TensorRT recipe
+with asymmetric Percentile 99.9 histogram collection.
+
+| Head | Exactly equal tensor ranges | Exactly equal initializer arrays | Exactly equal graph nodes |
+| --- | ---: | ---: | ---: |
+| Flat | 339 | 1,374 | 1,366 |
+| Hierarchical | 339 | 1,378 | 1,380 |
+
+Names, input/output definitions and node order also matched the earlier
+`tmp-trt-probe/{head}-float-bias.onnx` candidates. Both new graphs passed ONNX
+checking and finite-output CPU smoke execution. Snapshot/external-file paths
+change serialization hashes, so this is graph/tensor reproduction, not a claim
+of identical file bytes. No new engine timing or full-dataset quality measurement
+was made for this command milestone; the preceding results remain attributed to
+their original engines and runs.
+
+Input manifests and batches are retained under `tmp-onnx-calibration-inputs/`;
+new models, caches, smoke outputs and reports are under
+`tmp-onnx-calibration-{flat,hierarchical}/`. The maintained command validates a
+declared calibration split, unique sample IDs, input hashes and dimensions; it
+cannot independently prove that a caller's provenance excludes held-out data.
+Dataset preparation, paired timing and full mini_metrics evaluation still need
+to be connected into the maintained continuous pipeline.
+
+Validation passed static checks, all ten focused calibration tests, and the full
+CPU-default suite: 416 passed, 149 skipped and the known EMA expected failure.
+This milestone did not rerun GPU tests or establish new target-hardware results.
+
 ### Maintained TensorRT engine reproduction
 
 `dev.benchmarks.tensorrt_build` replaces the one-off engine build/inspection probe

@@ -656,6 +656,82 @@ unsigned activation recipe measured on x86 is a candidate to test, not a univers
 GPU/ARM recipe. This inference runner does not validate HPC PyTorch quantized
 training, native QT checkpoint export or million-class capacity.
 
+### Maintained ONNX calibration command
+
+`dev.benchmarks.onnx_calibration` creates a fresh QDQ model from ordered,
+preprocessed NPZ batches. Use an explicitly prepared ONNX/ONNX Runtime environment;
+the command installs nothing and requires the calibration-cache API tested with
+ONNX Runtime 1.29.0. Calibration and the final smoke execution run on CPU with
+`--threads 1` by default, including the first session created by the calibrator.
+
+Supply a manifest such as:
+
+```json
+{
+  "schema_version": 1,
+  "split": "train",
+  "batch_input": "images",
+  "provenance": {
+    "dataset": "versioned dataset manifest and hash",
+    "checkpoint": "source checkpoint hash",
+    "selection": "sample selection algorithm and seed",
+    "preprocessing": "exact resize, channel order, normalization and dtype"
+  },
+  "batches": [
+    {"path": "batch-000.npz", "sample_ids": ["train/image-001", "train/image-002"]}
+  ]
+}
+```
+
+Each NPZ must contain all model inputs under their ONNX names, with finite arrays
+and matching dtypes/shapes. `batch_input` identifies the input whose leading
+dimension matches `sample_ids`; other inputs can be static or unbatched. Paths
+are relative to the manifest. Optional batch `sha256` values are checked before
+use, and the command always records hashes of the bytes actually loaded. Sample
+IDs must be unique across batches. The split must be `train` or `calibration`;
+this declaration cannot prove separation from held-out data, so review the
+selection and provenance. Preserve batch order and boundaries for reproducible
+histogram collection. Prepare inputs using the source model's preprocessing;
+this command does not infer image transforms or class mappings.
+
+```bash
+# Unsigned activations, signed per-channel weights, quantized biases (CPU candidate):
+python -m dev.benchmarks.onnx_calibration \
+    --model exported-float/model.onnx --manifest calibration/manifest.json \
+    --output /tmp/qdq-cpu-1 --threads 1
+
+# Signed symmetric activations and floating biases (tested TensorRT candidate):
+python -m dev.benchmarks.onnx_calibration \
+    --model exported-float/model.onnx --manifest calibration/manifest.json \
+    --output /tmp/qdq-trt-1 --threads 1 \
+    --activation-type int8 --symmetric-activations --float-bias
+```
+
+Defaults are Percentile 99.9, asymmetric histogram collection, symmetric INT8
+per-channel weights, and Conv/Gemm/MatMul selection. `--method minmax`,
+`--percentile`, `--symmetric-calibration`, `--per-tensor-weights` and repeated
+`--op-type` flags make alternatives explicit. Histogram symmetry and activation
+quantizer symmetry are separate settings: the tested TensorRT recipe derives
+symmetric quantizer ranges from asymmetric histograms, so it does **not** use
+`--symmetric-calibration`.
+
+A new output directory receives a private source-model snapshot, augmented
+calibration graph, `ranges.json`, quantized `model.onnx` and its external weights,
+`calibration-smoke.npz`, and `report.json`. Source/external-file hashes, recipe,
+versions, ordered sample IDs, input hashes and failures after output creation are
+retained. Existing output directories are refused. The private snapshot isolates
+ORT's shape-inference sidecars from the source directory. Histogram collection
+retains raw activations for one batch at a time; model loading, histograms and
+graph construction still consume memory. The artifact directory includes research
+intermediates, not only deployment files.
+
+The smoke run checks finite outputs on one calibration batch. It does not measure
+held-out quality, integer execution coverage, speed or memory benefit. Continue
+with provider/engine inspection and paired evaluation using mini_metrics. CPU
+regressions cover both calibration methods, signed/unsigned recipes, multiple
+inputs, thread limits, unchanged source files and retained failure reports in
+`tests/test_benchmark_calibration.py`.
+
 ### TensorRT calibration candidate
 
 The local candidate uses signed, symmetric INT8 activation/weight QDQ, per-channel
@@ -664,8 +740,9 @@ Percentile 99.9 training-split calibration cache. With ONNX Runtime 1.29.0's
 `quantize_static`, the relevant arguments are `quant_format=QuantFormat.QDQ`,
 `activation_type=QuantType.QInt8`, `weight_type=QuantType.QInt8`, `per_channel=True`
 and `extra_options={"ActivationSymmetric": True, "WeightSymmetric": True,
-"QuantizeBias": False}`. Supply a reviewed calibration reader/cache and use
-separate output artifacts. This changes the quantization recipe; it does not
+"QuantizeBias": False}`. The maintained calibration command above regenerates
+this recipe from reviewed input batches into separate artifacts. This changes
+the quantization recipe; it does not
 preserve the native training export's dynamic quantizer.
 
 In a separately prepared compatible TensorRT/ONNX Runtime GPU environment:
