@@ -3371,3 +3371,74 @@ count, larger batches, native dynamic-quantizer GPU export, HPC training, or ARM
 inference. The observed memory saving warrants further joint quality/efficiency
 qualification; the latency regression must remain visible. No million-class
 model or new production acceptance claim is introduced.
+
+### Larger-batch hundred-thousand-class deployment
+
+A follow-up rebuild keeps the exact 100,000-class floating and calibrated INT8
+ONNX artifacts from the preceding study, using matching TensorRT profiles with
+min/opt/max batch 1/32/64. Batches 32 and 64 concatenate the first four/eight
+retained calibration batches; all input-file hashes were verified and the 64
+images are distinct. The existing 128-image preprocessing equivalence check still
+applies. These training inputs measure execution; the seeded random class head
+still supplies no trained classification-quality result.
+
+Both builds enable FP16, disable TF32, use optimization level 1 and 1 GiB workspace,
+and pass finite batch-32 smoke execution. Inspection confirms 170 half-weight
+convolutions and half-input head GEMMs in the baseline, versus 170 INT8
+convolutions and both INT8 head GEMMs in the candidate. FP16/INT8 engine sizes are
+302,384,868/155,584,412 bytes; context requirements are 46,174,208/34,426,880 bytes.
+These are new engines with new tactics; the profile change is part of the study.
+No competing compute process was listed before builds or measurement.
+
+Six fresh processes use the maintained paired timing command, three per batch,
+10 warmups, 31 alternating paired observations, with initial engine and batch
+order reversed in trial two. The same RTX 3080 Ti Laptop GPU, TensorRT 10.16.1.11,
+pageable host IO and one PyTorch intra-op thread apply. Timings include H2D,
+execution, D2H and stream synchronization, excluding loading and preprocessing.
+Both engines coexist during timing.
+
+| Batch | Trial | FP16 median ms | INT8 median ms | Median paired INT8 / FP16 |
+| --- | --- | ---: | ---: | ---: |
+| 32 | 1 | 7.334 | 7.864 | 1.045 |
+| 32 | 2 | 7.879 | 8.384 | 1.035 |
+| 32 | 3 | 7.778 | 7.820 | 1.022 |
+| 64 | 1 | 12.913 | 12.775 | 0.998 |
+| 64 | 2 | 13.047 | 13.210 | 1.011 |
+| 64 | 3 | 12.654 | 12.515 | 0.996 |
+
+INT8 is 2.2–4.5% slower at batch 32. At batch 64 the paired ratios span
+0.996–1.011, effectively tied in this study, with no stable speedup established.
+The wider batch regime reduces the observed relative latency penalty, but this
+includes a profile/tactic rebuild and is not an isolated attribution to head IO.
+
+Six further fresh processes run the maintained memory command at batch 64,
+20 inferences each, with alternating engine order between trials. All six begin
+at the same 1,176.5 MiB device-used snapshot after CUDA initialization.
+
+| Engine | Trial | Warm device-used MiB | Increase from CUDA initialization MiB | Warm host RSS MiB | Warm host PSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| FP16 | 1 | 1554.5 | 378.0 | 1017.4 | 1010.5 |
+| INT8 | 1 | 1414.5 | 238.0 | 968.8 | 961.7 |
+| FP16 | 2 | 1554.5 | 378.0 | 1022.1 | 1015.2 |
+| INT8 | 2 | 1414.5 | 238.0 | 971.2 | 964.1 |
+| FP16 | 3 | 1554.5 | 378.0 | 1017.6 | 1010.5 |
+| INT8 | 3 | 1414.5 | 238.0 | 968.8 | 961.8 |
+
+The device difference is consistently 140 MiB: 37.0% of the post-initialization
+increment and 9.0% of the warm device-wide footprint. Host RSS is 4.8–5.0% lower.
+This makes batch 64 a local memory-saving candidate with nearly tied measured
+latency. The same device-wide/WSL accounting and transient-peak limitations apply;
+without trained quality it cannot satisfy the joint production acceptance rule.
+
+All twelve reports passed. Independent checks verified engine hashes, finite
+outputs and exact `[batch, 100000]` final-output shapes for every trial. No code
+change accompanies this research increment. Ignored `tmp-100k-batch-deployment/`
+retains input provenance, build/inspection, commands, raw timings, memory reports,
+outputs and `summary.json`. FP16 engine SHA256 is
+`1d74f21747f2b583c37a7f121b4caa3ff1d38ea069d796c1126b3692ec2c4095`;
+INT8 engine SHA256 is
+`6745ceb732333e22779b016b9ec78d7a09032495f41ec73ef47bdda58f780134`.
+The ONNX/checkpoint hashes remain those of the preceding 100,000-class study.
+These bounded local results support moving to reproducible target-runner and
+joint-quality qualification rather than claiming laptop speed gains or extending
+the sweep to a million classes.

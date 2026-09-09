@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the 100,000-class TensorRT capacity study](benchmarks.md#hundred-thousand-class-tensorrt-capacity-comparison).
+recorded in [the larger-batch 100,000-class study](benchmarks.md#larger-batch-hundred-thousand-class-deployment).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -32,8 +32,14 @@ show a 130 MiB lower device snapshot: 40.6% of the increment after CUDA
 initialization and 8.7% of the warm device-wide footprint, with essentially
 unchanged host RSS. This supplies stronger incremental memory evidence, but the
 random head cannot qualify trained quality and snapshots do not measure total
-GPU peaks. Hierarchical large-class deployment, larger batches and target
-hardware remain outstanding.
+GPU peaks. A subsequent rebuild for batches 32/64 leaves INT8 2.2–4.5% slower
+at batch 32 but effectively tied at batch 64 (paired ratios 0.996–1.011). At
+batch 64 it saves 140 MiB in device snapshots: 37.0% of the post-initialization
+increment and 9.0% of the warm device-wide footprint, with 4.8–5.0% lower host
+RSS. This identifies a local memory-saving candidate without a stable speedup;
+trained quality, hierarchical large-class deployment and target hardware remain
+outstanding. Prioritize composed target-runner and joint-quality qualification
+over further laptop capacity sweeps.
 
 ## Current evidence
 
