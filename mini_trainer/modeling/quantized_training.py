@@ -164,3 +164,78 @@ def load_training_weights(path, *, map_location="cpu"):
             raise
         with torch.serialization.safe_globals([_backend().TrainingWeight]):
             return torch.load(path, map_location=map_location, weights_only=True)
+
+
+def materialize_quantized_training_state(state_dict: dict, *, dtype=torch.float32):
+    """Create independent floating deployment weights from native INT8 state.
+
+    This removes dynamic activation quantization and is not a training-resume
+    conversion or a promise of native forward parity. Normalized directions use
+    integer codes as direction and absorb scale signs into their magnitudes,
+    including zero scales. The caller's tensors and recipes remain untouched.
+    """
+    import copy
+    from collections import OrderedDict
+
+    if dtype not in (torch.float16, torch.bfloat16, torch.float32, torch.float64):
+        raise ValueError("Materialization requires a floating dtype")
+    recipes = {key: value for key, value in state_dict.items() if key == "_quantized_training" or key.endswith("._quantized_training")}
+    weights = {key: value for key, value in state_dict.items() if getattr(value, "_is_quantized_training", False)}
+    if not recipes or not weights:
+        raise ValueError("Expected native INT8 training weights and their recipes")
+    backend = _backend()
+    selected = set()
+    for key, recipe in recipes.items():
+        if not isinstance(recipe, dict) or recipe.get("schema_version") != 1 or recipe.get("backend") != "cuda-int8-linear":
+            raise ValueError("Unsupported quantized training recipe for materialization")
+        prefix = key.removesuffix("_quantized_training")
+        for module in recipe["quantized_modules"]:
+            base = prefix + module + ("." if module else "")
+            matches = {base + "weight", base + "parametrizations.weight.original1"} & weights.keys()
+            if len(matches) != 1:
+                raise ValueError(f"Missing or ambiguous native weight for {base}")
+            selected.update(matches)
+    if selected != weights.keys() or any(not isinstance(value, backend.TrainingWeight) for value in weights.values()):
+        raise ValueError("Native weights do not match the recorded training recipes")
+    result = OrderedDict((key, copy.deepcopy(value)) for key, value in state_dict.items() if key not in recipes and key not in weights)
+    if hasattr(state_dict, "_metadata"):
+        result._metadata = copy.deepcopy(state_dict._metadata)
+    converted = []
+    for key, weight in weights.items():
+        codes, scales = weight.int_data, weight.scale
+        if (
+            codes.ndim != 2
+            or not codes.numel()
+            or codes.dtype != torch.int8
+            or scales.shape != (codes.shape[0],)
+            or not torch.isfinite(scales).all()
+        ):
+            raise ValueError(f"Invalid native weight representation: {key}")
+        values = codes.detach().to(dtype=dtype)
+        normalized = key.endswith("parametrizations.weight.original1")
+        if normalized:
+            magnitude_key = key.removesuffix("original1") + "original0"
+            magnitude = result.get(magnitude_key)
+            if not isinstance(magnitude, torch.Tensor) or magnitude.shape != (codes.shape[0], 1) or not torch.isfinite(magnitude).all():
+                raise ValueError(f"Invalid normalization magnitude: {magnitude_key}")
+            if (torch.linalg.vector_norm(values.float(), dim=1) == 0).any():
+                raise ValueError(f"Native normalization has an undefined zero-code direction: {key}")
+            result[magnitude_key] = magnitude.to(dtype=dtype) * scales.sign().to(dtype=dtype).view(-1, 1)
+            if not torch.isfinite(result[magnitude_key]).all():
+                raise ValueError(f"Normalization magnitude overflows the materialization dtype: {key}")
+        else:
+            values.mul_(scales.to(dtype=dtype).view(-1, 1))
+        if not torch.isfinite(values).all():
+            raise ValueError(f"Represented weights overflow the materialization dtype: {key}")
+        result[key] = values
+        converted.append({"name": key, "shape": list(values.shape), "normalized": normalized, "source_compute_dtype": str(weight.dtype)})
+    return result, {
+        "schema_version": 1,
+        "source_backend": "cuda-int8-linear",
+        "target": "floating_weights_for_deployment_calibration",
+        "dtype": str(dtype),
+        "converted_weights": converted,
+        "source_recipes": copy.deepcopy(recipes),
+        "dynamic_activation_quantization_preserved": False,
+        "training_resume_supported": False,
+    }

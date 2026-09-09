@@ -171,3 +171,45 @@ separately; passing the default sample checks does not establish universal score
 parity or confidence-threshold equivalence. The generic exporter does not
 impose a model allowlist; configurations outside this tested coverage must pass
 the same export and parity checks before a bundle is published.
+
+## Explicit materialization for deployment calibration
+
+`mt_export --materialize-int8-training` exports a **separate floating model** from
+a native INT8 training checkpoint. This is an opt-in route to subsequent static
+calibration for runtimes that cannot execute the native dynamic quantizer. The
+ordinary export path above remains unchanged.
+
+```bash
+mt_export --weights native-int8-last.pt --output materialized-onnx \
+    --input-shape 3 128 128 --materialize-int8-training
+```
+
+The conversion checks the recorded native recipes, copies the state, materializes
+INT8 weight representations, and removes the recipe that would restore native
+training tensor types. It preserves class metadata, active-class masks and other
+buffers. Normalized directions use their integer codes with scale signs absorbed
+into the floating magnitudes. This follows the native effective-weight formula
+and handles zero scales without introducing an ordinary weight-normalization
+divide-by-zero. Undefined zero-code directions and invalid/nonfinite states fail.
+The source checkpoint is never rewritten, and neither optimizers nor training
+state are carried into this deployment artifact.
+
+**Dynamic activation quantization is removed.** ONNX verification compares against
+the materialized floating model, not against the native training forward. Its
+manifest records the original checkpoint hash, the floating state hash and an
+explicit `source.quantized_training_materialization` recipe, including
+`dynamic_activation_quantization_preserved=false` and
+`training_resume_supported=false`. The original checkpoint remains the source
+for native training/resume. Materialization holds floating weights in memory;
+it is not a training-memory optimization.
+
+Use the maintained [input preparation](../dev/benchmarks/README.md#maintained-image-input-preparation)
+and [calibration](../dev/benchmarks/README.md#maintained-onnx-calibration-command)
+commands on this artifact. For the tested TensorRT recipe, choose signed symmetric
+activations, signed per-channel weights and floating biases, with training-only
+calibration data. Build and inspect a new engine for its destination device.
+Compare native predictions, materialized predictions and the calibrated deployment
+candidate on the same held-out samples using all five requested mini_metrics
+metrics. Use a practical FP16 baseline for efficiency comparisons; successful
+materialization/export alone does not establish acceptable quality, integer GPU
+execution or a worthwhile cost reduction.
