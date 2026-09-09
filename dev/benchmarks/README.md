@@ -1516,3 +1516,42 @@ for a configured target runner but is not yet wired into the scheduled GPU job;
 durable result hosting and joint quality/resource acceptance gates remain open.
 Local CUDA success does not establish HPC throughput, desktop ONNX performance
 or ARM inference support.
+
+### Isolated TensorRT memory command
+
+Use `dev.benchmarks.tensorrt_memory` in a **fresh Linux process for each engine
+and trial**, after preparing TensorRT/CUDA explicitly. The command installs
+nothing and accepts the same arbitrary named NPZ inputs as the build and paired
+latency commands. Engines must be rebuilt for the intended target environment.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m dev.benchmarks.tensorrt_memory \
+  --engine results/fp16/model.engine --inputs inputs-8.npz \
+  --output results/memory-fp16-trial1 --runs 20 --threads 1
+CUDA_VISIBLE_DEVICES=0 python -m dev.benchmarks.tensorrt_memory \
+  --engine results/int8/model.engine --inputs inputs-8.npz \
+  --output results/memory-int8-trial1 --runs 20 --threads 1
+```
+
+Repeat in fresh processes and alternate engine order. Stop competing GPU jobs
+before measuring. `--pinned` enables pinned host buffers and nonblocking copies;
+keep this choice, input shapes and run counts matched across candidates.
+`--device` selects the visible CUDA device, with engine optimization profile zero.
+Each output directory must be new. Reports retain engine/input/output hashes,
+versions, GPU identity, IO contracts, TensorRT warnings, and available snapshots
+if deserialization, input validation or execution fails.
+
+Snapshots cover host memory before runtime imports, then host/device memory after
+CUDA initialization, engine load, context/IO allocation and synchronized repeated
+execution. Every inference output must be finite. The command records Linux
+RSS/PSS/swap and the approximate host high-water mark, device-wide free/total
+memory, and PyTorch allocated/reserved counters separately. Snapshots precede
+output serialization. Model decoding/preprocessing is external.
+
+Interpret the fields according to their scope: device-wide changes can include
+other processes and driver accounting; PyTorch counters omit TensorRT-owned
+allocations; context requirements omit engine weights and other runtime costs.
+These snapshots do **not** measure total transient GPU allocation peaks. Importing
+PyTorch for CUDA/IO management also affects this process's footprint. Use paired
+latency and full `mini_metrics` quality evaluation separately before accepting a
+memory/quality trade-off. CPU/WSL evidence does not establish target GPU results.

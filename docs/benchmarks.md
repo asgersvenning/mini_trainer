@@ -3251,3 +3251,33 @@ retain its protocol and evidence. WSL device-memory accounting and unobserved
 background activity limit attribution. No claim of measured total GPU peak memory
 or minimal standalone TensorRT host footprint is made: this probe imports PyTorch
 for CUDA and IO management. This research increment changes no runtime code.
+
+### Maintained single-engine TensorRT memory measurement
+
+`dev.benchmarks.tensorrt_memory` makes the isolated memory experiment reusable on
+Linux GPU hosts. It accepts arbitrary named NPZ inputs and an existing engine,
+reuses the paired runner's shape/dtype/device IO checks, and keeps engine/input/
+output hashes, environment, IO contracts and TensorRT warnings. Each run requires
+a fresh output directory, and failures retain the available report and snapshots.
+There is no model-name or class-count allowlist.
+
+The command records device-wide free/total memory and PyTorch allocator counters
+separately from Linux process RSS/PSS/swap and approximate host high-water marks.
+Snapshots occur after CUDA initialization, engine load, context/IO creation and
+repeated synchronized execution. Every inference output must be finite; output
+serialization follows the final snapshot. Device-wide differences are not
+per-process accounting, PyTorch counters omit TensorRT-owned allocations, and
+none of these snapshots establish total transient GPU peaks. Use fresh processes
+and quiescent hardware for comparisons, and retain the separate latency and
+five-metric quality checks. See the [command documentation](../dev/benchmarks/README.md#isolated-tensorrt-memory-command).
+
+CPU contracts check lazy CLI imports, actionable missing-runtime failures,
+retained failure reports, protection against overwriting results, and invalid
+settings. Intentional CUDA tests cover exact named outputs with multiple inputs,
+pageable/pinned IO, available memory snapshots and retained input-contract errors.
+
+Validation passed static checks and the full CPU-default suite: 513 passed,
+162 skipped and the known EMA expected failure. All seven focused checks also
+passed with CUDA/TensorRT explicitly enabled. These validate the command's
+contracts; the preceding experimental memory values retain their original probe
+and provenance and are not silently reattributed to the maintained command.
