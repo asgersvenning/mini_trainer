@@ -3,6 +3,9 @@
 Tests are grouped by subsystem; see the [test suite map](../tests/README.md).
 For quantization work, follow the [branch roadmap](../docs/quantization-roadmap.md)
 and [benchmark command index](benchmarks/README.md).
+For a mounted global_lepi dataset on a manually allocated UCloud node, use the
+[paired branch training comparison](ucloud/README.md), including fresh environment
+setup, single-GPU/DDP launch and a checkpoint-based ONNX follow-up.
 
 Use the uv-managed environment from the [installation guide](../README.md#local-installation).
 The default sync includes the development dependency group. Choose a PyTorch backend
