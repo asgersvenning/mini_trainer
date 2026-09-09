@@ -866,3 +866,42 @@ functional outputs and making the final parameter copies visible to the compiler
 It must preserve optimizer state, scalar learning-rate precision, AMP gating,
 checkpoint behavior, and stochastic-rounding quality. Simply exposing more tensor
 arithmetic did not provide that improvement here.
+
+### Rejected experiment: functional fused weight update
+
+A second candidate reused the native update kernel to produce fresh INT8 codes
+and scales directly, followed by compiler-visible parameter copies. It avoided
+an explicit floating updated-weight result in that kernel's caller and consumed
+learning-rate tensors on CUDA. Six kernel cases matched the existing native
+update exactly across FP32, FP16 and BF16, with division-based updates and
+noncontiguous inputs. All 67 CUDA model/optimizer cases and 23 kernel cases passed.
+
+Inspection confirmed that compiled AdamW reached the new operator. Compiled SGD
+continued through its existing decomposition, including with `foreach=False`, so
+this experiment did not establish an SGD optimization. The following AdamW runs
+used the dense MNIST profile above, learning rate 0.001, 15 epochs, batch 128,
+FP16 AMP, CPU cache, and both model and optimizer graph replay. Baselines ran from
+an isolated snapshot of `e5387d8`; the candidate used the working checkout and the
+same virtual environment and data. No timed run overlapped another run or tests.
+
+| Seed/run | Existing median train epoch 3–15 s | Candidate median s | Existing / candidate accuracy |
+| --- | ---: | ---: | ---: |
+| 42, initial pair | 0.152 | 0.162 | 94.14% / 94.34% |
+| 43, reversed order | 0.267 | 0.133 | 94.02% / 94.00% |
+| 42, warmed before→after | 0.139 | 0.153 | 94.14% / 94.34% |
+| 42, warmed after→before | 0.197 | 0.220 | 94.14% / 94.34% |
+
+All runs peaked at 218.10 MiB. Timing varied substantially between runs, so the
+second seed alone would give a misleading speedup claim. Both additional warmed
+pairs favored the existing implementation by about 10–12%. Whole-call times in
+those pairs were 13.05 vs 13.69 s and 16.68 vs 17.11 s. The candidate was reverted;
+passing numerical tests alone did not justify extra kernel complexity without a
+measured memory or speed benefit. Its patch and reports are retained locally in
+`tmp-optimizer-cudagraphs/rejected-functional-update.patch`,
+`functional-adam-{before,after}*`, and `adam-repeat-*`.
+
+Update fusion remains a possible future direction, but merely placing the final
+weight arithmetic inside the row kernel did not improve this workload. Further
+performance validation should also include larger compute workloads, where the
+integer GEMMs have more opportunity to offset update and scheduling overhead,
+and should retain alternating run order and report variability.
