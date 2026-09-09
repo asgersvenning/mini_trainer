@@ -28,9 +28,13 @@ CUDA PyTorch, ONNX GPU and ONNX ARM CPU. The current native QT checkpoint cannot
 be exported directly through the ONNX path. ONNX Runtime training/fine-tuning
 would be a separate integration; an inference export does not provide it.
 
-Next extend the shared dataset harness to select backbone and head independently,
-preserving existing defaults. Record initialization/pretrained provenance,
-symmetric width, normalization, image size and all training settings. Compare
+The shared dataset harness now selects backbone and head independently while
+preserving existing defaults. A CPU integration test trains and reloads both
+EfficientNetV2-S heads on synthetic image files with a reviewed test taxonomy,
+checking identical split manifests and leaf-class ordering. Reports record
+initialization choice, symmetric width, normalization and image size; commands
+and the target-machine handoff are in the [benchmark guide](../dev/benchmarks/README.md).
+Next compare
 float and quantized paths with identical splits and paired seeds, reporting
 quantized versus floating operators and physical storage before making speed
 claims. Profile the real backbone before selecting convolution or other storage

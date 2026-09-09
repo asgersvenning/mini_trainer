@@ -6,7 +6,7 @@ import os
 import platform
 import subprocess
 import time
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
@@ -18,7 +18,7 @@ import torch
 from mini_trainer.data import get_inference_dataloader
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
 from mini_trainer.hierarchical.model import HierarchicalClassifier
-from mini_trainer.modeling import Classifier
+from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.train import main as train
 from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
@@ -56,7 +56,12 @@ def run(
     quantized_training: bool = False,
     compile: bool = False,
     compile_optimizer: bool = False,
-    hidden: int = 0,
+    hidden: bool | int = 0,
+    backbone: str | None = None,
+    head: str = "auto",
+    normalized: bool | None = None,
+    image_size: int | None = None,
+    pretrained: bool = False,
     batch_size: int = 32,
     cache_workers: int | None = None,
     model_profile: str = "default",
@@ -69,6 +74,20 @@ def run(
     validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
     if model_profile not in ("default", "dense") or optimizer not in ("muon", "adamw", "sgd"):
         raise ValueError("Unknown model or optimizer profile.")
+    if backbone is not None and model_profile != "default":
+        raise ValueError("Choose an explicit backbone or a model profile, not both.")
+    if head not in ("auto", "flat", "hierarchical"):
+        raise ValueError("Unknown head type.")
+    hierarchical = head == "hierarchical" or (head == "auto" and dataset == "blair")
+    if hierarchical and dataset != "blair":
+        raise ValueError("Hierarchical benchmarks require the reviewed Blair taxonomy.")
+    normalized = hierarchical if normalized is None else normalized
+    if hierarchical and not normalized:
+        raise ValueError("HierarchicalClassifier requires normalization.")
+    if image_size is not None and image_size < 1:
+        raise ValueError("Image size must be positive.")
+    if pretrained and backbone is None:
+        raise ValueError("Pretrained initialization requires an explicit backbone.")
     if learning_rate is None:
         learning_rate = 0.1 if dataset == "synthetic" else 0.01
     if not np.isfinite(learning_rate) or learning_rate <= 0:
@@ -119,12 +138,18 @@ def run(
         manifest, spec = prepare_real(root, output, name=dataset, seed=seed, class_spec=Path(class_spec) if class_spec else None)
         manifest_path = output / "dataset_manifest.json"
         spec_path = output / "class_spec.json"
-        spec_path.write_text(json.dumps(spec, indent=2) + "\n")
+        # Preserve the taxonomy in the manifest, but train the flat head using
+        # its exact leaf indices so paired runs share both splits and class order.
+        training_spec = spec
+        if dataset == "blair" and not hierarchical:
+            training_spec = {"num_classes": spec["num_classes"][0], "cls2idx": spec["cls2idx"]["0"]}
+        spec_path.write_text(json.dumps(training_spec, indent=2) + "\n")
         size = 28 if dataset == "mnist" else 64
         model_type = "dev.benchmarks.models:TinyConv"
     if model_profile == "dense":
         model_type = "dev.benchmarks.models:DenseImageMLP"
-    hierarchical = dataset == "blair"
+    model_type = backbone or model_type
+    size = image_size or size
     records = manifest["records"]
     train_records = [record for record in records if record["split"] != "test"]
     data_index = output / "train_index.json"
@@ -160,7 +185,8 @@ def run(
         model_builder_kwargs={
             "model_type": model_type,
             "hidden": hidden if hidden else False,
-            "normalized": hierarchical,
+            "normalized": normalized,
+            **({"model_args": {"pretrained": pretrained}} if backbone else {}),
             "cls": HierarchicalClassifier if hierarchical else Classifier,
         },
         dataloader_builder_kwargs={
@@ -192,7 +218,12 @@ def run(
         else None
     )
     weights = output / "training/weights/last.pt"
-    model, preprocess = Classifier.build(weights=str(weights), device=target_device, dtype=torch.float32)
+    model, preprocess = Classifier.build(
+        weights=str(weights),
+        device=target_device,
+        dtype=torch.float32,
+        **({"model_args": {"pretrained": False}} if backbone else {}),
+    )
     model.eval()
     quantization_recipe = getattr(model, "_quantized_training_recipe", None)
     if quantized_training and not quantization_recipe:
@@ -247,6 +278,12 @@ def run(
         },
         "dataset": dataset,
         "model_profile": model_profile,
+        "backbone": model_type,
+        "head": "hierarchical" if hierarchical else "flat",
+        "normalized": normalized,
+        "image_size": size,
+        "pretrained": pretrained,
+        "hidden_width": classification_module(model).preclassification_size,
         "optimizer": optimizer,
         "learning_rate": learning_rate,
         "momentum": 0.9 if optimizer == "sgd" else None,
@@ -306,7 +343,7 @@ def run(
         "dataset_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "checkpoint_sha256": hashlib.sha256(weights.read_bytes()).hexdigest(),
         "score_semantics": "model_eval_forward",
-        "class_mapping": model.fc.metadata["cls2idx"],
+        "class_mapping": classification_module(model).metadata["cls2idx"],
         "test_used_for_training_or_selection": False,
     }
     (output / "report.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -336,7 +373,17 @@ def main():
     parser.add_argument("--model-profile", choices=["default", "dense"], default="default")
     parser.add_argument("--optimizer", choices=["muon", "adamw", "sgd"], default="muon")
     parser.add_argument("--learning-rate", type=float)
-    parser.add_argument("--hidden", type=int, default=0)
+    parser.add_argument(
+        "--hidden",
+        type=lambda value: True if value == "symmetric" else int(value),
+        default=0,
+        help="0 disables the hidden layer; symmetric uses the backbone width; otherwise a positive width.",
+    )
+    parser.add_argument("--backbone", help="Registered model name, for example efficientnet_v2_s.")
+    parser.add_argument("--head", choices=["auto", "flat", "hierarchical"], default="auto")
+    parser.add_argument("--normalized", action=BooleanOptionalAction, default=None)
+    parser.add_argument("--image-size", type=int)
+    parser.add_argument("--pretrained", action="store_true", help="Allow downloading pretrained backbone weights.")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
         "--allow-nondeterministic",
@@ -370,6 +417,11 @@ def main():
             compile_optimizer=args.compile_optimizer,
             optimizer_cudagraphs=args.optimizer_cudagraphs,
             hidden=args.hidden,
+            backbone=args.backbone,
+            head=args.head,
+            normalized=args.normalized,
+            image_size=args.image_size,
+            pretrained=args.pretrained,
             batch_size=args.batch_size,
             cache_workers=args.cache_workers,
             model_profile=args.model_profile,
@@ -394,6 +446,11 @@ def main():
             "compile_optimizer": args.compile_optimizer,
             "optimizer_cudagraphs": args.optimizer_cudagraphs,
             "hidden": args.hidden,
+            "backbone": args.backbone,
+            "head": args.head,
+            "normalized": args.normalized,
+            "image_size": args.image_size,
+            "pretrained": args.pretrained,
             "batch_size": args.batch_size,
             "cache_workers": args.cache_workers,
             "model_profile": args.model_profile,

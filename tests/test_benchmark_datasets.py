@@ -191,3 +191,58 @@ def test_summary_later_epoch_median_requires_timing_scope(tmp_path):
     report["phase_measurements"] = report["phase_measurements"][:2]
     path.write_text(json.dumps(report))
     assert "| — | 123.00s |" in summarize(tmp_path)
+
+
+def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path):
+    import numpy as np
+    import torch
+
+    from dev.benchmarks.run import run
+
+    root = tmp_path / "images"
+    make_dataset(root)
+    spec = {
+        "labels": {"a": ["species_a", "parent_a"], "b": ["species_b", "parent_b"]},
+        "num_classes": [2, 2],
+        "cls2idx": {"0": {"species_b": 0, "species_a": 1}, "1": {"parent_a": 0, "parent_b": 1}},
+    }
+    spec_path = tmp_path / "taxonomy.json"
+    spec_path.write_text(json.dumps(spec))
+    reports = []
+    previous_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        for head in ("flat", "hierarchical"):
+            reports.append(
+                run(
+                    tmp_path / head,
+                    epochs=1,
+                    dataset="blair",
+                    data_root=root,
+                    class_spec=spec_path,
+                    backbone="efficientnet_v2_s",
+                    head=head,
+                    hidden=True,
+                    normalized=True,
+                    image_size=32,
+                    batch_size=4,
+                    cache_workers=0,
+                )
+            )
+    finally:
+        torch.set_num_threads(previous_threads)
+    flat, hierarchical = reports
+    assert flat["dataset_manifest_sha256"] == hierarchical["dataset_manifest_sha256"]
+    assert flat["class_mapping"] == spec["cls2idx"]["0"]
+    assert hierarchical["class_mapping"]["0"] == flat["class_mapping"]
+    assert flat["hidden_width"] == hierarchical["hidden_width"] == 1280
+    assert all(report["normalized"] and not report["pretrained"] for report in reports)
+    with np.load(tmp_path / "flat/predictions.npz") as a, np.load(tmp_path / "hierarchical/predictions.npz") as b:
+        np.testing.assert_array_equal(a["paths"], b["paths"])
+        np.testing.assert_array_equal(a["labels"], b["labels"])
+        assert a["scores"].shape == b["scores"].shape == (2, 2)
+        assert b["scores_1"].shape == (2, 2)
+    indices = [json.loads((tmp_path / head / "train_index.json").read_text()) for head in ("flat", "hierarchical")]
+    assert indices[0]["path"] == indices[1]["path"]
+    assert indices[0]["split"] == indices[1]["split"]
+    assert indices[0]["class"] == [labels[0] for labels in indices[1]["class"]]

@@ -283,6 +283,82 @@ pinned CPU transfer batches and exact CPU/CUDA cache contents.
 
 ## Integrated QT dataset profiles
 
+### Representative EfficientNetV2 configuration
+
+The runner accepts a registered `--backbone` independently of the dataset and
+`--head flat|hierarchical`. `--hidden symmetric` uses the backbone embedding width;
+`--normalized` enables the normalized head for flat classification too. Existing
+benchmark defaults are preserved. Explicit backbones start without pretrained
+weights unless `--pretrained` is supplied; that flag permits a download. Reload
+uses the saved checkpoint without requesting pretrained initialization again.
+
+For a matched Blair comparison on an available CUDA machine:
+
+```bash
+for head in flat hierarchical; do
+  for precision in float int8; do
+    qt_args=()
+    if [[ "$precision" == int8 ]]; then qt_args=(--quantized-training); fi
+    CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
+      .venv/bin/python -m dev.benchmarks.run \
+      --dataset blair --data-root examples/blair \
+      --class-spec examples/blair/blair_model/class_spec.json \
+      --backbone efficientnet_v2_s --head "$head" --hidden symmetric --normalized \
+      --image-size 128 --epochs 5 --batch-size 32 --seed 42 \
+      --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --num-workers 0 \
+      "${qt_args[@]}" --output "tmp-efficientnet/$head-$precision"
+  done
+done
+```
+
+Each output directory must be new. This is an eager baseline; add identical
+compilation settings to both precisions when measuring compilation. Repeat paired
+seeds with alternating precision order before interpreting quality or speed.
+Both heads use identical leaf indices and the same dataset manifest, including
+the reviewed parent taxonomy. Flat training projects the taxonomy to the leaf
+mapping; it does not regenerate splits or reorder classes. Reports retain the
+backbone, effective hidden width, normalization, image size and initialization
+choice. Held-out inference currently checks scores and quality; it is not an
+ONNX latency benchmark.
+
+For offline pipeline verification use `--device cpu --dtype float32` without
+`--quantized-training`. Smaller image sizes or short runs may check execution,
+but must be reported as diagnostic settings rather than the production workload.
+The CPU integration test exercises both real EfficientNetV2 heads with synthetic
+image files and a deliberately reordered taxonomy; it checks training, reload,
+predictions, class order and identical split manifests without a download.
+
+### Validation when target hardware is unavailable
+
+Use the local GPU to vary batch size, resolution, cache mode and worker count
+one at a time. Compare each quantized run with the same floating configuration;
+record out-of-memory failures, conversion costs and floating operator coverage.
+Smaller memory budgets and constrained CPU affinity can exercise resource limits,
+but cannot reproduce a different GPU architecture, bandwidth or ARM instruction
+set. Keep compiler warmup separate from steady-state measurements. The CPU suite
+is a correctness check, not an estimate of Raspberry Pi latency.
+
+When machines become available, use the same revision, lock file, dataset
+manifest, checkpoints and commands, with a separately selected compatible backend:
+
+- HPC: run paired PyTorch training on the allocated GPU/CPU resources, recording
+  exact hardware, CPU affinity/quota, software versions and whether storage is
+  local or shared. Measure each GPU generation separately. Multi-GPU QT remains
+  unsupported and requires its own implementation and validation.
+- Local batch processing: repeat training and frozen-backbone fine-tuning as
+  distinct workloads. Then export and measure ONNX GPU inference with provider
+  placement evidence; a listed provider alone does not prove GPU execution.
+- Edge: transfer the export, preprocessing recipe, class mapping and fixed input
+  samples to the ARM device. Verify scores before measuring batch-one latency,
+  sustained throughput and process memory under explicit thread counts.
+
+The current native QT checkpoint is not ONNX-exportable. Establish floating
+EfficientNetV2 export parity first, then implement and validate an appropriate
+deployment quantization path for each provider. Export/runtime work and target
+machine verification remain open; these commands do not establish those results.
+Retain reports, logs, failures and predictions with the existing benchmark
+summary/artifact workflow so external runs can be reviewed without machine access.
+
 Install the optional `quantization` extra with the intended CUDA backend explicitly
 selected (see the repository README), then use new output directories:
 
