@@ -3209,3 +3209,45 @@ The optimized diagnostic reproduces the original batch-eight maximum error and
 `tmp-large-head-deployment/parity-diagnostic.py` and `parity-diagnostic.json`.
 The process completed successfully. No training or GPU test was needed for this
 research-only increment; default large-head export qualification remains open.
+
+#### Isolated deployment memory snapshots
+
+Six fresh processes loaded one of the exact 10,000-class engines above, created
+its context and pageable IO buffers for batch eight, and completed 20 synchronized
+inferences. There were three trials per engine, with order reversed in trial two.
+The GPU was idle before the study and no compute process was listed. Every run
+passed finite `[8, 10000]` output checks and engine-hash verification.
+
+CUDA free/total snapshots were collected after CUDA initialization, engine load,
+context/IO creation and warm execution. These are **device-wide snapshots**, not
+per-process GPU accounting or transient allocation peaks. The initialization
+snapshot was 1,176.5 MiB in all six processes. PyTorch allocated/reserved memory
+was recorded separately; it does not account for TensorRT's own allocations.
+Host RSS/PSS came from each process's `/proc/self/smaps_rollup`.
+
+| Engine | Trial | Warm device-used MiB | Increase from CUDA initialization MiB | Warm host RSS MiB | Warm host PSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| FP16 | 1 | 1306.5 | 130.0 | 957.2 | 950.2 |
+| INT8 | 1 | 1272.5 | 96.0 | 872.5 | 865.5 |
+| FP16 | 2 | 1306.5 | 130.0 | 954.8 | 947.8 |
+| INT8 | 2 | 1272.5 | 96.0 | 874.8 | 867.7 |
+| FP16 | 3 | 1306.5 | 130.0 | 956.6 | 949.5 |
+| INT8 | 3 | 1272.5 | 96.0 | 870.4 | 863.3 |
+
+The consistent device difference is 34 MiB: 26.2% of the FP16 increment after
+initialization, but only 2.6% of its warm device-wide snapshot including the
+common runtime/background footprint. Host RSS is about 8.4–9.0% lower. These
+measurements demonstrate why the 45.2% engine-file reduction must not be described
+as a corresponding total deployment-memory reduction. Combined with the measured
+12–17% latency regression, this local 10,000-class profile has not demonstrated
+a compelling production trade-off. A larger head may change the balance but
+requires a new measurement, and target hardware remains unverified.
+
+The probe uses the maintained TensorRT IO-buffer helper with one engine per
+process; it is an experimental driver, not yet a maintained memory command.
+`tmp-large-head-deployment/memory-probe.py`, `measure-memory.py`,
+`memory-protocol.json`, `memory-summary.json`, and all six reports/output archives
+retain its protocol and evidence. WSL device-memory accounting and unobserved
+background activity limit attribution. No claim of measured total GPU peak memory
+or minimal standalone TensorRT host footprint is made: this probe imports PyTorch
+for CUDA and IO management. This research increment changes no runtime code.

@@ -13,8 +13,11 @@ or integer operator count sufficient evidence of production readiness.
 A 10,000-class seeded random normalized head now builds and executes through
 calibrated TensorRT, including 170 INT8 convolutions and both INT8 head GEMMs.
 Across six fresh paired trials, INT8 was 12–17% slower than FP16 locally, despite
-a 45.2% smaller engine and 24.6% lower reported context requirement. Total runtime
-memory and trained quality were not measured. FP32 export needed an explicit
+a 45.2% smaller engine and 24.6% lower reported context requirement. [Isolated memory snapshots](benchmarks.md#isolated-deployment-memory-snapshots)
+subsequently showed a consistent 34 MiB lower device reading: 26.2% of the
+increment after CUDA initialization, but 2.6% of the warm device-wide footprint.
+Host RSS was 8.4–9.0% lower. Total GPU transient peaks and trained quality remain
+unmeasured. FP32 export needed an explicit
 absolute-tolerance override from 1e-5 to 1e-4; default parity qualification remains
 open. A [CPU numerical diagnostic](benchmarks.md#numerical-attribution-of-the-capacity-export-failure)
 found that disabling ONNX optimization worsens parity, while both optimized ORT
