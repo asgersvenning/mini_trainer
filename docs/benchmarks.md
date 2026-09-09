@@ -1400,6 +1400,73 @@ restricted checkpoint CLI loading, and zero/tiny-input and zero/negative-scale
 numerical cases. Exported bundles, source checkpoint hashes, parity manifests and
 runtime profiles are retained under ignored `tmp-native-int8-onnx/verified/`.
 The documented export command is in the [ONNX guide](onnx.md#native-int8-training-checkpoints).
-Full-dataset quality comparison with `mini_metrics`, AMP/TF32 versus full-FP32
-quality differences, target-provider execution and speed, and million-class
-export capacity remain open. No new test-set evaluation was used in this work.
+The full-validation follow-up below measures `mini_metrics` quality and numerical
+limits, including AMP/TF32 comparisons. Target-provider execution and speed,
+confidence-threshold equivalence and million-class export capacity remain open.
+No new test-set evaluation was used in this work.
+
+
+### Native ONNX full-validation quality and numerical limits
+
+The native QT checkpoints and ONNX bundles above were compared on all 912 Blair
+validation images in batches of eight. Checkpoint and graph/external-weight hashes
+were verified, class mappings were checked against the dataset manifest, and
+all modes used the same preprocessed inputs. This is inference comparison of each
+fixed checkpoint, not a new training comparison or a test-set evaluation.
+
+ONNX Runtime CPU and the full-FP32 CUDA reference made **identical top-1
+predictions for every image**, at both hierarchical levels. Their Macro-F1,
+Macro-Recall, Macro-Precision, Coverage and Theil's U therefore matched exactly.
+Values below are proportions from `mini_metrics` at clean checkout revision
+`70cc69adc05362863439277048e06386c1f885e1`, using the preceding full-coverage metric
+call with no threshold optimization, filtering or resampling.
+
+| Output / execution | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / ONNX and CUDA FP32 | 0.769112 | 0.758984 | 0.796193 | 1.000000 | 0.810716 |
+| Flat / CUDA AMP FP16 | 0.768593 | 0.758712 | 0.795913 | 1.000000 | 0.810290 |
+| Hierarchical fine / ONNX and CUDA FP32 | 0.730698 | 0.720275 | 0.799803 | 1.000000 | 0.787638 |
+| Hierarchical fine / CUDA AMP FP16 | 0.726950 | 0.716638 | 0.795216 | 1.000000 | 0.786153 |
+| Hierarchical parent / ONNX and CUDA FP32 | 0.867051 | 0.844461 | 0.913180 | 1.000000 | 0.857871 |
+| Hierarchical parent / CUDA AMP FP16 | 0.867051 | 0.844461 | 0.913180 | 1.000000 | 0.857871 |
+
+FP32/ONNX accuracy was 83.55% flat and 81.47% / 91.45% hierarchical fine / parent.
+AMP changed two flat and two hierarchical fine predictions; parent predictions
+were unchanged. AMP fine accuracy was 81.36%; flat accuracy remained 83.55%
+despite its two changed decisions. A third mode allowed cuDNN TF32 while keeping
+floating matmul TF32 disabled and autocast off; it produced the same decisions
+and metrics as the full-FP32 reference in this batch-eight run. Allowing TF32 does
+not force a particular cuDNN kernel and is not evidence of TF32 execution. This
+result does not establish parity for other batch sizes, devices or kernel choices.
+
+The full split **did not pass universal score parity** at the export defaults
+rtol=1e-4/atol=1e-5, despite identical top-1 decisions:
+
+| Output | Images with any score outside tolerance | Score elements outside tolerance | Maximum absolute score error |
+| --- | ---: | ---: | ---: |
+| Flat | 6 / 912 | 142 | 0.022024 |
+| Hierarchical fine | 16 / 912 | 372 | 0.012286 |
+| Hierarchical parent | 17 / 912 | 222 | 0.010367 |
+
+The earlier eight-image export check remains valid for its tested inputs, but
+must not be read as a guarantee for unseen inputs. Supplying these affected
+images to strict export verification would fail; the tolerance was not relaxed.
+Coverage is 100% by construction here. Confidence differences can still matter
+for abstention, threshold calibration or downstream consumers even when argmax
+is unchanged. No production quality acceptance criterion has been established.
+
+An affected-batch diagnostic exposed hidden inputs and actual integer activation
+codes without changing weights. At validation index 164, the maximum hidden-input
+CPU/CUDA difference was 1.07e-6. One of the hidden Linear input codes differed,
+then two output Linear input codes differed; the maximum score difference was
+0.009955. The other seven images in that batch had identical integer input codes.
+This localizes amplification to quantization boundaries following small floating
+input differences. It does not justify changing the trained quantizer or claiming
+that all outliers have the same cause.
+
+Exact scores, prediction CSVs, package/source provenance, per-level differences,
+metric JSON and the diagnostic are retained under ignored
+`tmp-native-int8-validation/`. These are local x86 CPU / laptop CUDA measurements,
+not target GPU or ARM verification, and no latency claim is derived from this
+quality run. Confidence-thresholded evaluation, repeated-seed training quality,
+large-vocabulary quality and the intended target-machine runs remain open.

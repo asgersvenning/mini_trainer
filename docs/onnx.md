@@ -155,7 +155,13 @@ active-class filtering, dynamic batches, checkpoint CLI loading and numerical
 edge cases. Trained Blair checkpoints also passed checks on eight real validation
 images at batches 1, 2, 4 and 8. An exported graph still needs runtime profiling
 and quality evaluation on the intended provider. CUDA/ARM ONNX execution,
-full-dataset quality equivalence, million-class export capacity and production
-performance of this native path remain unverified. The generic exporter does not
+million-class export capacity and production performance of this native path
+remain unverified. On the full Blair validation split, top-1 predictions and the
+requested macro metrics matched the full-FP32 CUDA reference, but some image
+scores exceeded the strict export tolerance; see the
+[full-validation results](benchmarks.md#native-onnx-full-validation-quality-and-numerical-limits).
+Supply representative `verification_inputs` and evaluate deployment thresholds
+separately; passing the default sample checks does not establish universal score
+parity or confidence-threshold equivalence. The generic exporter does not
 impose a model allowlist; configurations outside this tested coverage must pass
 the same export and parity checks before a bundle is published.
