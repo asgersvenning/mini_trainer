@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the twenty-epoch hierarchical diagnostic](benchmarks.md#twenty-epoch-hierarchical-convergence-diagnostic).
+recorded in [the hierarchical BatchNorm-state diagnostic](benchmarks.md#hierarchical-validation-replay-and-batchnorm-state-diagnostic).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -81,10 +81,20 @@ at seed 42 now completes with actual epoch statistics. Held-out INT8 leaf/parent
 Macro-F1 differences are +0.331/−0.082 points, with mixed changes in other metrics.
 INT8 retains a 3.4% allocated-memory saving but takes 9.2% longer for the local
 training call. Both checkpoints record 2,300 optimizer/scheduler updates. Strong
-INT8 validation-loss spikes in the first half of training settle later; replaying
-retained intermediate checkpoints and examining train/eval state is the next
-focused diagnostic. One longer-budget seed neither resolves the multi-seed
+INT8 validation-loss spikes in the first half of training settle later; the
+checkpoint replay and state ablation below investigate that behavior. One longer-budget seed neither resolves the multi-seed
 quality question nor establishes target-hardware benefit.
+
+The [checkpoint replay and BatchNorm ablation](benchmarks.md#hierarchical-validation-replay-and-batchnorm-state-diagnostic)
+reproduce all six logged validation results after fresh loads. Refreshing only
+backbone BatchNorm running statistics on training images reduces early INT8 loss
+from 5.865 to 1.283 and raises parent accuracy from 48.81% to 85.45%, with all
+parameters and non-BatchNorm buffers unchanged in the verified repeat. Float also
+improves; final-checkpoint effects are much smaller and not uniformly positive.
+This identifies running-statistic sensitivity as a substantial contributor in
+this checkpoint, but not its origin or a universally beneficial production recipe.
+Next inspect the training-state updates and qualify any proposed refresh on
+additional seeds/heads with five held-out metrics and its extra execution cost.
 
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.

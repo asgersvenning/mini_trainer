@@ -2546,6 +2546,65 @@ for the instability investigation, predictions, the paired quality bundle,
 code changed; validation comprises the real paired run, metric evaluation,
 cross-study held-out identity checks and checkpoint-step checks above.
 
+### Hierarchical validation replay and BatchNorm-state diagnostic
+
+At revision `eb4c8dd`, fresh CUDA loads of the preceding 20-epoch study's retained
+float and native INT8 checkpoints replay validation at epochs 6, 11 and 20.
+The original sequential validation loader, 128px preprocessing, batch 32, BF16
+AMP and two-level loss are reused over all 912 validation images. Each checkpoint
+reconstructs its model, so the replay does not inherit live training caches.
+Using the logger's exact `topk=(1, 5)` accuracy convention, all six replays match
+both recorded accuracies exactly; the largest absolute loss difference is
+1.85e-7. The early INT8 loss spike therefore survives checkpoint reconstruction.
+An initial argmax-based diagnostic differed on tied scores; its separate report
+is retained, and the matched replay supersedes that accuracy comparison.
+
+A controlled ablation then refreshes the 110 backbone `BatchNorm2d` modules on
+copies of epochs 6 and 20, for both precisions. Parameters remain fixed. Running
+statistics are reset and accumulated with `momentum=None` over one shuffled,
+training-only pass: 115 batches of 32 images (3,680 images; the training loader
+drops its final partial batch). The shuffle seed is fixed at 42. Other modules
+remain in evaluation mode, including dropout; preprocessing and BF16 execution
+match the original run. No validation or test images update the statistics.
+
+| Precision / epoch | Validation loss before → after | Leaf accuracy before → after (%) | Parent accuracy before → after (%) |
+| --- | ---: | ---: | ---: |
+| Float / 6 | 1.567 → 1.090 | 70.15 → 76.72 | 80.28 → 87.28 |
+| INT8 / 6 | 5.865 → 1.283 | 39.33 → 72.74 | 48.81 → 85.45 |
+| Float / 20 | 0.934 → 0.917 | 84.91 → 85.56 | 92.35 → 93.10 |
+| INT8 / 20 | 0.824 → 0.820 | 86.53 → 87.07 | 94.18 → 94.07 |
+
+Every ablation verifies exact equality of all physical parameter arrays before
+and after, including INT8 data and scales. A separate early-INT8 repeat also
+verifies exact equality of every non-BatchNorm buffer array; it reproduces the
+same before/after metrics. The first buffer-inspection attempt used an unsupported
+generic CPU conversion for a quantized cache; comparing its physical data/scales
+resolved that diagnostic issue without changing the model implementation.
+
+This isolates backbone running-statistic refresh as sufficient to remove much
+of the early checkpoint's validation degradation. It implicates a mismatch in
+saved running statistics, rather than a cache retained from training, as a major
+contributor in this case. It does not establish why the mismatch developed,
+explain every fluctuation, or show that INT8 rounding directly caused it. Both
+precisions improve at epoch 6, and final INT8 parent accuracy slightly decreases
+after refresh. Universal recalibration or a changed default is not justified by
+this single-seed diagnostic.
+
+These are validation loss/accuracy batch means, not the five held-out
+mini_metrics measures or a production acceptance study. Before adopting a recipe,
+qualify training-only refresh on additional seeds and heads, evaluate all five
+metrics on an untouched held-out split, and include the extra pass in training
+cost and checkpoint/export provenance. Inspect the original running-statistic
+updates and training/evaluation behavior before choosing a permanent intervention.
+No refreshed checkpoint was saved and no training defaults changed.
+
+Ignored `tmp-hierarchical-replay/` retains the replay/ablation scripts, the
+argmax and matched replay reports, `batchnorm-report.json` and the stronger
+`batchnorm-buffer-check.json`. The original intermediate checkpoints remain in
+`tmp-hierarchical-long-budget/`. Validation consists of six matched real-model
+replays, four controlled refresh ablations and one stronger state-preservation
+repeat; no new speed, memory or target-hardware claim is made.
+
 ### Isolated 100k-class optimizer compilation comparison
 
 Revision `aff0807` exposes the existing optimizer compilation and graph options
