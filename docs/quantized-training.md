@@ -10,6 +10,8 @@ Install the optional `quantization` extra while explicitly retaining the intende
 PyTorch CUDA backend, as described in the README. The current implementation uses
 TorchAO's experimental Triton kernels. It has been exercised on an RTX 3080 Ti;
 CPU preparation and checkpoint inspection do not establish CPU execution support.
+See the [validation audit](quantized-training-validation.md) for current tests,
+measured training/loading benefits and the limits of those results.
 
 ```bash
 mt_train -i /path/to/data --device cuda --quantized-training --dtype float16 --cache cpu --cache-workers 0

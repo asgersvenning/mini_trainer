@@ -88,15 +88,23 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
+The native QT and shared-loader increment is delivered for the documented CUDA
+Linear regime. The [validation audit](quantized-training-validation.md) records
+three-seed memory/speed benefits, real loading comparisons, synthetic and
+hierarchical checkpoint/inference coverage, allocation-aware worker defaults,
+and installed-package checks. Broader hardware/operator coverage, cold-start
+performance and additional quality studies remain future work. The chronological
+results below retain earlier failures and mixed comparisons.
+
 The primary implementation target is **actual quantized training and faster data loading**.
 QT must reduce retained training storage and demonstrate lower peak memory and faster
 training on supported workloads. QAT with floating-point master weights is a separate
 capability and does not complete this target. The initial CUDA integer forward/backward
 kernel probe and cached-loader benchmark are documented in [the benchmark guide](../dev/benchmarks/README.md).
 An initial [CUDA INT8 Linear integration](quantized-training.md) connects model
-preparation and checkpoint loading to the training entry point. Broader operator
+preparation and checkpoint loading to the training entry point. At that stage, broader operator
 and optimizer coverage, stronger convergence evidence and real-workload speedups
-remain required. Paired synthetic, MNIST and hierarchical Blair smoke runs now
+remained required. Paired synthetic, MNIST and hierarchical Blair smoke runs now
 record quality, storage and timing; [these small workloads are slower under QT](benchmarks.md#integrated-int8-training).
 Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
 that target. The implementation and comparison plan is in
@@ -120,7 +128,7 @@ confirms 26–28% lower peak memory but mixed speed results and 0.10–0.54 perc
 points lower accuracy. [Functional fused requantization](benchmarks.md#functional-fused-requantization)
 then reduced peak memory to 30–31% below float, with slightly higher accuracy in
 all three pairs. Whole-run times improved, but later-phase speed remained mixed.
-Reliable speed gains, cold-start cost, and broader workload validation remain open.
+At that stage, reliable speed gains, cold-start cost, and broader workload validation remained open; see the current audit above.
 
 Deliver quantization-aware training and post-training inference quantization as
 separate opt-in capabilities, recording actual weight/activation bit widths,
