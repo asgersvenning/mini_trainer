@@ -577,3 +577,58 @@ def test_cuda_compiled_stochastic_rounding_preserves_sub_code_updates():
         if previous_codes is not None:
             assert not torch.equal(codes, previous_codes)
         previous_codes = codes.clone()
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("compiled", [False, True])
+def test_cuda_functional_requantization_preserves_independent_rounding(dtype, compiled):
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify functional CUDA requantization")
+    from mini_trainer.modeling._quantized_update import quantize_int8_rows
+
+    values = torch.full((128, 2048), 0.25, device="cuda", dtype=dtype)[:, ::2]
+    values[:, 0] = 127
+
+    def twice(values):
+        return quantize_int8_rows(values), quantize_int8_rows(values)
+
+    run = torch.compile(twice, fullgraph=True) if compiled else twice
+    run(values)  # Initialize compiler state before checking generator replay.
+    rng = torch.cuda.get_rng_state()
+    first, second = run(values)
+    after = torch.cuda.get_rng_state()
+    assert not torch.equal(rng, after)
+    assert not torch.equal(first[0], second[0])
+    for codes, scales in (first, second):
+        assert codes.dtype == torch.int8 and scales.dtype == dtype
+        assert torch.all(scales == 1) and torch.all(codes[:, 0] == 127)
+        assert torch.all((codes[:, 1:] == 0) | (codes[:, 1:] == 1))
+        assert abs(codes[:, 1:].float().mean().item() - 0.25) < 0.01
+    torch.cuda.set_rng_state(rng)
+    replay = run(values)
+    for expected, actual in zip((first, second), replay, strict=True):
+        for left, right in zip(expected, actual, strict=True):
+            torch.testing.assert_close(left, right, rtol=0, atol=0)
+
+
+def test_cuda_weight_copy_preserves_storage_aliases_and_source():
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify CUDA weight copy semantics")
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    codes = torch.zeros((4, 14), device="cuda", dtype=torch.int8)[:, ::2]
+    scales = torch.ones(8, device="cuda")[::2]
+    weight = nn.Parameter(TrainingWeight(codes, scales))
+    alias = weight.detach()
+    values = torch.randn((4, 14), device="cuda")[:, ::2]
+    before = values.clone()
+    version = weight._version
+    with torch.no_grad():
+        assert weight.copy_(values) is weight
+    assert weight._version > version and alias._version == weight._version
+    assert weight.int_data.data_ptr() == codes.data_ptr()
+    assert weight.scale.data_ptr() == scales.data_ptr()
+    torch.testing.assert_close(values, before, rtol=0, atol=0)
+    torch.testing.assert_close(alias.dequantize(), weight.dequantize(), rtol=0, atol=0)
+    bound = values.abs().amax(1, keepdim=True) / 127 + 1e-6
+    assert torch.all((weight.dequantize() - values).abs() <= bound)

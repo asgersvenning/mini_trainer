@@ -117,8 +117,10 @@ profile](benchmarks.md#larger-batches-and-direct-collation) now shows lower memo
 and faster training with populated compiler caches in individual runs. The first
 [three-seed comparison](benchmarks.md#continuous-multi-seed-large-batch-profile)
 confirms 26–28% lower peak memory but mixed speed results and 0.10–0.54 percentage
-points lower accuracy. Quality parity, reliable speed gains, cold-start cost, and
-broader workloads still need validation.
+points lower accuracy. [Functional fused requantization](benchmarks.md#functional-fused-requantization)
+then reduced peak memory to 30–31% below float, with slightly higher accuracy in
+all three pairs. Whole-run times improved, but later-phase speed remained mixed.
+Reliable speed gains, cold-start cost, and broader workload validation remain open.
 
 Deliver quantization-aware training and post-training inference quantization as
 separate opt-in capabilities, recording actual weight/activation bit widths,

@@ -412,3 +412,48 @@ for this local validation.
 The synthetic CUDA float/INT8 oracle pair was rerun with the retained kernels;
 both reached the required 100% accuracy after training and checkpoint reload.
 This verifies the simple task, not convergence equivalence on MNIST or Blair.
+
+### Functional fused requantization
+
+The compiled optimizer's floating-to-INT8 copy now uses a fused row kernel that
+returns fresh codes and scales, followed by ordinary tensor copies. A first
+in-place custom-operator experiment was rejected: generated SGD code updated
+weight storage before calculating momentum that still depended on the old
+weights. The existing floating-reference momentum regression caught the error.
+The functional version passes that regression, independent stochastic-rounding
+and RNG-replay checks, and checkpoint tests. It retains no floating master weight.
+
+The same three-seed profile was rerun, sequentially with no concurrent GPU tests.
+Runtime source hash is
+`ae6843b04efb8697fd2b830b3be729cbf61a061d3439abc8673c1d1d752d4542`;
+the lock hash is unchanged. Paired manifests, held-out labels and paths match,
+and all floating accuracies match the preceding run.
+
+| Seed | Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–60 | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 42 | Float | 93.06% | 254.26 | 0.076 | 30.77 |
+| 42 | INT8 | 93.22% | 175.37 | 0.074 | 30.57 |
+| 43 | Float | 92.76% | 249.13 | 0.074 | 31.54 |
+| 43 | INT8 | 92.98% | 175.37 | 0.076 | 29.20 |
+| 44 | Float | 92.74% | 249.13 | 0.071 | 32.40 |
+| 44 | INT8 | 93.00% | 175.37 | 0.081 | 28.41 |
+
+Peak allocation falls another 4.9% relative to the preceding INT8 run, and is now
+30–31% below float. Accuracy is 0.16–0.26 percentage points above the paired
+floating runs; the changed rounding stream means this is not proof of an
+intrinsically better learning algorithm. Whole training calls are shorter in
+all three pairs, but later training phases are slower in two. Startup, validation
+and logging costs remain part of the whole-run measurement, and caches were not
+cleared. These results support retaining the memory improvement; they do not
+establish a consistent compute speedup. Repeated timing and broader workloads
+remain necessary. The synthetic CUDA pair again reached 100% oracle accuracy.
+
+Reports and predictions are retained locally under
+`/tmp/mini-trainer-qt-large-batch-functional-requant`, with the oracle pair under
+`/tmp/mini-trainer-qt-oracle-functional-requant`. The shared pipeline will exercise
+the new backend without changing its recipes or acceptance thresholds.
+
+A separate eight-trial alternating dispatch probe compared the cached autotuner
+with direct launches of its identical selected kernel. Skipping tuner bookkeeping
+saved about 4 microseconds for the batch-128 square contraction, but less than
+2% for the three larger training shapes. A second launch cache was not added.

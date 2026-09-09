@@ -11,7 +11,7 @@ from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
 
 from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
-from ._quantized_update import update_int8_rows_
+from ._quantized_update import quantize_int8_rows, update_int8_rows_
 
 # Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
 # graph key. Include the backend and kernel implementations so changing hidden
@@ -77,6 +77,32 @@ def to_copy(func, types, args, kwargs):
 def add(func, types, args, kwargs):
     # Coupled weight decay (SGD) adds the dequantized parameter to its gradient.
     return func(*(value.dequantize() if isinstance(value, TrainingWeight) else value for value in args), **kwargs)
+
+
+@TrainingWeight.implements(torch.ops.aten.copy_.default)
+def copy_weight(func, types, args, kwargs):
+    destination, source = args[:2]
+    if not isinstance(destination, Int8QuantizedTrainingLinearWeight):
+        destination.copy_(source.dequantize(), **kwargs)
+    elif isinstance(source, Int8QuantizedTrainingLinearWeight):
+        destination.int_data.copy_(source.int_data, **kwargs)
+        destination.scale.copy_(source.scale, **kwargs)
+    elif (
+        destination.device.type == "cuda"
+        and source.device == destination.device
+        and source.shape == destination.shape
+        and source.dtype == destination.dtype
+        and source.dtype in (torch.float32, torch.float16, torch.bfloat16)
+        and 0 < source.shape[1] <= 16384
+    ):
+        codes, scales = quantize_int8_rows(source)
+        destination.int_data.copy_(codes, **kwargs)
+        destination.scale.copy_(scales, **kwargs)
+    else:
+        codes, scales = quantize_int8_rowwise(source, stochastic_rounding=True)
+        destination.int_data.copy_(codes, **kwargs)
+        destination.scale.copy_(scales, **kwargs)
+    return destination
 
 
 @TrainingWeight.implements(torch.ops.prims.fma.default)

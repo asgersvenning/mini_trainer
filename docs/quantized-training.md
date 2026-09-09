@@ -78,10 +78,20 @@ as does twelve-group AdamW, with hard failure enabled on compiler-cache fallback
 This establishes compilation compatibility, not a performance recommendation:
 the batch-128 dense MNIST comparison is slower and less accurate with QT than float.
 The [larger-batch profile](benchmarks.md#larger-batches-and-direct-collation) shows
-lower memory and faster training after compiler caches are populated, but still
-needs multi-seed quality validation.
+lower memory and faster training in individual runs after compiler caches are
+populated. The [three-seed requantization comparison](benchmarks.md#functional-fused-requantization)
+shows lower memory and slightly higher accuracy than float, but later-phase
+speed remains mixed and broader workload validation is still required.
 Compiled stochastic requantization can follow a different random trajectory from
 the eager row kernel, so a matching seed does not establish identical training.
+Floating-to-INT8 copies now use a fused row-quantization kernel for matching CUDA
+FP32/FP16/BF16 tensors with at most 16,384 columns. It returns fresh codes and
+scales; ordinary tensor copies perform the final storage mutation so compiled
+optimizer calculations that need the old weight remain correctly ordered. This
+keeps no floating master weight, though transient floating updates still exist.
+The operator is marked as seeded randomness, and compiled regressions check
+independent rounding, generator replay, sub-code updates and optimizer state.
+The random trajectory can differ from earlier compiled requantization.
 The earlier storage prototype's fake-tensor and dtype-cache failures are resolved
 by an explicit Triton kernel and custom-operator boundary; the storage kernel
 does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
