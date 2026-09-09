@@ -2257,6 +2257,11 @@ itself; it must not be credited with the probe correction's memory reduction.
 Static checks passed. The CPU-default regression run passed 482 tests, with 156
 skips and the known EMA expected failure. Separate intentional CUDA runs passed
 the 11 focused update/version checks and both new parameter-lifetime checks.
+The broader affected CUDA suite passed all 95 tests after isolating its existing
+fresh-tuning regression in a subprocess with compiled caches disabled at startup.
+Initially that test failed because no tuning callback ran; clearing only the
+tuner cache or disabling graph caches late in a shared process was insufficient.
+The isolated test retains its tuning, finite-gradient and optimizer assertions.
 
 ### Maintained image preparation reproduction
 

@@ -229,6 +229,22 @@ def test_dense_backward_graph_with_fresh_kernel_tuning(monkeypatch):
     pytest.importorskip("torchao")
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 for fresh INT8 kernel tuning in CUDA graphs")
+    # Earlier compiled tests can retain generated kernels in process even when
+    # graph caches are disabled later. Start this fresh-tuning contract with
+    # caches disabled before importing the compiler; keep all assertions below.
+    if os.environ.get("MINI_TRAINER_FRESH_TUNING_CHILD") != "1":
+        import subprocess
+        import sys
+
+        environment = dict(os.environ, MINI_TRAINER_FRESH_TUNING_CHILD="1", TORCHINDUCTOR_FORCE_DISABLE_CACHES="1")
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", f"{__file__}::test_dense_backward_graph_with_fresh_kernel_tuning", "-q"],
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return
     from dev.benchmarks.models import DenseImageMLP
     from mini_trainer.modeling import Classifier, EmbeddingContext
     from mini_trainer.modeling import _quantized_matmul as matmul
