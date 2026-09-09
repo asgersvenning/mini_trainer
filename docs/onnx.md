@@ -102,7 +102,10 @@ The actual EfficientNetV2-S backbone with symmetric normalized flat/hierarchical
 heads is also covered by offline dynamic-batch export tests. Trained Blair
 checkpoints passed ONNX Runtime CPU parity on real images; see the
 [deployment experiment](benchmarks.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
-GPU providers, ARM execution and arbitrary spatial dimensions remain unvalidated.
+Local [CUDA placement checks](benchmarks.md#onnx-cuda-provider-placement) expose
+CPU fallback for native integer heads and floating execution for calibrated
+convolutions. Target GPU hardware, ARM execution and arbitrary spatial dimensions
+remain unvalidated.
 An initial signed MinMax INT8 recipe lost substantial accuracy and retained
 floating convolutions. A follow-up unsigned Percentile recipe executed all
 convolutions as QLinearConv and roughly halved warm local CPU inference latency,
@@ -155,9 +158,11 @@ Tests cover normalized symmetric flat/hierarchical heads, EfficientNetV2-S,
 active-class filtering, dynamic batches, checkpoint CLI loading and numerical
 edge cases. Trained Blair checkpoints also passed checks on eight real validation
 images at batches 1, 2, 4 and 8. An exported graph still needs runtime profiling
-and quality evaluation on the intended provider. CUDA/ARM ONNX execution,
-million-class export capacity and production performance of this native path
-remain unverified. On the full Blair validation split, top-1 predictions and the
+and quality evaluation on the intended provider. Local CUDA-provider execution
+retains CPU MatMulInteger operations; it does not establish integer GPU execution.
+Target GPU/ARM deployment, million-class export capacity and production performance
+of this native path remain unverified. On the full Blair validation split,
+top-1 predictions and the
 requested macro metrics matched the full-FP32 CUDA reference, but some image
 scores exceeded the strict export tolerance; see the
 [full-validation results](benchmarks.md#native-onnx-full-validation-quality-and-numerical-limits).

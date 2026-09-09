@@ -1600,3 +1600,85 @@ Local probe and phase reports are retained under ignored `tmp-million-head/` as
 Validation passed static checks and 387 CPU-default tests (146 skips and the
 existing EMA expected failure), plus 13 focused CPU/CUDA preparation cases and
 91 CUDA-enabled quantized-training/model regressions.
+
+
+### ONNX CUDA provider placement
+
+A local follow-up on 2026-09-09 used an isolated ONNX Runtime GPU 1.29.0 wheel,
+Python 3.13.7, ONNX 1.22.0 and NumPy 2.4.6 on the RTX 3080 Ti Laptop GPU.
+The wheel links CUDA 13 libraries; the process used the existing CUDA 13/cuDNN 9
+library directories without replacing the working PyTorch or CPU ORT packages.
+`use_tf32=0` was explicit. Runtime dependencies must match the actual installed
+wheel; see the [ORT CUDA provider guide](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html).
+
+The portable runner profiled the retained EfficientNetV2-S exports using the same
+eight preprocessed Blair validation images, batch eight, size 128. **Selecting
+CUDA did not produce integer GPU execution for either quantized recipe.**
+
+| Export | Main CUDA operations | Main CPU operations | Profiled host-to-device / device-to-host copies |
+| --- | --- | --- | ---: |
+| Floating flat | 170 Conv, 2 Gemm | Auxiliary operations | 1 / 1 |
+| Native QT flat | 170 Conv | 2 MatMulInteger | 3 / 3 |
+| Native QT hierarchical | 170 Conv | 2 MatMulInteger | 3 / 3 |
+| Calibrated unsigned Percentile flat QDQ | 170 floating Conv, 2 floating Gemm | 171 DequantizeLinear | 172 / 1 |
+
+The QDQ CUDA run additionally executed 340 QuantizeLinear and 650 DequantizeLinear
+operations on GPU. This differs from its earlier CPU run, which fused integer
+QLinearConv/QGemm operations. These counts describe the observed optimized runtime
+graph, not a universal statement about every CUDA/TensorRT version or quantized
+representation. The native head's CPU fallback is particularly relevant to the
+large-class deployment objective, even though this quality model has only 25 leaves.
+Single-process timings are retained in the reports; these placement probes do not
+establish speedups on the intended target machines.
+
+An optional `--require-provider-op` check now requires each named runtime operation
+type to occur and execute entirely on the requested provider. Requiring Conv and
+MatMulInteger rejected the native CUDA run with its two CPU MatMulInteger nodes,
+retaining a failed report and profile before timing. Missing/fused-away operation
+types also fail; inspect actual profiles when selecting requirements. The default
+runner still permits partial CPU execution and records it.
+
+On the eight images, float and both native heads passed CPU/CUDA score comparison
+at rtol=1e-4, atol=1e-5 (maximum errors 1.24e-5, 1.34e-5 and 8.59e-6 respectively).
+The calibrated flat QDQ export failed: maximum score error 0.45745 and one top-1
+change versus its own CPU output. That recipe needs a full CUDA-specific quality
+study; its CPU results cannot serve as GPU quality evidence.
+
+The native flat/hierarchical exports were then evaluated on all **912** Blair
+validation images, in manifest order, batch eight, against retained matched CPU
+ORT and full-FP32 PyTorch references. Manifest/checkpoint hashes and class mappings
+were checked; the baseline score file hashes are retained. All predictions stayed
+the same. `mini_metrics` revision `70cc69adc05362863439277048e06386c1f885e1`, with
+explicit MacroF1 selection criterion and the earlier threshold-zero, no-abstention
+policy, gave exactly the same five metrics for all three execution paths:
+
+| Output | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat | 0.769112 | 0.758984 | 0.796193 | 1.000000 | 0.810716 |
+| Hierarchical leaf | 0.730698 | 0.720275 | 0.799803 | 1.000000 | 0.787638 |
+| Hierarchical parent | 0.867051 | 0.844461 | 0.913180 | 1.000000 | 0.857871 |
+
+Strict score parity remains false: versus full-FP32 PyTorch, 6 flat, 18 leaf and
+19 parent images exceed tolerance, with maximum errors 0.014928, 0.012346 and
+0.010621. Confidence-threshold equivalence and production acceptance remain open.
+The initial probe completed flat evaluation then hit a cleanup NameError; after
+fixing that probe, hierarchical evaluation completed while preserving the flat
+result. No training or performance measurements were inferred from that retry.
+
+Profiles, hashes and output arrays are retained under ignored
+`tmp-onnx-cuda-placement-flat/`, `tmp-onnx-cuda-placement-recipes/`,
+`tmp-onnx-cuda-placement-cpu-reference/` and `tmp-onnx-cuda-required-int8/`.
+Full-validation scores, metric CSVs and reports are under
+`tmp-native-int8-cuda-validation/`; its probe is
+`tmp-native-int8-validation/run_cuda.py`.
+
+Next, verify an integer GPU execution path with an appropriate provider/kernel
+and repeat the quality protocol before making a GPU quantization recommendation.
+The native dynamic quantizer and calibrated QDQ recipe have distinct numerical
+contracts. HPC training performance, intended desktop/Spark GPU performance and
+ARM CPU inference still require their actual hardware; laptop execution does not
+close those requirements.
+
+The placement-check increment passed static checks and 390 CPU-default tests,
+with 146 skips and the existing EMA expected failure. The real CUDA negative
+probe also rejected native-head CPU fallback and retained its diagnostic report.

@@ -47,8 +47,13 @@ measurements remain useful for debugging but cannot establish gains on these
 systems. Do not assume a single quantized artifact or kernel recipe works across
 CUDA PyTorch, ONNX GPU and ONNX ARM CPU. Native QT now has an opt-in
 [integer-forward ONNX export](onnx.md#native-int8-training-checkpoints), verified
-against a full-FP32 CUDA reference on the local CPU provider. This does not
-establish ONNX GPU/ARM execution or performance. ONNX Runtime training/fine-tuning
+against a full-FP32 CUDA reference on the local CPU provider. Subsequent
+[local CUDA-provider checks](benchmarks.md#onnx-cuda-provider-placement) retain
+CPU execution for native integer heads; full Blair validation preserves the five
+requested metrics, while strict score parity still fails. The calibrated QDQ
+recipe uses floating Conv/Gemm on CUDA and fails the small CPU/CUDA parity probe.
+Integer GPU execution, target GPU performance and ARM execution remain open.
+ONNX Runtime training/fine-tuning
 would be a separate integration; an inference export does not provide it.
 
 The shared dataset harness now selects backbone and head independently while

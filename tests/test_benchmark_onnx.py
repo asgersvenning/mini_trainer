@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from dev.benchmarks.onnx_inference import run
+from dev.benchmarks.onnx_inference import require_operations, run
 
 onnx = pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
@@ -29,9 +29,10 @@ def model_and_inputs(tmp_path):
 def test_cpu_measurement_records_external_weights_execution_and_outputs(model_and_inputs, tmp_path):
     model, inputs = model_and_inputs
     output = tmp_path / "measurement"
-    report = run([model], inputs, output, "CPUExecutionProvider", warmup=1, repeats=2)
+    report = run([model], inputs, output, "CPUExecutionProvider", warmup=1, repeats=2, required_ops=["MatMul"])
     assert report == json.loads((output / "report.json").read_text())
     assert report["status"] == "passed"
+    assert report["required_ops"] == ["MatMul"]
     record = report["models"][0]
     assert len(record["files"]) == 2
     assert len(record["seconds"]) == 2
@@ -48,6 +49,29 @@ def test_unavailable_provider_does_not_fall_back(model_and_inputs, tmp_path):
     with pytest.raises(ValueError, match="unavailable"):
         run([model], inputs, tmp_path / "missing", "MissingExecutionProvider")
     assert not (tmp_path / "missing").exists()
+
+
+def test_missing_required_operation_retains_failed_profile(model_and_inputs, tmp_path):
+    model, inputs = model_and_inputs
+    output = tmp_path / "missing-operation"
+    with pytest.raises(RuntimeError, match="Required operation MatMulInteger"):
+        run([model], inputs, output, "CPUExecutionProvider", required_ops=["MatMulInteger"])
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "failed"
+    assert report["required_ops"] == ["MatMulInteger"]
+    assert report["models"][0]["execution"]
+    assert report["models"][0]["seconds"] == []
+
+
+@pytest.mark.parametrize("gpu_count", [0, 1])
+def test_required_operation_rejects_partial_or_complete_cpu_fallback(gpu_count):
+    counts = {("Conv", "CUDAExecutionProvider"): 170, ("MatMulInteger", "CPUExecutionProvider"): 2}
+    if gpu_count:
+        counts[("MatMulInteger", "CUDAExecutionProvider")] = gpu_count
+    with pytest.raises(RuntimeError, match="Required operation MatMulInteger"):
+        require_operations(counts, "CUDAExecutionProvider", ["Conv", "MatMulInteger"])
+    # Auxiliary CPU work is allowed when the required operations remain on GPU.
+    require_operations(counts, "CUDAExecutionProvider", ["Conv"])
 
 
 def test_input_contract_failure_is_retained(model_and_inputs, tmp_path):

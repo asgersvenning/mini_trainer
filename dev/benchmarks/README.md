@@ -613,7 +613,23 @@ that executes no operations on the requested provider fails instead of reporting
 a CPU run as a GPU measurement. Partial CPU execution is reported, not prohibited:
 shape and other auxiliary operations may legitimately use CPU. Inspect the profile
 for the expensive operations. Integer weights or QDQ nodes alone are not proof of
-integer execution. Failures after output creation retain a failed `report.json`;
+integer execution. Use repeatable `--require-provider-op` arguments to require
+particular **profiled runtime operation types** on the requested provider. Every
+required type must occur in each supplied model and every occurrence must execute
+on that provider; missing types and partial fallback fail before timing. Inspect
+the profile first: graph optimizations can change operation names or fuse nodes.
+Auxiliary CPU operations remain allowed when they are not among the requirements.
+
+For example, add `--require-provider-op Conv --require-provider-op MatMulInteger`
+to a native QT model invocation to require both the backbone and integer head on
+CUDA. This currently **fails** on the tested ONNX Runtime 1.29.0 CUDA build: its
+native integer head executes on CPU. The calibrated QDQ artifact instead runs
+floating Conv/Gemm on CUDA, so requiring integer operation types also fails.
+See the [measured placement results](../../docs/benchmarks.md#onnx-cuda-provider-placement).
+A successful default measurement means some work ran on the requested provider;
+it is not an integer-kernel or quality acceptance gate.
+
+Failures after output creation retain a failed `report.json`;
 input/environment preflight failures leave no result directory.
 
 Timing covers warm `Session.run` with CPU NumPy inputs and outputs, including

@@ -92,8 +92,9 @@ An initial native QT and shared-loader milestone is implemented for the document
 CUDA Linear regime. The [validation audit](quantized-training-validation.md) records
 three-seed memory/speed benefits, real loading comparisons, synthetic and
 hierarchical checkpoint/inference coverage, allocation-aware worker defaults,
-and installed-package checks. The primary EfficientNetV2 configuration with symmetric
-hidden layers and normalized flat/hierarchical heads remains unvalidated. HPC
+and installed-package checks. Local EfficientNetV2-S runs now cover symmetric
+hidden layers and normalized flat/hierarchical heads, including 100k-class
+synthetic capacity checks and Blair quality measurements. HPC
 PyTorch training, local GPU training/ONNX inference and ARM ONNX edge inference
 are required deployment targets, not extensions of a completed objective.
 Broader operator coverage, cold-start performance and quality studies remain open. The chronological

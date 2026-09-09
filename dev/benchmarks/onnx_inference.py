@@ -35,7 +35,15 @@ def model_files(path, onnx):
     return [{"path": str(p), "sha256": file_hash(p), "bytes": p.stat().st_size} for p in sorted(paths)]
 
 
-def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provider_options=None):
+def require_operations(counts, provider, operations):
+    """Require observed runtime operations to execute entirely on the chosen EP."""
+    for operation in operations:
+        placement = {ep: count for (op, ep), count in counts.items() if op == operation and count}
+        if set(placement) != {provider}:
+            raise RuntimeError(f"Required operation {operation} must execute exclusively on {provider}; observed: {placement}")
+
+
+def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provider_options=None, required_ops=()):
     import onnx
     import onnxruntime as ort
 
@@ -60,6 +68,7 @@ def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provi
         "runner_sha256": file_hash(__file__),
         "provider": provider,
         "provider_options": provider_options or {},
+        "required_ops": list(required_ops),
         "available_providers": ort.get_available_providers(),
         "threads": threads,
         "warmup": warmup,
@@ -108,6 +117,7 @@ def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provi
             record["profile"] = str(profile)
             if not any(ep == provider for _, ep in counts):
                 raise RuntimeError(f"No profiled operation executed on requested provider {provider}")
+            require_operations(counts, provider, required_ops)
             if any(not np.isfinite(array).all() for array in predictions):
                 raise ValueError(f"Nonfinite predictions from {path}")
             record["outputs"] = [node.name for node in session.get_outputs()]
@@ -144,6 +154,13 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provider", required=True)
     parser.add_argument("--provider-options", type=json.loads, default={})
+    parser.add_argument(
+        "--require-provider-op",
+        dest="required_ops",
+        action="append",
+        default=[],
+        help="Require this profiled operation type to execute entirely on the requested provider (repeatable)",
+    )
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=11)
