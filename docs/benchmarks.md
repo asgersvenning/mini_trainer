@@ -1845,6 +1845,91 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Native INT8 checkpoint to calibrated TensorRT deployment
+
+The explicit `mt_export --materialize-int8-training` path connects a trained
+native INT8 checkpoint to floating export and subsequent static calibration.
+It does not silently substitute the native export: the source checkpoint hash,
+removed dynamic activation quantization and conversion recipe are recorded in
+the manifest. See the [export contract](onnx.md#explicit-materialization-for-deployment-calibration).
+
+This study uses the actual native checkpoints behind the verified native ONNX
+baselines: `tmp-normalization-blair/{flat,hierarchical}/training/weights/last.pt`.
+Their hashes were checked against `tmp-native-int8-onnx/verified/{head}/manifest.json`,
+and the source files remained unchanged. These are different training runs from
+the initial floating-checkpoint TensorRT study above, so its engines and metrics
+are not reused as baselines here.
+
+Both EfficientNetV2-S heads are normalized with symmetric hidden layers. The new
+exports passed floating ONNX verification on CPU. The maintained preparation
+command reproduced all retained NPZ hashes for the 128 training calibration
+images and 912 held-out validation images. Percentile 99.9 calibration used the
+same signed symmetric INT8 activation/per-channel weight, floating-bias recipe,
+with asymmetric histograms and one CPU thread. Dynamic activation row quantization
+from native training is absent from this new artifact.
+
+TensorRT 10.16.1.11 on the RTX 3080 Ti Laptop built both INT8 engines and matched
+FP16 baselines from the same materialized models. Settings were profile 1–8,
+128px inputs, builder optimization 1, workspace 1 GiB, and TF32 disabled. Detailed
+inspection verified **170 INT8 convolutions and two INT8 head GEMMs in each INT8
+engine**, including INT8 inputs/weights or integer GEMM tactics. This establishes
+integer GPU execution for the converted artifacts, not the native dynamic graph.
+
+All four stages were evaluated on all 912 validation images, using the maintained
+collector and mini_metrics comparison with threshold zero and no tuning. Native
+means the previously verified native integer ONNX graph on CPU; materialized
+FP32 means ONNX CPU execution before recalibration. FP16 and INT8 mean direct
+TensorRT execution. The metrics are:
+
+| Head / stage | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / native | 0.769112 | 0.758984 | 0.796193 | 1.000000 | 0.810716 |
+| Flat / materialized FP32 | 0.770778 | 0.762868 | 0.796316 | 1.000000 | 0.810397 |
+| Flat / TensorRT FP16 | 0.772581 | 0.765220 | 0.797016 | 1.000000 | 0.811644 |
+| Flat / TensorRT INT8 | 0.769551 | 0.762561 | 0.789897 | 1.000000 | 0.805218 |
+| Hierarchical leaf / native | 0.730698 | 0.720275 | 0.799803 | 1.000000 | 0.787638 |
+| Hierarchical leaf / materialized FP32 | 0.735466 | 0.725632 | 0.801459 | 1.000000 | 0.791476 |
+| Hierarchical leaf / TensorRT FP16 | 0.732321 | 0.722396 | 0.800159 | 1.000000 | 0.789964 |
+| Hierarchical leaf / TensorRT INT8 | 0.736413 | 0.730936 | 0.777745 | 1.000000 | 0.791877 |
+| Hierarchical parent / native | 0.867051 | 0.844461 | 0.913180 | 1.000000 | 0.857871 |
+| Hierarchical parent / materialized FP32 | 0.870255 | 0.847898 | 0.915910 | 1.000000 | 0.859540 |
+| Hierarchical parent / TensorRT FP16 | 0.870844 | 0.848284 | 0.916666 | 1.000000 | 0.862149 |
+| Hierarchical parent / TensorRT INT8 | 0.869788 | 0.849624 | 0.913274 | 1.000000 | 0.857367 |
+
+Materialization changes 5 flat, 9 hierarchical leaf and 4 parent predictions
+against native. The final INT8 candidate changes 65, 64 and 21 respectively.
+Relative to native, INT8 F1 changes are +0.044, +0.572 and +0.274 percentage points,
+while hierarchical leaf precision drops 2.206 points. Relative to matched FP16,
+the corresponding F1 changes are −0.303, +0.409 and −0.106 points, with a 2.241-point
+hierarchical leaf precision drop. Small F1 gains in a single-checkpoint comparison
+are not evidence that quantization generally improves model quality.
+
+INT8 engine sizes are 26,325,140 bytes (flat) and 26,492,548 bytes (hierarchical),
+versus 46,455,028 and 46,154,172 for FP16. Reported context requirements are
+5,586,944 versus 5,669,888 bytes. These are file/context observations, not total
+runtime-memory savings. No new latency benchmark or target-hardware performance
+claim is made; a worthwhile trade-off must still be verified against FP16 on
+the intended workload and device.
+
+The conversion regressions cover ordinary/normalized weights, negative/zero scales,
+source immutability, masked flat/hierarchical checkpoint exports and explicit native
+default behavior. A further shared-magnitude regression exposed a sign-placement
+issue; signs now belong to the directions, while zero-scale rows use zero
+magnitudes. Compatible shared magnitudes work, and incompatible tied roles/views
+fail explicitly. The two real checkpoints have no nonpositive normalized direction
+scales, so their materialized parameter values are unchanged by this correction.
+All 12 focused materialization tests passed. `bash dev/check.sh all` passed static
+checks and 470 tests, with 152 skips and one known EMA expected failure. Those
+CPU regression checks supplement the real TensorRT execution above; they do not
+establish target GPU or ARM correctness.
+
+All artifacts are retained under `tmp-native-materialized/`: source-linked floating
+exports, prepared inputs, calibrated QDQ graphs, detailed engine inspection,
+per-batch scores, prediction CSVs and native/FP16 comparison reports. The experiment
+provides a distinct, measured QT-checkpoint-to-INT8-GPU route. It does not establish
+unchanged native quantization, distributed training, million-class capacity,
+ARM execution or target-machine cost benefits.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
