@@ -685,3 +685,35 @@ Reports and predictions are at `/tmp/mini-trainer-embedding-default-pairs` and
 `/tmp/mini-trainer-embedding-clean-pairs`. An earlier exploratory comparison at
 `/tmp/mini-trainer-embedding-pairs` is retained separately; a short CPU validation
 check overlapped that run, so its timings are excluded from this table.
+
+#### Hierarchical Blair check
+
+The same source comparison also ran Blair with 3,704 training images, 912
+validation images and the fixed 1,161-image test set. Both sides used TinyConv,
+a 64-feature hidden layer, the normalized `HierarchicalClassifier`, the same
+reviewed two-level class specification, MuonAuxAdamW, batch 32, five epochs,
+FP16 AMP, CPU cache, and model/optimizer compilation with `reduce-overhead`.
+INT8 coverage is `fc.hidden` and `fc.linear`; the convolutions remain floating
+point. This checks the two-level aggregation path, not every hierarchical head
+variant. Manifest, test labels and paths match, and all saved scores are finite.
+
+| Precision | Revision | Species accuracy | Parent accuracy | Peak MiB | Median train epoch 3–5 s | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Float | Before | 65.72% | 79.33% | 72.64 | 0.721 | 22.27 |
+| Float | After | 64.86% | 78.12% | 66.38 | 0.679 | 18.47 |
+| INT8 | Before | 65.81% | 81.05% | 55.96 | 1.060 | 22.95 |
+| INT8 | After | 67.53% | 82.95% | 54.62 | 0.845 | 46.54 |
+
+Later-phase time improves by 6% for float and 20% for INT8, and peak allocation
+falls for both. INT8 still takes longer per epoch than float. Its whole-call
+time also rises sharply: the first training phase takes 35.60 seconds after the
+change versus 13.21 before, consistent with substantial first-use compilation
+cost. These caches were not cleared, so this is not a controlled cold-start
+comparison. This short single-seed run establishes functional coverage and a
+measured steady-phase improvement; it does not establish convergence equivalence,
+universal memory behavior, or faster total QT training on Blair. Raw reports,
+predictions and the class specification are at `/tmp/mini-trainer-embedding-blair`.
+
+After this change, both synthetic CUDA oracle runs again reached 100% with model
+and MuonAuxAdamW optimizer compilation, `reduce-overhead`, FP16 AMP, training and
+checkpoint reload. Reports are at `/tmp/mini-trainer-embedding-oracle`.
