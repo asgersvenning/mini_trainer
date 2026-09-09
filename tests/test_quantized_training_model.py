@@ -467,6 +467,9 @@ def test_cuda_compiled_optimizer_handles_many_quantized_groups(kind):
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 to verify many-group optimizer compilation")
     assert torch.cuda.is_available()
+    # Measure this optimizer's frames, independently of earlier tests' Dynamo
+    # caches/skip decisions. Never reset between groups or measured updates.
+    torch._dynamo.reset()
     weights = [nn.Parameter(TrainingWeight.from_float(torch.randn(64, 128, device="cuda"))) for _ in range(12)]
     groups = [{"params": [weight], "lr": 0.01 / (index + 1)} for index, weight in enumerate(weights)]
     optimizer = torch.optim.SGD(groups, momentum=0.9, weight_decay=0.1) if kind == "sgd" else torch.optim.AdamW(groups, foreach=False)
