@@ -60,13 +60,17 @@ def test_blair_requires_explicit_covering_taxonomy(tmp_path):
         prepare_real(root, tmp_path, name="blair", seed=42, class_spec=path)
 
 
-def test_summary_preserves_failures_and_unmeasured_fields(tmp_path):
+@pytest.mark.parametrize("fine_tune", [False, True])
+def test_summary_preserves_failures_and_unmeasured_fields(tmp_path, fine_tune):
     path = tmp_path / "failed"
     path.mkdir()
-    (path / "report.json").write_text(json.dumps({"status": "failed", "device": "cuda:0", "dtype": "float16", "quantized_training": True}))
+    (path / "report.json").write_text(
+        json.dumps({"status": "failed", "device": "cuda:0", "dtype": "float16", "quantized_training": True, "fine_tune": fine_tune})
+    )
     summary = summarize(tmp_path)
     assert "| failed | failed | cuda:0 / float16 | requested | — | — | — | — |" in summary
     assert "CPU results do not validate GPU" in summary
+    assert (" | frozen |" if fine_tune else " | trainable |") in summary
     assert "No reports produced" in summarize(Path(tmp_path / "missing"))
 
 
@@ -193,11 +197,28 @@ def test_summary_later_epoch_median_requires_timing_scope(tmp_path):
     assert "| — | 123.00s |" in summarize(tmp_path)
 
 
-def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path):
+@pytest.mark.parametrize("fine_tune", [False, True])
+def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path, monkeypatch, fine_tune):
     import numpy as np
     import torch
 
     from dev.benchmarks.run import run
+    from mini_trainer.builders import BaseBuilder
+    from mini_trainer.modeling import classification_module
+
+    captured = {}
+    build_optimizer = BaseBuilder.build_optimizer
+
+    def inspect_optimizer(model, *args, **kwargs):
+        head_ids = {id(p) for p in classification_module(model).parameters()}
+        backbone = [p for p in model.parameters() if id(p) not in head_ids]
+        assert backbone and all(p.requires_grad != fine_tune for p in backbone)
+        if fine_tune:
+            captured["backbone"] = [(p, p.detach().clone()) for p in backbone]
+            captured["head"] = [(p, p.detach().clone()) for p in classification_module(model).parameters() if p.requires_grad]
+        return build_optimizer(model, *args, **kwargs)
+
+    monkeypatch.setattr(BaseBuilder, "build_optimizer", inspect_optimizer)
 
     root = tmp_path / "images"
     make_dataset(root)
@@ -227,8 +248,13 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path):
                     image_size=32,
                     batch_size=4,
                     cache_workers=0,
+                    fine_tune=fine_tune,
                 )
             )
+            if fine_tune:
+                assert all(torch.equal(p, initial) and p.grad is None for p, initial in captured["backbone"])
+                assert any(not torch.equal(p, initial) for p, initial in captured["head"])
+                captured.clear()
     finally:
         torch.set_num_threads(previous_threads)
     flat, hierarchical = reports
@@ -237,6 +263,7 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path):
     assert hierarchical["class_mapping"]["0"] == flat["class_mapping"]
     assert flat["hidden_width"] == hierarchical["hidden_width"] == 1280
     assert all(report["normalized"] and not report["pretrained"] for report in reports)
+    assert all(report["fine_tune"] == fine_tune and report["backbone_training_mode"] == "train" for report in reports)
     with np.load(tmp_path / "flat/predictions.npz") as a, np.load(tmp_path / "hierarchical/predictions.npz") as b:
         np.testing.assert_array_equal(a["paths"], b["paths"])
         np.testing.assert_array_equal(a["labels"], b["labels"])

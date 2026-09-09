@@ -11,8 +11,8 @@ def summarize(directory: Path) -> str:
         "# Dataset benchmark results",
         "",
         "| Run | Status | Device / precision | QT coverage | Accuracy by level | Parameter bytes | Peak CUDA MiB | "
-        "Median train epoch 3+ | Training wall time |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "Median train epoch 3+ | Training wall time | Backbone parameters |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     reports = sorted(directory.rglob("report.json"))
     for path in reports:
@@ -47,10 +47,10 @@ def summarize(directory: Path) -> str:
         )
         lines.append(
             f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | "
-            f"{peak_memory} | {later_duration} | {duration} |"
+            f"{peak_memory} | {later_duration} | {duration} | {'frozen' if report.get('fine_tune') else 'trainable'} |"
         )
     if not reports:
-        lines.append("| No reports produced | incomplete | — | — | — | — | — | — | — |")
+        lines.append("| No reports produced | incomplete | — | — | — | — | — | — | — | — |")
     lines.extend(
         [
             "",
@@ -61,6 +61,7 @@ def summarize(directory: Path) -> str:
             "only with matching hardware, dataset/configuration and timing scope. See JSON reports",
             "for provenance, errors and explicit coverage flags. CPU results do not validate GPU behavior.",
             "QT coverage counts quantized Linear modules; other operations may remain floating point.",
+            "Frozen backbone parameters do not imply evaluation mode: fine-tuning retains normal BatchNorm/dropout behavior.",
             "Parameter bytes describe stored parameters. CUDA peaks cover training, excluding final held-out inference.",
             "Older CUDA readings without a scope marker are unverified because logger resets could hide earlier peaks.",
             "Later-epoch medians use timed training phases from epoch 3 onward, including loading, preprocessing and batch logging.",

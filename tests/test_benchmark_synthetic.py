@@ -81,6 +81,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
             "reduce-overhead",
             "--compile-optimizer",
             "--optimizer-cudagraphs",
+            "--fine-tune",
         ],
     )
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
@@ -93,6 +94,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     assert report["device"] == "cuda:0"
     assert report["compile_mode"] == "reduce-overhead"
     assert report["optimizer_cudagraphs"] is True
+    assert report["fine_tune"] is True
     assert report["error"]["type"] == "RuntimeError"
     assert "test_accuracy" not in report
 

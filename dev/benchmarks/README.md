@@ -328,6 +328,18 @@ The CPU integration test exercises both real EfficientNetV2 heads with synthetic
 image files and a deliberately reordered taxonomy; it checks training, reload,
 predictions, class order and identical split manifests without a download.
 
+Add `--pretrained --fine-tune` to both precision runs for the existing builder's
+parameter-frozen fine-tuning regime. The benchmark keeps floating backbone
+parameters in FP32 and uses the requested AMP dtype for compute; INT8 preparation
+still follows the ordinary recipe and reports its actual operator coverage.
+Backbone parameters receive no optimizer updates, but BatchNorm running statistics
+and dropout retain normal training behavior. This is distinct from the
+`large_head_training --frozen` capacity probe, which evaluates the backbone.
+Reports record `fine_tune`, `backbone_floating_dtype` and `backbone_training_mode`;
+the option is also retained in failure reports. Apply identical settings and seeds
+to both precision runs. The flag alone does not establish a speed, memory or
+quality benefit, and random frozen features are only an execution diagnostic.
+
 ### Validation when target hardware is unavailable
 
 Use the local GPU to vary batch size, resolution, cache mode and worker count

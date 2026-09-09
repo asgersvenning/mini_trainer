@@ -62,6 +62,7 @@ def run(
     normalized: bool | None = None,
     image_size: int | None = None,
     pretrained: bool = False,
+    fine_tune: bool = False,
     batch_size: int = 32,
     cache_workers: int | None = None,
     model_profile: str = "default",
@@ -184,6 +185,8 @@ def run(
         optimizer_cudagraphs=optimizer_cudagraphs,
         model_builder_kwargs={
             "model_type": model_type,
+            "fine_tune": fine_tune,
+            "fine_tune_dtype": torch.float32,
             "hidden": hidden if hidden else False,
             "normalized": normalized,
             **({"model_args": {"pretrained": pretrained}} if backbone else {}),
@@ -283,6 +286,9 @@ def run(
         "normalized": normalized,
         "image_size": size,
         "pretrained": pretrained,
+        "fine_tune": fine_tune,
+        "backbone_floating_dtype": "float32",
+        "backbone_training_mode": "train",
         "hidden_width": classification_module(model).preclassification_size,
         "optimizer": optimizer,
         "learning_rate": learning_rate,
@@ -384,6 +390,9 @@ def main():
     parser.add_argument("--normalized", action=BooleanOptionalAction, default=None)
     parser.add_argument("--image-size", type=int)
     parser.add_argument("--pretrained", action="store_true", help="Allow downloading pretrained backbone weights.")
+    parser.add_argument(
+        "--fine-tune", action="store_true", help="Freeze backbone parameters; retain normal training modes and FP32 storage."
+    )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
         "--allow-nondeterministic",
@@ -422,6 +431,7 @@ def main():
             normalized=args.normalized,
             image_size=args.image_size,
             pretrained=args.pretrained,
+            fine_tune=args.fine_tune,
             batch_size=args.batch_size,
             cache_workers=args.cache_workers,
             model_profile=args.model_profile,
@@ -451,6 +461,7 @@ def main():
             "normalized": args.normalized,
             "image_size": args.image_size,
             "pretrained": args.pretrained,
+            "fine_tune": args.fine_tune,
             "batch_size": args.batch_size,
             "cache_workers": args.cache_workers,
             "model_profile": args.model_profile,
