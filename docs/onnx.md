@@ -103,9 +103,13 @@ heads is also covered by offline dynamic-batch export tests. Trained Blair
 checkpoints passed ONNX Runtime CPU parity on real images; see the
 [deployment experiment](benchmarks.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
 GPU providers, ARM execution and arbitrary spatial dimensions remain unvalidated.
-An experimental ONNX static INT8 recipe executed on the local CPU but lost
-substantial accuracy and retained floating convolution execution. It is not a
-supported production recipe. Native CUDA QT checkpoints remain a separate backend
+An initial signed MinMax INT8 recipe lost substantial accuracy and retained
+floating convolutions. A follow-up unsigned Percentile recipe executed all
+convolutions as QLinearConv and roughly halved warm local CPU inference latency,
+with remaining quality losses measured through `mini_metrics`; see the
+[calibration and metric results](benchmarks.md#onnx-activation-calibration-execution-coverage-and-macro-metrics).
+It remains exploratory, with no agreed production quality gate or target-device
+verification. Native CUDA QT checkpoints remain a separate backend
 and are not made ONNX-exportable by these floating-checkpoint experiments.
 
 These local bundles are a foundation for Hugging Face hosting. Model cards,

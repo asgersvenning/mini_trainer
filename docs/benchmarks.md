@@ -1243,3 +1243,114 @@ profiles, report JSON and scripts are retained under ignored
 experiment used the checkpoint's repository preprocessing and does not yet provide
 a standalone raw-image deployment recipe. Missing telemetry/cache write access
 emitted environment warnings; export and inference completed.
+
+### ONNX activation calibration, execution coverage and macro metrics
+
+A follow-up on the same floating checkpoints separates execution coverage from
+quantization error. Recoding signed activation zero points as unsigned values
+(`zero_point + 128`), retaining scales and signed weights, gave bitwise-identical
+unoptimized outputs on a fixed real validation batch for both heads. With ORT
+optimization enabled, all 170 convolutions then executed as QLinearConv, rather
+than 63 QLinearConv plus 107 floating Conv. This is a representation-dependent
+fusion result on this CPU/provider build, not evidence that other providers behave
+the same way. It did not solve the MinMax quality loss.
+
+Diagnostic weight-only and activation-only graphs were evaluated on all 912
+validation images. Float / weight-only / activation-only accuracy was
+84.10% / 83.22% / 55.92% for flat, 80.92% / 80.92% / 65.68% for hierarchical fine,
+and 91.12% / 90.90% / 77.96% for hierarchical parent. These controls isolate error
+sources; they are not efficient deployment graphs. Activation quantization is the
+larger problem here, although weight and activation errors interact.
+
+One focused Percentile 99.9 calibration trial used the same 128 training images
+(seed 42), asymmetric activation ranges, unsigned INT8 activations and per-channel
+signed INT8 weights. Histogram collection used 2,048 bins and batches of eight,
+accumulating histograms across batches without retaining every raw activation.
+Conv, Gemm and MatMul remained the target operations. Validation accuracy recovered
+to 82.68% flat and 78.62% / 89.47% hierarchical fine / parent. This follow-up used
+validation data for diagnosis, not a new inspection of the test split.
+
+Quality was also evaluated through the local `mini_metrics` checkout at commit
+`70cc69adc05362863439277048e06386c1f885e1` (clean working tree). The table uses
+ordinary Macro-F1, Macro-Recall, Macro-Precision, Coverage and Theil's U directly
+from that package. Values are proportions, not percentages.
+
+| Output / recipe | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / float | 0.76207 | 0.75442 | 0.78957 | 1.00000 | 0.81479 |
+| Flat / signed MinMax | 0.44030 | 0.45594 | 0.62608 | 1.00000 | 0.63969 |
+| Flat / unsigned Percentile | 0.76082 | 0.75161 | 0.78966 | 1.00000 | 0.81173 |
+| Hierarchical fine / float | 0.70922 | 0.69573 | 0.79877 | 1.00000 | 0.78258 |
+| Hierarchical fine / signed MinMax | 0.59050 | 0.58995 | 0.74886 | 1.00000 | 0.72673 |
+| Hierarchical fine / unsigned Percentile | 0.69824 | 0.67946 | 0.75561 | 1.00000 | 0.76686 |
+| Hierarchical parent / float | 0.85936 | 0.82759 | 0.92038 | 1.00000 | 0.85139 |
+| Hierarchical parent / signed MinMax | 0.77617 | 0.74597 | 0.89192 | 1.00000 | 0.79788 |
+| Hierarchical parent / unsigned Percentile | 0.84110 | 0.80161 | 0.91253 | 1.00000 | 0.82635 |
+
+Every recipe uses exactly the same 912 validation images and manifest class
+mapping, with independent top-1 predictions at each available output level.
+There is no threshold optimization, resampling, known-label filtering or inferred
+parent output for the flat head. Confidence is softmax maximum; threshold zero
+makes Coverage 100% by construction. This does not measure useful abstention.
+The flat Macro-F1 decrease is 0.13 percentage points, versus 1.10 / 1.83 points
+for hierarchical fine / parent. These single-checkpoint descriptive results do
+not establish a production acceptance threshold or statistical equivalence.
+
+For a CSV in the repository's `mini_metric.csv` schema, the exact metric call is:
+
+```python
+from mini_metrics.metrics import MacroF1, evaluate_file
+
+metrics = evaluate_file(
+    "mini_metric.csv",
+    optimal=False,
+    threshold=0,
+    known_only=False,
+    per_class=False,
+    simple=True,
+    hierarchical=False,
+    pattern=r"^(f1|recall|precision|coverage|theilU)$",
+    opt_crit=MacroF1,
+    verbose=0,
+)
+```
+
+In this package version, unprefixed `f1`, `recall` and `precision` identify macro
+metrics; micro variants have a `micro_` prefix. Pin the metrics revision when
+comparing reports. The installed package was not replaced: this experiment
+selected the sibling checkout with an explicit process-local `PYTHONPATH`.
+The package itself does not depend on that filesystem layout. The publication
+bootstrap script provides a reference for a later confidence-thresholded study;
+its `optimal=True` mode changes the evaluated sample set by splitting calibration
+from evaluation. Such a study should preserve paired splits across recipes and
+report Coverage alongside quality, separately from this full-coverage comparison.
+
+Warm CPU inference timing used one ORT intra/inter-op thread, fixed preprocessed
+real inputs, three warmups and eleven measured repetitions per batch size.
+Recipe execution order alternated forward/reverse each repetition. Medians below
+are milliseconds per `Session.run`, excluding image loading, preprocessing,
+session construction and model export; these are not end-to-end CLI latencies.
+
+| Head / batch | Float | Signed MinMax | Unsigned Percentile |
+| --- | ---: | ---: | ---: |
+| Flat / 1 | 23.29 | 35.89 | 11.91 |
+| Flat / 8 | 162.81 | 243.15 | 80.67 |
+| Hierarchical / 1 | 23.86 | 36.75 | 11.96 |
+| Hierarchical / 8 | 175.44 | 252.97 | 84.56 |
+
+A separate execution profile of the Percentile graphs confirms 170 QLinearConv
+and two QGemm operations, with no floating Conv. Sigmoid, multiplication,
+normalization and other operations still execute in floating point. These are
+local Intel i7-12800H x86 CPU measurements with ORT 1.29.0, not Raspberry Pi, ARM,
+CUDA-provider or production throughput verification. Calibration and activation
+representation both differ between the timed quantized recipes, so timing does
+not isolate either change. Quality acceptance, repeated-process timing and target
+hardware measurements remain open. Native CUDA QT checkpoint export is still a
+separate unsupported path.
+
+Local scripts, scores, CSV inputs, exact metric JSON, calibration histograms,
+raw timing samples and execution profiles are retained under ignored
+`tmp-onnx-validation/`. The dataset manifest SHA256 is
+`1cef6c7d9133d889b6c8eff0ffef29b1db5d6653ab4adf0c005739af8c2921c6`.
+This documents an exploratory experiment; those local artifacts are not a shared
+continuous-evaluation service or a portable deployment harness.
