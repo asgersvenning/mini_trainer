@@ -629,6 +629,13 @@ See the [measured placement results](../../docs/benchmarks.md#onnx-cuda-provider
 A successful default measurement means some work ran on the requested provider;
 it is not an integer-kernel or quality acceptance gate.
 
+`--optimization disable|basic|extended|all` selects and records ONNX Runtime's
+graph optimization level for both the profiling and timing sessions (`all` is the
+unchanged default). This matters for provider partitioning: the tested TensorRT
+QDQ graph acquired unsupported INT32 bias dequantization under the default
+rewrites. With `disable`, its flat model ran as one TensorRT partition without
+CPU operations. This setting does not disable TensorRT's own engine optimization.
+
 Failures after output creation retain a failed `report.json`;
 input/environment preflight failures leave no result directory.
 
@@ -648,3 +655,33 @@ power/thermal configuration and concurrent workload alongside the report. The
 unsigned activation recipe measured on x86 is a candidate to test, not a universal
 GPU/ARM recipe. This inference runner does not validate HPC PyTorch quantized
 training, native QT checkpoint export or million-class capacity.
+
+### TensorRT calibration candidate
+
+The local candidate uses signed, symmetric INT8 activation/weight QDQ, per-channel
+weights and floating biases. It derives symmetric ranges from the retained
+Percentile 99.9 training-split calibration cache. With ONNX Runtime 1.29.0's
+`quantize_static`, the relevant arguments are `quant_format=QuantFormat.QDQ`,
+`activation_type=QuantType.QInt8`, `weight_type=QuantType.QInt8`, `per_channel=True`
+and `extra_options={"ActivationSymmetric": True, "WeightSymmetric": True,
+"QuantizeBias": False}`. Supply a reviewed calibration reader/cache and use
+separate output artifacts. This changes the quantization recipe; it does not
+preserve the native training export's dynamic quantizer.
+
+In a separately prepared compatible TensorRT/ONNX Runtime GPU environment:
+
+```bash
+python -m dev.benchmarks.onnx_inference \
+    --model signed-symmetric-qdq/model.onnx --inputs preprocessed-batch.npz \
+    --output /tmp/trt-placement-1 --provider TensorrtExecutionProvider \
+    --optimization disable \
+    --provider-options '{"trt_max_workspace_size":"1073741824","trt_engine_cache_enable":true,"trt_engine_cache_path":"/tmp/trt-cache-1"}'
+```
+
+TensorRT profiles show fused partition names rather than individual Conv/Gemm
+operations. A partition on GPU alone does not prove integer arithmetic: inspect
+engine layer input/weight types and tactics using detailed TensorRT engine
+inspection. Direct hierarchical engine construction requires registering the
+standard TensorRT plugins (`init_libnvinfer_plugins`) for scatter reductions.
+Do not copy device-specific engines between target machines. See the
+[TensorRT evidence and quality limits](../../docs/benchmarks.md#tensorrt-int8-calibration-candidate).

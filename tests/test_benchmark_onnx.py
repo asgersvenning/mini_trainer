@@ -12,7 +12,10 @@ pytest.importorskip("onnxruntime")
 @pytest.fixture
 def model_and_inputs(tmp_path):
     graph = onnx.helper.make_graph(
-        [onnx.helper.make_node("MatMul", ["images", "weight"], ["scores"])],
+        [
+            onnx.helper.make_node("MatMul", ["images", "weight"], ["raw_scores"]),
+            onnx.helper.make_node("Identity", ["raw_scores"], ["scores"]),
+        ],
         "linear",
         [onnx.helper.make_tensor_value_info("images", onnx.TensorProto.FLOAT, ["batch", 2])],
         [onnx.helper.make_tensor_value_info("scores", onnx.TensorProto.FLOAT, ["batch", 2])],
@@ -26,18 +29,21 @@ def model_and_inputs(tmp_path):
     return path, inputs
 
 
-def test_cpu_measurement_records_external_weights_execution_and_outputs(model_and_inputs, tmp_path):
+@pytest.mark.parametrize("optimization", ["disable", "basic", "extended", "all"])
+def test_cpu_measurement_records_external_weights_execution_and_outputs(model_and_inputs, tmp_path, optimization):
     model, inputs = model_and_inputs
     output = tmp_path / "measurement"
-    report = run([model], inputs, output, "CPUExecutionProvider", warmup=1, repeats=2, required_ops=["MatMul"])
+    report = run([model], inputs, output, "CPUExecutionProvider", warmup=1, repeats=2, required_ops=["MatMul"], optimization=optimization)
     assert report == json.loads((output / "report.json").read_text())
     assert report["status"] == "passed"
     assert report["required_ops"] == ["MatMul"]
+    assert report["optimization"] == optimization
     record = report["models"][0]
     assert len(record["files"]) == 2
     assert len(record["seconds"]) == 2
     assert record["median_seconds"] > 0
     assert any(e["op"] == "MatMul" and e["provider"] == "CPUExecutionProvider" for e in record["execution"])
+    assert any(e["op"] == "Identity" for e in record["execution"]) == (optimization == "disable")
     with np.load(output / "model-0-outputs.npz") as actual, np.load(inputs) as expected:
         np.testing.assert_array_equal(actual["scores"], expected["images"])
     with pytest.raises(FileExistsError):

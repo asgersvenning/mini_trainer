@@ -52,7 +52,13 @@ against a full-FP32 CUDA reference on the local CPU provider. Subsequent
 CPU execution for native integer heads; full Blair validation preserves the five
 requested metrics, while strict score parity still fails. The calibrated QDQ
 recipe uses floating Conv/Gemm on CUDA and fails the small CPU/CUDA parity probe.
-Integer GPU execution, target GPU performance and ARM execution remain open.
+The subsequent [TensorRT candidate](benchmarks.md#tensorrt-int8-calibration-candidate)
+executes calibrated INT8 convolutions and head GEMMs for both representative heads.
+It has a separate numerical contract and mixed metric changes. Degradation of a
+few percentage points is acceptable to the user when paired with a significant
+measured inference speed/cost or memory benefit; quality alone does not establish
+acceptance. Native-export integer GPU execution, target GPU performance and ARM
+execution remain open.
 ONNX Runtime training/fine-tuning
 would be a separate integration; an inference export does not provide it.
 

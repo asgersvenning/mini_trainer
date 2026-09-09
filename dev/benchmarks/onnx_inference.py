@@ -43,10 +43,13 @@ def require_operations(counts, provider, operations):
             raise RuntimeError(f"Required operation {operation} must execute exclusively on {provider}; observed: {placement}")
 
 
-def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provider_options=None, required_ops=()):
+def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provider_options=None, required_ops=(), optimization="all"):
     import onnx
     import onnxruntime as ort
 
+    levels = {"disable": "ORT_DISABLE_ALL", "basic": "ORT_ENABLE_BASIC", "extended": "ORT_ENABLE_EXTENDED", "all": "ORT_ENABLE_ALL"}
+    if optimization not in levels:
+        raise ValueError(f"Unknown graph optimization level: {optimization}")
     if min(threads, warmup, repeats) < 1:
         raise ValueError("threads, warmup and repeats must be positive")
     if not models or len(set(models)) != len(models):
@@ -69,6 +72,7 @@ def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provi
         "provider": provider,
         "provider_options": provider_options or {},
         "required_ops": list(required_ops),
+        "optimization": optimization,
         "available_providers": ort.get_available_providers(),
         "threads": threads,
         "warmup": warmup,
@@ -91,6 +95,7 @@ def run(models, inputs, output, provider, threads=1, warmup=3, repeats=11, provi
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = threads
         opts.inter_op_num_threads = 1
+        opts.graph_optimization_level = getattr(ort.GraphOptimizationLevel, levels[optimization])
         return opts
 
     try:
@@ -154,6 +159,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provider", required=True)
     parser.add_argument("--provider-options", type=json.loads, default={})
+    parser.add_argument("--optimization", choices=["disable", "basic", "extended", "all"], default="all")
     parser.add_argument(
         "--require-provider-op",
         dest="required_ops",

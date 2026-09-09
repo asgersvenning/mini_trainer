@@ -1682,3 +1682,93 @@ close those requirements.
 The placement-check increment passed static checks and 390 CPU-default tests,
 with 146 skips and the existing EMA expected failure. The real CUDA negative
 probe also rejected native-head CPU fallback and retained its diagnostic report.
+
+
+### TensorRT INT8 calibration candidate
+
+The next local experiment used isolated TensorRT 10.16.1.11 CUDA 13 packages with
+ONNX Runtime GPU 1.29.0 and the same RTX 3080 Ti Laptop GPU. The working `.venv`
+was not changed. TensorRT is the documented
+[ORT GPU quantization path](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html),
+but its [standard quantizer](https://docs.nvidia.com/deeplearning/tensorrt/latest/_static/operators/Quantize.html)
+requires constant scales and zero zero-points. Native QT uses dynamic row scales.
+
+Direct parsing rejected the native export at an unsigned intermediate Cast. A
+small signed MatMulInteger probe was also rejected as unsupported, so changing
+only activation signedness does not establish a native TensorRT export path.
+Those failures are retained, not replaced by a calibrated graph with a different
+numerical contract.
+
+The separate calibration candidate uses signed symmetric INT8 activation/weight
+QDQ, per-channel weights and **floating biases**, applied to Conv/Gemm/MatMul.
+Its symmetric ranges derive from the previously recorded asymmetric Percentile
+99.9 ranges on 128 training images; it is not a newly fitted symmetric histogram.
+Default INT32 bias dequantization was rejected by TensorRT. Disabling bias
+quantization made the flat graph parse directly; registering TensorRT's standard
+plugins also enabled the hierarchical scatter reductions.
+
+ONNX Runtime's default graph rewrites reintroduced INT32 bias dequantization,
+leaving 171 DequantizeLinear operations on CPU and 171 host-to-device copy nodes
+around a TensorRT partition. Repeating the same flat graph with graph optimization
+disabled produced **one TensorRT partition and no profiled CPU operations**.
+The runner now exposes `--optimization disable|basic|extended|all`, records it,
+and applies it to both profiling and timing sessions. The default remains `all`.
+This does not disable TensorRT engine optimization. The initial provider probe
+also exposed a configuration error: this build requires True/False values for
+TensorRT boolean options, rather than the string "1"; its failed report is retained.
+
+Directly built engines used a 1 GiB workspace limit, builder optimization level 1,
+TF32 disabled, detailed layer inspection, and batch profiles 1–8 at image size 128.
+Both normalized symmetric EfficientNetV2-S heads built and executed. Inspection
+shows all **170 convolutions with INT8 inputs and weights**, and **both head GEMMs
+with INT8 tactics**. Floating bias and auxiliary operations remain. The
+hierarchical engine uses three standard scatter plugin layers. These are actual
+integer GPU computation checks, not conclusions from QDQ nodes alone. The flat
+ORT TensorRT output matched the direct engine exactly on the eight fixed images.
+That is not a full ORT-versus-direct-engine equivalence claim.
+
+The direct engines were evaluated on all **912** Blair validation images in
+manifest order, batch eight, alongside full-FP32 PyTorch and CPU ORT executions of
+the same signed QDQ graphs. Checkpoint/export hashes and class order were checked;
+graph/external-weight/calibration/engine hashes are retained. Metrics use local
+`mini_metrics` revision `70cc69adc05362863439277048e06386c1f885e1`, explicit MacroF1
+selection criterion, threshold zero and no abstention or threshold tuning.
+
+| Output / execution | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / Float | 0.762073 | 0.754415 | 0.789570 | 1.000000 | 0.814794 |
+| Flat / TensorRT INT8 | 0.755863 | 0.744234 | 0.790002 | 1.000000 | 0.804222 |
+| Hierarchical leaf / Float | 0.709222 | 0.695729 | 0.798771 | 1.000000 | 0.782579 |
+| Hierarchical leaf / TensorRT INT8 | 0.710140 | 0.687581 | 0.775226 | 1.000000 | 0.769531 |
+| Hierarchical parent / Float | 0.859365 | 0.827595 | 0.920382 | 1.000000 | 0.851394 |
+| Hierarchical parent / TensorRT INT8 | 0.847096 | 0.805315 | 0.921725 | 1.000000 | 0.828815 |
+
+Relative to float, Macro-F1 changes are **−0.62 percentage points flat, +0.09 leaf,
+and −1.23 parent**. Recall and Theil's U decrease for all three outputs; the small
+leaf F1 increase is not evidence of generally improved quality. TensorRT versus
+CPU QDQ changes 13 flat, 10 leaf and 7 parent predictions. Maximum score differences
+are 0.46753, 0.52708 and 0.52582, and strict parity fails. This reinforces the need
+for provider-specific quality evaluation. No production degradation tolerance has
+been fixed. The user accepts degradation of a few percentage points when paired
+with a significant inference speed/cost or memory improvement. These quality
+results alone do not establish that joint trade-off; matched performance evidence
+against a practical floating deployment baseline is required.
+
+This milestone establishes a **separate calibrated INT8 GPU inference candidate**
+for both representative heads, not native QT export equivalence. It does not
+establish target-machine performance, optimal TensorRT build settings, training
+benefits, confidence-threshold parity or large-class deployment capacity. The
+probes used a default CUDA stream and ran alongside CPU correctness checks; their
+recorded timings are not benchmark evidence. Production measurements require
+fresh, uncontended runs with the final stream, build and cache configuration.
+
+Ignored `tmp-trt-probe/` retains parser failures, the candidate manifest, graphs,
+ORT reports, engines, detailed `direct-{flat,hierarchical}/layers.json`, the
+`build_inspect.py` and `full_validation.py` probes, and the full-validation
+scores/metric CSVs/report. Rebuild engines on each target device. The reproducible
+runner options and recipe parameters are in the
+[developer guide](../dev/benchmarks/README.md#tensorrt-calibration-candidate).
+
+Static checks and 393 CPU-default tests passed, with 146 skips and the known EMA
+expected failure. Runtime regressions verify that the selected ORT optimization
+level changes the profiled graph while preserving fixture outputs.
