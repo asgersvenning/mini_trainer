@@ -67,7 +67,11 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
 
     from dev.benchmarks.run import main
 
-    monkeypatch.setattr(sys, "argv", ["benchmark", "--output", str(tmp_path / "failed"), "--device", "cuda:0"])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["benchmark", "--output", str(tmp_path / "failed"), "--device", "cuda:0", "--compile", "--compile-mode", "reduce-overhead"],
+    )
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch, "set_num_threads", lambda threads: None)
     monkeypatch.setattr(torch, "use_deterministic_algorithms", lambda enabled: None)
@@ -76,6 +80,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     report = json.loads((tmp_path / "failed/report.json").read_text())
     assert report["status"] == "failed"
     assert report["device"] == "cuda:0"
+    assert report["compile_mode"] == "reduce-overhead"
     assert report["error"]["type"] == "RuntimeError"
     assert "test_accuracy" not in report
 
@@ -88,3 +93,20 @@ def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
     with pytest.raises(ValueError, match="require CUDA"):
         run(tmp_path / "qt", quantized_training=True)
     assert not (tmp_path / "qt").exists()
+
+
+def test_compile_mode_requires_compilation_before_creating_outputs(tmp_path):
+    import pytest
+
+    from dev.benchmarks.run import run
+    from mini_trainer.train import main
+    from mini_trainer.training.compilation import model_compile_options
+
+    for mode in ("reduce-overhead", "invalid"):
+        with pytest.raises(ValueError, match="requires compile=True"):
+            run(tmp_path / "benchmark", compile_mode=mode)
+        with pytest.raises(ValueError, match="requires compile=True"):
+            main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), compile_mode=mode)
+    with pytest.raises(ValueError, match="Unknown model compile mode"):
+        model_compile_options(True, "invalid")
+    assert not list(tmp_path.iterdir())

@@ -23,6 +23,7 @@ from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
@@ -76,6 +77,7 @@ def main(  # noqa: D417
     logger_builder_kwargs: dict[str, Any] = {"verbose": False},
     ddp_info: dict | None = None,
     compile_optimizer: bool = False,
+    compile_mode: str | None = None,
 ):
     """Train a classifier.
 
@@ -111,6 +113,7 @@ def main(  # noqa: D417
             See ``mini_trainer.builders.BaseBuilder`` for details.
     """
     orig_args = locals()
+    model_compile_options(compile, compile_mode)
     # Prepare state
     if seed is not None:
         random.seed(seed)
@@ -324,6 +327,7 @@ def main(  # noqa: D417
         output_dir=weight_output_dir,
         weight_store_rate=5,
         compile=compile,
+        compile_mode=compile_mode,
     )
 
     del train_loader
@@ -588,6 +592,11 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         dest="compile",
         required=False,
         help="Compile the model using torch.compile for faster execution (default=False).",
+    )
+    cfg_args.add_argument(
+        "--compile-mode",
+        choices=MODEL_COMPILE_MODES,
+        help="Model compilation mode; requires --compile. Optimizer compilation is configured separately.",
     )
     cfg_args.add_argument(
         "--dtype",

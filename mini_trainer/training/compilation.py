@@ -1,10 +1,23 @@
-"""Opt-in optimizer compilation with stable learning-rate inputs."""
+"""Opt-in model and optimizer compilation."""
 
 from functools import wraps
 
 import torch
 
 from .muon import Muon, MuonAuxAdamW
+
+MODEL_COMPILE_MODES = ("default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs")
+
+
+def model_compile_options(enabled: bool, mode: str | None) -> dict:
+    """Validate explicit model modes while preserving ordinary compile defaults."""
+    if mode is None:
+        return {}
+    if not enabled:
+        raise ValueError("compile_mode requires compile=True (--compile).")
+    if mode not in MODEL_COMPILE_MODES:
+        raise ValueError(f"Unknown model compile mode {mode!r}; choose from {MODEL_COMPILE_MODES}.")
+    return {"mode": mode}
 
 
 def _tensor_learning_rates(optimizer):

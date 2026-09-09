@@ -124,6 +124,25 @@ ONNX export, checkpoint averaging, DDP/FSDP, quantized activation normalization
 and integer convolution training are not established for this path. Distributed training and
 EMA are rejected by the training entry point.
 
+## Model compilation modes
+
+Model compilation accepts `--compile --compile-mode reduce-overhead` (or
+`compile=True, compile_mode="reduce-overhead"` in Python). This is opt-in and
+independent of optimizer compilation. The benchmark runner records the selected
+mode. See [compilation guidance](../dev/README.md#model-compilation) for the other
+modes and measurement requirements; selecting a mode does not establish a speedup.
+
+Normalized heads resolve their parametrized weights after publishing embeddings,
+keeping weight normalization and the integer Linear operation in the same graph.
+Previously the embedding publication could split them and cause AOTAutograd to
+expect an INT8 tensor subclass gradient where the backward supplies a float tensor.
+This affected both ordinary and CUDA graph compilation. Regression coverage now
+includes normalized and ordinary heads, eager/default/reduce-overhead execution,
+AMP training, compiled/eager optimizers, checkpoint loading and eager resume.
+A separate FP32 test compares input and parameter gradients with an embedding
+auxiliary loss. AMP compilation can change rounding and INT8 activation bins;
+these checks do not promise bitwise-identical eager and compiled trajectories.
+
 ## Evidence and remaining work
 
 The [developer probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance)

@@ -21,6 +21,7 @@ from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier
 from mini_trainer.train import main as train
 from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options
 
 from .datasets import prepare_real
 from .models import NoAugmentationBuilder
@@ -61,7 +62,9 @@ def run(
     model_profile: str = "default",
     optimizer: str = "muon",
     learning_rate: float | None = None,
+    compile_mode: str | None = None,
 ):
+    model_compile_options(compile, compile_mode)
     if model_profile not in ("default", "dense") or optimizer not in ("muon", "adamw", "sgd"):
         raise ValueError("Unknown model or optimizer profile.")
     if learning_rate is None:
@@ -149,6 +152,7 @@ def run(
         ema=False,
         quantized_training=quantized_training,
         compile=compile,
+        compile_mode=compile_mode,
         compile_optimizer=compile_optimizer,
         model_builder_kwargs={
             "model_type": model_type,
@@ -245,6 +249,7 @@ def run(
         "momentum": 0.9 if optimizer == "sgd" else None,
         "quantization_recipe": quantization_recipe,
         "compile": compile,
+        "compile_mode": compile_mode,
         "compile_optimizer": compile_optimizer,
         "hidden": hidden,
         "batch_size": batch_size,
@@ -321,6 +326,7 @@ def main():
     parser.add_argument("--quantized-training", action="store_true")
     parser.add_argument("--cuda-prefetch", action="store_true")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--compile-mode", choices=MODEL_COMPILE_MODES)
     parser.add_argument("--compile-optimizer", action="store_true")
     parser.add_argument("--model-profile", choices=["default", "dense"], default="default")
     parser.add_argument("--optimizer", choices=["muon", "adamw", "sgd"], default="muon")
@@ -355,6 +361,7 @@ def main():
             cuda_prefetch=args.cuda_prefetch,
             quantized_training=args.quantized_training,
             compile=args.compile,
+            compile_mode=args.compile_mode,
             compile_optimizer=args.compile_optimizer,
             hidden=args.hidden,
             batch_size=args.batch_size,
@@ -377,6 +384,7 @@ def main():
             "cuda_prefetch": args.cuda_prefetch,
             "quantized_training": args.quantized_training,
             "compile": args.compile,
+            "compile_mode": args.compile_mode,
             "compile_optimizer": args.compile_optimizer,
             "hidden": args.hidden,
             "batch_size": args.batch_size,

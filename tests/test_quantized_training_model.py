@@ -136,7 +136,8 @@ def test_mixed_muon_adamw_updates_and_counter():
 
 @pytest.mark.parametrize("normalized", [False, True])
 @pytest.mark.parametrize("compiled_optimizer", [False, True])
-def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, compiled_optimizer):
+@pytest.mark.parametrize("compile_mode", [None, "default", "reduce-overhead"])
+def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, compiled_optimizer, compile_mode):
     from mini_trainer.modeling import Classifier
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.train import main
@@ -155,6 +156,8 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, comp
         "dtype": "float16",
         "quantized_training": True,
         "compile_optimizer": compiled_optimizer,
+        "compile": compile_mode is not None,
+        "compile_mode": compile_mode,
         "seed": 42,
         "builder": DeterministicBuilder,
         "model_builder_kwargs": {"model_type": TinyMockModel(), "hidden": False, "droprate": 0, "normalized": normalized},
@@ -177,6 +180,8 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, comp
     # plumbing, not identical stochastic continuation with a changed schedule.
     args["epochs"] = 2
     args["compile_optimizer"] = False
+    args["compile"] = False
+    args["compile_mode"] = None
     args["name"] = "resumed"
     args["checkpoint"] = str(tmp_path / "quantized/weights/checkpoint_last.pth")
     args["model_builder_kwargs"]["model_type"] = TinyMockModel()
@@ -635,3 +640,32 @@ def test_cuda_weight_copy_preserves_storage_aliases_and_source():
     torch.testing.assert_close(alias.dequantize(), weight.dequantize(), rtol=0, atol=0)
     bound = values.abs().amax(1, keepdim=True) / 127 + 1e-6
     assert torch.all((weight.dequantize() - values).abs() <= bound)
+
+
+@pytest.mark.parametrize("mode", ["default", "reduce-overhead"])
+def test_normalized_compilation_preserves_embedding_loss_gradients(mode):
+    from mini_trainer.modeling import Classifier, EmbeddingContext
+
+    torch.manual_seed(19)
+    model = Classifier(64, 4, hidden=False, normalized=True).to(cuda())
+    prepare_quantized_training(model)
+    forward = torch.compile(model, mode=mode)
+    data = torch.randn(8, 64, device=cuda())
+    target = torch.arange(8, device=cuda()) % 4
+    results = []
+    for call in (model, forward):
+        model.zero_grad(set_to_none=True)
+        inputs = data.clone().requires_grad_()
+        # Isolate graph-boundary gradients from AMP fusion rounding, which can
+        # move normalized activations across an INT8 quantization threshold.
+        with EmbeddingContext():
+            scores = call(inputs)
+            embeddings = EmbeddingContext.get()
+            assert embeddings is not None and embeddings.requires_grad
+            loss = torch.nn.functional.cross_entropy(scores, target) + embeddings[:, 0].sum() * 0.1
+            loss.backward()
+        results.append(
+            (scores.detach().clone(), inputs.grad.clone(), [None if p.grad is None else p.grad.clone() for p in model.parameters()])
+        )
+    assert model.linear.parametrizations.weight.original1.grad.norm() > 0
+    torch.testing.assert_close(results[0], results[1], rtol=1e-3, atol=1e-4)

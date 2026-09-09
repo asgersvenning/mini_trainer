@@ -212,6 +212,21 @@ this change and 2.22 million afterward. This isolates cached iteration; larger
 images, decoding, transfer and model compute change the overall benefit. See the
 [integrated measurements](../docs/benchmarks.md#larger-batches-and-direct-collation).
 
+### Model compilation
+
+`mt_train --compile --compile-mode reduce-overhead` selects a PyTorch model
+compilation mode. The Python training entry points accept `compile_mode`, and
+`dev.benchmarks.run` accepts the same CLI flag and records it in success and
+failure reports. An explicit mode requires `--compile`; omitting it preserves
+ordinary `torch.compile(model)` behavior. Optimizer compilation remains separate.
+
+Supported modes are `default`, `reduce-overhead`, `max-autotune`, and
+`max-autotune-no-cudagraphs`. PyTorch's CUDA graph modes can reduce launch overhead
+for eligible graphs, but capture is not guaranteed and workspace caching can
+increase memory. Measure both float and INT8 with the same mode, including
+compilation time, later training phases, peak allocation and held-out quality.
+See the [PyTorch compilation modes](https://docs.pytorch.org/docs/2.12/generated/torch.compile.html).
+
 ### Optimizer compilation
 
 `mt_train --compile-optimizer` opts into compiling optimizer updates independently

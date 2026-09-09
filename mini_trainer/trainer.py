@@ -19,6 +19,7 @@ from mini_trainer import get_logger
 from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
+from mini_trainer.training.compilation import model_compile_options
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
     TQDM,
@@ -277,6 +278,7 @@ def train(
     output_dir: str | None = None,
     weight_store_rate: int | None = None,
     compile: bool = False,
+    compile_mode: str | None = None,
     **kwargs,
 ):
     """Full training loop across epochs with periodic evaluation and checkpointing.
@@ -300,10 +302,13 @@ def train(
         dtype: AMP/autocast data type for forward/eval passes.
         output_dir: If provided, checkpoints are written here.
         weight_store_rate: Store a snapshot every ``weight_store_rate`` epochs if set.
+        compile: Compile the model with PyTorch.
+        compile_mode: Optional PyTorch model compilation mode; requires compile=True.
         **kwargs: Forwarded to lower-level helpers.
     """
     log = get_logger()
 
+    compile_options = model_compile_options(compile, compile_mode)
     log.info("Start training")
     start_time = time.time()
 
@@ -326,7 +331,7 @@ def train(
             # Disable DDPOptimizer graph splitting — it deadlocks on models with
             # find_unused_parameters or custom scatter ops, causing NCCL timeouts.
             torch._dynamo.config.optimize_ddp = False
-        model = torch.compile(model)
+        model = torch.compile(model, **compile_options)
 
     best_eval_metric = -float("inf")
     best_epoch = -1

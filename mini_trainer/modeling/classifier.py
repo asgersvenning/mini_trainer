@@ -232,10 +232,13 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             return self.batch_norm(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weight, bias = self._weight_bias()
         embeddings = self.preclassification(x)
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
+        # Resolve parametrized weights beside their consumer. Publishing the
+        # embeddings can break a compiled graph; carrying a normalized INT8
+        # weight across that boundary gives AOTAutograd the wrong tangent type.
+        weight, bias = self._weight_bias()
         if self.normalized:
             return cosine_to_zscore(F.linear(embeddings, weight=weight), self.preclassification_size) + bias
         else:

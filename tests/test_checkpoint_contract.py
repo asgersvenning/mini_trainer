@@ -191,11 +191,19 @@ def test_ema_status_warning_only_when_enabled():
         EMATeacher(enable=True, total_steps=1, model=torch.nn.Linear(2, 2))
 
 
-def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", [None, "reduce-overhead"])
+def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatch, mode):
     # Exercise Dynamo's real OptimizedModule wrapper without testing CPU
     # Inductor performance. Its state_dict adds _orig_mod unless unwrapped.
     compile_model = torch.compile
-    monkeypatch.setattr(torch, "compile", lambda model: compile_model(model, backend="eager"))
+    model_options = []
+
+    def compile_with_eager_backend(model, **options):
+        if isinstance(model, torch.nn.Module):
+            model_options.append(options)
+        return compile_model(model, backend="eager")
+
+    monkeypatch.setattr(torch, "compile", compile_with_eager_backend)
     for label in ("class_a", "class_b"):
         (tmp_path / "data" / label).mkdir(parents=True)
     args = {
@@ -207,6 +215,7 @@ def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatc
         "dtype": "float32",
         "seed": 42,
         "compile": True,
+        "compile_mode": mode,
         "compile_optimizer": True,
         "ema": False,
         "builder": DeterministicBuilder,
@@ -216,6 +225,7 @@ def test_compiled_checkpoint_uses_portable_keys_and_resumes(tmp_path, monkeypatc
         "logger_builder_kwargs": {"verbose": False},
     }
     train_module.main(**args)
+    assert model_options == [{} if mode is None else {"mode": mode}]
     path = tmp_path / "compiled/weights/checkpoint_last.pth"
     state = torch.load(path, weights_only=True)
     assert not any(key.startswith("_orig_mod.") for key in state["model"])
