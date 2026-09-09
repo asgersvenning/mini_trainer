@@ -3281,3 +3281,93 @@ Validation passed static checks and the full CPU-default suite: 513 passed,
 passed with CUDA/TensorRT explicitly enabled. These validate the command's
 contracts; the preceding experimental memory values retain their original probe
 and provenance and are not silently reattributed to the maintained command.
+
+### Hundred-thousand-class TensorRT capacity comparison
+
+The bounded deployment study now reaches 100,000 classes using the same
+pretrained EfficientNetV2-S and symmetric normalized flat-head configuration.
+Seed 42 produces 129,842,240 head parameters and 600,078,912 total parameter
+bytes. All 780 backbone tensors and both hidden-layer tensors were checked for
+exact equality against the 10,000-class checkpoint; the final class projection
+changes. The head is randomly initialized, so this is capacity/execution evidence,
+not a trained 100,000-class quality comparison.
+
+All 128 training calibration inputs again exactly matched this model's
+preprocessing. Export passed the declared study tolerance `rtol=1e-4, atol=1e-4`;
+the stricter default was not tested in this run. Calibration used the same
+percentile-99.9 signed symmetric activations, asymmetric histograms, per-channel
+INT8 weights and floating biases as the 10,000-class study. Both engines enabled
+FP16, disabled TF32, and used profile 1/8/8 at 128x128, optimization level 1 and
+1 GiB workspace. Builds overlapped CPU correctness checks; the inference
+measurements below started after those checks completed, with an idle GPU and
+no other compute process listed. Build duration is not a performance result.
+
+Inspection confirms 170 INT8 convolutions and both INT8 head GEMMs in the
+candidate. The FP16-enabled baseline has 170 half-weight convolutions and head
+GEMMs with half-precision inputs; its selected hidden GEMM uses a different
+accumulation/output tactic from the 10,000-class build. Engine sizes are
+302,529,468 bytes for FP16 and 155,355,740 bytes for INT8, a 48.6% reduction.
+Reported context requirements are 5,771,776 and 4,303,360 bytes respectively;
+these do not include total runtime memory.
+
+Six fresh processes used `dev.benchmarks.tensorrt_pair`, three per batch, with
+10 warmups and 31 alternating paired samples. Trial two reversed the initial
+engine and batch order. Pageable host IO, synchronized H2D/execution/D2H timing,
+one PyTorch intra-op thread, the RTX 3080 Ti Laptop GPU and TensorRT 10.16.1.11
+match the earlier timing protocol. Both engines coexist during paired timing.
+
+| Batch | Trial | FP16 median ms | INT8 median ms | Median paired INT8 / FP16 |
+| --- | --- | ---: | ---: | ---: |
+| 1 | 1 | 3.712 | 4.749 | 1.148 |
+| 1 | 2 | 3.775 | 4.029 | 1.084 |
+| 1 | 3 | 4.032 | 4.215 | 1.091 |
+| 8 | 1 | 4.362 | 4.747 | 1.049 |
+| 8 | 2 | 4.401 | 4.665 | 1.064 |
+| 8 | 3 | 4.711 | 4.884 | 1.086 |
+
+Ratios are medians of adjacent paired observations, not ratios of the displayed
+marginal medians. INT8 remains 8.4–14.8% slower at batch one and 4.9–8.6% slower
+at batch eight. These small-batch results do not establish large-batch throughput
+or benefit on the intended desktop/Spark hardware.
+
+Six additional fresh processes used the maintained
+`dev.benchmarks.tensorrt_memory` command at revision `a13b9fc`, one engine per
+process, 20 runs at batch eight, pageable IO and one thread. Engine order reversed
+in trial two. CUDA initialization snapshots were 1,176.5 MiB in all six runs.
+
+| Engine | Trial | Warm device-used MiB | Increase from CUDA initialization MiB | Warm host RSS MiB | Warm host PSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| FP16 | 1 | 1496.5 | 320.0 | 975.2 | 968.3 |
+| INT8 | 1 | 1366.5 | 190.0 | 973.4 | 966.4 |
+| FP16 | 2 | 1496.5 | 320.0 | 977.3 | 970.4 |
+| INT8 | 2 | 1366.5 | 190.0 | 971.3 | 964.3 |
+| FP16 | 3 | 1496.5 | 320.0 | 975.0 | 968.0 |
+| INT8 | 3 | 1366.5 | 190.0 | 975.6 | 968.5 |
+
+The consistent device difference is 130 MiB: 40.6% of the increase after CUDA
+initialization, or 8.7% of the entire warm device-wide snapshot. Host RSS is
+essentially unchanged. This is a stronger incremental memory result than the
+10,000-class study, but device snapshots remain subject to WSL/driver and
+background-process accounting and do not capture total transient GPU peaks.
+The maintained probe also checks finite outputs every iteration, whereas the
+older experimental memory driver checked its final output; retain that protocol
+distinction when comparing host observations across studies.
+
+All six timing and six memory reports passed; independent checks verified engine
+hashes and finite `[batch, 100000]` outputs throughout the retained final-output
+archives. Raw paired samples, memory stages, outputs, source/preprocessing checks,
+calibration, build inspection, drivers and exact command records remain under
+ignored `tmp-100k-head-deployment/`, with `summary.json` holding the verified
+aggregate. Source checkpoint SHA256 is
+`ba1d4c5cc9d2c45e73fc2b4b8dbbe736a82724770201c0b573bf041e38482ab3`.
+FP16 engine SHA256 is
+`e418de6af2a73999379502865fcbad70fc8106854bbb875fd259bc8b68f392d1`;
+INT8 engine SHA256 is
+`09eecbd2c34a5cf477082084ea66eeb382253c5a687b6a1eab3e0bf2df1295b2`.
+
+This closes a bounded 100,000-class flat deployment capacity check. It does not
+qualify a trained large-class dataset, hierarchical deployment at this class
+count, larger batches, native dynamic-quantizer GPU export, HPC training, or ARM
+inference. The observed memory saving warrants further joint quality/efficiency
+qualification; the latency regression must remain visible. No million-class
+model or new production acceptance claim is introduced.

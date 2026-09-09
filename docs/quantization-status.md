@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the 10,000-class TensorRT capacity study](benchmarks.md#ten-thousand-class-tensorrt-capacity-comparison).
+recorded in [the 100,000-class TensorRT capacity study](benchmarks.md#hundred-thousand-class-tensorrt-capacity-comparison).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -24,6 +24,16 @@ found that disabling ONNX optimization worsens parity, while both optimized ORT
 and PyTorch FP32 separately pass against a FP64 reference on batch eight. This
 narrows the investigation without establishing a faulty operator or relaxing the
 export gate. This capacity evidence is not target-hardware certification.
+
+The subsequent 100,000-class flat capacity study also executes 170 INT8
+convolutions and both INT8 head GEMMs. Six fresh paired timing runs remain
+4.9–14.8% slower than FP16. Six isolated runs of the maintained memory command
+show a 130 MiB lower device snapshot: 40.6% of the increment after CUDA
+initialization and 8.7% of the warm device-wide footprint, with essentially
+unchanged host RSS. This supplies stronger incremental memory evidence, but the
+random head cannot qualify trained quality and snapshots do not measure total
+GPU peaks. Hierarchical large-class deployment, larger batches and target
+hardware remain outstanding.
 
 ## Current evidence
 
