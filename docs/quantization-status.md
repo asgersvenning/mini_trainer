@@ -14,7 +14,7 @@ or integer operator count sufficient evidence of production readiness.
 
 | Workstream | Verified locally | What remains unproven |
 | --- | --- | --- |
-| Native PyTorch INT8 training | INT8 Linear weights and saved inputs, normalized symmetric flat/hierarchical heads, optimizer/AMP/checkpoint regressions, full EfficientNetV2-S updates at 100k classes; bounded preparation and initialization | Benefit on A40/A100/B300-class hardware; representative end-to-end training gains; integer convolution training; distributed QT |
+| Native PyTorch INT8 training | INT8 Linear weights and saved inputs, normalized symmetric flat/hierarchical heads, optimizer/AMP/checkpoint regressions; maintained 100k-class full/frozen BF16 capacity comparison: full-model peak 17.4% lower, frozen peak 10.5% higher, mixed timing; bounded preparation and initialization | Frozen-mode peak allocation profiling; benefit on A40/A100/B300-class hardware; representative end-to-end training gains; integer convolution training; distributed QT |
 | Native QT ONNX export | Generic integer-forward export; full Blair predictions and five metrics preserved on the tested hybrid CUDA/CPU path, with strict score differences | Integer head execution on GPU: CUDA falls back to CPU for MatMulInteger; TensorRT rejects the native representation |
 | QT checkpoint to calibrated GPU deployment | Explicit materialization of the matched trained INT8 checkpoints, training-only calibration, TensorRT INT8 convolution/head execution, and full Blair comparison against native and FP16 baselines | Broader configuration/large-head qualification; target-machine quality and cost/runtime-memory benefit; exact native dynamic quantization is not preserved |
 | Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained input preparation, calibration, build/inspection/smoke, paired timing, full-dataset collection and paired quality commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; composed continuous orchestration |
@@ -94,6 +94,10 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    setup, steady-state throughput/latency, transfers, loading and runtime memory
    separately. Optimize the dominant measured costs rather than assuming integer
    arithmetic is faster. Include full and frozen-backbone training/fine-tuning.
+   The [100k-class BF16 capacity study](benchmarks.md#maintained-100k-class-bf16-training-comparison)
+   now covers both modes and heads across three seeds. Profile the reproducible
+   frozen-mode INT8 peak regression before treating that mode as a memory benefit;
+   repeat with realistic pretrained features and longer integrated training.
 
 3. **Qualify the trained-checkpoint-to-deployment contract.** Explicit conversion
    and calibration now connect the matched native QT checkpoints to distinct

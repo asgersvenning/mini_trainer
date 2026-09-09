@@ -1322,3 +1322,52 @@ passed production acceptance. For visible CI reporting, retain the complete
 output directory even on failure and append its `summary.md` to the job summary
 when present. Durable cross-run hosting, recipe acceptance gates, preprocessing
 costs and actual target-device verification remain separate requirements.
+
+### Large-head training capacity command
+
+`dev.benchmarks.large_head_training` makes the earlier large-class probe reusable
+on the intended training machines. It builds the actual backbone with a symmetric,
+normalized flat or hierarchical head, then performs eager MuonAuxAdamW updates
+through the existing builder, scaler and optimizer-step helper. It uses fixed
+synthetic uint8 images and labels, not a convergence or dataset-quality benchmark.
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
+  .venv/bin/python -m dev.benchmarks.large_head_training \
+  --classes 10000 --backbone efficientnet_v2_s --batch-size 32 --image-size 128 \
+  --dtype float16 --seed 42 --warmup 3 --steps 5 --output capacity-float
+
+# Same settings, separate fresh process, quantized weights/saved Linear inputs:
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
+  .venv/bin/python -m dev.benchmarks.large_head_training \
+  --classes 10000 --backbone efficientnet_v2_s --batch-size 32 --image-size 128 \
+  --dtype float16 --seed 42 --warmup 3 --steps 5 --quantized --output capacity-int8
+```
+
+Add `--hierarchical` to both commands for a synthetic parent taxonomy grouping
+consecutive leaves in groups of 100. Add `--frozen` to both for head-only training:
+backbone parameters are frozen and its modules use evaluation mode, while the head
+trains. Parameters intentionally frozen by the classifier remain frozen. Backbone
+forward computation still runs on every update; embeddings are not cached.
+`--dtype bfloat16` selects a separate AMP profile; `float32` disables autocast.
+Use `--device cpu --dtype float32` only for offline floating diagnostics. Native
+INT8 training requires an accessible CUDA device.
+
+Use new output directories, matching settings, alternating float/INT8 order and
+paired seeds. A separate CPU generator fixes inputs independently of quantization
+setup RNG consumption; reports retain their hash. The report includes warmup and
+measured losses, applied-update flags, trainable/gradient parameter counts,
+unused trainable parameter names, quantization coverage and storage, warm median
+update time and CUDA allocated/reserved peaks. Valid normalized heads can retain
+unused BatchNorm parameters; these are reported rather than silently reclassified
+or treated as missing gradients in an active branch. Measured skipped/nonfinite
+updates or a head with no gradients fail, retaining the partial report.
+
+Setup/warmup allocation and measured-phase allocation are recorded separately.
+Kernel-cache state is not controlled; there is no cold-compilation speed claim.
+The probe does not exercise the full trainer's loading, scheduler, checkpoint,
+resume, augmentation, distributed or convergence behavior. Use the integrated
+real-data profiles for those comparisons. Run target GPU generations separately;
+a laptop result cannot certify A40/A100/B300 or the intended desktop. Keep full
+models at 100k classes or below on the laptop, and increase capacity only on a
+machine provisioned for it. No weights or datasets are saved by this probe.

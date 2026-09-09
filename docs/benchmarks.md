@@ -2154,6 +2154,73 @@ failure. This composes evaluation of existing CPU deployment artifacts;
 preparation/calibration, GPU orchestration, durable CI hosting and profile-specific
 acceptance gates remain unfinished.
 
+### Maintained 100k-class BF16 training comparison
+
+`dev.benchmarks.large_head_training` turns the earlier capacity probe into a
+maintained command with independent synthetic-input RNG, applied-update checks,
+failure reports and separate full/frozen-backbone modes. It preserves the head's
+intentionally frozen parameters. Valid unused normalized-head BatchNorm parameters
+are reported explicitly; they do not imply a missing gradient in an active branch.
+See the [command guide](../dev/benchmarks/README.md#large-head-training-capacity-command).
+
+The local study ran 24 fresh GPU processes: normalized symmetric EfficientNetV2-S
+flat/hierarchical heads, 100,000 leaf classes, full/frozen backbone, float/native
+INT8 storage, and seeds 42/43/44. Both paths used BF16 autocast, FP32 gradients and
+eager MuonAuxAdamW (learning rate 0.01, zero weight decay, norm clipping at 5).
+The hierarchical taxonomy groups leaves in consecutive groups of 100. Batch size
+was 32 at 128px, with three warmup and five measured updates on each fixed batch.
+Floating parameters remain FP32; native INT8 quantizes the two head Linear weights
+and saved Linear inputs. Convolutions, gradients and optimizer states remain floating.
+
+The backbone was initialized without pretrained weights in every case. Frozen
+mode is therefore a synthetic capacity diagnostic, not realistic pretrained
+fine-tuning: it evaluates the backbone on every batch and trains the head, without
+caching embeddings. Loss is leaf cross-entropy plus parent cross-entropy for the
+hierarchical case. These are new inputs and BF16 profiles; earlier FP16 results
+are not reused as baselines. Float/INT8 order reverses for seed 43.
+
+All input hashes, settings (apart from quantization), parameter counts and reported
+environments matched within each pair. All 72 warmup and 120 measured optimizer
+updates were applied. The only unused trainable parameters in every run were the
+normalized head's inactive BatchNorm weight and bias. No frozen parameters received
+gradients. Measurements began after the full regression suite and GPU smoke checks
+had exited, and all GPU cases ran sequentially on the RTX 3080 Ti Laptop with
+PyTorch 2.12.0+cu130 and TorchAO 0.17.0.
+
+| Head / mode | Float median update ms, seeds 42/43/44 | INT8 median update ms, seeds 42/43/44 | Float measured peak GiB | INT8 measured peak GiB |
+| --- | --- | --- | ---: | ---: |
+| Flat / full | 137.349 / 110.825 / 148.278 | 167.257 / 143.157 / 151.248 | 3.819 | 3.154 |
+| Hierarchical / full | 132.841 / 145.857 / 152.000 | 132.494 / 120.835 / 134.396 | 3.820 | 3.154 |
+| Flat / frozen | 68.440 / 78.138 / 103.929 | 88.448 / 63.521 / 80.553 | 2.800 | 3.093 |
+| Hierarchical / frozen | 90.369 / 73.076 / 91.959 | 72.296 / 92.531 / 92.770 | 2.801 | 3.094 |
+
+Measured-phase CUDA allocated peaks were identical across the three seeds for
+each configuration. Native INT8 reduced the full-model peak by **17.4%**, but
+**increased the frozen-backbone peak by 10.5%**. Parameter storage decreased from
+about 0.559 to 0.197 GiB in both modes; that storage reduction is not proof of a
+runtime-memory reduction. The frozen-mode peak needs allocation profiling before
+choosing an optimization; this comparison alone does not identify its cause.
+
+INT8/float update-time ratios were 1.218/1.292/1.020 for flat/full,
+0.997/0.828/0.884 for hierarchical/full, 1.292/0.813/0.775 for flat/frozen and
+0.800/1.266/1.009 for hierarchical/frozen. These short local trials do not establish
+a general speedup or stable target throughput. No device clock/thermal controls
+or cold compiler-cache controls were imposed. Timings use synchronized host
+boundaries around preprocessing, forward, backward, clipping and optimizer work;
+scalar loss reporting follows the timed interval. Setup/warmup allocated peaks
+and measured allocated/reserved peaks are retained separately. These are PyTorch
+allocator measurements, not total device/process memory.
+
+`tmp-large-head-bf16/` retains the paired driver, logs, reports and comparison JSON.
+The probe saves no checkpoints or datasets. CPU float32 full/frozen diagnostics
+cover both head types, while separate FP16 and 100k-class hierarchical BF16 native
+INT8 CUDA smoke cases checked execution. `bash dev/check.sh all` passed static
+checks and 482 tests, with 152 skips and one known EMA expected failure.
+Actual HPC/desktop hardware, realistic pretrained fine-tuning, longer training,
+convergence, loading, checkpoint/resume, scheduler and distributed behavior still
+require the corresponding integrated profiles; this capacity probe does not
+certify those parts of the goal.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
