@@ -16,7 +16,11 @@ Across six fresh paired trials, INT8 was 12–17% slower than FP16 locally, desp
 a 45.2% smaller engine and 24.6% lower reported context requirement. Total runtime
 memory and trained quality were not measured. FP32 export needed an explicit
 absolute-tolerance override from 1e-5 to 1e-4; default parity qualification remains
-open. This capacity evidence is not target-hardware certification.
+open. A [CPU numerical diagnostic](benchmarks.md#numerical-attribution-of-the-capacity-export-failure)
+found that disabling ONNX optimization worsens parity, while both optimized ORT
+and PyTorch FP32 separately pass against a FP64 reference on batch eight. This
+narrows the investigation without establishing a faulty operator or relaxing the
+export gate. This capacity evidence is not target-hardware certification.
 
 ## Current evidence
 

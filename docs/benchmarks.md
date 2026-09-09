@@ -3174,3 +3174,38 @@ INT8 engine SHA256 is
 `53d3020e506e10c388cda6f1ae09c7bbf7554f95670c405fdb36dcf0f02f774d`.
 No implementation change or new trained mini_metrics comparison accompanies
 this capacity milestone.
+
+#### Numerical attribution of the capacity export failure
+
+A follow-up CPU diagnostic used the same checkpoint and real batch eight,
+comparing PyTorch FP32 to a copied FP64 model, exposing the ONNX backbone output,
+and running the PyTorch head on those exact ONNX features. Classifier caches were
+invalidated after conversion to FP64. All comparisons use the original
+`atol=1e-5, rtol=1e-4` criterion; FP64 is a higher-precision reference, not a proof
+of exact mathematical output.
+
+| Comparison | Maximum absolute error | Scores outside tolerance |
+| --- | ---: | ---: |
+| PyTorch FP32 versus FP64 | 1.121e-5 | 0 |
+| ORT all optimizations versus PyTorch FP32 | 2.134e-5 | 12 |
+| ORT all optimizations versus PyTorch FP64 | 1.610e-5 | 0 |
+| ORT optimizations disabled versus PyTorch FP32 | 2.557e-5 | 29 |
+| ORT optimizations disabled versus PyTorch FP64 | 2.245e-5 | 6 |
+| ORT head versus PyTorch head on identical ORT features, all optimizations | 1.287e-5 | 0 |
+
+Basic-only optimization matched the disabled result. Backbone features also pass
+this tolerance (maximum error 6.050e-6 with all optimizations). Thus disabling
+optimization does not resolve this failure. The combined observations are
+consistent with accumulated backbone/head rounding differences: separate head
+and feature checks pass, but the end-to-end comparison does not. They do not
+isolate a faulty operator or justify changing normalized score semantics, turning
+off optimization, or weakening the default export gate. In particular, both
+implementations passing against FP64 does not make their mutual parity pass.
+
+The diagnostic only added an intermediate graph output to a separate file; it
+did not change the deployment graph, engines, checkpoint or library behavior.
+The optimized diagnostic reproduces the original batch-eight maximum error and
+12 failing scores. Script and detailed measurements are retained in
+`tmp-large-head-deployment/parity-diagnostic.py` and `parity-diagnostic.json`.
+The process completed successfully. No training or GPU test was needed for this
+research-only increment; default large-head export qualification remains open.
