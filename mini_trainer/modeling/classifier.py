@@ -41,7 +41,9 @@ class Classifier(nn.Module):  # noqa: D101 TODO
 
         for _ in range(iterations):
             w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
-            grad = w @ w.t() @ w
+            # Associate through the smaller Gram matrix. A class-by-class matrix
+            # is prohibitive for heads with tens of thousands of output classes.
+            grad = w @ (w.t() @ w) if num_classes > w.size(1) else w @ w.t() @ w
             proj = (grad * w).sum(dim=1, keepdim=True) * w
             w.sub_((lr / num_classes) * (grad - proj))
 
