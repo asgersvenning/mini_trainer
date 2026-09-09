@@ -1354,3 +1354,15 @@ raw timing samples and execution profiles are retained under ignored
 `1cef6c7d9133d889b6c8eff0ffef29b1db5d6653ab4adf0c005739af8c2921c6`.
 This documents an exploratory experiment; those local artifacts are not a shared
 continuous-evaluation service or a portable deployment harness.
+
+The portable `dev.benchmarks.onnx_inference` runner now retains graph/external
+weight/input hashes, named outputs, raw timings, runtime configuration and actual
+operation/provider execution profiles. See the
+[target-machine commands](../dev/benchmarks/README.md#portable-onnx-inference-measurements).
+A local batch-eight check of the same trained flat graphs measured 181.24 ms float
+and 90.57 ms Percentile INT8, with 170 floating Conv versus 170 QLinearConv and two
+QGemm operations. The report is retained under ignored `tmp-onnx-portable-flat/`.
+This verifies the shared runner on a real model, not repeatability across machines
+or a new quality comparison. Regression tests cover external weight provenance,
+retained input-contract failures, unavailable providers and an advertised GPU
+provider whose graph actually executes entirely on CPU.

@@ -570,3 +570,64 @@ runs it alongside the existing profiles, publishes its summary, and retains
 reports and failures for 90 days. Keep the older profiles as controls: optimizer
 graph replay is opt-in and does not improve every workload. See the
 [measured larger-batch results](../../docs/benchmarks.md#larger-batch-model-and-optimizer-graph-results).
+
+## Portable ONNX inference measurements
+
+`onnx_inference` runs without importing PyTorch or `mini_trainer`. Use a prepared
+NumPy, ONNX and ONNX Runtime environment appropriate to the target CPU/GPU; it
+never installs packages. The repository's export extra supplies the CPU provider.
+GPU provider installation is a separate environment choice, not an automatic
+replacement of that installation.
+
+Prepare a fixed `.npz` containing preprocessed arrays keyed by exact ONNX input
+names (for the default exporter, `images`). Carry the preprocessing recipe, sample
+identities, split manifest and labels alongside it. Use the same input file for
+every recipe and machine. A batch is fixed by its array shape; prepare separate
+files for batch-one edge latency and larger batch throughput measurements.
+Copy each whole ONNX bundle, including external weights, to the target machine.
+
+```bash
+.venv/bin/python -m dev.benchmarks.onnx_inference \
+    --model exported-float/model.onnx --model exported-int8/model.onnx \
+    --inputs preprocessed-batch.npz --output /tmp/onnx-cpu-run-1 \
+    --provider CPUExecutionProvider --threads 1 --warmup 3 --repeats 11
+
+# In a separately prepared ONNX Runtime GPU environment:
+python -m dev.benchmarks.onnx_inference \
+    --model exported-float/model.onnx --model exported-int8/model.onnx \
+    --inputs preprocessed-batch.npz --output /tmp/onnx-cuda-run-1 \
+    --provider CUDAExecutionProvider --provider-options '{"device_id": "0"}'
+```
+
+Each output directory must be new. Reports include graph/external-weight/input
+hashes, runtime versions/build, runner source hash, input shapes/dtypes, requested
+and effective provider configuration, every timing sample and medians. Outputs
+are saved by ONNX output name, suitable for a separate quality evaluation with
+`mini_metrics` using the original class mappings and labels. This runner does not
+infer score semantics, calibrate thresholds or impose a quality acceptance gate.
+
+Profiling uses a separate session and records actual operation/provider counts,
+including CPU execution in a GPU-requested run. An unavailable provider or a graph
+that executes no operations on the requested provider fails instead of reporting
+a CPU run as a GPU measurement. Partial CPU execution is reported, not prohibited:
+shape and other auxiliary operations may legitimately use CPU. Inspect the profile
+for the expensive operations. Integer weights or QDQ nodes alone are not proof of
+integer execution. Failures after output creation retain a failed `report.json`;
+input/environment preflight failures leave no result directory.
+
+Timing covers warm `Session.run` with CPU NumPy inputs and outputs, including
+host/device transfers on GPU. It excludes image IO, preprocessing, export, session
+construction and profiling. It is neither GPU-only kernel time nor end-to-end
+image prediction latency. Sessions for all supplied models coexist during timing;
+use individual model invocations if residency exceeds device capacity, and record
+that different protocol. For repeated-process evidence, run at least three fresh
+invocations with separate output directories and reverse model argument order in
+alternate invocations. Avoid concurrent training, tests or other benchmarks.
+
+Start with the exact same bundles on the local CPU, then repeat on Raspberry Pi
+(or the intended ARM device) and the intended ONNX GPU device. Do not reuse
+hardware-specific optimized graph caches across devices. Record the device model,
+power/thermal configuration and concurrent workload alongside the report. The
+unsigned activation recipe measured on x86 is a candidate to test, not a universal
+GPU/ARM recipe. This inference runner does not validate HPC PyTorch quantized
+training, native QT checkpoint export or million-class capacity.
