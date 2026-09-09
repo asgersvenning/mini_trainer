@@ -890,3 +890,88 @@ inspection to establish the quality/efficiency trade-off. CPU tests cover pairin
 summary arithmetic and invalid clocks; optional GPU tests cover actual multi-input
 execution, both transfer modes and retained failures in
 `tests/test_benchmark_tensorrt_pair.py`.
+
+### Maintained paired quality comparison
+
+`dev.benchmarks.quality_compare` evaluates baseline and candidate prediction CSVs
+using mini_metrics Macro-F1, Macro-Recall, Macro-Precision, Coverage and Theil's U
+independently at each level. It uses an explicit held-out manifest to check sample
+identity, labels, complete level coverage and declared class mappings. It does
+not run model inference; connect the CSVs produced by a dataset inference pass
+to this contract. This format avoids requiring complete score matrices merely
+to compare classification metrics for large heads.
+
+Prepare mini_metrics explicitly in the evaluation environment. The command does
+not install it or assume a sibling checkout. It records the imported package path
+and Python source hashes separately from installed distribution metadata: an
+explicit source checkout on `PYTHONPATH` can differ from the installed release.
+
+```bash
+PYTHONHASHSEED=0 OMP_NUM_THREADS=1 python -m dev.benchmarks.quality_compare \
+    --manifest heldout-comparison.json --output /tmp/quality-1
+```
+
+The CSV columns are exactly `instance_id,filename,level,label,prediction,confidence,threshold`.
+IDs are nonnegative INT64 integers; levels are zero-based in manifest order.
+Class names remain literal strings, including numeric-looking names such as
+`001`. Confidence must be finite in [0,1] and threshold must be zero. Rows may
+arrive in any order; duplicate/missing samples or levels, changed filenames/labels,
+unknown predictions and hash mismatches are rejected. Optional derived metric
+columns are deliberately excluded so they cannot override the evaluated labels
+or prediction policy.
+
+A minimal manifest has this structure (include every evaluated sample):
+
+```json
+{
+  "schema_version": 1,
+  "split": "val",
+  "provenance": {"dataset": "manifest hash and split selection", "preprocessing": "exact inference transforms"},
+  "levels": [{"name": "leaf", "classes": ["cat", "dog"]}],
+  "samples": [
+    {"instance_id": 0, "filename": "cat.jpg", "labels": ["cat"]},
+    {"instance_id": 1, "filename": "dog.jpg", "labels": ["dog"]}
+  ],
+  "baseline": {
+    "path": "baseline.csv", "classes": [["cat", "dog"]],
+    "provenance": {"model": "checkpoint/export/engine hashes", "preprocessing": "baseline transforms"}
+  },
+  "candidate": {
+    "path": "candidate.csv", "classes": [["cat", "dog"]],
+    "provenance": {"model": "checkpoint/export/engine hashes", "preprocessing": "candidate transforms"}
+  }
+}
+```
+
+Paths are relative to the manifest. Baseline/candidate may each include `sha256`
+to require exact input bytes. Each artifact's `classes` must match the ordered
+level mappings used to translate its score columns to labels. These are explicit
+declarations; the evaluator cannot prove how an external producer translated
+scores or whether a declared `val`/`test` split is independent of training and
+calibration. Review the dataset, preprocessing and model provenance. Hierarchical
+models add levels and one label per level to each sample; this command computes
+ordinary per-level metrics, not hierarchical path metrics.
+
+Policy is fixed: `optimal=False`, threshold zero, no abstention, `known_only=False`,
+`per_class=False`, and an explicit `opt_crit=MacroF1`. No evaluation subset is
+removed for threshold tuning. Coverage is therefore one for these complete,
+known-label predictions; abstention/unknown-label policies need separate studies.
+The package's own observed-class and undefined-value semantics are preserved;
+declaring a class does not force it into mini_metrics' macro denominator.
+
+The report retains both sets of metrics, candidate-minus-baseline differences in
+their original units, prediction-change counts, provenance and canonical CSVs.
+Multiply differences by 100 to express percentage-point changes where appropriate.
+Undefined values become explicit JSON `null` entries and appear in
+`undefined_metrics`; they are not silently replaced by zero. `status=evaluated`
+means calculation completed, not that production quality is acceptable. Failures
+after output creation retain completed results; existing directories are refused.
+
+The tested mini_metrics F1 implementation iterates an unordered class set, so
+last-bit summation differences can occur across Python hash seeds. Set
+`PYTHONHASHSEED` before starting Python for repeatable runs, retain its recorded
+value, and use a numerical tolerance when comparing independently recorded
+floating results. Do not alter metric definitions to force exact historical
+bytes. Correctness tests cover synthetic oracle metrics, literal class identities,
+reordered predictions, invalid contracts and undefined Theil's U; tests requiring
+mini_metrics skip explicitly when that optional evaluation package is absent.

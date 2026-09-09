@@ -1845,6 +1845,53 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Maintained paired mini_metrics reproduction
+
+`dev.benchmarks.quality_compare` now validates prediction CSVs against an explicit
+held-out sample/level/class manifest and evaluates Macro-F1, Macro-Recall,
+Macro-Precision, Coverage and Theil's U. It preserves literal class names,
+canonicalizes reordered rows, rejects missing/duplicate samples and changed labels,
+and retains model/dataset provenance plus imported mini_metrics source hashes.
+See the [input contract and commands](../dev/benchmarks/README.md#maintained-paired-quality-comparison).
+
+The real-data replay compared the retained TensorRT INT8 predictions with the
+retained TensorRT FP16 baseline for both heads across all 912 Blair validation
+images. It reused existing inference CSVs; no new model execution, score-parity
+check or timing measurement was performed. Fixed threshold zero, no abstention,
+no threshold optimization, ordinary per-level metrics and explicit `MacroF1`
+selection preserve the previous evaluation policy.
+
+| Level | F1 delta | Recall delta | Precision delta | Coverage delta | Theil's U delta | Changed predictions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Flat leaf | −0.003960 | −0.007645 | +0.002504 | 0 | −0.009136 | 61 |
+| Hierarchical leaf | +0.000918 | −0.008148 | −0.023545 | 0 | −0.013048 | 67 |
+| Hierarchical parent | −0.012269 | −0.022280 | +0.001343 | 0 | −0.022578 | 25 |
+
+Deltas are candidate minus baseline in the original metric units; an F1 delta
+of −0.003960 is approximately −0.396 percentage points. Coverage remains one for
+all rows under this complete known-label, no-abstention policy. These quality
+changes must be considered alongside measured efficiency, not accepted alone.
+
+An initial exact-equality replay failed only on last-bit Macro-F1 differences.
+Inspection of the imported mini_metrics implementation showed unordered class-set
+iteration followed by floating summation. The maximum difference from historical
+results was 3.33e−16; every result was within the explicit 1e−12 reproduction
+tolerance. No metric implementation or expected historical result was changed.
+Two fresh processes with `PYTHONHASHSEED=0` reproduced all metrics and deltas
+exactly. The runner records the hash-seed setting. Undefined metrics, such as
+Theil's U with a single observation, are explicit JSON nulls with an accompanying
+list, not invalid JSON NaNs or silently substituted zeros.
+
+The initial replay is retained under `tmp-quality-compare/`; fixed-seed manifests,
+canonical CSVs, package hashes and reports are under `tmp-quality-compare-fixed/`,
+including both heads and their fresh-process repeats. The local sibling package
+was selected explicitly through `PYTHONPATH`; the command itself assumes no local
+checkout layout. All 14 focused tests passed with both the installed mini_metrics
+release and the local checkout. Static checks and the full CPU-default suite
+passed: 439 passed, 151 skipped and the known EMA expected failure.
+Full-dataset inference collection and calibration
+input preparation still need to be connected to the maintained evaluation commands.
+
 ### Maintained paired TensorRT timing reproduction
 
 `dev.benchmarks.tensorrt_pair` now measures arbitrary existing engine pairs with
