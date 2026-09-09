@@ -15,6 +15,9 @@ from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
 from ._quantized_normalization import int8_weight_norm_backward
 from ._quantized_update import quantize_int8_rows, update_int8_rows_
 
+# Limit rowwise preparation temporaries without changing rounding or row scales.
+_PREPARATION_CHUNK_ELEMENTS = 4 * 1024 * 1024
+
 # Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
 # graph key. Include the backend and kernel implementations so changing hidden
 # backward math or operator decomposition cannot reuse an earlier graph.
@@ -31,6 +34,23 @@ class TrainingWeight(Int8QuantizedTrainingLinearWeight):
     """INT8 storage with integer linear arithmetic and ordinary optimizer updates."""
 
     _is_quantized_training = True
+
+    @classmethod
+    def from_float(cls, tensor):
+        if tensor.numel() <= _PREPARATION_CHUNK_ELEMENTS or tensor.ndim != 2 or not tensor.shape[1]:
+            return super().from_float(tensor)
+        values = tensor.detach()
+        codes = torch.empty_like(values, dtype=torch.int8)
+        scales = torch.empty(values.shape[0], dtype=values.dtype, device=values.device)
+        rows = max(1, _PREPARATION_CHUNK_ELEMENTS // values.shape[1])
+        for start in range(0, values.shape[0], rows):
+            end = min(start + rows, values.shape[0])
+            row_codes, row_scales = quantize_int8_rowwise(values[start:end])
+            codes[start:end].copy_(row_codes)
+            scales[start:end].copy_(row_scales)
+        result = cls(codes, scales)
+        result.requires_grad_(tensor.requires_grad)
+        return result
 
     def dequantize(self):
         return _Dequantize.apply(self)

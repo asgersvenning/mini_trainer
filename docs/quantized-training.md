@@ -37,6 +37,10 @@ The returned recipe lists quantized modules, skipped operations, remaining
 floating-point parameters and physical versus reference weight storage. Automatic
 selection covers ordinary `nn.Linear` modules, including their functional use by
 Classifier heads. It preserves shared weights when every owner is selected.
+Initial conversion of large weights processes row chunks of at most 4,194,304
+elements (or one row when wider), limiting the quantizer's floating temporaries.
+This preserves deterministic INT8 codes and row scales; it does not reduce the
+storage needed for source weights, validation, gradients or optimizer states.
 Row-wise PyTorch weight normalization (`dim=0`) quantizes the direction parameter
 while retaining its scalar magnitude per output row in floating point. Effective
 normalized weights reuse the integer codes with new row scales; normalization

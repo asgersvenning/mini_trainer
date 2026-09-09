@@ -31,7 +31,10 @@ priority for investigation. The subsequent
 [normalization backward kernel](benchmarks.md#bounded-int8-normalization-backward-storage)
 reduces measured 100k-class training-step peak allocation by 17.4% versus float
 for both heads. Timings and single-seed quality changes remain mixed. A
-million-class training run remains unverified.
+million-class training run remains unverified. Local full-model capacity checks
+use up to 100k classes; million-class full-model validation is reserved for a
+larger machine. Small arithmetic regressions can still test million-element
+contractions without constructing a million-class EfficientNetV2 model.
 
 | Deployment target | Execution path to validate | Required measurements |
 | --- | --- | --- |

@@ -1558,3 +1558,45 @@ would not resolve it.
 Validation for the initializer change passed 381 CPU-default tests with 139 skips
 and the existing EMA expected failure. Seven focused CPU/CUDA parity and
 allocation cases passed with intentional GPU access. Static checks passed.
+
+### Bounded preparation and laptop-sized capacity checks
+
+Initial native INT8 conversion now applies the existing deterministic rowwise
+quantizer in chunks, avoiding full-matrix rounding/clipping temporaries. The
+source matrix and final INT8 storage remain resident during conversion; other
+preparation validation allocations are unchanged. Exact regression checks cover
+FP32, FP16 and BF16 on CPU and CUDA, including transposed weights, zero/tiny rows,
+source preservation, RNG preservation and output layout. A CUDA check using a
+10k-by-1280 matrix bounds additional conversion allocation below 96 MiB, which the
+previous whole-matrix conversion exceeds.
+
+Following the local scale limit, the full-model repeat uses **100,000 classes**,
+not one million. Both randomly initialized EfficientNetV2-S configurations use a
+symmetric hidden layer, normalized output head, seed 42, batch two of synthetic
+128-by-128 RGB images, FP16 AMP (initial scale 128), gradient clipping at 5, and
+MuonAuxAdamW (learning rate .01, weight decay zero). The hierarchical case groups
+100 consecutive leaves per parent. Each run performs three successful optimizer
+updates and verifies finite gradients and changed INT8 codes in the two target
+rows. Forward/zero-grad/backward ordering matches the trainer.
+
+The same RTX 3080 Ti Laptop GPU runs under a 92% PyTorch allocator cap. Peaks below
+are allocated MiB for each phase, including live model/state storage, rather than
+additional scratch space or independently measured physical VRAM residency.
+
+| Head | Construction | Preparation | Training update peak | Changed target codes |
+| --- | ---: | ---: | ---: | ---: |
+| flat | 1563.6 | 1436.6 | 2899.0 | 2535 |
+| hierarchical | 1564.3 | 1437.4 | 2899.8 | 2538 |
+
+Both runs passed. These synthetic checks establish construction, preparation and
+updates at this scale, not generalization, throughput improvements, checkpoint
+capacity or target-hardware performance. No new million-class full-model run was
+attempted; that remains work for a larger machine. The earlier million-class
+preparation failure remains a recorded failure, not a subsequently verified pass.
+Local probe and phase reports are retained under ignored `tmp-million-head/` as
+`full_model_100k.py`, `full-flat-100k/report.json` and
+`full-hierarchical-100k/report.json`.
+
+Validation passed static checks and 387 CPU-default tests (146 skips and the
+existing EMA expected failure), plus 13 focused CPU/CUDA preparation cases and
+91 CUDA-enabled quantized-training/model regressions.
