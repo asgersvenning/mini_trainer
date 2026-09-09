@@ -27,7 +27,11 @@ now exercise full EfficientNetV2-S training steps at 10k and 100k classes for bo
 normalized heads. They exposed and motivated a quadratic-memory initialization
 fix. At 100k classes the current INT8 path saves parameter bytes but increases
 peak training allocation, making transient normalization/gradient storage a
-priority for investigation. A million-class training run remains unverified.
+priority for investigation. The subsequent
+[normalization backward kernel](benchmarks.md#bounded-int8-normalization-backward-storage)
+reduces measured 100k-class training-step peak allocation by 17.4% versus float
+for both heads. Timings and single-seed quality changes remain mixed. A
+million-class training run remains unverified.
 
 | Deployment target | Execution path to validate | Required measurements |
 | --- | --- | --- |

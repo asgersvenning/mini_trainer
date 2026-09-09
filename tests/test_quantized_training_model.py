@@ -724,3 +724,48 @@ def test_optimizer_graphs_replay_and_restore_device_rates(kind):
         scheduler.step()
     if kind == "muon":
         assert optimizer._step_count == 11
+
+
+@pytest.mark.parametrize("width", [17, 1280])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_cuda_normalization_backward_matches_float_jacobian(width, dtype):
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
+    device = cuda()
+    torch.manual_seed(19)
+    direction = nn.Parameter(TrainingWeight.from_float(torch.randn(7, width, device=device, dtype=dtype)))
+    with torch.no_grad():
+        direction.scale[::2].neg_()
+    magnitude = nn.Parameter(torch.randn(7, 1, device=device, dtype=dtype))
+    with torch.no_grad():
+        magnitude[0].zero_()
+    reference_direction = (direction.int_data.float() * direction.scale.float().unsqueeze(1)).requires_grad_()
+    reference_magnitude = magnitude.detach().float().requires_grad_()
+    expected = torch._weight_norm(reference_direction, reference_magnitude, 0)
+    gradient = torch.randn(width, 7, device=device, dtype=dtype).T  # Exercise strided upstream gradients.
+    actual = torch._weight_norm(direction, magnitude, 0)
+    actual.backward(gradient)
+    expected.backward(gradient.float())
+    tolerance = {torch.float32: 2e-5, torch.float16: 2e-3, torch.bfloat16: 2e-2}[dtype]
+    torch.testing.assert_close(direction.grad.float(), reference_direction.grad, rtol=tolerance, atol=tolerance)
+    torch.testing.assert_close(magnitude.grad.float(), reference_magnitude.grad, rtol=tolerance, atol=tolerance)
+
+
+def test_cuda_normalization_backward_bounds_temporary_storage():
+    from mini_trainer.modeling._quantized_normalization import int8_weight_norm_backward
+
+    device = cuda()
+    codes = torch.randint(-127, 128, (2048, 1280), device=device, dtype=torch.int8)
+    scales = torch.ones(2048, device=device)
+    magnitude = torch.ones(2048, 1, device=device)
+    norm = codes.float().norm(dim=1)
+    gradient = torch.randn(2048, 1280, device=device)
+    warmup = int8_weight_norm_backward(codes, scales, magnitude, norm, gradient)
+    del warmup
+    torch.cuda.synchronize()
+    torch.cuda.reset_peak_memory_stats()
+    start = torch.cuda.memory_allocated()
+    result = int8_weight_norm_backward(codes, scales, magnitude, norm, gradient)
+    torch.cuda.synchronize()
+    output_bytes = sum(value.numel() * value.element_size() for value in result)
+    assert torch.cuda.max_memory_allocated() - start <= output_bytes + 1024 * 1024

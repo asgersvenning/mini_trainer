@@ -1142,3 +1142,52 @@ execution, and summed durations do not account for overlap. Raw trace, grouped
 operator data, script and run outputs are retained under ignored
 `tmp-efficientnet-profile/`. Do not sum the grouped operator table directly;
 it includes nested attribution as well as device events and would double-count.
+
+### Bounded INT8 normalization backward storage
+
+The large-head follow-up isolates a concrete temporary-allocation cost in QT's
+weight-normalization Jacobian. The previous expression materialized floating unit
+directions and projection/update intermediates. A CUDA row kernel now computes
+the same Jacobian while allocating only the returned direction and magnitude
+gradients. CPU execution, widths above 16,384 and higher-order differentiation
+retain the Torch expression. The kernel does not change quantization bit widths,
+optimizer state, row scales, the forward normalization or stochastic rounding.
+
+At 100k rows by 1280 columns with FP32 gradient metadata, three warmups and five
+measured calls reduced extra allocated bytes from 1,536,800,768 to 512,400,384.
+Median isolated backward duration fell from about 18.5 ms to 2.7 ms. The probe
+excludes caller-owned codes, scales, magnitudes, norms and upstream gradients;
+it is not an end-to-end training measurement. Reports are retained under ignored
+`tmp-quantized-normalization/`.
+
+Fresh full-model capacity probes used the same synthetic-input settings as the
+large-class comparison above. Both heads had finite losses and applied every
+measured optimizer update:
+
+| Head, 100k classes | Float / INT8 peak allocated MiB | Float / INT8 median step ms |
+| --- | ---: | ---: |
+| Flat | 3910.4 / 3231.4 | 129.47 / 135.97 |
+| Hierarchical | 3910.4 / 3231.4 | 125.64 / 120.12 |
+
+Peak allocation during the five measured steps is now 17.4% lower under QT for
+both heads. Model construction and the three warmup steps are excluded from that
+peak. Step timings remain mixed and these short sequential samples do not
+establish a portable speed gain. Reports are under `tmp-efficientnet-normalization/`.
+
+The CUDA model suite passed 73 cases covering the normalization Jacobian,
+negative scales, zero/trainable magnitudes, FP32/FP16/BF16, strided upstream
+gradients, compilation, optimizer graph replay, checkpoint and inference behavior.
+A separate allocation-bound regression also passed. Source hashing includes the
+new kernel so compiled backward graphs cannot reuse the previous implementation.
+The full CPU-default suite passed with 351 tests passed, 141 skipped and the
+existing EMA expected failure; static lint, formatting and import checks passed.
+
+Both pretrained Blair INT8 heads were rerun for five epochs under the previous
+settings and produced finite held-out predictions after checkpoint reload. Flat
+accuracy was 84.07% (previous INT8 83.63%); hierarchical fine/parent accuracy was
+79.16%/91.73% (previous INT8 80.62%/91.30%). These mixed single-seed changes do not
+establish quality equivalence or superiority; reduction-order changes can alter
+quantized optimization trajectories. Reports are under `tmp-normalization-blair/`,
+with source SHA256 `6aba096dca741e09863487cf4ed96dce21dea44b68b5612625caa3f3beb347d2`.
+Repeated-seed convergence, million-class capacity, ONNX deployment and performance
+on the intended target machines remain open.

@@ -12,6 +12,7 @@ from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
 
 from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
+from ._quantized_normalization import int8_weight_norm_backward
 from ._quantized_update import quantize_int8_rows, update_int8_rows_
 
 # Tensor-subclass dispatch hides custom autograd bodies from AOT's ordinary
@@ -20,7 +21,8 @@ from ._quantized_update import quantize_int8_rows, update_int8_rows_
 # Compute once when importing.
 _IMPLEMENTATION_HASH = hashlib.sha256(
     b"".join(
-        Path(__file__).with_name(name).read_bytes() for name in ("_quantized_training.py", "_quantized_matmul.py", "_quantized_update.py")
+        Path(__file__).with_name(name).read_bytes()
+        for name in ("_quantized_training.py", "_quantized_matmul.py", "_quantized_update.py", "_quantized_normalization.py")
     )
 ).hexdigest()
 
@@ -250,6 +252,8 @@ class _WeightNorm(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gradient):
         codes, scales, magnitude, norm = ctx.saved_tensors
+        if codes.device.type == "cuda" and codes.shape[1] <= 16384 and not torch.is_grad_enabled():
+            return int8_weight_norm_backward(codes, scales, magnitude, norm, gradient)
         unit = codes.float() * (scales.sign() / norm).unsqueeze(1)
         projection = (gradient.float() * unit).sum(dim=1, keepdim=True)
         direction_gradient = (gradient.float() - projection * unit) * (magnitude.float() / (scales.float().abs() * norm).unsqueeze(1))
