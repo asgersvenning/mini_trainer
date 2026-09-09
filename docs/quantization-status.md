@@ -95,6 +95,11 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    and raw timing samples. Resolve or exclude inconsistent timing sources. The
    current detailed probes and engines are retained locally under ignored `tmp-*`
    directories; documentation alone does not make them a continuous pipeline.
+   The [training-prediction adapter](../dev/benchmarks/README.md#training-predictions-to-paired-quality-evaluation)
+   now also feeds saved flat/hierarchical training predictions into the shared
+   five-metric evaluator without checkpoint or image transfers. It reproduced the
+   pretrained fine-tuning metrics exactly; continuous orchestration and durable
+   result publication remain to be completed.
 
 2. **Find and verify the beneficial workload regimes.** Pair INT8 with practical
    FP16/BF16 baselines while varying batch size, resolution and head size in a

@@ -1383,3 +1383,48 @@ real-data profiles for those comparisons. Run target GPU generations separately;
 a laptop result cannot certify A40/A100/B300 or the intended desktop. Keep full
 models at 100k classes or below on the laptop, and increase capacity only on a
 machine provisioned for it. No weights or datasets are saved by this probe.
+
+## Training predictions to paired quality evaluation
+
+Use saved `dev.benchmarks.run` output directories to prepare the same held-out
+contract consumed by `quality_compare`, independently of the training device:
+
+```bash
+.venv/bin/python -m dev.benchmarks.training_predictions \
+  --baseline results/float --candidate results/int8 --output results/quality-inputs
+# Use an explicitly prepared environment containing mini_metrics:
+/path/to/metrics-python -m dev.benchmarks.quality_compare \
+  --manifest results/quality-inputs/manifest.json --output results/quality
+```
+
+Run from the repository root. This installs nothing and does not import PyTorch,
+load checkpoints or rerun inference. The adapter accepts the runner's synthetic
+and real-dataset layouts, flat heads and any number of reported hierarchy levels.
+Transfer `report.json`, `predictions.npz` and the dataset manifest from the training
+machine; checkpoints and source images are not needed for this evaluation step.
+The training report's checkpoint identifier is retained, not independently
+verified against a checkpoint file.
+
+Both runs must have completed training, checkpoint reload and inference, and
+must declare that test images were not used for training or selection. A synthetic
+run that completed inference but missed its quality gate can still be evaluated;
+its original failure status remains in the manifest. Execution failures without
+completed inference are rejected. The adapter checks each dataset-manifest hash,
+held-out paths/labels, ordered class mappings, image hashes, archive levels,
+leaf aliases and finite floating scores before creating output. Different
+manifest order or training metadata is allowed when the held-out identities and
+image hashes agree; different test labels, image hashes or class order is rejected.
+
+The new directory contains canonical `baseline.csv`, `candidate.csv` and
+`manifest.json`, with source hashes and both original training reports. Fixed
+argmax predictions use row-wise softmax confidence at threshold zero, without
+abstention or threshold optimization. Confidence conversion does not allocate a
+second dense float64 score matrix, although NumPy still loads an archive's score
+array into memory. The confidence values are not calibration evidence. The
+existing evaluator computes Macro-F1, Macro-Recall, Macro-Precision, Coverage and
+Theil's U independently per level, and records its mini_metrics source hashes.
+
+This is a saved-prediction quality comparison. It does not establish runtime
+performance, checkpoint-to-score parity, source-image integrity beyond the
+recorded hashes, or production acceptance. Preserve the evaluator's report and
+CSV/manifest bundle alongside the original training reports for continuous runs.

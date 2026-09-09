@@ -2317,14 +2317,48 @@ training reports, NPZ predictions, dataset manifests and logs. Its
 `prepare-quality.py` validates identities/labels/mappings and creates hashed CSV
 and held-out manifests for the maintained `dev.benchmarks.quality_compare`
 command, executed in the existing separate `mini_metrics` environment. Quality
-reports include source hashes for that package and all five metrics. Making the
-NPZ-to-quality adapter a generic maintained command and publishing durable results
-remain follow-up work; local artifacts alone are not a continuous pipeline.
+reports include source hashes for that package and all five metrics. The maintained
+adapter below replaces the local conversion script. Publishing durable results
+remains follow-up work; local artifacts alone are not a continuous pipeline.
 
 Validation passed static checks and 483 CPU-default tests, with 158 skips and
 the known EMA expected failure. Five additional focused summary/CLI checks passed
 after adding the visible backbone-policy column. All four real GPU training and
 reload runs and both five-metric evaluations completed successfully.
+
+### Maintained training prediction quality inputs
+
+`dev.benchmarks.training_predictions` now connects saved dataset benchmark runs
+to `quality_compare` without model loading or a dependency on the training device.
+It supports the synthetic/real manifest layouts and flat or arbitrary-depth
+hierarchical outputs. The [command](../dev/benchmarks/README.md#training-predictions-to-paired-quality-evaluation)
+produces canonical paired CSVs and a portable held-out manifest, retaining both
+source reports, prediction hashes, reported checkpoint identifiers and image hashes.
+It validates the actual dataset-manifest bytes against each report and checks
+archive identities, labels, class order, finite scores and leaf aliases before
+creating output. Reordered records are canonicalized; mismatched held-out evidence
+is rejected. It does not independently reload checkpoints or read source images.
+
+The retained pretrained Blair fine-tuning pairs were converted and reevaluated
+with the existing separate mini_metrics environment. All five metrics reproduced
+the earlier values exactly for flat leaves and hierarchical leaves/parents.
+This replaces a local data-conversion step, not the models, predictions, metric
+policy or performance evidence. Conversion uses row-wise softmax confidence at
+threshold zero, without an additional dense float64 probability matrix; the
+source score array is still loaded by NumPy. Transported reports, NPZ predictions
+and dataset manifests are sufficient, without large checkpoint/image transfers.
+
+Focused tests cover flat, three-level hierarchical and synthetic quality-failure
+reports; exact identity canonicalization; literal labels such as `001`; unchanged
+inputs; and rejection of inconsistent hashes, mappings, labels, paths and arrays.
+Execution failures without completed inference are rejected. Evaluating a
+completed synthetic run that missed its oracle gate does not mark that gate as
+passed: its original status is retained in the bundle. Durable publication and
+profile-specific acceptance gates remain unfinished.
+
+Static checks passed. The full CPU-default suite passed 497 tests, with 158 skips
+and the known EMA expected failure; all 17 final focused adapter checks also
+passed. Final-code replays again reproduced both Blair metric reports exactly.
 
 ### Maintained image preparation reproduction
 
