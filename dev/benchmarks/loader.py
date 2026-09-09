@@ -1,4 +1,4 @@
-"""Measure scalar versus batched cached loading without changing data or sampling."""
+"""Measure scalar versus batched loading without changing data or sampling."""
 
 import json
 import statistics
@@ -25,19 +25,39 @@ class ScalarFetch(Dataset):
         return self.dataset[index]
 
 
-def run(samples=2048, size=64, batch_size=64, repeats=5, pin_batches=False):
+class TensorReader:
+    """Picklable synthetic reader for spawn-worker batch assembly probes."""
+
+    def __init__(self, images):
+        self.images = images
+
+    def __call__(self, item):
+        return self.images[item[0]], torch.tensor(item[0])
+
+
+def run(samples=2048, size=64, batch_size=64, repeats=5, pin_batches=False, workers=0, cache="cpu"):
+    if pin_batches and (workers or cache != "cpu"):
+        raise ValueError("Pinned gathering comparison requires CPU caching and zero workers.")
     generator = torch.Generator().manual_seed(42)
     images = torch.randint(0, 256, (samples, 3, size, size), dtype=torch.uint8, generator=generator)
-    dataset = LazyDataset(lambda item: (images[item[0]], torch.tensor(item[0])), (list(range(samples)),), cache="cpu")
+    reader = TensorReader(images)
+    dataset = LazyDataset(reader, (list(range(samples)),), cache=cache, cache_workers=0)
+    context = "spawn" if workers else None
     loaders = {
-        "scalar": DataLoader(ScalarFetch(dataset), batch_size=batch_size, num_workers=0),
-        "batched": get_dataloader(dataset, "val", batch_size, 0, False, torch.device("cpu")),
+        "scalar": DataLoader(
+            ScalarFetch(dataset),
+            batch_size=batch_size,
+            num_workers=workers,
+            persistent_workers=workers > 0,
+            multiprocessing_context=context,
+        ),
+        "batched": get_dataloader(dataset, "val", batch_size, workers, False, torch.device("cpu"), multiprocessing_context=context),
     }
     if pin_batches:
         if not torch.cuda.is_available():
             raise RuntimeError("Pinned batch comparison requires an accessible CUDA device.")
         direct = LazyDataset(
-            lambda item: (images[item[0]], torch.tensor(item[0])),
+            reader,
             (list(range(samples)),),
             cache="cpu",
             cache_workers=0,
@@ -65,11 +85,15 @@ def run(samples=2048, size=64, batch_size=64, repeats=5, pin_batches=False):
         "shape": [3, size, size],
         "dtype": "uint8",
         "batch_size": batch_size,
-        "workers": 0,
+        "workers": workers,
+        "cache": cache,
         "threads": torch.get_num_threads(),
         "identical_batches": True,
         "pin_batches": pin_batches,
-        "scope": "cached CPU loader iteration; excludes cache construction, preprocessing, H2D and model compute",
+        "scope": (
+            "synthetic tensor loader iteration including worker IPC; "
+            "excludes worker startup, cache construction, image decoding, preprocessing, H2D and model compute"
+        ),
         "seconds": timings,
         "median_samples_per_second": {name: samples / statistics.median(values) for name, values in timings.items()},
         "speedup": statistics.median(timings[baseline]) / statistics.median(timings[candidate]),
@@ -83,9 +107,15 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--pin-batches", action="store_true")
+    parser.add_argument("--workers", type=int, default=0)
+    parser.add_argument("--cache", choices=["cpu", "none"], default="cpu")
     args = parser.parse_args()
     if min(args.samples, args.size, args.batch_size, args.repeats) < 1:
         parser.error("All sizes and repeat counts must be positive")
+    if args.workers < 0:
+        parser.error("Worker count must be nonnegative")
+    if args.pin_batches and (args.workers or args.cache != "cpu"):
+        parser.error("--pin-batches requires --cache cpu and --workers 0")
     torch.set_num_threads(1)
     print(json.dumps(run(**vars(args)), indent=2))
 

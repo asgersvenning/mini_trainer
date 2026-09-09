@@ -344,6 +344,13 @@ class _DirectBatchIndices(list):
     """Index list for the repository collator, which accepts stacked tensors."""
 
 
+def _shared_batch_buffer(template, shape):
+    # Match PyTorch's worker collator: allocate the final IPC storage directly,
+    # rather than stack/gather locally and copy it when the queue shares it.
+    storage = template._typed_storage()._new_shared(math.prod(shape), device=template.device)
+    return template.new(storage).resize_(shape)
+
+
 class _FetchedBatch(list):
     """Sample views for standard collators, with the already-stacked batch attached."""
 
@@ -550,7 +557,18 @@ class LazyDataset(torch.utils.data.Dataset):
                     for tensor in tensors
                 )
             else:
-                data = tuple(tensor.index_select(0, index) for tensor in tensors)
+                worker = isinstance(indices, _DirectBatchIndices) and torch.utils.data.get_worker_info() is not None
+                data = tuple(
+                    torch.index_select(
+                        tensor,
+                        0,
+                        index,
+                        out=_shared_batch_buffer(tensor, (len(index), *tensor.shape[1:]))
+                        if worker and tensor.device.type == "cpu" and not tensor.requires_grad
+                        else None,
+                    )
+                    for tensor in tensors
+                )
             data = data[0] if self._ram_was_single_tensor else data
         else:
             data = self[indices]

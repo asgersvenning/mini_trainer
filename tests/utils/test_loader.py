@@ -10,6 +10,16 @@ from mini_trainer.data import loader as data_loader
 from mini_trainer.data.loader import PathLabelProcessor, get_dataset_dataloader, get_inference_dataloader
 
 
+def _assert_shared_worker_batch(samples):
+    assert torch.utils.data.get_worker_info() is not None
+    assert not torch.cuda.is_initialized()
+    values = samples.data if isinstance(samples.data, (tuple, list)) else (samples.data,)
+    # Check before the multiprocessing queue can copy ordinary storage into
+    # shared memory; checking only the parent's received batch would miss it.
+    assert all(value.is_shared() for value in values)
+    return data_loader._collate_batch(samples)
+
+
 @pytest.fixture
 def metadata(tmp_path):
     paths = []
@@ -379,6 +389,43 @@ def test_pinned_cache_gather_never_pins_inside_worker(monkeypatch):
     result = data_loader._collate_batch(dataset.__getitems__([2, 0]))
     assert not result.is_pinned()
     assert result.tolist() == [2, 0]
+
+
+@pytest.mark.parametrize("labels", [False, True])
+def test_cached_worker_batches_are_built_in_shared_storage(metadata, labels):
+    if labels:
+        datasets, loaders = get_dataset_dataloader(
+            metadata, resize_size=4, modes=("val",), cache="CPU", cache_workers=0, batch_size=2, num_workers=0
+        )
+        dataset, base = datasets[0], loaders[0]
+    else:
+        uncached, _ = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0)
+        dataset = data_io.LazyDataset(uncached.func, uncached.items, cache="CPU", cache_workers=0)
+        base = data_loader.get_dataloader(dataset, "val", 2, 0, False, torch.device("cpu"))
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_sampler=base.batch_sampler,
+        collate_fn=_assert_shared_worker_batch,
+        num_workers=1,
+        multiprocessing_context="spawn",
+    )
+    batches = list(loader)
+    expected = [data_loader._collate_batch(dataset.__getitems__(indices)) for indices in base.batch_sampler]
+    torch.testing.assert_close(batches, expected, rtol=0, atol=0)
+    first = batches[0][0] if labels else batches[0]
+    preserved = first.clone()
+    last = batches[-1][0] if labels else batches[-1]
+    last.zero_()
+    torch.testing.assert_close(first, preserved, rtol=0, atol=0)
+
+
+def test_external_collation_does_not_allocate_an_extra_shared_batch(monkeypatch):
+    dataset = data_io.LazyDataset(lambda item: torch.tensor(item[0]), ([0, 1],), cache="CPU", cache_workers=0)
+    monkeypatch.setattr(torch.utils.data, "get_worker_info", lambda: object())
+    ordinary = dataset.__getitems__([0, 1]).data
+    direct = dataset.__getitems__(data_io._DirectBatchIndices([0, 1])).data
+    assert not ordinary.is_shared() and direct.is_shared()
+    torch.testing.assert_close(ordinary, direct, rtol=0, atol=0)
 
 
 def test_cached_repository_loader_does_not_unpack_sample_views():

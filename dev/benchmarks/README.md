@@ -347,6 +347,25 @@ training/checkpoint/inference profile passed its 100% oracle gate with prefetch
 and reproduced the earlier QT held-out scores bit for bit; that establishes
 compatibility, not a training speedup.
 
+### Worker batch assembly
+
+```bash
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.loader \
+    --workers 1 --cache cpu --samples 512 --size 224 --batch-size 32 --repeats 7
+```
+
+Use `--cache none` to probe uncached tensor assembly. These are synthetic tensor
+readers, so neither mode measures image decoding. The probe verifies identical
+batches, warms persistent spawn workers and then alternates scalar/batched passes.
+Timing includes worker IPC but excludes startup, cache construction, preprocessing,
+H2D and model compute. Worker count is explicit and defaults to zero; cached
+loading does not automatically benefit from additional workers.
+
+Repository CPU-cache gathers now write directly into shared storage inside
+workers. External collators retain their own allocation path. Main-process
+pinning and CUDA-cache behavior remain separate. See the [measured worker
+results](../../docs/benchmarks.md#shared-storage-for-cached-worker-batches).
+
 ### Direct pinned gathering
 
 ```bash

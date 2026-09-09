@@ -499,3 +499,46 @@ Reports, logs and predictions are retained locally under
 `/tmp/mini-trainer-disabled-ema-comparison`; traces are
 `/tmp/mini-trainer-requant-epoch-trace.json` and
 `/tmp/mini-trainer-disabled-ema-epoch-trace.json`.
+
+### Shared storage for cached worker batches
+
+CPU-cache gathers inside repository DataLoader workers now allocate their final
+shared buffer before `index_select`. Previously, the gather produced an ordinary
+tensor and the multiprocessing queue copied its storage again. This follows the
+allocation approach used by PyTorch's worker collator. A spawned-worker regression
+checks storage before it reaches the queue, along with exact values, partial
+batches, retained-batch ownership and absence of CUDA initialization in workers.
+
+The optimization applies to the repository sampler/collator pair. External
+collators retain their ordinary input allocation so they do not receive an extra
+shared buffer. Worker-count defaults, parent-side pinning, CUDA caching and
+main-process gathers are unchanged.
+
+Two alternating before/after trials used 512 synthetic uint8 RGB tensors at
+224×224, batch size 32, one spawn worker per loader and one Torch thread. Each
+trial reports the median of seven measured passes after warmup. The control used
+an isolated copy of `0520129` with the same updated probe script.
+
+| Trial | Cached batched images/s before | After | Observed gain |
+| --- | ---: | ---: | ---: |
+| 1 | 13,425 | 14,395 | 7.2% |
+| 2 | 13,226 | 15,367 | 16.2% |
+
+The separate scalar reference varied between 13,388 and 14,555 images/s across
+these processes, so these are host-specific observations rather than a universal
+speedup. The probe verifies identical batch tensors. Timing includes IPC but
+excludes worker startup, cache construction, image decoding, H2D and model compute;
+it does not establish an end-to-end training or inference gain.
+
+An uncached shared-stack candidate was also tested. It changed throughput from
+11,668 to 11,503 and from 12,129 to 11,298 images/s in the two trials. That path
+was removed; uncached assembly retains its previous implementation. Fewer copies
+did not establish a speed benefit, and changing where work occurs may affect
+overlap between decoding/assembly and the queue's sharing work. Real image-decoding
+and uncached throughput remain separate optimization targets. In particular,
+`get_inference_dataloader` currently streams uncached data; this cached-worker
+change does not establish a speed gain for that helper.
+
+The shared [loader probe](../dev/benchmarks/README.md#worker-batch-assembly) now
+accepts explicit `--workers` and `--cache` options with picklable readers.
+Detailed trial results are retained under `/tmp/mini-trainer-shared-batch-final`.
