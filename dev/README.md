@@ -285,3 +285,18 @@ AMP skips, rate precision, same-optimizer restoration and eager checkpoint resum
 Capture eligibility, extra gradient copies, graph workspace memory and first-use
 compilation costs still depend on the optimizer and workload. Measure both float
 and INT8 with the same options; enabling graphs alone is not evidence of a speedup.
+
+## Automatic CPU budgets
+
+Automatic loader and cache worker counts now use the smallest detected process
+CPU count, affinity mask, visible Linux cgroup CPU quota, and positive
+`SLURM_CPUS_PER_TASK` allocation. Cgroup v1 and v2 ancestor limits are included;
+fractional CPU quotas are rounded down before applying the existing four-CPU
+reserve and worker caps. Explicit worker counts, including zero, remain unchanged.
+Unreadable, unlimited, or malformed quota data falls back to the other signals.
+
+These are resource ceilings, not a measurement of contention from other jobs.
+For a deliberately shared allocation, set worker counts explicitly when needed.
+The relevant interfaces are documented by the
+[Linux kernel](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files)
+and [Slurm](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_CPUS_PER_TASK).

@@ -949,3 +949,41 @@ configuration is now reproducible through the shared
 workflow, with visible summaries and retained artifacts. Use
 [the shared command](../dev/benchmarks/README.md#model-and-optimizer-graph-comparison)
 for future comparisons rather than treating these timings as fixed thresholds.
+
+### Loading audit on the delivered implementation
+
+The shared loader and reader probes were rerun after `d9ecab6`, using one Torch
+thread, seven measured repetitions after warmup, and alternating reference/current
+order. All comparisons verified exactly identical batches.
+
+| Path | Workers | Reference samples/s | Current samples/s | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| CPU cache, synthetic 64×64 | 0 | 241,783 | 625,168 | 2.59× |
+| CPU cache, synthetic 64×64 | 1 | 40,090 | 43,843 | 1.09× |
+| MNIST streaming, resized to 224×224 | 0 | 4,037 | 4,881 | 1.21× |
+| MNIST streaming, resized to 224×224 | 1 | 2,447 | 3,444 | 1.41× |
+| Blair streaming, resized to 224×224 | 0 | 2,309 | 2,643 | 1.14× |
+| Blair streaming, resized to 224×224 | 1 | 1,956 | 2,448 | 1.25× |
+
+The cached probe used 2,048 generated uint8 images and batch 64, comparing scalar
+fetch/stack against batched gathering. The reader probe used 128 real images per
+dataset and batch 16 through `get_inference_dataloader`, comparing the retained
+Torchvision resize path with the current reader. Worker runs used spawn. Timings
+exclude worker startup, cache construction and model compute; the cached probe
+also excludes decoding, and both exclude H2D. Reader filesystem caches were warm.
+The streaming reader and batching implementation are shared by float and INT8
+inference; cached gathering also serves training. These ratios are loading-path
+measurements, not end-to-end model throughput claims.
+
+Reports, input file hashes, all repetition times, and equality flags are retained
+in `tmp-optimizer-cudagraphs/audit/{cached-*,reader-*}.json`. Reproduce with the
+shared `dev.benchmarks.loader` and `dev.benchmarks.reader` commands documented in
+[the benchmark guide](../dev/benchmarks/README.md).
+
+The audit also found that automatic worker selection still omitted CPU bandwidth
+quotas and Slurm task allocations. The budget helper now includes cgroup v1/v2
+limits (including visible ancestors) and `SLURM_CPUS_PER_TASK`, while preserving
+explicit overrides and the existing reserve/caps. Regression tests cover quota
+and namespace parsing, fractional/unlimited/malformed limits, scheduler budgets,
+and affinity fallbacks. This closes an allocation-aware defaulting gap; it does
+not infer the instantaneous load or private CPU shares of competing processes.

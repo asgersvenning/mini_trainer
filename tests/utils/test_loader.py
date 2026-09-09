@@ -124,7 +124,7 @@ def test_label_processing_and_hook(label, multilabel):
 
 
 @pytest.mark.parametrize("available,expected", [(1, 0), (4, 0), (7, 2), (8, 4), (64, 16)])
-def test_automatic_training_workers_respect_affinity(metadata, monkeypatch, available, expected):
+def test_automatic_training_workers_respect_affinity(metadata, monkeypatch, available, expected, isolated_cpu_limits):
     monkeypatch.setattr(_workers.os, "cpu_count", lambda: 256)
     monkeypatch.setattr(_workers.os, "process_cpu_count", lambda: 256, raising=False)
     monkeypatch.setattr(_workers.os, "sched_getaffinity", lambda _: set(range(available)), raising=False)
@@ -134,7 +134,7 @@ def test_automatic_training_workers_respect_affinity(metadata, monkeypatch, avai
 
 
 @pytest.mark.parametrize("process_count,affinity_count,expected", [(6, 128, 2), (128, 8, 4), (80, 80, 32)])
-def test_inference_uses_smaller_process_limit(metadata, monkeypatch, process_count, affinity_count, expected):
+def test_inference_uses_smaller_process_limit(metadata, monkeypatch, process_count, affinity_count, expected, isolated_cpu_limits):
     monkeypatch.setattr(_workers.os, "process_cpu_count", lambda: process_count, raising=False)
     monkeypatch.setattr(_workers.os, "sched_getaffinity", lambda _: set(range(affinity_count)), raising=False)
     _, loader = get_inference_dataloader(metadata["path"], resize_size=4)
@@ -142,14 +142,14 @@ def test_inference_uses_smaller_process_limit(metadata, monkeypatch, process_cou
 
 
 @pytest.mark.parametrize("host_count", [None, 1, 8])
-def test_worker_detection_fallbacks(monkeypatch, host_count):
+def test_worker_detection_fallbacks(monkeypatch, host_count, isolated_cpu_limits):
     monkeypatch.delattr(_workers.os, "process_cpu_count", raising=False)
     monkeypatch.delattr(_workers.os, "sched_getaffinity", raising=False)
     monkeypatch.setattr(_workers.os, "cpu_count", lambda: host_count)
     assert _workers._available_cpu_count() == (host_count or 0)
 
 
-def test_worker_detection_failed_affinity_and_unknown_process_count(monkeypatch):
+def test_worker_detection_failed_affinity_and_unknown_process_count(monkeypatch, isolated_cpu_limits):
     def unavailable(_):
         raise OSError("Affinity unavailable")
 
@@ -535,3 +535,9 @@ def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, wo
         # torch.stack's C-level sequence handling (which bypasses list methods).
         direct = dataset.__getitems__([4, 1, 1])
         torch.testing.assert_close(torch.stack(direct), dataset[[4, 1, 1]])
+
+
+@pytest.fixture
+def isolated_cpu_limits(monkeypatch):
+    monkeypatch.setattr(_workers, "_cgroup_cpu_count", lambda: None)
+    monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
