@@ -6,6 +6,9 @@ and shared loading for float and quantized training/inference. The capability is
 opt-in; speedups are workload-dependent. Local validation was recorded on 2026-09-09 using
 Python 3.13.7, PyTorch 2.12.0/CUDA 13.0, TorchAO 0.17.0 and an RTX 3080 Ti Laptop GPU.
 
+The [2026-09-09 goal status report](quantization-status.md) separates verified
+capabilities from remaining work and defines the evidence required for completion.
+
 ## Primary model and deployment targets
 
 The primary model is EfficientNetV2 with a symmetric hidden layer (`hidden=True`)
