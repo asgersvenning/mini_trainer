@@ -8,7 +8,7 @@ The maintained sources of truth are now:
 - [Current benchmark findings](benchmarks.md): measured benefits, regressions and
   interpretation limits.
 - [Command index](../dev/benchmarks/README.md): training, inference and reporting.
-- [Historical evidence](archive/benchmark-history.md): detailed experiments,
+- [Historical evidence](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md): detailed experiments,
   unsuccessful approaches and numerical results retained for traceability.
 - [Artifact retention](quantization-artifacts.md): what survived temporary cleanup
   and how to restore evidence.

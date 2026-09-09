@@ -101,8 +101,8 @@ operators and data-dependent Python control flow remain subject to the
 The actual EfficientNetV2-S backbone with symmetric normalized flat/hierarchical
 heads is also covered by offline dynamic-batch export tests. Trained Blair
 checkpoints passed ONNX Runtime CPU parity on real images; see the
-[deployment experiment](archive/benchmark-history.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
-Local [CUDA placement checks](archive/benchmark-history.md#onnx-cuda-provider-placement) expose
+[deployment experiment](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
+Local [CUDA placement checks](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-cuda-provider-placement) expose
 CPU fallback for native integer heads and floating execution for calibrated
 convolutions. Target GPU hardware, ARM execution and arbitrary spatial dimensions
 remain unvalidated.
@@ -110,7 +110,7 @@ An initial signed MinMax INT8 recipe lost substantial accuracy and retained
 floating convolutions. A follow-up unsigned Percentile recipe executed all
 convolutions as QLinearConv and roughly halved warm local CPU inference latency,
 with remaining quality losses measured through `mini_metrics`; see the
-[calibration and metric results](archive/benchmark-history.md#onnx-activation-calibration-execution-coverage-and-macro-metrics).
+[calibration and metric results](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-activation-calibration-execution-coverage-and-macro-metrics).
 It remains exploratory, with no agreed production quality gate or target-device
 verification. Native CUDA QT checkpoint export is a separate path described below;
 these floating-checkpoint PTQ experiments do not validate it.
@@ -165,7 +165,7 @@ of this native path remain unverified. On the full Blair validation split,
 top-1 predictions and the
 requested macro metrics matched the full-FP32 CUDA reference, but some image
 scores exceeded the strict export tolerance; see the
-[full-validation results](archive/benchmark-history.md#native-onnx-full-validation-quality-and-numerical-limits).
+[full-validation results](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#native-onnx-full-validation-quality-and-numerical-limits).
 Supply representative `verification_inputs` and evaluate deployment thresholds
 separately; passing the default sample checks does not establish universal score
 parity or confidence-threshold equivalence. The generic exporter does not

@@ -180,7 +180,7 @@ See [PyTorch stream semantics](https://docs.pytorch.org/docs/main/notes/cuda.htm
 
 This is an opt-in throughput/memory tradeoff. Actual gains depend on the balance
 between transfer and compute; compare peak allocation as well as wall time using
-[the transfer probe](benchmarks/training.md#cuda-transfer-overlap).
+[the transfer probe](benchmarks/training.md#capacity-and-bottleneck-probes).
 
 ### Direct pinned cache batches
 
@@ -214,13 +214,13 @@ A one-thread cache benchmark with 4,096 uint8 RGB 28×28 images, batch size 128,
 and seven alternating trials measured approximately 0.52 million samples/s before
 this change and 2.22 million afterward. This isolates cached iteration; larger
 images, decoding, transfer and model compute change the overall benefit. See the
-[integrated measurements](../docs/archive/benchmark-history.md#larger-batches-and-direct-collation).
+[integrated measurements](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#larger-batches-and-direct-collation).
 
 ### Model compilation
 
 `mt_train --compile --compile-mode reduce-overhead` selects a PyTorch model
 compilation mode. The Python training entry points accept `compile_mode`, and
-`dev.benchmarks.run` accepts the same CLI flag and records it in success and
+`dev.benchmarks.training.run` accepts the same CLI flag and records it in success and
 failure reports. An explicit mode requires `--compile`; omitting it preserves
 ordinary `torch.compile(model)` behavior. Optimizer compilation remains separate.
 

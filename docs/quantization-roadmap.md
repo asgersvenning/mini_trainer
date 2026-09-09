@@ -70,7 +70,7 @@ PyTorch/ONNX versions, thread/worker limits and allocation conditions.
    five-epoch quality is not a settled convergence comparison.
 5. Rebuild TensorRT engines on the target with
    `bash dev/check-tensorrt-deployment.sh FRESH_RESULTS`. On ARM, use
-   `python -m dev.benchmarks.cpu_deployment` with the reviewed baseline/candidate,
+   `python -m dev.benchmarks.inference.cpu_deployment` with the reviewed baseline/candidate,
    manifest and representative inputs. Begin with explicit conservative threads.
 6. Collect fresh-process repeated runs without competing benchmark jobs. Include
    cold startup, warm execution and end-to-end input handling as separate scopes.

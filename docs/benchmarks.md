@@ -4,7 +4,7 @@ These are the current conclusions of the quantization branch, based on local
 measurements. They do not certify HPC, Spark/desktop, or ARM performance.
 The [branch roadmap](quantization-roadmap.md) defines the remaining work and
 completion criteria. Exact configurations, trials and superseded findings remain
-in the [historical experiment record](archive/benchmark-history.md).
+in the [historical experiment record](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
 
 ## Representative workload
 

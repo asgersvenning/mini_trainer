@@ -78,30 +78,12 @@ selected configurations are cached on disk. TorchAO's global operators and tuner
 are unchanged. The explicit update and matrix operators provide fake execution
 implementations for model compilation.
 
-`--compile-optimizer` now supports the FMA primitive that Dynamo uses for tensor
-learning-rate updates. The formerly failing twelve-group SGD regression passes,
-as does twelve-group AdamW, with hard failure enabled on compiler-cache fallback.
-This establishes compilation compatibility, not a performance recommendation:
-the batch-128 dense MNIST comparison is slower and less accurate with QT than float.
-The [larger-batch profile](archive/benchmark-history.md#larger-batches-and-direct-collation) shows
-lower memory and faster training in individual runs after compiler caches are
-populated. The [three-seed requantization comparison](archive/benchmark-history.md#functional-fused-requantization)
-shows lower memory and slightly higher accuracy than float, but later-phase
-speed remains mixed and broader workload validation is still required.
-Compiled stochastic requantization can follow a different random trajectory from
-the eager row kernel, so a matching seed does not establish identical training.
-Floating-to-INT8 copies now use a fused row-quantization kernel for matching CUDA
-FP32/FP16/BF16 tensors with at most 16,384 columns. It returns fresh codes and
-scales; ordinary tensor copies perform the final storage mutation so compiled
-optimizer calculations that need the old weight remain correctly ordered. This
-keeps no floating master weight, though transient floating updates still exist.
-The operator is marked as seeded randomness, and compiled regressions check
-independent rounding, generator replay, sub-code updates and optimizer state.
-The random trajectory can differ from earlier compiled requantization.
-The earlier storage prototype's fake-tensor and dtype-cache failures are resolved
-by an explicit Triton kernel and custom-operator boundary; the storage kernel
-does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
-separate option. See the [measured results](archive/benchmark-history.md#optimizer-fma-dispatch).
+`--compile-optimizer` supports tensor-learning-rate FMA updates and functional
+stochastic requantization. Floating-to-INT8 copies use a fused row kernel for
+matching CUDA FP32/FP16/BF16 tensors with at most 16,384 columns, returning fresh
+codes/scales before the final storage mutation. Eager and compiled rounding can
+follow different random trajectories even with a matching seed. Transient floating
+updates remain; compilation compatibility does not imply a speedup.
 
 `--compile-optimizer --optimizer-cudagraphs` opts into optimizer graph replay.
 During AOT fake-tensor tracing, updates expose floating arithmetic followed by
@@ -159,61 +141,25 @@ independent of optimizer compilation. The benchmark runner records the selected
 mode. See [compilation guidance](../dev/README.md#model-compilation) for the other
 modes and measurement requirements; selecting a mode does not establish a speedup.
 
-Embedding publication uses mutable dictionary state so Dynamo can preserve the
-side effect without splitting the model graph. Normalized weights remain beside
-their Linear consumer. Previously the class-attribute assignment forced graph
-breaks and could make AOTAutograd expect an INT8 tensor subclass gradient where
-backward supplies a float tensor. Public context activation, retrieval, nesting
-checks and cleanup remain unchanged; this is still a shared context, not thread-
-or task-local state.
-
-Regression coverage includes normalized and ordinary heads,
-eager/default/reduce-overhead execution, AMP training, compiled/eager optimizers,
-checkpoint loading and eager resume. Full-graph FP32 tests compare input and
-parameter gradients with an embedding auxiliary loss and check stable compilation
-after lazy classifier metadata initializes. AMP fusion can change rounding and
-INT8 activation bins; these checks do not promise bitwise-identical eager and
-compiled trajectories. Fewer graphs do not guarantee lower peak memory or shorter
-whole training calls; see the [measured tradeoffs](archive/benchmark-history.md#embedding-publication-without-graph-breaks).
+Embedding publication preserves context side effects across compilation, with
+normalized weights beside their Linear consumer. Context remains shared, not
+thread/task-local. AMP fusion can change rounding and INT8 activation bins;
+eager and compiled trajectories are not promised to be bitwise identical.
+Compiler cache keys include backend source and tensor metadata so hidden backward
+changes invalidate cached graphs.
 
 ## Evidence and remaining work
 
-The [developer probes](../dev/benchmarks/training.md#quantized-training-and-loader-performance)
-record both positive and negative workload-dependent results. Compiler cache keys
-include backend source and tensor metadata to avoid reusing obsolete backward
-graphs. Numerical checks include small gradients, compiled/eager agreement,
-weight storage, optimizer updates, regularization and model-state restoration.
+See [current findings](benchmarks.md), [validation contracts](quantized-training-validation.md)
+and [the roadmap](quantization-roadmap.md). These own measured benefits, negative
+results and remaining hardware/quality work. Use [the training guide](../dev/benchmarks/training.md)
+for reproducible commands. Kernel speedups do not establish real-model convergence
+or end-to-end efficiency.
 
-Kernel-probe results do not establish a real-model speedup or convergence. The
-integrated path now has paired synthetic-oracle, MNIST and hierarchical Blair
-smoke runs, recorded in [the dataset benchmark results](archive/benchmark-history.md#integrated-int8-training).
-Complete optimizer/resume coverage, demonstrated real-workload speedups and broader
-quantized operation coverage remain outstanding. These are requirements
-for the overall QT goal, not conclusions implied by this initial integration.
-
-The integrated backend was rerun on the four-layer, 4096-wide, batch-2048 compiled
-SGD probe: 15.61 ms/step and 319,063,552 peak allocated bytes for INT8, versus
-30.05 ms and 386,139,648 bytes for FP16. These single-run numbers are about
-1.93x faster and 17% lower peak memory for that workload, with nonzero gradients
-checked before timing. They remain kernel-probe evidence, not a claim about
-MNIST, Blair or typical convolutional models.
-
-
-Row-wise normalization is checked against PyTorch's represented-value forward
-and backward results, including signed scales and zero magnitudes. Tests inspect
-saved tensors to exclude a retained floating direction matrix, and exercise
-checkpoint restoration, eager/compiled CUDA training and masked inference.
-Initial zero direction rows are rejected before preparation mutates any weights;
-normalization is undefined for these rows. The mathematical contract follows
-[PyTorch weight normalization](https://docs.pytorch.org/docs/2.12/generated/torch.nn.utils.parametrizations.weight_norm.html).
-
-The [dense MNIST comparison](archive/benchmark-history.md#dense-mnist-profile-with-corrected-peak-measurements)
-now exercises a quantized backbone through the compiled trainer. Its accuracy is
-similar for one seed, but QT is slower and uses a higher whole-training peak than
-the floating path despite substantially smaller parameter storage. Corrected
-benchmark logging preserves CUDA peaks across all resets; older dataset-run CUDA
-readings do not establish whole-run memory reductions. Compiled training now saves
-unwrapped model keys so ordinary checkpoint restoration and resume remain valid.
+Row-wise normalization tests cover represented-value forward/backward, signed
+scales, zero magnitudes, saved storage, masked inference and checkpoint restoration.
+Initial zero direction rows are rejected before mutation. Whole-run memory includes
+initialization, gradients and optimizer storage as well as compressed parameters.
 
 ## Large-class accumulator bounds
 
@@ -222,7 +168,15 @@ above 131,071, the backend now combines bounded INT32 dot products in INT64 befo
 converting and scaling the result. This prevents finite but saturated gradients
 for large vocabularies. Shorter contractions keep the existing tuned kernel.
 ONNX export also bounds integer partial products and combines them in INT64.
-See the [arithmetic regression and limits](archive/benchmark-history.md#long-contraction-int8-accumulator-correctness).
+See the [arithmetic regression and limits](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#long-contraction-int8-accumulator-correctness).
 A million-output Linear gradient test does not establish that a full million-class
 EfficientNetV2 training configuration fits the available GPU; parameter,
 initialization, gradient and optimizer storage still require separate measurement.
+
+## Implementation layout
+
+Public APIs remain in `modeling.quantized_training` and `modeling.quantization`
+(the separate PTQ/QAT backend). Private native INT8 code lives in
+`modeling/_quantized_training/`: tensor dispatch in `__init__.py`, plus `matmul.py`,
+`normalization.py`, `update.py` and ONNX translation in `onnx.py`. Keeping the backend
+package at its original module path preserves serialized `TrainingWeight` identities.

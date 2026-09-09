@@ -92,87 +92,25 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
-An initial native QT and shared-loader milestone is implemented for the documented
-CUDA Linear regime. The [validation audit](quantized-training-validation.md) records
-three-seed memory/speed benefits, real loading comparisons, synthetic and
-hierarchical checkpoint/inference coverage, allocation-aware worker defaults,
-and installed-package checks. Local EfficientNetV2-S runs now cover symmetric
-hidden layers and normalized flat/hierarchical heads, including 100k-class
-synthetic capacity checks and Blair quality measurements. HPC
-PyTorch training, local GPU training/ONNX inference and ARM ONNX edge inference
-are required deployment targets, not extensions of a completed objective.
-Broader operator coverage, cold-start performance and quality studies remain open. The chronological
-results below retain earlier failures and mixed comparisons.
+Delivered: opt-in native CUDA INT8 Linear training, x86 PTQ/QAT inference,
+checkpoint/export integration, bounded preparation/normalization storage, and
+allocation-aware loader hardening. Defaults remain floating point. EMA is deferred;
+native QT DDP/FSDP is unsupported.
 
-The primary implementation target is **actual quantized training and faster data loading**.
-QT must reduce retained training storage and demonstrate lower peak memory and faster
-training on supported workloads. QAT with floating-point master weights is a separate
-capability and does not complete this target. The initial CUDA integer forward/backward
-kernel probe and cached-loader benchmark are documented in [the benchmark guide](../dev/benchmarks/README.md).
-An initial [CUDA INT8 Linear integration](quantized-training.md) connects model
-preparation and checkpoint loading to the training entry point. At that stage, broader operator
-and optimizer coverage, stronger convergence evidence and real-workload speedups
-remained required. Paired synthetic, MNIST and hierarchical Blair smoke runs now
-record quality, storage and timing; [these small workloads are slower under QT](archive/benchmark-history.md#integrated-int8-training).
-Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
-that target. The implementation and comparison plan is in
-[training feature validation](training-feature-validation.md).
+The [quantization roadmap](quantization-roadmap.md) owns remaining performance,
+quality and deployment work. [Measured findings](benchmarks.md) distinguish local
+memory savings from mixed speed/convergence results; HPC, desktop/Spark and ARM
+qualification remain open. AMP, fake quantization and CPU smoke tests do not
+complete the deeper quantization objective.
 
-The explicit CUDA storage-update kernel and local matrix tuner now reduce
-whole-run peak allocation in the dense MNIST comparison by approximately 35%;
-[the batch-128 speed result remains unfavorable](archive/benchmark-history.md#explicit-cuda-kernels-and-local-tuning).
-The outer optimizer fallback was traced to missing FMA dispatch for tensor
-learning rates. Twelve-group SGD and AdamW now compile without cache fallback,
-and the former expected-failure marker is removed. The [paired compiled-optimizer
-result](benchmarks.md#optimizer-fma-dispatch) is still slower and less accurate
-under QT; throughput and convergence work remain required.
+After quantization, evaluate a task-aware augmentation recipe against the legacy
+pipeline. Preserve label semantics, input dtype, optimizer/accumulation/resume
+behavior and existing builder extension points. Add loading controls only when
+whole-training measurements demonstrate a benefit.
 
-Direct collation removes redundant per-sample views from repository loaders while
-preserving external default collation and shuffle RNG. A [larger-batch MNIST
-profile](benchmarks.md#larger-batches-and-direct-collation) now shows lower memory
-and faster training with populated compiler caches in individual runs. The first
-[three-seed comparison](archive/benchmark-history.md#continuous-multi-seed-large-batch-profile)
-confirms 26–28% lower peak memory but mixed speed results and 0.10–0.54 percentage
-points lower accuracy. [Functional fused requantization](archive/benchmark-history.md#functional-fused-requantization)
-then reduced peak memory to 30–31% below float, with slightly higher accuracy in
-all three pairs. Whole-run times improved, but later-phase speed remained mixed.
-At that stage, reliable speed gains, cold-start cost, and broader workload validation remained open; see the current audit above.
-
-Deliver quantization-aware training and post-training inference quantization as
-separate opt-in capabilities, recording actual weight/activation bit widths,
-calibration data, backend kernels, checkpoint/resume and export/runtime support.
-FP8 or other reduced-precision compute is a separate hardware-dependent profile.
-Keep unsupported model/backend combinations explicit; do not silently run an
-unquantized model while reporting a quantized result. EMA support is not a gate
-for this work while the feature is declared defunct.
-
-Improve the default augmentation pipeline after paired task-aware experiments,
-retaining a reproducible legacy recipe. Respect label semantics: digit tasks,
-color-based synthetic tasks and biological imagery need different invariances.
-Document uint8 input and augmentation-before-preprocessing behavior accurately.
-
-Benchmark foundation delivered: the [continuous dataset benchmark suite](benchmarks.md)
-uses a synthetic oracle, MNIST and hierarchical Blair, with CPU and GPU/AMP/cache
-profiles, explicit split/provenance records, Actions summaries and retained artifacts.
-This is a verifiable milestone, not a CPU-only scope boundary. Add durable hosted
-history, repeated comparisons and coverage of the remaining training features next.
-
-Next establish repeatable measurements for loader wait time, images/second, host/GPU
-memory, and validation quality on fixed configurations. Existing code already uses
-autocast, optional compilation, persistent workers, cache modes, and DDP spawn handling.
-
-Add opt-in loader controls only where measurements justify them (for example,
-prefetching and transfer overlap), with coverage for zero workers, cache modes,
-deterministic seeding, and distributed sampling. Extend augmentation through the
-existing builder interface, documenting label and dtype requirements.
-
-Evaluate lower-precision training, quantization-aware training, and inference
-quantization as distinct paths. Keep current defaults and checkpoint compatibility;
-validate optimizer/resume behavior (EMA is deferred), numerical stability, hardware support, export
-compatibility, memory, throughput, and quality before recommending a configuration.
-
-Acceptance: reproducible baseline and comparison results, explicit supported hardware
-and backends, opt-in configuration, and no regression in default training behavior.
+Acceptance: opt-in supported recipes, reproducible paired quality/resource evidence,
+and unchanged default behavior. Use [training feature validation](training-feature-validation.md)
+for the deferred optimizer, loss and augmentation comparisons.
 
 ## 5. mini_metrics and continuous model evaluation
 
