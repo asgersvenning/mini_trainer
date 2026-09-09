@@ -1,10 +1,68 @@
 # Quantized training and loading validation
 
-This audit covers the delivered objective: genuine quantized training that lowers
-memory and increases training speed on supported workloads, plus faster shared
-loading for float and quantized training/inference. The capability is opt-in;
-speedups are workload-dependent. Validation was completed on 2026-09-09 using
+This audit records an initial Linear-only milestone, not completion of the
+representative-model or deployment objective. It covers genuine quantized training
+and shared loading for float and quantized training/inference. The capability is
+opt-in; speedups are workload-dependent. Local validation was recorded on 2026-09-09 using
 Python 3.13.7, PyTorch 2.12.0/CUDA 13.0, TorchAO 0.17.0 and an RTX 3080 Ti Laptop GPU.
+
+## Primary model and deployment targets
+
+The primary model is EfficientNetV2 with a symmetric hidden layer (`hidden=True`)
+and a normalized `Classifier` or `HierarchicalClassifier`. Start with the
+`efficientnet_v2_s` configuration used in `examples/blair.ipynb`, with both heads
+on the same reviewed Blair splits. The dense MNIST model is a kernel diagnostic;
+TinyConv on Blair is an integration check. Neither establishes performance or
+quality for the primary model.
+
+| Deployment target | Execution path to validate | Required measurements |
+| --- | --- | --- |
+| HPC: A40, A100, B300-class GPU systems with AMD EPYC hosts | PyTorch GPU training | End-to-end training time, steady-state throughput, allocated/reserved GPU peaks, host memory, loading/transfer costs, convergence and checkpoint/resume; record actual GPU, allocation, precision and kernels separately for each system. |
+| Local batch processing: NVIDIA Spark or the intended RTX desktop with Ryzen 7 9800X3D | PyTorch training/fine-tuning; ONNX GPU inference | Full and frozen-backbone training separately; export parity, actual execution-provider placement, batch throughput, latency and memory including preprocessing/transfers. Exact installed device and runtime support must be verified. |
+| Edge integration: Raspberry Pi or similar | ONNX CPU inference | Export/score parity, accuracy, model size, process memory, batch-one latency and sustained throughput on the actual ARM device, with explicit thread settings. |
+
+These are acceptance targets, not claims of hardware or backend support. Laptop
+measurements remain useful for debugging but cannot establish gains on these
+systems. Do not assume a single quantized artifact or kernel recipe works across
+CUDA PyTorch, ONNX GPU and ONNX ARM CPU. The current native QT checkpoint cannot
+be exported directly through the ONNX path. ONNX Runtime training/fine-tuning
+would be a separate integration; an inference export does not provide it.
+
+Next extend the shared dataset harness to select backbone and head independently,
+preserving existing defaults. Record initialization/pretrained provenance,
+symmetric width, normalization, image size and all training settings. Compare
+float and quantized paths with identical splits and paired seeds, reporting
+quantized versus floating operators and physical storage before making speed
+claims. Profile the real backbone before selecting convolution or other storage
+reductions. Keep kernel probes separate from full training and deployment results.
+
+Accuracy superiority has not been demonstrated. The three paired dense MNIST
+accuracy differences were -0.24, +0.62 and -0.34 percentage points (INT8 minus
+float); Blair below is one short seed. Agree quality tolerances before evaluating
+candidate recipes, retain negative results, and report uncertainty separately
+from speed and memory measurements. Target-machine runs and representative-model
+comparisons remain outstanding.
+
+### EfficientNetV2-S structural coverage probe
+
+On 2026-09-09, CPU-only preparation through `Classifier.build` and
+`HierarchicalClassifier.build`, using `model_type="efficientnet_v2_s"`,
+`num_classes=25`, `hidden=True`, `normalized=True` and
+`model_args={"pretrained": False}`, produced the same storage counts:
+
+| Quantity | Bytes / count |
+| --- | ---: |
+| All floating parameters before preparation (FP32) | 87,407,112 bytes |
+| Selected head weights before preparation | 6,681,600 bytes |
+| Selected head INT8 weights including row scales | 1,675,620 bytes |
+| Reduction relative to all parameter bytes | 5.73% |
+| Convolutions left floating | 170 |
+
+`prepare_quantized_training(model)` selected only `classifier.hidden` and
+`classifier.linear`. This constructed random models without downloading weights;
+the hierarchical construction did not supply taxonomy masks or execute a forward
+pass. It establishes operator/parameter coverage only, not hierarchical runtime
+correctness, activation storage, peak training memory, convergence or throughput.
 
 ## Requirements and evidence
 

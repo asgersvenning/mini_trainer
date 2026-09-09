@@ -88,12 +88,15 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
-The native QT and shared-loader increment is delivered for the documented CUDA
-Linear regime. The [validation audit](quantized-training-validation.md) records
+An initial native QT and shared-loader milestone is implemented for the documented
+CUDA Linear regime. The [validation audit](quantized-training-validation.md) records
 three-seed memory/speed benefits, real loading comparisons, synthetic and
 hierarchical checkpoint/inference coverage, allocation-aware worker defaults,
-and installed-package checks. Broader hardware/operator coverage, cold-start
-performance and additional quality studies remain future work. The chronological
+and installed-package checks. The primary EfficientNetV2 configuration with symmetric
+hidden layers and normalized flat/hierarchical heads remains unvalidated. HPC
+PyTorch training, local GPU training/ONNX inference and ARM ONNX edge inference
+are required deployment targets, not extensions of a completed objective.
+Broader operator coverage, cold-start performance and quality studies remain open. The chronological
 results below retain earlier failures and mixed comparisons.
 
 The primary implementation target is **actual quantized training and faster data loading**.
