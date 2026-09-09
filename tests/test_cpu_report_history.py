@@ -102,3 +102,32 @@ def test_failed_cpu_evaluation_never_presents_performance(cpu_report, tmp_path):
     record = archive(path, history, "cpu", "a" * 40, "CPU", performance_valid=True)
     assert not json.loads(record.read_text())["performance_valid"]
     assert "Resource readings excluded" in render(history).read_text()
+
+
+@pytest.mark.parametrize("status", ["evaluated", "failed"])
+def test_requested_cpu_budget_survives_archival(cpu_report, tmp_path, status):
+    path, data = cpu_report
+    data["status"] = status
+    data["settings"] = {"threads": 1, "trials": 1 if status == "evaluated" else 3, "warmup": 1, "repeats": 3}
+    path.write_text(json.dumps(data))
+    history = tmp_path / "history"
+    record = json.loads(archive(path, history, "cpu", "a" * 40, "CPU").read_text())
+    assert record["comparison"]["requested_settings"] == data["settings"]
+    assert f"1 of {data['settings']['trials']} requested" in render(history).read_text()
+
+
+@pytest.mark.parametrize("key,value", [("trials", 2), ("threads", 2), ("warmup", 2), ("repeats", 4), ("trials", True), ("trials", 0)])
+def test_incomplete_or_inconsistent_requested_cpu_settings_are_rejected(cpu_report, tmp_path, key, value):
+    path, data = cpu_report
+    data["settings"] = {"threads": 1, "trials": 1, "warmup": 1, "repeats": 3}
+    data["settings"][key] = value
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="CPU|cpu"):
+        archive(path, tmp_path / "history", "cpu", "a" * 40, "CPU")
+
+
+def test_older_cpu_report_does_not_invent_requested_budget(cpu_report, tmp_path):
+    history = tmp_path / "history"
+    record = json.loads(archive(cpu_report[0], history, "cpu", "a" * 40, "CPU").read_text())
+    assert "requested_settings" not in record["comparison"]
+    assert "requested count was not retained" in render(history).read_text()

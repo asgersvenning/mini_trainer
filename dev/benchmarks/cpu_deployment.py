@@ -24,6 +24,7 @@ def evaluate(
         "schema_version": 1,
         "status": "running",
         "runner_sha256": file_hash(__file__),
+        "settings": {"threads": threads, "trials": trials, "warmup": warmup, "repeats": repeats},
         "required_candidate_ops": list(required_ops),
         "stages": [],
         "pairs": [],

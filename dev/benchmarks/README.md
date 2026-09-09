@@ -1743,10 +1743,14 @@ and sizes, architecture, affinity, thread settings, and the five metrics.
 
 CPU rows explicitly compare **separate-process latency medians** and show process
 RSS and approximate peak RSS. They do not acquire GPU memory fields or adjacent
-GPU timing semantics. The resource declaration remains opt-in. Existing CPU
-reports record completed trial pairs but not the originally requested trial count;
-the archive records that completed count and cannot establish that a particular
-planned repetition budget was met. A completed report is still not acceptance.
+GPU timing semantics. The resource declaration remains opt-in. New CPU reports
+retain requested trials, threads, warmups and repeats even after a failed stage.
+The archive verifies requested settings against the measured child reports and
+requires the requested number of trials for a completed evaluation. Failed runs
+can retain fewer completed trials. Older CPU reports without requested settings
+remain readable, and the page explicitly says their requested count was not
+retained; the archive does not infer it from completed pairs. A completed report
+is still not acceptance.
 Failed CPU reports remain visible and never display eligible resource comparisons.
 
 The adapter was exercised on retained flat/hierarchical Blair x86 reports with

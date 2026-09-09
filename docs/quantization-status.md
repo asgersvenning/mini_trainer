@@ -79,6 +79,11 @@ measurements. Both retained Blair x86 evaluations archived successfully with thr
 trials each. This makes the format usable for future ARM evidence, but neither
 the synthetic ARM display fixture nor the x86 reports establish ARM execution.
 
+New CPU evaluations also retain the requested repetition/thread configuration.
+Archival checks it against actual child measurements and rejects a completed
+evaluation with a different trial count. Older reports remain readable with an
+explicitly unknown requested count; failed runs preserve their partial progress.
+
 ## Current evidence
 
 | Workstream | Verified locally | What remains unproven |

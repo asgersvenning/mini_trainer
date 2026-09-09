@@ -203,6 +203,17 @@ def cpu_evidence(source, root):
         if not result["quality"] or not result["resources"] or set(result["execution"]) != {"baseline", "candidate"}:
             raise ValueError("Completed CPU evaluation requires quality, placement and resource trials")
     comparison["recorded_trials"] = len(result["resources"])
+    if "settings" in source:
+        requested = {key: source["settings"][key] for key in ("threads", "trials", "warmup", "repeats")}
+        if any(type(value) is not int or value < 1 for value in requested.values()):
+            raise ValueError("Requested CPU settings must be positive integers")
+        if "settings" in comparison and any(comparison["settings"][key] != requested[key] for key in ("threads", "warmup", "repeats")):
+            raise ValueError("Observed CPU settings disagree with requested settings")
+        if comparison["recorded_trials"] > requested["trials"] or (
+            source["status"] == "evaluated" and comparison["recorded_trials"] != requested["trials"]
+        ):
+            raise ValueError("CPU trial count disagrees with requested budget")
+        comparison["requested_settings"] = requested
     return result, runtime, comparison
 
 
@@ -337,6 +348,11 @@ def render(history):
             f"<p>Measured {'CPU architecture' if cpu else 'GPU'}: {escape(device)}. "
             f"Source report <code>{escape(record['source_report_sha256'])}</code>.</p>"
         )
+        if cpu:
+            requested = record["comparison"].get("requested_settings")
+            count = record["comparison"]["recorded_trials"]
+            budget = f"of {requested['trials']} requested" if requested else "(requested count was not retained)"
+            lines.append(f"<p>Recorded CPU trials: {escape(count)} {escape(budget)}.</p>")
         for level in evidence["quality"]:
             lines.append(
                 f"<h3>{escape(level['name'])}: {escape(level['samples'])} samples, "

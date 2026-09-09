@@ -10,6 +10,7 @@ from dev.benchmarks.cpu_deployment import evaluate as evaluate_cpu
 from dev.benchmarks.dataset_inference import collect, inference_manifest, pair_bundle, predictions
 from dev.benchmarks.inference_pair import run_pair
 from dev.benchmarks.quality_compare import read_manifest, read_predictions
+from dev.benchmarks.report_history import archive
 
 
 @pytest.fixture
@@ -122,6 +123,9 @@ def test_cpu_deployment_composes_quality_placement_and_alternating_trials(exampl
     output = tmp_path / "deployment"
     report = evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, trials=2, warmup=1, repeats=2, required_ops=["Add"])
     assert report["status"] == "evaluated"
+    assert report["settings"] == {"threads": 1, "trials": 2, "warmup": 1, "repeats": 2}
+    archived = archive(output / "report.json", tmp_path / "history", "cpu", "a" * 40, "CPU integration fixture")
+    assert json.loads(archived.read_text())["comparison"]["requested_settings"] == report["settings"]
     assert [p["order"] for p in report["pairs"]] == [["baseline", "candidate"], ["candidate", "baseline"]]
     assert len(report["stages"]) == 6
     assert all(value > 0 for p in report["pairs"] for value in p["candidate_over_baseline"].values())
@@ -142,6 +146,7 @@ def test_cpu_deployment_missing_required_operation_stops_before_resource_trials(
         evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, required_ops=["QLinearConv"])
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "failed" and report["phase"] == "placement"
+    assert report["settings"] == {"threads": 1, "trials": 3, "warmup": 3, "repeats": 31}
     assert report["pairs"] == [] and not list(output.glob("trial-*"))
     assert report["stages"][-1]["status"] == "failed"
     assert (output / "quality/summary.md").exists()
