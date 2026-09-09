@@ -25,3 +25,48 @@ def test_native_quantized_training_is_not_reported_as_cpu_training(tmp_path):
     with pytest.raises(ValueError, match="requires CUDA"):
         run(tmp_path / "invalid", device="cpu", dtype="float32", quantized=True)
     assert not (tmp_path / "invalid").exists()
+
+
+@pytest.mark.parametrize("hierarchical", [False, True])
+def test_cuda_frozen_probe_releases_replaced_float_parameters(tmp_path, monkeypatch, hierarchical):
+    import os
+    import weakref
+
+    import torch
+
+    from dev.benchmarks import large_head_training as probe
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify frozen INT8 parameter lifetime")
+    assert torch.cuda.is_available()
+    prepare = probe.prepare_quantized_training
+    build_optimizer = probe.BaseBuilder.build_optimizer
+    replaced = []
+
+    def capture_replacements(model):
+        before = {id(p): weakref.ref(p) for p in model.parameters()}
+        recipe = prepare(model)
+        after = {id(p) for p in model.parameters()}
+        replaced.extend(ref for key, ref in before.items() if key not in after)
+        return recipe
+
+    def verify_released(*args, **kwargs):
+        assert replaced
+        assert all(ref() is None for ref in replaced), "Probe retains replaced floating parameters"
+        return build_optimizer(*args, **kwargs)
+
+    monkeypatch.setattr(probe, "prepare_quantized_training", capture_replacements)
+    monkeypatch.setattr(probe.BaseBuilder, "build_optimizer", verify_released)
+    result = run(
+        tmp_path / "quantized",
+        classes=101,
+        hierarchical=hierarchical,
+        batch_size=2,
+        image_size=32,
+        warmup=1,
+        steps=1,
+        frozen=True,
+        quantized=True,
+        dtype="bfloat16",
+    )
+    assert result["status"] == "measured"

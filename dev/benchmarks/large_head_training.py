@@ -112,6 +112,9 @@ def run(
             for parameter in model.parameters():
                 if id(parameter) not in head_ids:
                     parameter.requires_grad_(False)
+            # Do not retain the final floating parameter after INT8 preparation
+            # replaces it; a large classification head can dominate this probe.
+            del parameter
             model.eval()
             head.train()
         else:

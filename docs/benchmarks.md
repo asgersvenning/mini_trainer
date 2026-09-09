@@ -2196,7 +2196,9 @@ PyTorch 2.12.0+cu130 and TorchAO 0.17.0.
 
 Measured-phase CUDA allocated peaks were identical across the three seeds for
 each configuration. Native INT8 reduced the full-model peak by **17.4%**, but
-**increased the frozen-backbone peak by 10.5%**. Parameter storage decreased from
+**increased the frozen-backbone peak by 10.5%** in the original probe. This frozen
+result was subsequently traced to a retained floating parameter in the probe;
+see the correction below. Parameter storage decreased from
 about 0.559 to 0.197 GiB in both modes; that storage reduction is not proof of a
 runtime-memory reduction. The frozen-mode peak needs allocation profiling before
 choosing an optimization; this comparison alone does not identify its cause.
@@ -2220,6 +2222,41 @@ Actual HPC/desktop hardware, realistic pretrained fine-tuning, longer training,
 convergence, loading, checkpoint/resume, scheduler and distributed behavior still
 require the corresponding integrated profiles; this capacity probe does not
 certify those parts of the goal.
+
+### Correcting the frozen-head allocation comparison
+
+Allocation tracing of the 100k-class BF16 probe placed the frozen-mode peak in
+AdamW, which updates the final classification layer. A CUDA allocator snapshot
+also identified a live 512,000,000-byte allocation from the original floating
+head constructor after INT8 preparation. The probe's backbone-freezing loop
+retained its last `parameter` local after preparation replaced that parameter.
+The corrected probe releases that reference before preparation. This was a
+measurement artifact, not a required floating master weight for native training.
+GPU lifetime regressions check that replaced parameters have been released before
+optimizer construction for both flat and hierarchical heads.
+
+The corrected flat frozen run measured 2.616 GiB allocated peak versus 2.800 GiB
+for float, a 6.6% reduction, instead of the original 3.093 GiB INT8 peak. The
+hierarchical frozen pair measured 2.617 GiB INT8 versus 2.801 GiB float, also 6.6%
+lower. Each uses
+the same seed 42, 100k classes, batch 32, image size 128, three warmup and five
+measured updates, normalized symmetric EfficientNetV2-S and BF16 settings. The
+full-model comparison remained 3.819 GiB float versus 3.154 GiB INT8. Reports and
+diagnostic allocation snapshots are retained under ignored `tmp-mixed-update/`.
+CPU regression checks overlapped the corrected diagnostic runs, so these runs
+support allocation conclusions only, not new timing claims or target certification.
+
+A separate update-path improvement handles FP16/BF16 optimizer updates to FP32
+INT8 weights without materializing a floating weight matrix. It preserves the
+update dtype's multiplication rounding before FP32 addition. CUDA regressions
+compare exact codes, scales and RNG consumption across repeated updates and
+transposed inputs, and forbid dequantization during the fused update. This closes
+a Muon fallback but did not change the measured full-model or frozen peak by
+itself; it must not be credited with the probe correction's memory reduction.
+
+Static checks passed. The CPU-default regression run passed 482 tests, with 156
+skips and the known EMA expected failure. Separate intentional CUDA runs passed
+the 11 focused update/version checks and both new parameter-lifetime checks.
 
 ### Maintained image preparation reproduction
 
