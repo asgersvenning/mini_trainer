@@ -1844,3 +1844,39 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 `paired_inference.py` probes. Reports retain engine/source hashes and all timing
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
+
+### Maintained TensorRT engine reproduction
+
+`dev.benchmarks.tensorrt_build` replaces the one-off engine build/inspection probe
+with a documented command. It accepts arbitrary named execution inputs, explicit
+min/opt/max profiles, precision flags and workspace/build settings. It records
+model/external-weight/input hashes, environment, detailed layers, engine size and
+context-memory requirement, and one set of actual outputs. An optional reference
+checks exact names/shapes/dtypes and explicit numerical tolerances. Parser and
+parity failures retain failed reports and available artifacts; a fresh output
+directory is required.
+
+The command was exercised on both signed floating-bias EfficientNetV2-S QDQ
+candidates above, using batch eight, profile 1–8, size 128, workspace 1 GiB, builder
+optimization level 1, and TF32/FP16 flags disabled. All flat and hierarchical
+outputs passed comparison to the retained direct-engine outputs at rtol=1e-4,
+atol=1e-5. Inspection again shows 170 INT8 convolutions and two head GEMMs per
+engine. Reports and inspection are retained under ignored
+`tmp-trt-probe/maintained-{flat,hierarchical}/`.
+
+These checks establish reproduction and one-input execution, not new throughput,
+full-dataset quality or every-shape parity results. TensorRT can choose different
+tactics on rebuild; compare the exact engine hashes when interpreting timing
+reports. The command is generic across model/head names but explicitly rejects
+shape-tensor input profiles, host/nonlinear IO bindings and unresolved/empty
+outputs that its smoke-test buffer handling does not yet support.
+
+CPU contracts cover profile ranges, exact integer reference comparison, floating
+parity and CLI help without TensorRT/PyTorch imports. Intentional CUDA checks cover real multi-input
+engine construction, successful parity, retained mismatches, parser failure
+messages and external-weight provenance. See the
+[command and environment instructions](../dev/benchmarks/README.md#maintained-tensorrt-build-and-inspection-command).
+
+Validation passed static checks and 406 CPU-default tests (149 skips and the
+known EMA expected failure), plus all 16 focused checks in the prepared CUDA/
+TensorRT environment and both real-model reference comparisons above.

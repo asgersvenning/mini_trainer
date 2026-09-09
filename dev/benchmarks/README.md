@@ -685,3 +685,68 @@ inspection. Direct hierarchical engine construction requires registering the
 standard TensorRT plugins (`init_libnvinfer_plugins`) for scatter reductions.
 Do not copy device-specific engines between target machines. See the
 [TensorRT evidence and quality limits](../../docs/benchmarks.md#tensorrt-int8-calibration-candidate).
+
+### Maintained TensorRT build and inspection command
+
+`dev.benchmarks.tensorrt_build` builds an engine from an existing ONNX graph,
+records detailed layer inspection, executes one supplied input, and optionally
+checks its outputs against a named reference NPZ. It uses CUDA PyTorch for probe
+buffers/stream management, plus explicitly installed compatible TensorRT and ONNX;
+it never installs packages. This is a developer validation command, not a
+PyTorch dependency for the deployed TensorRT engine. Module import and `--help`
+do not load TensorRT or PyTorch.
+
+```bash
+python -m dev.benchmarks.tensorrt_build \
+    --model signed-symmetric-qdq/model.onnx --inputs preprocessed-batch.npz \
+    --profiles profiles.json --output /tmp/trt-build-1 --optimization 3
+
+# Practical floating baseline from the unquantized graph:
+python -m dev.benchmarks.tensorrt_build \
+    --model exported-float/model.onnx --inputs preprocessed-batch.npz \
+    --profiles profiles.json --output /tmp/trt-fp16-build-1 --fp16 --optimization 3
+```
+
+Every input name must occur in the profiles JSON, for example:
+
+```json
+{"images": {"min": [1, 3, 128, 128], "opt": [8, 3, 128, 128], "max": [8, 3, 128, 128]}}
+```
+
+Without `--profiles`, all min/opt/max shapes equal the supplied input shapes.
+The smoke-test input may be anywhere within an explicit profile. Fixed network
+dimensions and input dtypes must match; arrays are not implicitly cast. Profiles
+control the engine's supported input range, not a claim that every shape in that
+range has been executed or validated. No model/head allowlist is used.
+
+The default workspace limit is 1024 MiB and builder optimization level is 3;
+`--workspace-mib`, `--optimization` and `--device` are explicit controls. TF32 is
+disabled unless `--tf32` is supplied. `--fp16` allows FP16 tactics. QDQ precision
+comes from the graph; the command does not calibrate, insert QDQ or replace the
+native training quantizer. Standard TensorRT plugins are registered before parsing.
+
+A new output directory receives `model.engine`, `layers.json`, `outputs.npz` and
+`report.json`, including graph/external-weight/input hashes, SDK versions, GPU,
+settings, engine hash/size and reported context-memory requirement. Failures after
+output creation retain diagnostics, including parser errors and warning/error
+messages. An existing directory is never overwritten. A built engine or smaller
+file does not certify integer execution, speed, total GPU-memory reduction or
+acceptable model quality; inspect layer types/tactics and run the separate studies.
+
+Optional `--reference expected-outputs.npz` requires exact output names, shapes
+and dtypes. Floating parity defaults to `--rtol 1e-4 --atol 1e-5`; integer/bool
+outputs compare exactly. Failed parity retains the engine, actual outputs and
+comparison report. Absence of a reference is recorded and means parity was not
+checked. A single input does not replace full dataset evaluation with mini_metrics.
+
+The probe currently supports ordinary execution inputs and linear device IO.
+Shape-tensor input profiles, host/nonlinear IO bindings, unresolved data-dependent
+output dimensions and empty outputs fail explicitly. These are probe limitations,
+not blanket limitations of ONNX or TensorRT. Engines must be rebuilt and tested
+for their actual destination device/software environment.
+
+CPU profile/reference contracts run in the normal suite. In the prepared GPU
+environment, set `CUDA_VISIBLE_DEVICES` and `RUN_CUDA_TESTS=1`, then run
+`bash dev/check.sh test tests/test_benchmark_tensorrt.py` to include real engine
+construction, successful reference matching, retained mismatches and parser
+failure diagnostics.
