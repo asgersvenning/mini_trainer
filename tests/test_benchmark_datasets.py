@@ -1,3 +1,4 @@
+import csv
 import json
 import shutil
 from pathlib import Path
@@ -257,6 +258,10 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path, monkeyp
                 captured.clear()
     finally:
         torch.set_num_threads(previous_threads)
+    with (tmp_path / "hierarchical/training/logs/summary.csv").open() as stream:
+        summaries = list(csv.DictReader(stream))
+    assert [row["type"] for row in summaries] == ["train", "eval"]
+    assert all(float(row[level_loss]) > 0 for row in summaries for level_loss in ("loss/lvl0", "loss/lvl1"))
     flat, hierarchical = reports
     assert flat["dataset_manifest_sha256"] == hierarchical["dataset_manifest_sha256"]
     assert flat["class_mapping"] == spec["cls2idx"]["0"]

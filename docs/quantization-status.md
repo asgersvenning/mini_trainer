@@ -58,6 +58,24 @@ recommending the five-epoch recipe for its 3.4% full-training memory saving.
 Longer matched-quality budgets and investigation of hierarchical optimization
 sensitivity remain necessary. All final checkpoint step checks passed.
 
+A subsequent harness audit found that all statistic loggers were disabled. The
+historical epoch-summary CSVs therefore contain zeros and cannot reveal training
+curves; historical `best.pt` selection also used a constant validation statistic.
+The five-metric results above use independent predictions from `last.pt`, so this
+does not explain their quality differences. The runner now retains its default
+metric logger to support real convergence diagnostics. New timing comparisons
+must include this overhead in both baselines; see the
+[epoch-statistics contract](../dev/benchmarks/README.md#epoch-statistics-for-convergence-comparisons).
+The correction passed static checks and the full CPU-default suite: 503 passed,
+160 skipped and one known EMA expected failure. Focused tests verify all epoch
+rows, positive finite losses, oracle accuracy and both hierarchical loss levels.
+A one-epoch pretrained hierarchical BF16/native INT8 fine-tuning run also completed
+on CUDA, reloaded its checkpoint and recorded actual statistics at both levels.
+Its artifacts are in ignored `tmp-epoch-logger-int8/`; CPU checks overlapped, so
+its timings are excluded from performance claims. This restores the prerequisite
+for a longer convergence study; it does not supply the missing historical curves.
+
+
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.
 Ordinary optimizer compilation improves both precisions' local update times and

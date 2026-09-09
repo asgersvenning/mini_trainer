@@ -209,7 +209,7 @@ def run(
         criterion_builder_kwargs={"label_smoothing": 0.0},
         regularizer_builder_kwargs={"strength": 0.0},
         lr_schedule_builder_kwargs={"warmup_epochs": 0.0},
-        logger_builder_kwargs={"logger_cls": [], "measurement_device": device},
+        logger_builder_kwargs={"measurement_device": device},
     )
     if target_device.type == "cuda":
         torch.cuda.synchronize(target_device)

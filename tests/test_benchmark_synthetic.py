@@ -1,3 +1,5 @@
+import csv
+
 import numpy as np
 from PIL import Image
 
@@ -37,6 +39,14 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
     assert all(phase["seconds"] >= 0 and phase["peak_cuda_allocated_bytes"] is None for phase in first["phase_measurements"])
     assert first["peak_cuda_allocated_bytes"] is None
     assert first["test_accuracy"] == second["test_accuracy"] == 1.0
+    for name in ("first", "second"):
+        with (tmp_path / name / "training/logs/summary.csv").open() as stream:
+            summaries = list(csv.DictReader(stream))
+        assert [(int(row["epoch"]), row["type"]) for row in summaries] == [
+            (epoch, phase) for epoch in range(12) for phase in ("train", "eval")
+        ]
+        assert all(np.isfinite(float(row["loss"])) and float(row["loss"]) > 0 for row in summaries)
+        assert float(summaries[-1]["acc1"]) == 100.0
     assert first["dataset_manifest_sha256"] == second["dataset_manifest_sha256"]
     with np.load(tmp_path / "first/predictions.npz") as a, np.load(tmp_path / "second/predictions.npz") as b:
         np.testing.assert_array_equal(a["scores"], b["scores"])

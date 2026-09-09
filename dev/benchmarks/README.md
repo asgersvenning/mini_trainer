@@ -1441,3 +1441,21 @@ This is a saved-prediction quality comparison. It does not establish runtime
 performance, checkpoint-to-score parity, source-image integrity beyond the
 recorded hashes, or production acceptance. Preserve the evaluator's report and
 CSV/manifest bundle alongside the original training reports for continuous runs.
+
+### Epoch statistics for convergence comparisons
+
+The dataset runner retains the existing `MetricLogger` so
+`training/logs/summary.csv` records actual train/validation statistics for every
+epoch, including per-level hierarchical losses and accuracies. These are the
+logger's unweighted means of batch statistics, not the held-out mini_metrics
+Macro-F1/Recall/Precision/Coverage/Theil's U results. Use the paired prediction
+adapter and quality evaluator for those metrics.
+
+Earlier runs through `aaa90a1` passed `logger_cls=[]`: their CSV statistics are
+zero placeholders and cannot support convergence claims, and their `best.pt`
+selection saw a constant validation statistic. The dataset runner explicitly
+reloads `last.pt` for held-out predictions, so those independently calculated
+quality results and the recorded timing/memory measurements remain valid within
+their stated scope. Do not treat the historical `best.pt` files as validated
+best-epoch choices. Restoring statistics changes logging overhead; rerun both
+precisions together before comparing new timing results with one another.
