@@ -1960,6 +1960,81 @@ Validation: `bash dev/check.sh all` passed static checks and 473 tests, with
 suite passed 12 tests with one optional CUDA skip. The real TensorRT replays
 were separate intentional GPU runs; ordinary CPU checks do not establish GPU support.
 
+### Isolated Linux CPU memory and inference study
+
+`dev.benchmarks.onnx_cpu_memory` measures one CPU model per fresh Linux interpreter,
+with no profiling session or other model loaded. It records session load, first
+inference, all warm timings, and resident-memory snapshots before/after runtime
+import, input loading, session creation, first inference, warmup and measurement.
+The [command guide](../dev/benchmarks/README.md#single-process-onnx-cpu-memory-probe)
+defines the memory accounting and target handoff procedure.
+
+A regression exposed inherited `ru_maxrss`: after a parent allocated 150 MiB,
+its fresh child reported 167,700 KiB through `getrusage`, while `/proc/self/status`
+reported a 13,404 KiB VmHWM for the child's new address space. The probe therefore
+uses `smaps_rollup` RSS/PSS snapshots and approximate post-exec VmHWM, rather than
+attributing a parent's earlier peak to model inference. It records memory before
+ONNX graph provenance inspection and output serialization. Interpreter, runtime,
+inputs/outputs and finite-value checks remain part of the measured process.
+
+The paired quality runner separately evaluated the materialized floating ONNX
+and signed calibrated QDQ models from the native-checkpoint study on all 912
+Blair validation images, using ONNX Runtime CPU. These are CPU runtime results,
+not reused TensorRT predictions. The five mini_metrics results are:
+
+| Head / stage | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / float | 0.770778 | 0.762868 | 0.796316 | 1.000000 | 0.810397 |
+| Flat / INT8 | 0.764407 | 0.756174 | 0.786411 | 1.000000 | 0.802939 |
+| Hierarchical leaf / float | 0.735466 | 0.725632 | 0.801459 | 1.000000 | 0.791476 |
+| Hierarchical leaf / INT8 | 0.738374 | 0.732758 | 0.774078 | 1.000000 | 0.795192 |
+| Hierarchical parent / float | 0.870255 | 0.847898 | 0.915910 | 1.000000 | 0.859540 |
+| Hierarchical parent / INT8 | 0.869179 | 0.848718 | 0.914401 | 1.000000 | 0.858741 |
+
+Flat F1 decreases 0.637 percentage points; hierarchical leaf F1 increases 0.291
+points while precision decreases 2.738 points. Parent F1 decreases 0.108 points.
+The candidate changes 67 flat, 55 leaf and 16 parent predictions. Calibration
+remains training-only; validation thresholds are fixed at zero without tuning.
+Local quality artifacts are `tmp-edge-quality-{flat,hierarchical}/`.
+
+After all regression and quality processes finished, three fresh-process trials
+per model used batch one, 128px inputs, one intra-op/inter-op thread, three warmup
+runs and 31 measured runs. Float/INT8 order was reversed in the middle trial.
+The machine was the local i7-12800H x86 WSL environment, ONNX Runtime 1.29; CPU
+affinity remained 0–19, rather than a pinned core. Session construction and first
+inference were recorded separately. No filesystem-cache eviction, thermal
+control or ARM emulation was performed.
+
+| Head / model | Warm median ms, trials 1/2/3 | Final RSS MiB, trials 1/2/3 | Approximate peak RSS MiB, trials 1/2/3 |
+| --- | --- | --- | --- |
+| Flat / float | 29.277 / 26.685 / 26.726 | 192.270 / 196.605 / 192.512 | 193.691 / 198.086 / 193.980 |
+| Flat / INT8 | 42.963 / 42.599 / 44.455 | 104.992 / 106.230 / 105.867 | 104.812 / 106.117 / 105.668 |
+| Hierarchical / float | 27.914 / 38.539 / 27.565 | 193.785 / 190.727 / 192.156 | 195.164 / 192.207 / 193.547 |
+| Hierarchical / INT8 | 45.976 / 40.411 / 45.793 | 105.406 / 105.633 / 105.980 | 105.359 / 105.395 / 105.926 |
+
+INT8 final resident memory was 44.6–46.0% lower across these pairs. Warm median
+latency was higher in all pairs: candidate/baseline ratios 1.468/1.596/1.663 for
+flat and 1.647/1.049/1.661 for hierarchical. These are separate-process median
+ratios, not adjacent per-inference paired ratios. Reported swap was zero. The
+approximate status high-water counter can be slightly below the more precise
+smaps snapshot; retain both sources rather than treating them as identical
+accounting. This demonstrates local process-memory savings, not a speed gain or
+an ARM production result.
+
+Separate post-measurement profiling found **63 QLinearConv and two QGemm**
+operations, with **107 floating Conv** operations, on CPU for each candidate.
+The same signed QDQ/floating-bias recipe executed 170 integer convolutions under
+TensorRT; its CPU execution is hybrid. A CPU-specific calibration/fusion study
+is therefore the next useful step before target ARM qualification, rather than
+assuming that the TensorRT recipe is also the best edge recipe.
+
+`tmp-edge-process-probe/` retains the trial driver, all raw timings/memory reports,
+output arrays, batch-one input provenance and separate placement profiles. No
+models or source datasets were duplicated. All 13 focused ONNX benchmark tests
+passed; `bash dev/check.sh all` passed static checks and 476 tests, with 152 skips
+and one known EMA expected failure. Hardware-specific validation, sustained-load
+thermal behavior and end-to-end preprocessing costs remain unverified.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ

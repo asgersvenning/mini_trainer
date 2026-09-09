@@ -1187,3 +1187,52 @@ engine builds, integer-placement inspection and paired performance measurement
 remain separate maintained commands. In particular, collector process duration
 is not a latency benchmark. Run the ONNX recipe on the actual ARM device and the
 TensorRT recipe on the intended GPU before making target support claims.
+
+### Single-process ONNX CPU memory probe
+
+Use `dev.benchmarks.onnx_cpu_memory` on Linux, including the intended ARM device,
+with **one model in each fresh interpreter process**. It measures a CPU-only,
+unprofiled session; it does not import PyTorch or `mini_trainer`. NumPy, ONNX and
+ONNX Runtime must already be installed for that architecture.
+
+```bash
+.venv/bin/python -m dev.benchmarks.onnx_cpu_memory \
+  --model float/model.onnx --inputs batch-one.npz --output cpu-float-trial-1 \
+  --threads 1 --warmup 3 --repeats 31
+.venv/bin/python -m dev.benchmarks.onnx_cpu_memory \
+  --model int8/model.onnx --inputs batch-one.npz --output cpu-int8-trial-1 \
+  --threads 1 --warmup 3 --repeats 31
+```
+
+Repeat in new processes and new directories at least three times, reversing the
+baseline/candidate order on alternate trials. Keep input hashes, thread counts,
+CPU affinity and runtime settings matched. Run timing trials without competing
+benchmarks. A fresh process does not imply cold filesystem caches; the command
+neither evicts caches nor changes the machine's CPU governor, affinity or cooling.
+For sustained edge claims, also run longer trials and record target power/cooling
+conditions and throttling. The current command does not collect thermal telemetry.
+
+Reports retain all warm timing samples, session-construction and first-inference
+times, effective providers, CPU affinity, runtime versions/build, source/input
+hashes and named output arrays. Memory snapshots cover runtime import, input
+loading, session creation, first inference, warmup and the final measurement.
+`resident_bytes` and `proportional_resident_bytes` use Linux `smaps_rollup` RSS/PSS;
+`peak_resident_bytes` uses the approximate `status` VmHWM high-water mark since
+exec. Shared mapped pages contribute fully to RSS and proportionally to PSS.
+See the [kernel proc documentation](https://docs.kernel.org/filesystems/proc.html)
+for these accounting distinctions and the accuracy limits of status counters.
+
+The peak includes interpreter/import/input/output and validation allocations. It
+is not a model-only allocation count, and subtracting two lifetime peaks does not
+isolate model memory. `ru_maxrss` is deliberately not used: a local regression
+showed that it retained a parent's pre-exec high-water mark in a fresh child,
+while VmHWM described the child's new address space. Snapshot reads are outside
+the inference timing intervals. ONNX provenance inspection and output serialization
+happen after the last memory snapshot to avoid inflating the reported peak with
+large inline graph tensors or archive-writing buffers.
+
+An existing output directory is rejected; execution failures retain partial
+reports. `measured` is not deployment acceptance. Pair results with the maintained
+quality evaluator and separate operator-placement probe. Timing excludes image IO
+and preprocessing; CPU/x86 measurements do not establish ARM kernels, memory,
+quality or speed, and this probe does not measure GPU memory.

@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -110,3 +112,64 @@ def test_advertised_provider_with_only_cpu_execution_fails(model_and_inputs, tmp
     assert report["status"] == "failed"
     assert all(e["provider"] == "CPUExecutionProvider" for e in report["models"][0]["execution"])
     assert report["models"][0]["seconds"] == []
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux resident-memory probe")
+@pytest.mark.parametrize("invalid", [False, True])
+def test_isolated_cpu_memory_probe_records_measurement_or_failure(model_and_inputs, tmp_path, invalid):
+    model, inputs = model_and_inputs
+    if invalid:
+        np.savez(inputs, wrong=np.ones((2, 2), dtype=np.float32))
+    output = tmp_path / "memory"
+    command = [
+        sys.executable,
+        "-m",
+        "dev.benchmarks.onnx_cpu_memory",
+        "--model",
+        str(model),
+        "--inputs",
+        str(inputs),
+        "--output",
+        str(output),
+        "--warmup",
+        "1",
+        "--repeats",
+        "2",
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    report = json.loads((output / "report.json").read_text())
+    if invalid:
+        assert result.returncode != 0 and report["status"] == "failed"
+        assert "Input names" in report["error"]
+        assert "median_seconds" not in report and not (output / "outputs.npz").exists()
+        return
+    assert result.returncode == 0, result.stderr
+    assert report["status"] == "measured"
+    assert report["session_providers"] == ["CPUExecutionProvider"]
+    assert report["session_load_seconds"] > 0 and report["first_run_seconds"] > 0
+    assert len(report["seconds"]) == 2 and report["median_seconds"] > 0
+    assert len(report["model_files"]) == 2
+    snapshots = list(report["memory"].values())
+    assert len(snapshots) == 7
+    assert all(s["resident_bytes"] > 0 and s["peak_resident_bytes"] > 0 and s["swap_bytes"] >= 0 for s in snapshots)
+    peaks = [s["peak_resident_bytes"] for s in snapshots]
+    assert peaks == sorted(peaks)
+    assert report["environment"]["cpu_affinity"]
+    with np.load(output / "outputs.npz") as actual, np.load(inputs) as expected:
+        np.testing.assert_array_equal(actual["scores"], expected["images"])
+    assert not list(output.glob("*profile*"))
+    original_report = (output / "report.json").read_bytes()
+    assert subprocess.run(command, capture_output=True, check=False).returncode != 0
+    assert (output / "report.json").read_bytes() == original_report
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux resident-memory probe")
+def test_memory_peak_excludes_parent_pre_exec_allocations():
+    child = (
+        "import json, resource; from dev.benchmarks.onnx_cpu_memory import resident_memory; "
+        "print(json.dumps({'memory': resident_memory(), 'rusage': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024}))"
+    )
+    parent = f"import subprocess, sys; retained = bytearray(128 * 1024**2); subprocess.run([sys.executable, '-c', {child!r}], check=True)"
+    result = subprocess.run([sys.executable, "-c", parent], capture_output=True, text=True, check=True)
+    report = json.loads(result.stdout)
+    assert report["memory"]["peak_resident_bytes"] < report["rusage"] - 64 * 1024**2
