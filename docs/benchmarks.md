@@ -3442,3 +3442,52 @@ The ONNX/checkpoint hashes remain those of the preceding 100,000-class study.
 These bounded local results support moving to reproducible target-runner and
 joint-quality qualification rather than claiming laptop speed gains or extending
 the sweep to a million classes.
+
+### Composed TensorRT deployment evaluation
+
+`dev.benchmarks.tensorrt_deployment` joins the existing TensorRT held-out collector
+and paired `mini_metrics` evaluator with build-bound inspection, fresh-process
+adjacent paired latency and single-engine memory snapshots. It accepts two
+maintained build bundles and arbitrary declared output levels; it has no
+backbone/head allowlist. Engine and inspection hashes must agree with each
+successful build report. The consumed engine, manifest and ordered batch
+identities are checked through quality collection, and resource stages must
+consume the same engine bytes and declared timing inputs. Reports retain
+runtime/environment identity, all five metric deltas, undefined values, stage
+commands, logs and hashes. Failures preserve the available evidence.
+
+The [command documentation](../dev/benchmarks/README.md#composed-tensorrt-deployment-evaluation)
+provides the target-runner invocation. `summary.md` presents quality and resource
+readings together, but `status=evaluated` is not an automatic production gate.
+Build bundles and original manifests/arrays must be retained for reproduction;
+this command does not install runtimes or copy source engines/datasets. Remote
+runner orchestration and durable publication remain separate work.
+
+Real smoke runs used the previously trained native INT8 Blair checkpoints'
+materialized FP16 and calibrated INT8 TensorRT engines, both flat and
+hierarchical, with all 912 held-out images. Each composed run completed quality,
+one paired timing process and two isolated memory processes. The smoke settings
+were one warmup, three paired samples and two memory executions. CPU correctness
+tests overlapped, so **these resource readings are excluded from performance
+claims**. Both build/inspection and cross-stage identity checks passed, with no
+undefined quality metrics.
+
+| Head / level | Macro-F1 delta pp | Macro-Recall delta pp | Macro-Precision delta pp | Coverage delta pp | Theil U delta ×100 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat leaf | -0.3030 | -0.2660 | -0.7119 | 0 | -0.6427 |
+| Hierarchical leaf | +0.4091 | +0.8540 | -2.2414 | 0 | +0.1912 |
+| Hierarchical parent | -0.1056 | +0.1340 | -0.3391 | 0 | -0.4782 |
+
+Deltas are candidate minus baseline. All predicted labels match the retained
+previous collection. Three of the four prediction CSVs are byte-identical;
+the hierarchical baseline differs only in two confidence values, by at most
+4.278e-12. No universal bitwise floating-output promise follows. These verify
+composition using existing trained artifacts, not new training improvements.
+Reports, full collector/metric outputs, commands and smoke resource outputs remain
+under ignored `tmp-composed-trt-{flat,hierarchical}-smoke/`.
+
+Validation passed static checks, all eight focused orchestration tests, and the
+full CPU-default suite: 521 passed, 162 skipped and the known EMA expected failure.
+The two real GPU smoke runs above additionally exercised full held-out collection,
+separate `mini_metrics` evaluation, paired latency and fresh-process memory stages.
+No new production performance claim accompanies this harness milestone.

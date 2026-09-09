@@ -1555,3 +1555,55 @@ These snapshots do **not** measure total transient GPU allocation peaks. Importi
 PyTorch for CUDA/IO management also affects this process's footprint. Use paired
 latency and full `mini_metrics` quality evaluation separately before accepting a
 memory/quality trade-off. CPU/WSL evidence does not establish target GPU results.
+
+### Composed TensorRT deployment evaluation
+
+`dev.benchmarks.tensorrt_deployment` joins the maintained held-out collector and
+`mini_metrics` comparison with build inspection, fresh-process paired latency and
+isolated single-engine memory trials. Prepare the two engines on the intended
+hardware with `dev.benchmarks.tensorrt_build`, then supply its **build directories**
+containing `model.engine`, `report.json`, and `layers.json`:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 python -m dev.benchmarks.tensorrt_deployment \
+  --baseline-build results/fp16 --candidate-build results/int8 \
+  --manifest heldout/manifest.json --inputs heldout/batch-00000.npz \
+  --output results/deployment-comparison \
+  --metrics-python /path/to/metrics-environment/bin/python \
+  --trials 3 --warmup 10 --repeats 31 --memory-runs 20 --threads 1
+```
+
+The active interpreter must have explicitly prepared TensorRT/CUDA dependencies;
+the separate metrics interpreter must provide `mini_metrics`. Nothing is
+installed or synchronized. The collector manifest declares preprocessing,
+held-out sample identities, class order, output names and score semantics. Use
+representative preprocessed timing inputs with shapes inside both engines'
+profiles. Any number of declared classification levels is supported by the
+existing collector contract; there is no backbone/head name allowlist.
+
+Each build's engine and layer-inspection hashes must match its successful build
+report. Quality collection runs first in fresh processes, followed by all five
+metrics. Engine bytes, manifest bytes, ordered consumed batches and runtime
+identity must agree before resource measurement begins. Each resource trial runs
+adjacent paired latency in a new process, then one fresh memory process per
+engine; trial order alternates. Resource input and engine hashes are checked
+against the declared artifacts. `--device` and optional `--pinned` apply to both
+resource runners. Memory uses the same NPZ inputs as timing and profile zero.
+
+Retain the entire output directory: it contains stage commands/logs, report
+hashes, canonical prediction CSVs, quality deltas and undefined metrics, raw
+paired timings, memory stages, and `summary.md`. Keep the source build bundles
+and input manifests/arrays with those artifacts for reproduction; the comparison
+does not copy the source engines or datasets. Failed stages return nonzero and
+retain the available reports instead of continuing into a misleading comparison.
+The CLI summary can be included in a CI job summary and the directory uploaded
+as an artifact; remote GPU orchestration and durable publication are separate.
+
+`status=evaluated` means the protocol completed, **not** that the candidate passed
+a production quality/resource threshold. Read the metric deltas and undefined
+values together with measured benefit. The inspection inventory does not itself
+prove a speedup or complete integer coverage. Host latency excludes preprocessing
+and loading, and both engines coexist during timing. Memory comes from separate
+processes; device-wide snapshots are not per-process or transient peak readings.
+Use quiescent target hardware and record deployment conditions before making
+HPC, desktop/Spark or edge acceptance claims.
