@@ -39,14 +39,14 @@ def evaluate(
         (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 
     def child(name, module, arguments, expected):
-        command = [sys.executable, "-m", f"dev.benchmarks.{module}", *map(str, arguments), "--output", str(output / name)]
+        command = [sys.executable, "-m", f"dev.benchmarks.inference.{module}", *map(str, arguments), "--output", str(output / name)]
         stage = {"name": name, "command": command, "status": "running", "log": f"{name}.log"}
         report["stages"].append(stage)
         save()
         with (output / stage["log"]).open("w") as log:
             process = subprocess.run(
                 command,
-                cwd=Path(__file__).resolve().parents[2],
+                cwd=Path(__file__).resolve().parents[3],
                 env={**os.environ, "PYTHONHASHSEED": "0"},
                 stdout=log,
                 stderr=subprocess.STDOUT,

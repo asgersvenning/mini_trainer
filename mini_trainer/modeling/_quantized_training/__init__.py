@@ -11,9 +11,9 @@ from torch._subclasses.fake_tensor import is_fake
 from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
 
-from ._quantized_matmul import scaled_int8_mm as _native_scaled_int8_mm
-from ._quantized_normalization import int8_weight_norm_backward
-from ._quantized_update import quantize_int8_rows, update_int8_rows_
+from .matmul import scaled_int8_mm as _native_scaled_int8_mm
+from .normalization import int8_weight_norm_backward
+from .update import quantize_int8_rows, update_int8_rows_
 
 # Limit rowwise preparation temporaries without changing rounding or row scales.
 _PREPARATION_CHUNK_ELEMENTS = 4 * 1024 * 1024
@@ -23,10 +23,7 @@ _PREPARATION_CHUNK_ELEMENTS = 4 * 1024 * 1024
 # backward math or operator decomposition cannot reuse an earlier graph.
 # Compute once when importing.
 _IMPLEMENTATION_HASH = hashlib.sha256(
-    b"".join(
-        Path(__file__).with_name(name).read_bytes()
-        for name in ("_quantized_training.py", "_quantized_matmul.py", "_quantized_update.py", "_quantized_normalization.py")
-    )
+    b"".join(Path(__file__).with_name(name).read_bytes() for name in ("__init__.py", "matmul.py", "update.py", "normalization.py"))
 ).hexdigest()
 
 

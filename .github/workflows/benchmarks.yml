@@ -49,7 +49,7 @@ jobs:
         run: bash dev/check-benchmarks.sh cpu benchmark-results
       - name: Visible run summary
         if: always()
-        run: python3 -m dev.benchmarks.summarize benchmark-results >> "$GITHUB_STEP_SUMMARY"
+        run: python3 -m dev.benchmarks.reporting.summarize benchmark-results >> "$GITHUB_STEP_SUMMARY"
       - name: Retain reports and reproduction artifacts
         if: always()
         uses: actions/upload-artifact@v7
@@ -115,14 +115,14 @@ jobs:
       - name: Visible run summaries
         if: always()
         run: |
-          python3 -m dev.benchmarks.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
+          python3 -m dev.benchmarks.reporting.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
           for qt_results in benchmark-qt benchmark-qt-real benchmark-qt-dense benchmark-qt-large-batch benchmark-qt-cudagraphs benchmark-qt-optimizer-cudagraphs; do
             if [[ -d "$qt_results" ]]; then
-              python3 -m dev.benchmarks.summarize "$qt_results" >> "$GITHUB_STEP_SUMMARY"
+              python3 -m dev.benchmarks.reporting.summarize "$qt_results" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
           if [[ -d benchmark-real ]]; then
-            python3 -m dev.benchmarks.summarize benchmark-real >> "$GITHUB_STEP_SUMMARY"
+            python3 -m dev.benchmarks.reporting.summarize benchmark-real >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Retain reports, failures and reproduction artifacts
         if: always()

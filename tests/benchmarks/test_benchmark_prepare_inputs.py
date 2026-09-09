@@ -6,8 +6,8 @@ import pytest
 import torch
 from PIL import Image
 
-from dev.benchmarks.onnx_inference import file_hash
-from dev.benchmarks.prepare_inputs import ordered_classes, prepare, repository_preprocess, seeded, select_records
+from dev.benchmarks.inference.onnx_inference import file_hash
+from dev.benchmarks.inference.prepare_inputs import ordered_classes, prepare, repository_preprocess, seeded, select_records
 
 
 def identity_factory(metadata):
@@ -130,3 +130,9 @@ def test_rng_context_is_repeatable_and_restores_callers():
     assert random.getstate() == python_state
     np.testing.assert_array_equal(np.random.get_state()[1], numpy_state[1])
     assert torch.equal(torch.random.get_rng_state(), torch_state)
+
+
+def test_historical_preprocessing_factory_remains_importable():
+    from dev.benchmarks.prepare_inputs import repository_preprocess as historical_factory
+
+    assert historical_factory is repository_preprocess

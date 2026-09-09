@@ -1,6 +1,6 @@
 import pytest
 
-from dev.benchmarks.large_head_training import run
+from dev.benchmarks.training.large_head_training import run
 
 
 @pytest.mark.parametrize("hierarchical", [False, True])
@@ -44,7 +44,7 @@ def test_cuda_frozen_probe_releases_replaced_float_parameters(tmp_path, monkeypa
 
     import torch
 
-    from dev.benchmarks import large_head_training as probe
+    from dev.benchmarks.training import large_head_training as probe
 
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 to verify frozen INT8 parameter lifetime")

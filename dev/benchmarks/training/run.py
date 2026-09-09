@@ -15,6 +15,9 @@ import matplotlib
 import numpy as np
 import torch
 
+from dev.benchmarks.data.datasets import prepare_real
+from dev.benchmarks.data.synthetic import generate
+from dev.benchmarks.models import NoAugmentationBuilder
 from mini_trainer.data import get_inference_dataloader
 from mini_trainer.hierarchical.integration import HierarchicalBuilder
 from mini_trainer.hierarchical.model import HierarchicalClassifier
@@ -23,10 +26,7 @@ from mini_trainer.train import main as train
 from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
 
-from .datasets import prepare_real
-from .models import NoAugmentationBuilder
 from .performance import BenchmarkLogger
-from .synthetic import generate
 
 
 class BenchmarkBuilder(NoAugmentationBuilder):
@@ -113,12 +113,12 @@ def run(
             raise RuntimeError("The selected CUDA device does not support bfloat16.")
         torch.cuda.synchronize(target_device)
         torch.cuda.reset_peak_memory_stats(target_device)
-    repository = Path(__file__).resolve().parents[2]
+    repository = Path(__file__).resolve().parents[3]
     revision = (
         subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=False).stdout.strip() or None
     )
     code_digest = hashlib.sha256()
-    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted(Path(__file__).parent.glob("*.py")):
+    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted((repository / "dev/benchmarks").rglob("*.py")):
         code_digest.update(str(source.relative_to(repository)).encode())
         code_digest.update(source.read_bytes())
     output = Path(output).absolute()

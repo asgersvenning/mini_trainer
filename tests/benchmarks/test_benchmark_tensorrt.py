@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pytest
 
-from dev.benchmarks.tensorrt_build import build, compare_outputs, input_profiles
+from dev.benchmarks.inference.tensorrt_build import build, compare_outputs, input_profiles
 
 
 def test_profiles_preserve_named_shapes_and_allow_sample_away_from_optimum():
@@ -66,7 +66,7 @@ def test_help_does_not_import_tensorrt_or_torch():
 import runpy, sys
 sys.argv = ['tensorrt_build', '--help']
 try:
-    runpy.run_module('dev.benchmarks.tensorrt_build', run_name='__main__')
+    runpy.run_module('dev.benchmarks.inference.tensorrt_build', run_name='__main__')
 except SystemExit as error:
     assert error.code == 0
 assert 'tensorrt' not in sys.modules

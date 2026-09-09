@@ -113,7 +113,7 @@ jobs:
           HISTORY_REPOSITORY: ${{ github.repository }}
         run: |
           command -v gh
-          python -m dev.benchmarks.release_history \
+          python -m dev.benchmarks.reporting.release_history \
             --repository "$HISTORY_REPOSITORY" --records incoming-history/records \
             --output published-history --upload
       - name: Prepare the public history page

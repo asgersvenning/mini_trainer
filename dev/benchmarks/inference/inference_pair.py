@@ -30,7 +30,7 @@ def run_pair(manifest, baseline, candidate, output, baseline_runtime=None, candi
         command = [
             python,
             "-m",
-            "dev.benchmarks.dataset_inference",
+            "dev.benchmarks.inference.dataset_inference",
             "--model",
             str(model),
             "--manifest",
@@ -55,7 +55,7 @@ def run_pair(manifest, baseline, candidate, output, baseline_runtime=None, candi
             [
                 str(Path(metrics_python).absolute()),
                 "-m",
-                "dev.benchmarks.quality_compare",
+                "dev.benchmarks.inference.quality_compare",
                 "--manifest",
                 str(output / "candidate/comparison.json"),
                 "--output",
@@ -87,7 +87,7 @@ def run_pair(manifest, baseline, candidate, output, baseline_runtime=None, candi
             with (output / stage["log"]).open("w") as log:
                 result = subprocess.run(
                     command,
-                    cwd=Path(__file__).resolve().parents[2],
+                    cwd=Path(__file__).resolve().parents[3],
                     env={**os.environ, "PYTHONHASHSEED": "0"},
                     stdout=log,
                     stderr=subprocess.STDOUT,

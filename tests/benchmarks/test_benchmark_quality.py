@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from dev.benchmarks.quality_compare import COLUMNS, METRICS, compare, read_manifest, read_predictions
+from dev.benchmarks.inference.quality_compare import COLUMNS, METRICS, compare, read_manifest, read_predictions
 
 
 @pytest.fixture

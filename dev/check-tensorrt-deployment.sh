@@ -28,14 +28,14 @@ for role in baseline candidate; do
     phase="build-$role"
     model="$TRT_BASELINE_MODEL"
     if [[ "$role" == candidate ]]; then model="$TRT_CANDIDATE_MODEL"; fi
-    "$BENCHMARK_PYTHON" -m dev.benchmarks.tensorrt_build \
+    "$BENCHMARK_PYTHON" -m dev.benchmarks.inference.tensorrt_build \
         --model "$model" --inputs "$TRT_INPUTS" --profiles "$TRT_PROFILES" \
         --output "$results/$role" --fp16 --device "${BENCHMARK_DEVICE:-0}" \
         --optimization "${TRT_OPTIMIZATION:-1}" --workspace-mib "${TRT_WORKSPACE_MIB:-1024}" \
         > "$results/build-$role.log" 2>&1
 done
 phase=evaluation
-"$BENCHMARK_PYTHON" -m dev.benchmarks.tensorrt_deployment \
+"$BENCHMARK_PYTHON" -m dev.benchmarks.inference.tensorrt_deployment \
     --baseline-build "$results/baseline" --candidate-build "$results/candidate" \
     --manifest "$TRT_INFERENCE_MANIFEST" --inputs "$TRT_INPUTS" --output "$results/evaluation" \
     --metrics-python "$BENCHMARK_METRICS_PYTHON" --threads "$OMP_NUM_THREADS" \

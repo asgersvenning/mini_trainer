@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pytest
 
-from dev.benchmarks.tensorrt_pair import benchmark, paired_trials, summarize
+from dev.benchmarks.inference.tensorrt_pair import benchmark, paired_trials, summarize
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -56,7 +56,7 @@ def test_help_does_not_load_gpu_libraries():
 import runpy, sys
 sys.argv = ['tensorrt_pair', '--help']
 try:
-    runpy.run_module('dev.benchmarks.tensorrt_pair', run_name='__main__')
+    runpy.run_module('dev.benchmarks.inference.tensorrt_pair', run_name='__main__')
 except SystemExit as error:
     assert error.code == 0
 assert 'tensorrt' not in sys.modules and 'torch' not in sys.modules
@@ -73,7 +73,7 @@ def test_real_engine_pair_preserves_named_outputs_and_failures(tmp_path, pinned)
 
     assert torch.cuda.is_available(), "CUDA requested but unavailable"
     onnx = pytest.importorskip("onnx")
-    from dev.benchmarks.tensorrt_build import build
+    from dev.benchmarks.inference.tensorrt_build import build
 
     graph = onnx.helper.make_graph(
         [onnx.helper.make_node("Add", ["x", "offset"], ["scores"])],

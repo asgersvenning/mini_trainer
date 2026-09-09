@@ -3,7 +3,7 @@ import csv
 import numpy as np
 from PIL import Image
 
-from dev.benchmarks.synthetic import generate, oracle
+from dev.benchmarks.data.synthetic import generate, oracle
 
 
 def test_synthetic_reproducibility_and_oracle(tmp_path):
@@ -24,7 +24,7 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
 
     import torch
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
 
     threads = torch.get_num_threads()
     try:
@@ -60,7 +60,7 @@ def test_requested_gpu_profile_does_not_fall_back_to_cpu(tmp_path, monkeypatch):
     import pytest
     import torch
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     with pytest.raises(RuntimeError, match="no accessible CUDA device"):
@@ -75,7 +75,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     import pytest
     import torch
 
-    from dev.benchmarks.run import main
+    from dev.benchmarks.training.run import main
 
     monkeypatch.setattr(
         sys,
@@ -112,7 +112,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
 def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
     import pytest
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
 
     with pytest.raises(ValueError, match="require CUDA"):
         run(tmp_path / "qt", quantized_training=True)
@@ -122,7 +122,7 @@ def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
 def test_compile_mode_requires_compilation_before_creating_outputs(tmp_path):
     import pytest
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
     from mini_trainer.train import main
     from mini_trainer.training.compilation import model_compile_options
 
@@ -139,7 +139,7 @@ def test_compile_mode_requires_compilation_before_creating_outputs(tmp_path):
 def test_optimizer_graphs_require_compilation_before_output(tmp_path):
     import pytest
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
     from mini_trainer.train import main
 
     with pytest.raises(ValueError, match="requires compile_optimizer=True"):
@@ -152,7 +152,7 @@ def test_optimizer_graphs_require_compilation_before_output(tmp_path):
 def test_optimizer_graphs_reject_cpu_before_output(tmp_path):
     import pytest
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
     from mini_trainer.train import main
 
     with pytest.raises(ValueError, match="require CUDA"):

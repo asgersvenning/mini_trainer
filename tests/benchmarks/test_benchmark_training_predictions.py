@@ -3,9 +3,9 @@ import json
 import numpy as np
 import pytest
 
-from dev.benchmarks.onnx_inference import file_hash
-from dev.benchmarks.quality_compare import read_manifest, read_predictions
-from dev.benchmarks.training_predictions import prepare
+from dev.benchmarks.inference.onnx_inference import file_hash
+from dev.benchmarks.inference.quality_compare import read_manifest, read_predictions
+from dev.benchmarks.training.training_predictions import prepare
 
 
 def make_run(path, *, hierarchical=False, synthetic=False, reverse=False):

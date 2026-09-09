@@ -49,6 +49,8 @@ def test_quantized_checkpoint_restores_storage_and_recipe(tmp_path):
     prepare_quantized_training(original)
     path = tmp_path / "weights.pt"
     torch.save(original.state_dict(), path)
+    assert TrainingWeight.__module__ == "mini_trainer.modeling._quantized_training"
+    assert "mini_trainer.modeling._quantized_training.TrainingWeight" in torch.serialization.get_unsafe_globals_in_checkpoint(path)
     safe_before = set(torch.serialization.get_safe_globals())
     state = load_training_weights(path)
     assert set(torch.serialization.get_safe_globals()) == safe_before
@@ -475,8 +477,8 @@ def test_cuda_storage_kernel_reused_across_parameter_objects_and_rates(monkeypat
 def test_cuda_local_matmul_tuning_bounds_temporary_memory(monkeypatch):
     from torchao.prototype.quantized_training.int8_mm import _scaled_int8_mm_kernel as upstream
 
-    from mini_trainer.modeling._quantized_matmul import _kernel
     from mini_trainer.modeling._quantized_training import scaled_int8_mm
+    from mini_trainer.modeling._quantized_training.matmul import _kernel
 
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 to verify first-use tuning memory")
@@ -633,7 +635,7 @@ def test_cuda_compiled_stochastic_rounding_preserves_sub_code_updates():
 def test_cuda_functional_requantization_preserves_independent_rounding(dtype, compiled):
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 to verify functional CUDA requantization")
-    from mini_trainer.modeling._quantized_update import quantize_int8_rows
+    from mini_trainer.modeling._quantized_training.update import quantize_int8_rows
 
     values = torch.full((128, 2048), 0.25, device="cuda", dtype=dtype)[:, ::2]
     values[:, 0] = 127
@@ -790,7 +792,7 @@ def test_cuda_normalization_backward_matches_float_jacobian(width, dtype):
 
 
 def test_cuda_normalization_backward_bounds_temporary_storage():
-    from mini_trainer.modeling._quantized_normalization import int8_weight_norm_backward
+    from mini_trainer.modeling._quantized_training.normalization import int8_weight_norm_backward
 
     device = cuda()
     codes = torch.randint(-127, 128, (2048, 1280), device=device, dtype=torch.int8)

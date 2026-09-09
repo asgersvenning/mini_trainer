@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from dev.benchmarks.report_history import METRICS, archive, render
+from dev.benchmarks.reporting.report_history import METRICS, archive, render
 
 
 @pytest.fixture

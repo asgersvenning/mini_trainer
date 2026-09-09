@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .onnx_inference import file_hash
-from .quality_compare import COLUMNS, read_manifest, read_predictions, validate_dataset
+from dev.benchmarks.inference.onnx_inference import file_hash
+from dev.benchmarks.inference.quality_compare import COLUMNS, read_manifest, read_predictions, validate_dataset
 
 
 def _is_sha256(value):

@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import pytest
 
-from dev.benchmarks.onnx_inference import require_operations, run
+from dev.benchmarks.inference.onnx_inference import require_operations, run
 
 onnx = pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
@@ -124,7 +124,7 @@ def test_isolated_cpu_memory_probe_records_measurement_or_failure(model_and_inpu
     command = [
         sys.executable,
         "-m",
-        "dev.benchmarks.onnx_cpu_memory",
+        "dev.benchmarks.inference.onnx_cpu_memory",
         "--model",
         str(model),
         "--inputs",
@@ -166,7 +166,7 @@ def test_isolated_cpu_memory_probe_records_measurement_or_failure(model_and_inpu
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux resident-memory probe")
 def test_memory_peak_excludes_parent_pre_exec_allocations():
     child = (
-        "import json, resource; from dev.benchmarks.onnx_cpu_memory import resident_memory; "
+        "import json, resource; from dev.benchmarks.inference.onnx_cpu_memory import resident_memory; "
         "print(json.dumps({'memory': resident_memory(), 'rusage': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024}))"
     )
     parent = f"import subprocess, sys; retained = bytearray(128 * 1024**2); subprocess.run([sys.executable, '-c', {child!r}], check=True)"

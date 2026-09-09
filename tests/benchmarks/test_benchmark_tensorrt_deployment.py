@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from dev.benchmarks import tensorrt_deployment as deployment
-from dev.benchmarks.onnx_inference import file_hash
+from dev.benchmarks.inference import tensorrt_deployment as deployment
+from dev.benchmarks.inference.onnx_inference import file_hash
 
 
 @pytest.fixture
@@ -163,7 +163,7 @@ def test_help_is_runtime_independent():
 import runpy, sys
 sys.argv = ['tensorrt_deployment', '--help']
 try:
-    runpy.run_module('dev.benchmarks.tensorrt_deployment', run_name='__main__')
+    runpy.run_module('dev.benchmarks.inference.tensorrt_deployment', run_name='__main__')
 except SystemExit as error:
     assert error.code == 0
 assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules

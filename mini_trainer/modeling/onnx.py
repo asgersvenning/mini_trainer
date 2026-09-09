@@ -153,7 +153,7 @@ def export_onnx(
     if native_int8:
         if reference_device.type != "cuda" or example_input.dtype != torch.float32:
             raise ValueError("Native INT8 ONNX export requires reference_device='cuda' and float32 example inputs.")
-        from ._onnx_quantized import scaled_int8_mm
+        from ._quantized_training.onnx import scaled_int8_mm
 
         translations[torch.ops.mini_trainer.scaled_int8_mm.default] = scaled_int8_mm
     sample = example_input.detach().cpu().clone()

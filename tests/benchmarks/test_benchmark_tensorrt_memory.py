@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pytest
 
-from dev.benchmarks.tensorrt_memory import measure
+from dev.benchmarks.inference.tensorrt_memory import measure
 
 
 def test_help_does_not_import_gpu_libraries():
@@ -18,7 +18,7 @@ def test_help_does_not_import_gpu_libraries():
 import runpy, sys
 sys.argv = ['tensorrt_memory', '--help']
 try:
-    runpy.run_module('dev.benchmarks.tensorrt_memory', run_name='__main__')
+    runpy.run_module('dev.benchmarks.inference.tensorrt_memory', run_name='__main__')
 except SystemExit as error:
     assert error.code == 0
 assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules
@@ -53,7 +53,7 @@ def test_real_engine_memory_and_retained_failure(tmp_path, pinned):
         pytest.skip("Set RUN_CUDA_TESTS=1 in an explicitly prepared GPU environment")
     pytest.importorskip("tensorrt")
     onnx = pytest.importorskip("onnx")
-    from dev.benchmarks.tensorrt_build import build
+    from dev.benchmarks.inference.tensorrt_build import build
 
     graph = onnx.helper.make_graph(
         [onnx.helper.make_node("Add", ["x", "offset"], ["scores"])],

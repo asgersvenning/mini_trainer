@@ -155,9 +155,9 @@ def run(baseline, output, *, data_root=None, calibration_samples=256, qat_epochs
             "test_inference_seconds": seconds,
             "artifact_bytes": weights.stat().st_size if name == "float" else (output / name / "model.pt2").stat().st_size,
         }
-    repository = Path(__file__).resolve().parents[2]
+    repository = Path(__file__).resolve().parents[3]
     source_digest = hashlib.sha256()
-    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted(Path(__file__).parent.glob("*.py")):
+    for source in sorted((repository / "mini_trainer").rglob("*.py")) + sorted((repository / "dev/benchmarks").rglob("*.py")):
         source_digest.update(str(source.relative_to(repository)).encode())
         source_digest.update(source.read_bytes())
     report = {

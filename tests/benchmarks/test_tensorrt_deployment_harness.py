@@ -55,7 +55,9 @@ def test_harness_builds_before_evaluation_and_preserves_literal_paths(tmp_path, 
     result, output, calls = invoke(tmp_path, environment)
     assert result.returncode == 0, result.stderr
     assert len(calls) == 5
-    assert [call[1] for call in calls[2:]] == ["dev.benchmarks.tensorrt_build"] * 2 + ["dev.benchmarks.tensorrt_deployment"]
+    assert [call[1] for call in calls[2:]] == ["dev.benchmarks.inference.tensorrt_build"] * 2 + [
+        "dev.benchmarks.inference.tensorrt_deployment"
+    ]
     for role, call in zip(("BASELINE", "CANDIDATE"), calls[2:4], strict=True):
         assert call[call.index("--model") + 1] == environment[f"TRT_{role}_MODEL"]
         assert call[call.index("--profiles") + 1] == environment["TRT_PROFILES"]

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from dev.benchmarks.release_history import GitHub, synchronize
-from dev.benchmarks.report_history import archive
+from dev.benchmarks.reporting.release_history import GitHub, synchronize
+from dev.benchmarks.reporting.report_history import archive
 
 
 @pytest.fixture

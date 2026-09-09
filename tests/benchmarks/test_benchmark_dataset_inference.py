@@ -6,11 +6,11 @@ import sys
 import numpy as np
 import pytest
 
-from dev.benchmarks.cpu_deployment import evaluate as evaluate_cpu
-from dev.benchmarks.dataset_inference import collect, inference_manifest, pair_bundle, predictions
-from dev.benchmarks.inference_pair import run_pair
-from dev.benchmarks.quality_compare import read_manifest, read_predictions
-from dev.benchmarks.report_history import archive
+from dev.benchmarks.inference.cpu_deployment import evaluate as evaluate_cpu
+from dev.benchmarks.inference.dataset_inference import collect, inference_manifest, pair_bundle, predictions
+from dev.benchmarks.inference.inference_pair import run_pair
+from dev.benchmarks.inference.quality_compare import read_manifest, read_predictions
+from dev.benchmarks.reporting.report_history import archive
 
 
 @pytest.fixture
@@ -161,7 +161,7 @@ def test_cpu_deployment_rejects_changed_timing_input_after_placement(example, tm
     original = subprocess.run
 
     def change_before_measurement(command, **kwargs):
-        if "dev.benchmarks.onnx_cpu_memory" in command:
+        if "dev.benchmarks.inference.onnx_cpu_memory" in command:
             with np.load(inputs) as archive:
                 arrays = {k: v.copy() for k, v in archive.items()}
             arrays["x"] += 0.5
@@ -216,7 +216,7 @@ def test_bundle_rejects_different_labels(example, tmp_path):
 def test_cpu_inference_to_real_mini_metrics(example, tmp_path):
     pytest.importorskip("onnxruntime")
     pytest.importorskip("mini_metrics")
-    from dev.benchmarks.quality_compare import compare
+    from dev.benchmarks.inference.quality_compare import compare
 
     model, manifest, _ = example
     collect(model, manifest, tmp_path / "baseline")
@@ -235,7 +235,7 @@ class Reject:
         if fullname.split('.')[0] in {'torch', 'tensorrt', 'mini_metrics'}:
             raise AssertionError('Unnecessary CPU collection dependency: ' + fullname)
 sys.meta_path.insert(0, Reject())
-from dev.benchmarks.dataset_inference import collect
+from dev.benchmarks.inference.dataset_inference import collect
 collect(sys.argv[1], sys.argv[2], sys.argv[3])
 """
     subprocess.run([sys.executable, "-c", code, str(model), str(manifest), str(tmp_path / "isolated")], check=True, capture_output=True)
@@ -248,7 +248,7 @@ def test_tensorrt_dataset_outputs_match_cpu_at_both_batch_sizes(example, tmp_pat
     import torch
 
     assert torch.cuda.is_available(), "CUDA requested but unavailable"
-    from dev.benchmarks.tensorrt_build import build
+    from dev.benchmarks.inference.tensorrt_build import build
 
     model, manifest, _ = example
     profiles = {"x": {"min": [1, 2], "opt": [2, 2], "max": [2, 2]}, "offset": {"min": [2], "opt": [2], "max": [2]}}

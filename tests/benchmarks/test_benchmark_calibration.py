@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from dev.benchmarks.onnx_calibration import calibrate, calibration_manifest, load_batch
+from dev.benchmarks.inference.onnx_calibration import calibrate, calibration_manifest, load_batch
 
 
 @pytest.fixture

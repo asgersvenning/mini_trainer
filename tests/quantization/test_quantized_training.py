@@ -6,7 +6,7 @@ import os
 import pytest
 import torch
 
-from dev.benchmarks.quantized_training import IntegerLinear, dependencies
+from dev.benchmarks.training.quantized_training import IntegerLinear, dependencies
 
 
 @pytest.mark.parametrize("gradient_scale", [1.0, 1e-6])
@@ -55,7 +55,7 @@ def test_integer_optimizer_updates_and_continuation(optimizer_name, foreach):
     import io
 
     pytest.importorskip("torchao")
-    from dev.benchmarks._int8_weight import TrainingWeight
+    from mini_trainer.modeling._quantized_training import TrainingWeight
 
     torch.manual_seed(123)
     parameter = torch.nn.Parameter(TrainingWeight.from_float(torch.randn(32, 64)))
@@ -108,7 +108,7 @@ def test_integer_decay_preserves_codes_and_upstream_dispatch():
     pytest.importorskip("torchao")
     from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight
 
-    from dev.benchmarks._int8_weight import TrainingWeight
+    from mini_trainer.modeling._quantized_training import TrainingWeight
 
     original = torch.randn(8, 16)
     weight = TrainingWeight.from_float(original)
@@ -129,7 +129,7 @@ def test_integer_linear_module_cuda(dtype, epsilon):
         pytest.skip("Set RUN_CUDA_TESTS=1 for CUDA linear dispatch")
     if not torch.cuda.is_available():
         pytest.fail("CUDA requested but unavailable")
-    from dev.benchmarks._int8_weight import TrainingWeight
+    from mini_trainer.modeling._quantized_training import TrainingWeight
 
     torch.manual_seed(456)
     layer = torch.nn.Linear(64, 32, device="cuda", dtype=dtype)
@@ -172,7 +172,7 @@ def test_compiled_integer_parameter_gradients():
         pytest.skip("Set RUN_CUDA_TESTS=1 for compiled INT8 gradient validation")
     if not torch.cuda.is_available():
         pytest.fail("CUDA requested but unavailable")
-    from dev.benchmarks.quantized_training import Layer
+    from dev.benchmarks.training.quantized_training import Layer
 
     torch.manual_seed(42)
     eager = torch.nn.Sequential(Layer(64, True, torch.float16), Layer(64, True, torch.float16))
@@ -196,7 +196,7 @@ def test_failed_tuning_candidate_releases_temporary_tensors(monkeypatch, kind):
     pytest.importorskip("torchao")
     from triton.runtime.errors import OutOfResources, PTXASError
 
-    from mini_trainer.modeling import _quantized_matmul as matmul
+    from mini_trainer.modeling._quantized_training import matmul
 
     error = OutOfResources(2, 1, "shared memory") if kind == "resources" else PTXASError("invalid candidate")
     references = []
@@ -215,7 +215,7 @@ def test_failed_tuning_candidate_releases_temporary_tensors(monkeypatch, kind):
 
 def test_tuning_preserves_unexpected_failures(monkeypatch):
     pytest.importorskip("torchao")
-    from mini_trainer.modeling import _quantized_matmul as matmul
+    from mini_trainer.modeling._quantized_training import matmul
 
     def candidate():
         raise RuntimeError("unexpected kernel failure")
@@ -247,7 +247,7 @@ def test_dense_backward_graph_with_fresh_kernel_tuning(monkeypatch):
         return
     from dev.benchmarks.models import DenseImageMLP
     from mini_trainer.modeling import Classifier, EmbeddingContext
-    from mini_trainer.modeling import _quantized_matmul as matmul
+    from mini_trainer.modeling._quantized_training import matmul
     from mini_trainer.modeling.quantized_training import prepare_quantized_training
 
     torch._dynamo.reset()

@@ -19,5 +19,5 @@ case "${BENCHMARK_PERFORMANCE_VALID:-false}" in
     false) ;;
     *) echo 'BENCHMARK_PERFORMANCE_VALID must be true or false.' >&2; exit 2 ;;
 esac
-"$BENCHMARK_PYTHON" -m dev.benchmarks.report_history archive "${args[@]}"
-"$BENCHMARK_PYTHON" -m dev.benchmarks.report_history render --history "$history"
+"$BENCHMARK_PYTHON" -m dev.benchmarks.reporting.report_history archive "${args[@]}"
+"$BENCHMARK_PYTHON" -m dev.benchmarks.reporting.report_history render --history "$history"

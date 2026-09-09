@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from dev.benchmarks.datasets import prepare_real
-from dev.benchmarks.summarize import summarize
+from dev.benchmarks.data.datasets import prepare_real
+from dev.benchmarks.reporting.summarize import summarize
 
 
 def make_dataset(root):
@@ -84,7 +84,7 @@ def test_shared_harness_records_process_failures(tmp_path, mode):
 
     runner = tmp_path / "python-wrapper"
     runner.write_text(
-        '#!/usr/bin/env bash\nif [[ "$1" == "-m" && "$2" == "dev.benchmarks.run" ]]; then exit 134; fi\n'
+        '#!/usr/bin/env bash\nif [[ "$1" == "-m" && "$2" == "dev.benchmarks.training.run" ]]; then exit 134; fi\n'
         + f'exec {shlex.quote(sys.executable)} "$@"\n'
     )
     runner.chmod(0o755)
@@ -125,7 +125,7 @@ def test_benchmark_retains_cuda_peaks_across_phase_resets(tmp_path):
     import torch
     from torch.utils.data import DataLoader
 
-    from dev.benchmarks.performance import BenchmarkLogger
+    from dev.benchmarks.training.performance import BenchmarkLogger
 
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 to validate cross-phase CUDA peaks")
@@ -203,7 +203,7 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path, monkeyp
     import numpy as np
     import torch
 
-    from dev.benchmarks.run import run
+    from dev.benchmarks.training.run import run
     from mini_trainer.builders import BaseBuilder
     from mini_trainer.modeling import classification_module
 
@@ -290,7 +290,7 @@ def test_representative_profile_retains_training_and_quality_failures(tmp_path):
     runner.write_text(
         "#!/usr/bin/env bash\n"
         'if [[ "$1" == "-c" ]]; then exit 0; fi\n'
-        'if [[ "$1" == "-m" && "$2" == "dev.benchmarks.run" ]]; then exit 134; fi\n' + f'exec {shlex.quote(sys.executable)} "$@"\n'
+        'if [[ "$1" == "-m" && "$2" == "dev.benchmarks.training.run" ]]; then exit 134; fi\n' + f'exec {shlex.quote(sys.executable)} "$@"\n'
     )
     runner.chmod(0o755)
     output = tmp_path / "reports"

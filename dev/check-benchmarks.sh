@@ -42,7 +42,7 @@ run_profile() {
     local profile="$1"
     shift
     if OMP_NUM_THREADS=1 MPLBACKEND=Agg TORCHINDUCTOR_COMPILE_THREADS="${TORCHINDUCTOR_COMPILE_THREADS:-1}" \
-        "$benchmark_python" -m dev.benchmarks.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
+        "$benchmark_python" -m dev.benchmarks.training.run --output "$results/$profile" "$@" > "$results/$profile.log" 2>&1; then
         return
     else
         local exit_code="$?"
@@ -136,11 +136,11 @@ elif [[ "$mode" == qt-efficientnet ]]; then
         for head in "${heads[@]}"; do
             for training_mode in "${training_modes[@]}"; do
                 pair="blair-$head-$training_mode-seed$seed"
-                if "$benchmark_python" -m dev.benchmarks.training_predictions \
+                if "$benchmark_python" -m dev.benchmarks.training.training_predictions \
                     --baseline "$results/blair-$head-$training_mode-float-seed$seed" \
                     --candidate "$results/blair-$head-$training_mode-int8-seed$seed" \
                     --output "$results/$pair-inputs" > "$results/$pair-quality.log" 2>&1 && \
-                    PYTHONHASHSEED=0 OMP_NUM_THREADS=1 "$BENCHMARK_METRICS_PYTHON" -m dev.benchmarks.quality_compare \
+                    PYTHONHASHSEED=0 OMP_NUM_THREADS=1 "$BENCHMARK_METRICS_PYTHON" -m dev.benchmarks.inference.quality_compare \
                     --manifest "$results/$pair-inputs/manifest.json" --output "$results/$pair-quality" \
                     >> "$results/$pair-quality.log" 2>&1; then
                     :
@@ -184,6 +184,6 @@ else
     run_profile mnist-cuda --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" --epochs 5 --device cuda:0 --dtype float16 --cache CUDA --allow-nondeterministic
     run_profile blair-cuda --dataset blair --data-root "$BENCHMARK_DATA_ROOT/blair" --class-spec "$BLAIR_CLASS_SPEC" --epochs 5 --device cuda:0 --dtype float16 --cache CUDA --allow-nondeterministic
 fi
-"$benchmark_python" -m dev.benchmarks.summarize "$results" > "$results/summary.md"
+"$benchmark_python" -m dev.benchmarks.reporting.summarize "$results" > "$results/summary.md"
 cat "$results/summary.md"
 exit "$status"

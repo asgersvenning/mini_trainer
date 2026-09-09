@@ -32,9 +32,9 @@ specification; it performs no downloads or online taxonomy queries.
 Individual runs are configurable:
 
 ```bash
-.venv/bin/python -m dev.benchmarks.run --output /tmp/oracle \
+.venv/bin/python -m dev.benchmarks.training.run --output /tmp/oracle \
     --seed 42 --threads 1 --device cpu
-.venv/bin/python -m dev.benchmarks.run --dataset mnist \
+.venv/bin/python -m dev.benchmarks.training.run --dataset mnist \
     --data-root examples/mnist --output /tmp/mnist-amp --epochs 5 \
     --device cuda:0 --dtype float16 --cache CUDA --allow-nondeterministic
 ```
@@ -138,4 +138,23 @@ and [artifact retention](https://github.com/actions/upload-artifact#retention-pe
 
 Use the shared commands in these guides; they do not implicitly synchronize the
 working environment. Historical experiments and rejected approaches are retained
-in the [experiment archive](../../docs/archive/benchmark-history.md).
+in the [experiment archive](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
+
+## Source layout and command migration
+
+| Package | Ownership |
+| --- | --- |
+| `training/` | Dataset training, native QT/PTQ probes, large heads, prediction adapter |
+| `data/` | Dataset generation/indexing, loading, caching, reading and transfer probes |
+| `inference/` | Input preparation, calibration, ONNX/TensorRT, paired quality/resources |
+| `reporting/` | Summaries, immutable history, release storage |
+
+Development CLI modules now include their package: for example,
+`dev.benchmarks.run` becomes `dev.benchmarks.training.run` and
+`dev.benchmarks.cpu_deployment` becomes `dev.benchmarks.inference.cpu_deployment`.
+The shared `dev/check-*.sh` entry points are unchanged. `models.py` stays at its
+original import path because saved benchmark checkpoints name those classes.
+`prepare_inputs.py` retains the old preprocessing-factory import for saved recipes;
+`_int8_weight.py` retains the earlier probe compatibility import.
+Source hashes change with this reorganization; historical reports keep their
+original hashes and should not be relabeled as runs of the new revision.
