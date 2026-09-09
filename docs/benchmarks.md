@@ -632,3 +632,56 @@ The synthetic oracle also reached 100% after checkpoint reload for float and INT
 with the same model mode and compiled MuonAuxAdamW updates. Those reports are at
 `/tmp/mini-trainer-cudagraph-oracle`. This checks the simple oracle task, not
 normalized-head convergence or general CUDA graph eligibility.
+
+### Embedding publication without graph breaks
+
+`EmbeddingContext.set` now publishes its tensor through dictionary state instead
+of assigning a tensor-valued class attribute. This lets Dynamo carry the side
+effect through a full model graph, preserving the embedding's gradient path.
+Activation, retrieval, nesting checks and exception cleanup retain their existing
+interface. Tests compare eager/full-graph input and parameter gradients, including
+an embedding auxiliary loss, and verify stable compilation after the classifier's
+initial lazy-cache guard settles.
+
+A batch-128 MNIST training trace fell from three compiled forward/backward calls
+per batch to one. CUDA graph launches fell from 186 to 62 in the third epoch.
+The traces are at `/tmp/mini-trainer-cudagraph-epoch-trace.json` and
+`/tmp/mini-trainer-embedding-epoch-trace.json`. Profiling timing is not used below.
+
+The following unprofiled comparisons used a snapshot of `8639c24` as the control,
+the same GPU/dependencies as above, dense MNIST, batch 128, 15 epochs, SGD,
+FP16 AMP, model and optimizer compilation, CPU cache, zero cache workers, and
+one CPU/compiler thread. Float ran before then after; INT8 ran after then before.
+Validation tests had finished before these runs. Dataset manifests, held-out
+labels and paths match within every pair. Source hashes are:
+
+- Before: `ee66fe6f88471cbbb798366f1ef056478ec569ca79140208d8928149cbbcaca2`.
+- After: `ccbfc2dfe1e69eae41f52f7b11bfb5c84641cb167ded827b588cad2196f8a023`.
+
+The lock hash remains `43ad5c7df81212b3bcd536220201f8888666723507c317e8c86dd538fb595745`.
+Compiler caches were retained and CUDA nondeterminism was permitted.
+
+| Mode | Seed | Precision | Accuracy before → after | Peak MiB before → after | Median train epoch 3–15 s before → after | Training wall s before → after |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| Ordinary | 42 | Float | 92.44% → 93.12% | 236.30 → 236.05 | 0.197 → 0.161 | 13.21 → 13.71 |
+| Ordinary | 42 | INT8 | 93.26% → 92.84% | 168.95 → 168.95 | 0.274 → 0.228 | 13.85 → 14.94 |
+| reduce-overhead | 42 | Float | 92.44% → 93.12% | 193.55 → 217.41 | 0.155 → 0.138 | 11.62 → 11.25 |
+| reduce-overhead | 42 | INT8 | 93.26% → 92.84% | 136.96 → 149.60 | 0.174 → 0.184 | 11.62 → 12.38 |
+| reduce-overhead | 43 | Float | 92.70% → 93.30% | 193.55 → 217.41 | 0.159 → 0.137 | 12.55 → 11.56 |
+| reduce-overhead | 43 | INT8 | 93.10% → 93.02% | 136.96 → 149.60 | 0.179 → 0.155 | 12.19 → 11.74 |
+
+Ordinary compilation improves later-phase time by about 18% for float and 17%
+for INT8 in this pair, with essentially unchanged allocation. Whole-call times
+increase, so this is not a startup improvement. Under CUDA graph compilation,
+float improves in both seeds, while INT8 is mixed and peak allocation rises by
+9% for INT8 and 12% for float. INT8 remains slower than equally configured float
+on this small-batch model. The change removes a verified graph break; it does not
+establish consistent QT speed superiority or universally lower compiled memory.
+
+AMP fusion changes the training trajectory: float accuracy rises by 0.60–0.68
+percentage points, while INT8 falls by 0.08–0.42 points. These few short runs
+neither establish an intrinsic quality improvement nor prove equivalence.
+Reports and predictions are at `/tmp/mini-trainer-embedding-default-pairs` and
+`/tmp/mini-trainer-embedding-clean-pairs`. An earlier exploratory comparison at
+`/tmp/mini-trainer-embedding-pairs` is retained separately; a short CPU validation
+check overlapped that run, so its timings are excluded from this table.

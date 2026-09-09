@@ -132,16 +132,22 @@ independent of optimizer compilation. The benchmark runner records the selected
 mode. See [compilation guidance](../dev/README.md#model-compilation) for the other
 modes and measurement requirements; selecting a mode does not establish a speedup.
 
-Normalized heads resolve their parametrized weights after publishing embeddings,
-keeping weight normalization and the integer Linear operation in the same graph.
-Previously the embedding publication could split them and cause AOTAutograd to
-expect an INT8 tensor subclass gradient where the backward supplies a float tensor.
-This affected both ordinary and CUDA graph compilation. Regression coverage now
-includes normalized and ordinary heads, eager/default/reduce-overhead execution,
-AMP training, compiled/eager optimizers, checkpoint loading and eager resume.
-A separate FP32 test compares input and parameter gradients with an embedding
-auxiliary loss. AMP compilation can change rounding and INT8 activation bins;
-these checks do not promise bitwise-identical eager and compiled trajectories.
+Embedding publication uses mutable dictionary state so Dynamo can preserve the
+side effect without splitting the model graph. Normalized weights remain beside
+their Linear consumer. Previously the class-attribute assignment forced graph
+breaks and could make AOTAutograd expect an INT8 tensor subclass gradient where
+backward supplies a float tensor. Public context activation, retrieval, nesting
+checks and cleanup remain unchanged; this is still a shared context, not thread-
+or task-local state.
+
+Regression coverage includes normalized and ordinary heads,
+eager/default/reduce-overhead execution, AMP training, compiled/eager optimizers,
+checkpoint loading and eager resume. Full-graph FP32 tests compare input and
+parameter gradients with an embedding auxiliary loss and check stable compilation
+after lazy classifier metadata initializes. AMP fusion can change rounding and
+INT8 activation bins; these checks do not promise bitwise-identical eager and
+compiled trajectories. Fewer graphs do not guarantee lower peak memory or shorter
+whole training calls; see the [measured tradeoffs](benchmarks.md#embedding-publication-without-graph-breaks).
 
 ## Evidence and remaining work
 

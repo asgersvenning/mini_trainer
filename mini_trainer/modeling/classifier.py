@@ -235,9 +235,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         embeddings = self.preclassification(x)
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
-        # Resolve parametrized weights beside their consumer. Publishing the
-        # embeddings can break a compiled graph; carrying a normalized INT8
-        # weight across that boundary gives AOTAutograd the wrong tangent type.
+        # Resolve parametrized weights beside their Linear consumer.
         weight, bias = self._weight_bias()
         if self.normalized:
             return cosine_to_zscore(F.linear(embeddings, weight=weight), self.preclassification_size) + bias

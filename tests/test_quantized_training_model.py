@@ -649,7 +649,7 @@ def test_normalized_compilation_preserves_embedding_loss_gradients(mode):
     torch.manual_seed(19)
     model = Classifier(64, 4, hidden=False, normalized=True).to(cuda())
     prepare_quantized_training(model)
-    forward = torch.compile(model, mode=mode)
+    forward = torch.compile(model, mode=mode, fullgraph=True)
     data = torch.randn(8, 64, device=cuda())
     target = torch.arange(8, device=cuda()) % 4
     results = []
