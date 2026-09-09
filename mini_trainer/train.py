@@ -23,7 +23,7 @@ from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
-from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options
+from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
@@ -78,6 +78,7 @@ def main(  # noqa: D417
     ddp_info: dict | None = None,
     compile_optimizer: bool = False,
     compile_mode: str | None = None,
+    optimizer_cudagraphs: bool = False,
 ):
     """Train a classifier.
 
@@ -114,6 +115,7 @@ def main(  # noqa: D417
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
+    validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
     # Prepare state
     if seed is not None:
         random.seed(seed)
@@ -297,7 +299,7 @@ def main(  # noqa: D417
     if compile_optimizer:
         from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
 
-        prepare_compiled_optimizer(optimizer)
+        prepare_compiled_optimizer(optimizer, cudagraphs=optimizer_cudagraphs)
         log.info("Optimizer updates compiled; scheduler and AMP step gating remain active.")
 
     # Instantiate logger
@@ -542,6 +544,11 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
     )
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
+    cfg_args.add_argument(
+        "--optimizer-cudagraphs",
+        action="store_true",
+        help="Opt into CUDA graph replay for optimizer updates; requires --compile-optimizer and CUDA.",
+    )
     cfg_args.add_argument(
         "--compile-optimizer",
         action="store_true",

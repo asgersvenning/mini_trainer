@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 
 import torch
+from torch._subclasses.fake_tensor import is_fake
 from torch.utils._python_dispatch import return_and_correct_aliasing
 from torchao.prototype.quantized_training.int8 import Int8QuantizedTrainingLinearWeight, quantize_int8_rowwise
 
@@ -290,7 +291,10 @@ def _apply_weight_update(original, update, alpha, denominator=None):
             and denominator.device == original.device
         )
     )
-    if not supported or torch.is_grad_enabled() and original.requires_grad:
+    # Expose update math and final copies to compiled graphs. An opaque
+    # in-place update can carry CPU scalar inputs across CUDA graph partitions
+    # and hides the storage dependencies the compiler needs to schedule safely.
+    if is_fake(original) or not supported or torch.is_grad_enabled() and original.requires_grad:
         change = update if denominator is None else update / denominator
         return original.copy_(original.dequantize() + change * alpha)
     if not isinstance(alpha, torch.Tensor):

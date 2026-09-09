@@ -135,7 +135,7 @@ def test_mixed_muon_adamw_updates_and_counter():
 
 
 @pytest.mark.parametrize("normalized", [False, True])
-@pytest.mark.parametrize("compiled_optimizer", [False, True])
+@pytest.mark.parametrize("compiled_optimizer", [False, True, "cudagraphs"])
 @pytest.mark.parametrize("compile_mode", [None, "default", "reduce-overhead"])
 def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, compiled_optimizer, compile_mode):
     from mini_trainer.modeling import Classifier
@@ -155,7 +155,8 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, comp
         "device": device,
         "dtype": "float16",
         "quantized_training": True,
-        "compile_optimizer": compiled_optimizer,
+        "compile_optimizer": bool(compiled_optimizer),
+        "optimizer_cudagraphs": compiled_optimizer == "cudagraphs",
         "compile": compile_mode is not None,
         "compile_mode": compile_mode,
         "seed": 42,
@@ -180,6 +181,7 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, comp
     # plumbing, not identical stochastic continuation with a changed schedule.
     args["epochs"] = 2
     args["compile_optimizer"] = False
+    args["optimizer_cudagraphs"] = False
     args["compile"] = False
     args["compile_mode"] = None
     args["name"] = "resumed"
@@ -517,7 +519,8 @@ def test_fma_uses_represented_weights_without_mutation_or_rounding(position):
 
 
 @pytest.mark.parametrize("kind", ["sgd", "adamw"])
-def test_cuda_compiled_quantized_update_matches_float_before_rounding(kind):
+@pytest.mark.parametrize("cudagraphs", [False, True])
+def test_cuda_compiled_quantized_update_matches_float_before_rounding(kind, cudagraphs):
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.training.compilation import compile_optimizer
 
@@ -533,7 +536,7 @@ def test_cuda_compiled_quantized_update_matches_float_before_rounding(kind):
         options.update(momentum=0.9, nesterov=True)
     optimizer, eager = cls([weight], **options), cls([reference], **options)
     schedulers = [torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=0.93) for opt in (optimizer, eager)]
-    compile_optimizer(optimizer)
+    compile_optimizer(optimizer, cudagraphs=cudagraphs)
     for _ in range(6):
         with torch.no_grad():
             reference.copy_(weight.dequantize())
@@ -669,3 +672,55 @@ def test_normalized_compilation_preserves_embedding_loss_gradients(mode):
         )
     assert model.linear.parametrizations.weight.original1.grad.norm() > 0
     torch.testing.assert_close(results[0], results[1], rtol=1e-3, atol=1e-4)
+
+
+@pytest.mark.parametrize("kind", ["sgd", "adamw", "muon"])
+def test_optimizer_graphs_replay_and_restore_device_rates(kind):
+    import copy
+
+    from mini_trainer.trainer import _optimizer_step
+    from mini_trainer.training import MuonAuxAdamW
+    from mini_trainer.training.compilation import compile_optimizer
+
+    device = cuda()
+    # Earlier tests deliberately compile many optimizer variants sharing the
+    # same step code objects. Isolate that cache history, never the steps or
+    # checkpoint transition within this test, and require actual replay below.
+    torch._dynamo.reset()
+    torch.manual_seed(61)
+    model = nn.Sequential(nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 4)).to(device)
+    prepare_quantized_training(model)
+    cls = {"sgd": torch.optim.SGD, "adamw": torch.optim.AdamW, "muon": MuonAuxAdamW}[kind]
+    options = {"momentum": 0.9} if kind == "sgd" else {}
+    optimizer = cls([{"name": "graph", "params": list(model.parameters())}], lr=0.01, weight_decay=0.01, **options)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.93)
+    scaler = torch.amp.GradScaler("cuda", enabled=False)
+    compile_optimizer(optimizer, cudagraphs=True)
+    assert compile_optimizer(optimizer, cudagraphs=True) is optimizer
+    with pytest.raises(ValueError, match="different CUDA graph setting"):
+        compile_optimizer(optimizer)
+    inputs = torch.randn(8, 64, device=device)
+
+    def backward():
+        optimizer.zero_grad(set_to_none=True)
+        model(inputs).square().mean().backward()
+
+    for _ in range(7):
+        backward()
+        assert _optimizer_step(optimizer, scaler)
+        scheduler.step()
+    backward()
+    # Profile only the optimizer: model autotuning or model graph launches
+    # cannot satisfy this assertion. Warmup above initializes and captures it.
+    with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]) as profile:
+        assert _optimizer_step(optimizer, scaler)
+    assert any(event.key == "cudaGraphLaunch" and event.count > 0 for event in profile.key_averages())
+    optimizer.load_state_dict(copy.deepcopy(optimizer.state_dict()))
+    for group in optimizer.param_groups:
+        assert group["lr"].device == device and group["lr"].dtype == torch.float64
+    for _ in range(3):
+        backward()
+        assert _optimizer_step(optimizer, scaler)
+        scheduler.step()
+    if kind == "muon":
+        assert optimizer._step_count == 11

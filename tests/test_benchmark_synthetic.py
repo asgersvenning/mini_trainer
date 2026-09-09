@@ -70,7 +70,18 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["benchmark", "--output", str(tmp_path / "failed"), "--device", "cuda:0", "--compile", "--compile-mode", "reduce-overhead"],
+        [
+            "benchmark",
+            "--output",
+            str(tmp_path / "failed"),
+            "--device",
+            "cuda:0",
+            "--compile",
+            "--compile-mode",
+            "reduce-overhead",
+            "--compile-optimizer",
+            "--optimizer-cudagraphs",
+        ],
     )
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch, "set_num_threads", lambda threads: None)
@@ -81,6 +92,7 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     assert report["status"] == "failed"
     assert report["device"] == "cuda:0"
     assert report["compile_mode"] == "reduce-overhead"
+    assert report["optimizer_cudagraphs"] is True
     assert report["error"]["type"] == "RuntimeError"
     assert "test_accuracy" not in report
 
@@ -109,4 +121,32 @@ def test_compile_mode_requires_compilation_before_creating_outputs(tmp_path):
             main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), compile_mode=mode)
     with pytest.raises(ValueError, match="Unknown model compile mode"):
         model_compile_options(True, "invalid")
+    assert not list(tmp_path.iterdir())
+
+
+def test_optimizer_graphs_require_compilation_before_output(tmp_path):
+    import pytest
+
+    from dev.benchmarks.run import run
+    from mini_trainer.train import main
+
+    with pytest.raises(ValueError, match="requires compile_optimizer=True"):
+        run(tmp_path / "benchmark", optimizer_cudagraphs=True)
+    with pytest.raises(ValueError, match="requires compile_optimizer=True"):
+        main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), optimizer_cudagraphs=True)
+    assert not list(tmp_path.iterdir())
+
+
+def test_optimizer_graphs_reject_cpu_before_output(tmp_path):
+    import pytest
+
+    from dev.benchmarks.run import run
+    from mini_trainer.train import main
+
+    with pytest.raises(ValueError, match="require CUDA"):
+        run(tmp_path / "benchmark", device="cpu", compile_optimizer=True, optimizer_cudagraphs=True)
+    with pytest.raises(ValueError, match="require CUDA"):
+        main(
+            input=str(tmp_path / "missing"), output=str(tmp_path / "train"), device="cpu", compile_optimizer=True, optimizer_cudagraphs=True
+        )
     assert not list(tmp_path.iterdir())

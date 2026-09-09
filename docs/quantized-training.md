@@ -53,7 +53,7 @@ the developer probe. Eager SGD, AdamW and the repository's MuonAuxAdamW update
 paths are covered; fused optimizer variants are not established. Quantized
 regularization uses a differentiable floating view of the represented weights.
 
-CUDA SGD/AdamW-style `add_` and `addcdiv_` updates fuse dequantization,
+Eager CUDA SGD/AdamW-style `add_` and `addcdiv_` updates fuse dequantization,
 the weight update and stochastic requantization over the underlying storage
 tensors. This kernel compiles on first use even when the outer optimizer is
 eager. It retains INT8 codes and row scales, advances tensor version counters,
@@ -96,6 +96,16 @@ The earlier storage prototype's fake-tensor and dtype-cache failures are resolve
 by an explicit Triton kernel and custom-operator boundary; the storage kernel
 does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
 separate option. See the [measured results](benchmarks.md#optimizer-fma-dispatch).
+
+`--compile-optimizer --optimizer-cudagraphs` opts into optimizer graph replay.
+During AOT fake-tensor tracing, updates expose floating arithmetic followed by
+functional requantization and storage copies. Eager native updates are retained.
+Learning rates stay on CUDA during replay; checkpoints retain numeric values and
+explicit non-default rate precision. This leaves the AMP gate, scheduler and
+MuonAuxAdamW outer counter in their existing roles. See the
+[optimizer graph requirements](../dev/README.md#optimizer-cuda-graphs), including
+native fused float32-rate restrictions. The native fused optimizer tests use
+floating parameters; they do not establish native fused updates of INT8 weights.
 
 ## Checkpoints and inference
 

@@ -253,3 +253,35 @@ variants, and MuonAuxAdamW on CUDA, including overflow skips, scheduler changes,
 parameter updates and optimizer state. This does not establish support for every
 custom optimizer or a real-workload INT8 speedup. Quantized update dispatch and
 its performance remain a separate validation boundary.
+
+### Optimizer CUDA graphs
+
+`mt_train --compile-optimizer --optimizer-cudagraphs` additionally requests CUDA
+graph replay for optimizer updates. It requires parameters on one CUDA device
+and the default Inductor backend. It is independent of model compilation;
+`--compile --compile-mode reduce-overhead` can enable model graphs as well.
+The benchmark runner accepts and records the same optimizer option.
+
+For custom training, call `compile_optimizer(optimizer, cudagraphs=True)` after
+scheduler construction and checkpoint restoration. The first real update still
+initializes state eagerly, under the trainer's AMP gating. Subsequent updates use
+device-resident learning rates. Scheduler updates, overflow decisions and Muon's
+outer step counter remain outside graph capture. Changing the graph setting of
+an already compiled optimizer is rejected rather than silently ignored.
+
+Numeric rates retain float64 precision; explicitly supplied tensor rates retain
+their dtype. Checkpoints save numeric values plus a `_mini_trainer_lr_dtype`
+marker for non-default precision, allowing compiled restoration to recover that
+choice. Ordinary eager loading still accepts the numeric rates. Native fused
+SGD/Adam/AdamW tensor-rate kernels require an explicitly selected float32 tensor
+rate (or its recorded checkpoint marker); unsupported rates fail before mutation.
+The existing foreach/capturable restrictions still apply.
+
+INT8 updates use compiler-visible arithmetic and final storage copies during AOT
+fake-tensor tracing. This avoids an opaque in-place operator carrying CPU scalar
+inputs into CUDA graph partitions. The native row update remains available in
+eager execution. Regression tests check actual optimizer-only replay, arithmetic,
+AMP skips, rate precision, same-optimizer restoration and eager checkpoint resume.
+Capture eligibility, extra gradient copies, graph workspace memory and first-use
+compilation costs still depend on the optimizer and workload. Measure both float
+and INT8 with the same options; enabling graphs alone is not evidence of a speedup.

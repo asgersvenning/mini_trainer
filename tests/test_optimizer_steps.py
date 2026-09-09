@@ -240,15 +240,24 @@ def test_compiled_foreach_adamw_requires_capturable_before_mutation():
 
 
 def _assert_compiled_optimizer_state(actual, expected, key=None):
-    if isinstance(actual, torch.Tensor):
+    if key == "lr":
+        # Compiled checkpoints deliberately serialize tensor rates as numbers.
+        # Compare those values exactly, including explicitly selected float32.
+        actual = actual.item() if isinstance(actual, torch.Tensor) else actual
+        expected = expected.item() if isinstance(expected, torch.Tensor) else expected
+        assert actual == expected
+    elif isinstance(actual, torch.Tensor):
         # Dynamo moves Adam's scalar step counter to CUDA. Check its exact
         # numeric state; all non-counter tensor devices must remain unchanged.
         if key == "step" and actual.numel() == expected.numel() == 1:
             expected = expected.to(actual.device)
         torch.testing.assert_close(actual, expected, rtol=1e-5, atol=2e-6)
     elif isinstance(actual, dict):
-        assert actual.keys() == expected.keys()
-        for name in actual:
+        # Non-default rate precision is checkpoint reconstruction metadata;
+        # eager state has no such marker. Roundtrip tests verify it separately.
+        actual_keys = actual.keys() - {"_mini_trainer_lr_dtype"}
+        assert actual_keys == expected.keys() - {"_mini_trainer_lr_dtype"}
+        for name in actual_keys:
             _assert_compiled_optimizer_state(actual[name], expected[name], name)
     elif isinstance(actual, (list, tuple)):
         assert type(actual) is type(expected) and len(actual) == len(expected)
@@ -259,7 +268,8 @@ def _assert_compiled_optimizer_state(actual, expected, key=None):
 
 
 @pytest.mark.parametrize("kind", KINDS)
-def test_cuda_compiled_optimizer_matches_eager_updates(kind):
+@pytest.mark.parametrize("cudagraphs", [False, True])
+def test_cuda_compiled_optimizer_matches_eager_updates(kind, cudagraphs):
     from mini_trainer.training.compilation import compile_optimizer
 
     if os.environ.get("RUN_CUDA_TESTS") != "1":
@@ -268,11 +278,18 @@ def test_cuda_compiled_optimizer_matches_eager_updates(kind):
     torch.manual_seed(71)
     initial = torch.randn(8, 8, device="cuda")
     parameters = [torch.nn.Parameter(initial.clone()) for _ in range(2)]
-    optimizers = [make_optimizer(kind, [parameter]) for parameter in parameters]
+    # Native fused tensor-lr kernels require float32; use the same explicitly
+    # chosen rate and scheduler arithmetic for both reference and candidate.
+    rate = torch.tensor(0.01, device="cuda", dtype=torch.float32) if cudagraphs and kind.startswith("fused") else 0.01
+    optimizers = [
+        make_optimizer(kind, [parameter], lr=rate.clone() if isinstance(rate, torch.Tensor) else rate) for parameter in parameters
+    ]
     schedulers = [torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=0.93) for opt in optimizers]
-    compile_optimizer(optimizers[1])
+    compile_optimizer(optimizers[1], cudagraphs=cudagraphs)
     scalers = [torch.amp.GradScaler("cuda", init_scale=8, growth_interval=100) for _ in optimizers]
-    for step in range(6):
+    for step in range(8):
+        if cudagraphs and step == 6:
+            optimizers[1].load_state_dict(copy.deepcopy(optimizers[1].state_dict()))
         gradient = torch.randn_like(initial)
         decisions = []
         for parameter, optimizer, scheduler, scaler in zip(parameters, optimizers, schedulers, scalers, strict=True):
@@ -287,3 +304,91 @@ def test_cuda_compiled_optimizer_matches_eager_updates(kind):
         assert decisions[0] == decisions[1] == (step != 2)
         torch.testing.assert_close(parameters[0], parameters[1], rtol=1e-5, atol=2e-6)
         _assert_compiled_optimizer_state(optimizers[0].state_dict(), optimizers[1].state_dict())
+
+
+def test_optimizer_graph_validation_precedes_mutation():
+    from mini_trainer.training.compilation import compile_optimizer
+
+    parameter = torch.nn.Parameter(torch.ones(4, 4))
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    original_step = optimizer.step
+    with pytest.raises(ValueError, match="one CUDA device"):
+        compile_optimizer(optimizer, cudagraphs=True)
+    assert optimizer.step == original_step and not optimizer.state
+    assert not optimizer._optimizer_state_dict_post_hooks
+    assert optimizer.param_groups[0]["lr"] == 0.1
+
+
+@pytest.mark.parametrize("kind", ["fused_sgd", "fused_adamw"])
+def test_cuda_fused_graph_rates_are_not_silently_rounded(kind):
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 for native fused CUDA graph rate validation")
+    parameter = torch.nn.Parameter(torch.ones(4, 4, device="cuda"))
+    optimizer = make_optimizer(kind, [parameter])
+    original_step = optimizer.step
+    with pytest.raises(ValueError, match="explicit float32 tensor learning rate"):
+        compile_optimizer(optimizer, cudagraphs=True)
+    assert optimizer.step == original_step and not optimizer.state
+    assert optimizer.param_groups[0]["lr"] == 0.01
+    assert not optimizer._optimizer_state_dict_post_hooks
+
+
+@pytest.mark.parametrize("kind", ["fused_sgd", "fused_adamw"])
+def test_cuda_graph_checkpoint_retains_explicit_rate_precision(kind):
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to check native fused graph checkpoint precision")
+    parameter = torch.nn.Parameter(torch.ones(4, 4, device="cuda"))
+    optimizer = make_optimizer(kind, [parameter], lr=torch.tensor(0.01, dtype=torch.float32, device="cuda"))
+    compile_optimizer(optimizer, cudagraphs=True)
+    parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    state = copy.deepcopy(optimizer.state_dict())
+    assert isinstance(state["param_groups"][0]["lr"], float)
+    assert state["param_groups"][0]["_mini_trainer_lr_dtype"] == "float32"
+    # Match the entrypoint order: restore first, then compile the fresh optimizer.
+    restored = make_optimizer(kind, [parameter])
+    restored.load_state_dict(state)
+    compile_optimizer(restored, cudagraphs=True)
+    for _ in range(4):
+        restored.step()
+        assert restored.param_groups[0]["lr"].dtype == torch.float32
+        assert restored.param_groups[0]["lr"].device == parameter.device
+    assert restored.state_dict()["param_groups"][0]["lr"] == state["param_groups"][0]["lr"]
+
+
+def test_compiled_checkpoint_preserves_nondefault_rate_dtype_on_cpu():
+    from mini_trainer.training.compilation import compile_optimizer
+
+    parameter = torch.nn.Parameter(torch.ones(4, 4))
+    optimizer = torch.optim.SGD([parameter], lr=torch.tensor(0.01, dtype=torch.float32))
+    compile_optimizer(optimizer, backend="eager")
+    parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    state = copy.deepcopy(optimizer.state_dict())
+    assert state["param_groups"][0]["_mini_trainer_lr_dtype"] == "float32"
+    restored = torch.optim.SGD([parameter], lr=0.1)
+    restored.load_state_dict(state)
+    observed = []
+    restored.register_step_pre_hook(lambda opt, args, kwargs: observed.append(opt.param_groups[0]["lr"].dtype))
+    compile_optimizer(restored, backend="eager")
+    for _ in range(3):
+        restored.step()
+        assert restored.param_groups[0]["lr"].dtype == torch.float32
+    assert observed == [torch.float32] * 3
+    assert restored.state_dict()["param_groups"][0]["lr"] == state["param_groups"][0]["lr"]
+
+
+def test_invalid_saved_rate_dtype_fails_before_compilation():
+    from mini_trainer.training.compilation import compile_optimizer
+
+    optimizer = torch.optim.SGD([torch.nn.Parameter(torch.ones(4))], lr=0.1)
+    optimizer.param_groups[0]["_mini_trainer_lr_dtype"] = "invalid"
+    original_step = optimizer.step
+    with pytest.raises(ValueError, match="Invalid saved learning-rate dtype"):
+        compile_optimizer(optimizer)
+    assert optimizer.step == original_step and not optimizer.state
+    assert not optimizer._optimizer_state_dict_post_hooks
