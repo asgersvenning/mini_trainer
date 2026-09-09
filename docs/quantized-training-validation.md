@@ -52,8 +52,15 @@ now completes training/reload/inference for both heads and precisions on real
 Blair data with random initialization. It shows only 3.1–3.4% lower peak allocation,
 slower training and lower accuracy under current head-only QT, including a large
 flat-head regression. This is evidence against recommending the present recipe,
-not completion of the speed/quality target. Pretrained runs and numerical
-investigation are next; target-machine measurements and ONNX deployment remain open.
+not completion of the speed/quality target. It motivated the pretrained comparison
+below; target-machine measurements and ONNX deployment remain open.
+
+The subsequent [pretrained comparison and fixed-batch diagnostic](benchmarks.md#pretrained-initialization-and-fixed-batch-numerical-check)
+did not reproduce the large flat accuracy drop in the same seed. INT8 still had
+3–4% slower later training phases and only about 3.5% lower peak allocation.
+Initial gradient discrepancies do not by themselves explain the convergence
+difference. Repeated-seed quality checks, optimizer/stochastic-layer investigation
+and backbone cost profiling remain necessary; no production speedup is established.
 
 ### EfficientNetV2-S structural coverage probe
 

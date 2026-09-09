@@ -1032,3 +1032,49 @@ hierarchical-INT8 order without clearing compiler caches. Timings include local
 loading/logging effects and do not predict A40/A100/B300 or Spark/desktop speed.
 The missing optional dendrogram visualization dependencies emitted warnings;
 training and prediction completed. No ONNX or target-hardware inference was tested.
+
+### Pretrained initialization and fixed-batch numerical check
+
+The matched pretrained comparison at revision `f14f62d` used the same settings,
+source hash and dataset manifest as above, adding `--pretrained`. This loaded
+Torchvision's cached `efficientnet_v2_s-dd5fe13b.pth` backbone, with a newly
+initialized symmetric normalized head. Execution order was INT8 then float for
+each head; no other runs overlapped the measurements.
+The pretrained file SHA256 is
+`dd5fe13b1d60ec15317ccc8ca158186e134d3366c3dde9cb9a4e301f2dc66c74`.
+
+| Head | Precision | Fine accuracy | Parent accuracy | Peak allocated MiB | Median train phase, epochs 3–5 (s) | Training call (s) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Flat | Float | 83.46% | — | 1234.15 | 14.673 | 89.091 |
+| Flat | INT8 | 83.63% | — | 1191.36 | 15.291 | 88.937 |
+| Hierarchical | Float | 78.21% | 90.61% | 1234.16 | 14.558 | 92.052 |
+| Hierarchical | INT8 | 80.62% | 91.30% | 1191.37 | 14.994 | 95.987 |
+
+The large flat accuracy regression did not recur with pretrained initialization
+in this seed. That neither establishes superiority nor identifies the cause of
+the random-initialization regression. INT8 later training phases remained 4.2%
+slower for the flat head and 3.0% slower for the hierarchical head; peak allocation
+was about 3.5% lower. Whole-call timing is mixed. All checkpoints reloaded and
+produced finite held-out scores; coverage is still limited to the two head layers.
+Reports and predictions are retained under ignored `tmp-efficientnet-pretrained/`.
+
+After those runs, a separate diagnostic compared deep-copied flat models before
+any optimizer update on 32 identical Blair training images, sampled with seed 42.
+Dropout and stochastic depth were disabled, BatchNorm remained in training mode,
+and both used FP16 AMP with loss scaled by 1024 for backward. This isolates an
+initial forward/backward discrepancy, not stochastic update or convergence behavior.
+
+| Initialization | Float / INT8 loss | Score relative L2 error | Backbone gradient relative L2 error | Hidden gradient relative L2 error | Output gradient relative L2 error |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Random | 3.74278 / 3.74148 | 1.43% | 4.68% | 4.61% | 1.31% |
+| Pretrained | 3.77631 / 3.77755 | 1.92% | 9.10% | 9.61% | 1.53% |
+
+Relative errors are L2 difference divided by the floating reference norm,
+aggregated over each parameter group. The initial pretrained gradient discrepancy
+was larger despite its better eventual accuracy: these initial errors alone do
+not explain the earlier result. Preparation uses deterministic rounding; subsequent
+updates use stochastic rounding and share the CUDA RNG with stochastic layers.
+Further investigation should separate repeated-seed variation, optimizer updates
+and stochastic-layer effects before changing training numerics. The diagnostic
+script, exact image paths and results are retained beside the reports as
+`gradient_probe.py`, `gradient-probe.json` and `gradient-probe.log`.
