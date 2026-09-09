@@ -1272,3 +1272,53 @@ same input files, explicit threads and floating baseline. This x86 result does
 not establish ARM fusion, kernel behavior or performance; run the full procedure
 on the intended edge device before accepting that profile. See the
 [measured comparison](../../docs/benchmarks.md#cpu-specific-activation-and-bias-calibration).
+
+### Composed CPU deployment comparison
+
+`dev.benchmarks.cpu_deployment` connects full held-out quality evaluation,
+operator/provider inspection and repeated isolated memory/latency trials for
+already exported baseline and candidate ONNX bundles. Run from a checkout in a
+prepared Linux CPU environment; dependencies are never installed implicitly.
+
+```bash
+.venv/bin/python -m dev.benchmarks.cpu_deployment \
+  --baseline materialized/model.onnx --candidate cpu-qdq/model.onnx \
+  --manifest prepared-val/manifest.json --inputs batch-one.npz \
+  --output cpu-deployment-run-1 --threads 1 --trials 3 --warmup 3 --repeats 31 \
+  --require-provider-op QLinearConv --require-provider-op QGemm \
+  --metrics-python /path/to/metrics-env/bin/python
+```
+
+The manifest supplies held-out identities, class ordering and score semantics.
+The separate NPZ selects the fixed batch shape for resource measurement; carry
+its preprocessing and sample-selection provenance alongside it. Baseline and
+candidate use that same NPZ. Preparation and calibration remain separate steps.
+The main interpreter supplies ONNX CPU dependencies, while `--metrics-python`
+can select an independently prepared mini_metrics environment.
+
+Execution is sequential: paired quality, baseline/candidate placement, then
+resource trials. Every profiling and resource command gets its own process;
+profiling allocations cannot inflate the memory trial's high-water mark. The
+first trial runs baseline then candidate, the next reverses the order, and so
+on. Each resource pair must have matching settings and reported environments.
+The graph/external-weight hashes must match those observed during quality
+collection, and the resource input hash must remain unchanged through placement
+and timing. Drift or a failed child stops the run and retains the failed phase,
+logs and completed evidence. An existing output directory is rejected.
+
+The output contains the child reports and logs, a top-level `report.json`, and
+`summary.md` combining all five quality deltas with per-trial latency and memory
+ratios. These ratios compare separate-process warm medians; they are not adjacent
+per-inference pairs. All raw timings, startup observations and memory accounting
+remain in the child reports. Requested candidate operation types must occur on
+CPU, but this does not assert that every weighted operation is integer: inspect
+`execution` counts and remaining floating operators. The operation requirements
+are explicit and optional; no model-specific operator list is hardcoded.
+
+Run the command without competing tests or benchmarks when using timing results.
+It does not evict disk caches or control temperature, affinity or power states.
+`evaluated` means the procedure completed, not that quality/resource trade-offs
+passed production acceptance. For visible CI reporting, retain the complete
+output directory even on failure and append its `summary.md` to the job summary
+when present. Durable cross-run hosting, recipe acceptance gates, preprocessing
+costs and actual target-device verification remain separate requirements.

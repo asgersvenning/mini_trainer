@@ -6,6 +6,7 @@ import sys
 import numpy as np
 import pytest
 
+from dev.benchmarks.cpu_deployment import evaluate as evaluate_cpu
 from dev.benchmarks.dataset_inference import collect, inference_manifest, pair_bundle, predictions
 from dev.benchmarks.inference_pair import run_pair
 from dev.benchmarks.quality_compare import read_manifest, read_predictions
@@ -111,6 +112,64 @@ def test_pair_pipeline_rejects_unknown_options_before_creating_output(example, t
     with pytest.raises(ValueError, match="Unknown candidate"):
         run_pair(manifest, model, model, output, candidate_runtime={"typo": True})
     assert not output.exists()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux process memory measurements")
+def test_cpu_deployment_composes_quality_placement_and_alternating_trials(example, tmp_path):
+    pytest.importorskip("onnxruntime")
+    pytest.importorskip("mini_metrics")
+    model, manifest, _ = example
+    output = tmp_path / "deployment"
+    report = evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, trials=2, warmup=1, repeats=2, required_ops=["Add"])
+    assert report["status"] == "evaluated"
+    assert [p["order"] for p in report["pairs"]] == [["baseline", "candidate"], ["candidate", "baseline"]]
+    assert len(report["stages"]) == 6
+    assert all(value > 0 for p in report["pairs"] for value in p["candidate_over_baseline"].values())
+    assert all(level["prediction_changes"] == 0 for level in report["quality"]["levels"])
+    assert any(op["op"] == "Add" for op in report["execution"]["candidate"])
+    summary = (output / "summary.md").read_text()
+    assert "Warm latency ratio" in summary and "Theil U delta" in summary
+    with pytest.raises(FileExistsError):
+        evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output)
+
+
+def test_cpu_deployment_missing_required_operation_stops_before_resource_trials(example, tmp_path):
+    pytest.importorskip("onnxruntime")
+    pytest.importorskip("mini_metrics")
+    model, manifest, _ = example
+    output = tmp_path / "failed-deployment"
+    with pytest.raises(RuntimeError, match="placement-candidate failed"):
+        evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, required_ops=["QLinearConv"])
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "failed" and report["phase"] == "placement"
+    assert report["pairs"] == [] and not list(output.glob("trial-*"))
+    assert report["stages"][-1]["status"] == "failed"
+    assert (output / "quality/summary.md").exists()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux process memory measurements")
+def test_cpu_deployment_rejects_changed_timing_input_after_placement(example, tmp_path, monkeypatch):
+    pytest.importorskip("onnxruntime")
+    pytest.importorskip("mini_metrics")
+    model, manifest, _ = example
+    inputs, output = tmp_path / "batch-0.npz", tmp_path / "changed-input"
+    original = subprocess.run
+
+    def change_before_measurement(command, **kwargs):
+        if "dev.benchmarks.onnx_cpu_memory" in command:
+            with np.load(inputs) as archive:
+                arrays = {k: v.copy() for k, v in archive.items()}
+            arrays["x"] += 0.5
+            np.savez(inputs, **arrays)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", change_before_measurement)
+    with pytest.raises(ValueError, match="changed between quality and resource"):
+        evaluate_cpu(model, model, manifest, inputs, output, trials=1, warmup=1, repeats=1)
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "failed" and report["phase"] == "resources"
+    assert report["pairs"] == []
+    assert not (output / "summary.md").exists()
 
 
 def test_cpu_collection_handles_multiple_inputs_levels_and_partial_batch(example, tmp_path):

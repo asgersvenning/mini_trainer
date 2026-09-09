@@ -74,8 +74,11 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    [paired quality pipeline](../dev/benchmarks/README.md#paired-inference-quality-pipeline)
    now runs both collectors and the evaluator in fresh processes, retaining logs,
    failure reports and a Markdown summary, with separately selectable runtime and
-   metric interpreters. Compose preparation, calibration, builds, placement and
-   performance checks with it, and package the explicit optional environments.
+   metric interpreters. A [composed CPU deployment check](../dev/benchmarks/README.md#composed-cpu-deployment-comparison)
+   now connects full quality, candidate operation requirements and repeated
+   fresh-process memory/latency trials, checks artifact hashes across phases and
+   produces a combined Markdown summary. Preparation, calibration, GPU builds and
+   GPU resource checks still need composition; package the explicit optional environments.
    The default preparation factory
    uses current architecture-loader transforms; custom preprocessing still needs
    an explicit reviewed factory and input verification.

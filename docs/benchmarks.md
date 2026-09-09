@@ -2114,6 +2114,46 @@ driver. Batch-one inputs and source provenance are reused from
 checks, and twelve timing processes completed successfully. Static checks passed;
 this increment changes documentation only, so the full runtime suite was not rerun.
 
+### Composed CPU deployment validation
+
+`dev.benchmarks.cpu_deployment` now runs the full held-out quality comparison,
+baseline/candidate operation inspection and repeated fresh-process resource
+trials in one command. It links graph/external-weight hashes across phases,
+rejects changed timing inputs, checks paired environments/settings and retains
+logs, child reports and a combined Markdown summary. Candidate operator
+requirements are explicit, not hardcoded by architecture. See the
+[command guide](../dev/benchmarks/README.md#composed-cpu-deployment-comparison).
+
+Both real heads completed the command with the unsigned CPU candidates and the
+same materialized float baselines, all 912 held-out Blair images, batch-one
+resource inputs, one thread, three trial pairs, three warmups and 31 repetitions.
+The full regression suite finished before these runs; the two complete model
+comparisons ran sequentially. Predictions and all five metric values reproduced
+the preceding CPU recipe study exactly for both baseline and candidate CSVs.
+Each candidate again executed 170 QLinearConv and two QGemm operations with no
+floating Conv. Every phase's artifact identity checks passed.
+
+| Head | Candidate/baseline warm latency ratios, trials 1/2/3 | Final RSS ratios, trials 1/2/3 |
+| --- | --- | --- |
+| Flat | 0.489 / 0.474 / 0.588 | 0.540 / 0.518 / 0.536 |
+| Hierarchical | 0.454 / 0.453 / 0.491 | 0.520 / 0.534 / 0.545 |
+
+These fresh x86 runs replicate the local latency/memory benefit. They are
+separate-process median comparisons, not adjacent inference-pair measurements,
+and do not establish sustained thermal behavior or target ARM performance.
+Raw warm timings, startup observations, approximate memory peaks, output arrays,
+placement profiles and quality reports are retained in
+`tmp-cpu-deployment-{flat,hierarchical}/`. Existing model and input bundles are
+reused; they are not copied into these report directories.
+
+Regression coverage exercises the real subprocess pipeline with a small
+two-level oracle, alternating execution order, rejection of existing outputs,
+missing required operations and changed timing inputs. `bash dev/check.sh all`
+passed static checks and 479 tests, with 152 skips and one known EMA expected
+failure. This composes evaluation of existing CPU deployment artifacts;
+preparation/calibration, GPU orchestration, durable CI hosting and profile-specific
+acceptance gates remain unfinished.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ
