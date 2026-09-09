@@ -542,3 +542,42 @@ change does not establish a speed gain for that helper.
 The shared [loader probe](../dev/benchmarks/README.md#worker-batch-assembly) now
 accepts explicit `--workers` and `--cache` options with picklable readers.
 Detailed trial results are retained under `/tmp/mini-trainer-shared-batch-final`.
+
+### Uint8 nearest resize in the streaming reader
+
+The default nearest-neighbor reader now gathers decoded uint8 image rows and
+columns directly, avoiding torchvision's temporary float image and conversion
+back to bytes. It preserves the legacy nearest coordinate mapping, unchanged-size
+identity, output layout and dtype conversion. Other interpolation modes and
+outputs larger than 4096 pixels on either axis retain the existing path. Coordinate
+caching is limited to 32 one-dimensional arrays, at most about 1 MiB per process.
+
+The replacement was checked against legacy float resizing across thousands of
+source/target length combinations and randomized images, including non-square and
+singleton dimensions. Layout checks caught and corrected a singleton-stride
+difference before measurement. Direct uint8 `interpolate` was also measured but
+was slower; that candidate was not adopted.
+
+The [file-backed reader probe](../dev/benchmarks/README.md#streaming-image-reader-comparison)
+uses the actual uncached inference loader. Each profile reads the first 128 sorted
+JPEG/PNG paths under the dataset's test directory, resizes to 224×224, and batches
+16 images. One Torch thread is used, with either zero workers or one spawn worker.
+Every batch matches the former reader exactly. The table reports medians of seven
+alternating measured passes after equivalence checks and warmup.
+
+| Dataset | Workers | Former reader images/s | Gather reader images/s | Observed gain |
+| --- | ---: | ---: | ---: | ---: |
+| MNIST | 0 | 4,071 | 4,889 | 20.1% |
+| MNIST | 1 | 3,123 | 3,685 | 18.0% |
+| Blair | 0 | 2,890 | 3,197 | 10.6% |
+| Blair | 1 | 2,049 | 2,653 | 29.5% |
+
+These measurements include decoding, resizing, batch assembly and IPC with a warm
+filesystem cache. They exclude worker startup, H2D and model compute, and do not
+establish model-inference or training speedups of the same size. The MNIST profile
+deliberately resizes to 224×224; it is not the 28×28 MNIST training recipe. Worker
+defaults are unchanged, and adding a worker was slower on both datasets here.
+
+Results, per-file content hashes, versions and timing samples are retained under
+`/tmp/mini-trainer-reader-comparison`. The standalone CPU command can be reused in
+continuous validation wherever the corresponding dataset is available.

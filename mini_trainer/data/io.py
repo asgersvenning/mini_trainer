@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from enum import Enum
+from functools import lru_cache
 from itertools import batched
 from typing import Any, TypeVar, cast
 
@@ -111,6 +112,28 @@ def _pil_to_torch_interp(interp: int) -> InterpolationMode:
     return m.get(interp, InterpolationMode.BILINEAR)  # type: ignore
 
 
+@lru_cache(maxsize=32)
+def _nearest_indices(source_size, target_size):
+    # Match ATen's legacy nearest mapping: float32 scale, floor, then clamp.
+    # Cache only one-dimensional coordinates, never full image-sized maps.
+    scale = np.float32(source_size) / np.float32(target_size)
+    indices = (np.arange(target_size, dtype=np.float32) * scale).astype(np.int64)
+    np.minimum(indices, source_size - 1, out=indices)
+    return torch.from_numpy(indices)
+
+
+def _resize_nearest_uint8(image, height, width):
+    if image.shape[-2:] == (height, width):
+        return image
+    rows = _nearest_indices(image.shape[1], height)
+    columns = _nearest_indices(image.shape[2], width)
+    # Decoders return interleaved RGB storage. Gather whole rows/pixels before
+    # restoring the contiguous CHW layout produced by torchvision resizing.
+    return (
+        image.permute(1, 2, 0).index_select(0, rows).index_select(1, columns).permute(2, 0, 1).clone(memory_format=torch.contiguous_format)
+    )
+
+
 class ReadAndResize:
     """Callable class to read and resize images from paths."""
 
@@ -137,7 +160,17 @@ class ReadAndResize:
         except Exception as e:
             e.add_note(f"Image path: {path}")
             raise
-        img = TF.resize(img, size=[self.h, self.w], interpolation=self.interp, antialias=self.antialias)
+        if (
+            self.interp == InterpolationMode.NEAREST
+            and img.device.type == "cpu"
+            and img.dtype == torch.uint8
+            and img.ndim == 3
+            and 0 < min(self.h, self.w)
+            and max(self.h, self.w) <= 4096
+        ):
+            img = _resize_nearest_uint8(img, self.h, self.w)
+        else:
+            img = TF.resize(img, size=[self.h, self.w], interpolation=self.interp, antialias=self.antialias)
         if img.dtype != self.dtype:
             img = self.converter(img)
         return img.to(self.device)

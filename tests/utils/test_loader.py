@@ -20,6 +20,48 @@ def _assert_shared_worker_batch(samples):
     return data_loader._collate_batch(samples)
 
 
+def test_nearest_coordinates_match_legacy_float_resize():
+    sources = [*range(1, 64), 127, 255, 257, 1023, 2049]
+    targets = [*range(1, 64), 127, 224, 257, 4096]
+    for source in sources:
+        values = torch.arange(source, dtype=torch.float32).reshape(1, 1, source, 1)
+        for target in targets:
+            expected = torch.nn.functional.interpolate(values, size=(target, 1), mode="nearest").flatten().long()
+            torch.testing.assert_close(data_io._nearest_indices(source, target), expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("source", [(3, 7), (17, 31), (128, 256)])
+@pytest.mark.parametrize("target", [(1, 1), (1, 19), (11, 1), (11, 19), (224, 224)])
+@pytest.mark.parametrize("dtype", [torch.uint8, torch.float32])
+def test_reader_nearest_resize_matches_pixels_layout_and_conversion(monkeypatch, source, target, dtype):
+    from torchvision.transforms import InterpolationMode
+    from torchvision.transforms import functional as transforms
+
+    image = torch.randint(0, 256, (*source, 3), dtype=torch.uint8, generator=torch.Generator().manual_seed(127)).permute(2, 0, 1)
+    monkeypatch.setattr(data_io, "decode_image", lambda *args, **kwargs: image)
+    reader = data_io.make_read_and_resize_fn((target[1], target[0]), torch.device("cpu"), dtype)
+    expected = transforms.resize(image, list(target), interpolation=InterpolationMode.NEAREST)
+    if dtype != torch.uint8:
+        expected = data_io.make_convert_dtype(dtype)(expected)
+    torch.testing.assert_close(reader("test-image"), expected, rtol=0, atol=0, check_stride=True)
+
+
+def test_reader_identity_and_non_nearest_paths_remain_unchanged(monkeypatch):
+    from torchvision.transforms import InterpolationMode
+    from torchvision.transforms import functional as transforms
+
+    image = torch.randint(0, 256, (7, 11, 3), dtype=torch.uint8).permute(2, 0, 1)
+    monkeypatch.setattr(data_io, "decode_image", lambda *args, **kwargs: image)
+    identity = data_io.make_read_and_resize_fn((11, 7), torch.device("cpu"), torch.uint8)
+    assert identity("test-image") is image
+    bilinear = data_io.make_read_and_resize_fn((19, 5), torch.device("cpu"), torch.uint8, interpolation=Image.Resampling.BILINEAR)
+    expected = transforms.resize(image, [5, 19], interpolation=InterpolationMode.BILINEAR)
+    torch.testing.assert_close(bilinear("test-image"), expected, rtol=0, atol=0, check_stride=True)
+    wide = data_io.make_read_and_resize_fn((4097, 1), torch.device("cpu"), torch.uint8)
+    expected = transforms.resize(image, [1, 4097], interpolation=InterpolationMode.NEAREST)
+    torch.testing.assert_close(wide("test-image"), expected, rtol=0, atol=0, check_stride=True)
+
+
 @pytest.fixture
 def metadata(tmp_path):
     paths = []

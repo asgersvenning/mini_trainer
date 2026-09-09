@@ -347,6 +347,26 @@ training/checkpoint/inference profile passed its 100% oracle gate with prefetch
 and reproduced the earlier QT held-out scores bit for bit; that establishes
 compatibility, not a training speedup.
 
+### Streaming image-reader comparison
+
+```bash
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.reader \
+    --data-root examples/blair/test --samples 128 --size 224 --batch-size 16 \
+    --workers 1 --repeats 7 > /tmp/blair-reader.json
+```
+
+Repeat with `--workers 0` or `--data-root examples/mnist/test`. This uses the
+actual streaming inference loader and compares the former torchvision resize
+path with the current reader. Every batch must match exactly before timing.
+JSON includes relative file names, content hashes, dependency versions and every
+timing sample. Paths are sorted and the first requested number of JPEG/PNG files
+is used; files are never modified.
+
+Timing includes file reads, decoding, nearest resize, assembly and worker IPC.
+The equivalence pass warms the filesystem cache and persistent workers, so these
+are not cold-disk or worker-startup measurements. H2D and model compute are excluded.
+See the [reader findings](../../docs/benchmarks.md#uint8-nearest-resize-in-the-streaming-reader).
+
 ### Worker batch assembly
 
 ```bash
