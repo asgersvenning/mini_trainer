@@ -122,6 +122,11 @@ def train_one_epoch(
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
+        if getattr(optimizer, "_mini_trainer_optimizer_cudagraphs", False):
+            # Model, backward, and optimizer graphs belong to one iteration.
+            # Automatic inference can otherwise retire backward's gradient buffers
+            # before the separately compiled optimizer consumes them.
+            torch.compiler.cudagraph_mark_step_begin()
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")

@@ -146,4 +146,5 @@ def compile_optimizer(optimizer, *, backend=None, cudagraphs=False):
         target.step = _compile_after_initial_call(target, options, cudagraphs=cudagraphs)
         target._mini_trainer_compiled = True
         target._mini_trainer_optimizer_cudagraphs = cudagraphs
+    optimizer._mini_trainer_optimizer_cudagraphs = cudagraphs
     return optimizer

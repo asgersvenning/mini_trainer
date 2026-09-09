@@ -102,7 +102,12 @@ During AOT fake-tensor tracing, updates expose floating arithmetic followed by
 functional requantization and storage copies. Eager native updates are retained.
 Learning rates stay on CUDA during replay; checkpoints retain numeric values and
 explicit non-default rate precision. This leaves the AMP gate, scheduler and
-MuonAuxAdamW outer counter in their existing roles. See the
+MuonAuxAdamW outer counter in their existing roles. The training loop explicitly
+marks each graph iteration before the model runs, keeping backward gradient
+buffers alive until the optimizer consumes them. Custom training loops must call
+[`torch.compiler.cudagraph_mark_step_begin()`](https://docs.pytorch.org/docs/2.12/generated/torch.compiler.cudagraph_mark_step_begin.html)
+before each training iteration when
+combining compiled models with optimizer graph replay. See the
 [optimizer graph requirements](../dev/README.md#optimizer-cuda-graphs), including
 native fused float32-rate restrictions. The native fused optimizer tests use
 floating parameters; they do not establish native fused updates of INT8 weights.

@@ -392,3 +392,44 @@ def test_invalid_saved_rate_dtype_fails_before_compilation():
         compile_optimizer(optimizer)
     assert optimizer.step == original_step and not optimizer.state
     assert not optimizer._optimizer_state_dict_post_hooks
+
+
+@pytest.mark.parametrize("quantized", [False, True])
+@pytest.mark.parametrize("kind", ["sgd", "adamw", "muon"])
+def test_cuda_model_and_optimizer_graphs_share_training_iterations(quantized, kind):
+    from mini_trainer.modeling.ema import EMATeacher
+    from mini_trainer.modeling.quantized_training import prepare_quantized_training
+    from mini_trainer.training.compilation import compile_optimizer
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify combined model and optimizer graph lifetimes")
+    torch._dynamo.reset()
+    torch.manual_seed(31)
+    device = torch.device("cuda:0")
+    raw = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(12, 16), torch.nn.ReLU(), torch.nn.Linear(16, 3)).to(device)
+    if quantized:
+        prepare_quantized_training(raw)
+    model = torch.compile(raw, mode="reduce-overhead")
+    optimizer = make_optimizer(kind, raw.parameters())
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.93)
+    compile_optimizer(optimizer, cudagraphs=True)
+    loader = DataLoader(TensorDataset(torch.randn(24, 3, 2, 2), torch.arange(24) % 3), batch_size=4)
+    logger = Mock()
+    logger.status.return_value = "combined graph regression"
+    train_one_epoch(
+        model,
+        EMATeacher(enable=False, total_steps=6),
+        torch.nn.CrossEntropyLoss(),
+        optimizer,
+        torch.amp.GradScaler("cuda", init_scale=8),
+        scheduler,
+        loader,
+        0,
+        logger,
+        device=device,
+        dtype=torch.float16,
+    )
+    assert scheduler.last_epoch == 6
+    assert logger.consume.call_count == 6
+    if kind == "muon":
+        assert optimizer._step_count == 6
