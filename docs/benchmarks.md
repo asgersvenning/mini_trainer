@@ -2481,6 +2481,71 @@ the twelve real training runs, six two-level metric evaluations and the identity
 configuration and checkpoint checks above. No library code changed, so the
 previous full-suite result remains separate from this empirical study.
 
+### Twenty-epoch hierarchical convergence diagnostic
+
+Revision `5010b22` runs a fresh 20-epoch full-training pair at seed 42 through
+`qt-efficientnet`, using the restored epoch logger. Both models use pretrained
+EfficientNetV2-S, the normalized symmetric hierarchical head, BF16 AMP, the same
+reviewed Blair splits, batch 32, 128px images and MuonAuxAdamW at learning rate
+0.01. Compilation is disabled. Float runs before native INT8; no benchmark/test
+jobs overlap. GPU clocks, thermals and background OS activity remain uncontrolled
+on the local RTX 3080 Ti Laptop GPU. This is one diagnostic seed, not a new
+three-seed qualification or evidence about the intended deployment hardware.
+
+Both runs completed 20 epochs, checkpoint-reloaded inference and two-level
+mini_metrics evaluation. Final resume checkpoints record epoch 19, scheduler
+position 2,300 and Adam step 2,300. Source and dataset hashes match within the
+pair; the held-out identities, labels, ordered class mappings and image hashes
+also match the earlier five-epoch seed-42 evaluation. Every epoch now has real
+train/validation statistics. Final `last.pt` checkpoints are evaluated without
+held-out seed, threshold or epoch selection.
+
+| Measurement | Float | INT8 |
+| --- | ---: | ---: |
+| Whole training call (s) | 320.502 | 349.918 |
+| Median train phase, epochs 3–20 (s) | 13.919 | 14.836 |
+| Scoped peak allocated memory (MiB) | 1,230.659 | 1,189.365 |
+| Held-out leaf Macro-F1 | 0.75854 | 0.76184 |
+| Held-out parent Macro-F1 | 0.86738 | 0.86656 |
+
+INT8 takes 9.2% longer for the training call and 6.6% longer in median later train
+phases, with 3.4% lower peak allocation. A single ordered pair does not establish
+a stable timing ratio. These scoped allocator peaks are not total process/device
+memory, and this result does not demonstrate a time-to-useful-quality advantage.
+
+All five held-out metric differences below are INT8 minus float, multiplied by
+100. Coverage is 1.0 throughout; none of the metrics is undefined.
+
+| Level | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Leaf | +0.331 | −0.279 | +1.612 | 0 | −0.252 |
+| Parent | −0.082 | −0.992 | +1.559 | 0 | +0.323 |
+
+The parent Macro-F1 gap is small at this budget in seed 42. This does not erase
+the earlier five-epoch, three-seed regressions or establish quality superiority.
+The new run has a fresh 20-epoch cosine schedule as well as more updates, and the
+restored logger adds overhead. It is not an isolated extra-epochs intervention
+or a directly comparable timing baseline for the older unlogged runs.
+
+The curves expose a separate concern: INT8 training loss falls steadily, but its
+validation loss spikes in the first half of training. At epochs 5 and 10 it is
+6.405 and 4.807, versus float 1.571 and 1.378. By epochs 15 and 20 it is 0.856
+and 0.824, versus float 0.944 and 0.934. Final batch-averaged validation leaf/parent
+accuracy is 86.53%/94.18% INT8 versus 84.91%/92.35% float. These validation batch
+means are distinct from held-out macro metrics. The spikes warrant replaying
+intermediate checkpoints and inspecting train/eval state before assuming that
+simply extending training is a reliable production solution. Their cause has not
+been established by this experiment.
+
+The exact environment/command record is `tmp-hierarchical-long-budget/protocol.json`.
+Use the documented representative profile with `BENCHMARK_HEAD=hierarchical`,
+`BENCHMARK_TRAINING_MODE=full`, `BENCHMARK_SEEDS=42` and `BENCHMARK_EPOCHS=20`.
+The same ignored directory retains reports, epoch CSVs, all checkpoints needed
+for the instability investigation, predictions, the paired quality bundle,
+`checkpoint-checks.json`, and `curves.png` with its plotting script. No library
+code changed; validation comprises the real paired run, metric evaluation,
+cross-study held-out identity checks and checkpoint-step checks above.
+
 ### Isolated 100k-class optimizer compilation comparison
 
 Revision `aff0807` exposes the existing optimizer compilation and graph options

@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the hierarchical training study](benchmarks.md#isolated-three-seed-hierarchical-training-comparison).
+recorded in [the twenty-epoch hierarchical diagnostic](benchmarks.md#twenty-epoch-hierarchical-convergence-diagnostic).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -75,6 +75,16 @@ Its artifacts are in ignored `tmp-epoch-logger-int8/`; CPU checks overlapped, so
 its timings are excluded from performance claims. This restores the prerequisite
 for a longer convergence study; it does not supply the missing historical curves.
 
+
+A [fresh twenty-epoch hierarchical pair](benchmarks.md#twenty-epoch-hierarchical-convergence-diagnostic)
+at seed 42 now completes with actual epoch statistics. Held-out INT8 leaf/parent
+Macro-F1 differences are +0.331/−0.082 points, with mixed changes in other metrics.
+INT8 retains a 3.4% allocated-memory saving but takes 9.2% longer for the local
+training call. Both checkpoints record 2,300 optimizer/scheduler updates. Strong
+INT8 validation-loss spikes in the first half of training settle later; replaying
+retained intermediate checkpoints and examining train/eval state is the next
+focused diagnostic. One longer-budget seed neither resolves the multi-seed
+quality question nor establishes target-hardware benefit.
 
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.
