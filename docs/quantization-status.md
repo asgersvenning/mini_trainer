@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the hierarchical BatchNorm-state diagnostic](benchmarks.md#hierarchical-validation-replay-and-batchnorm-state-diagnostic).
+recorded in [the BatchNorm update audit](benchmarks.md#batchnorm-update-equations-and-refresh-controls).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -95,6 +95,15 @@ This identifies running-statistic sensitivity as a substantial contributor in
 this checkpoint, but not its origin or a universally beneficial production recipe.
 Next inspect the training-state updates and qualify any proposed refresh on
 additional seeds/heads with five held-out metrics and its extra execution cost.
+
+The [BatchNorm update audit and refresh controls](benchmarks.md#batchnorm-update-equations-and-refresh-controls)
+find correct eager update equations, exactly expected inherited batch counts,
+and unchanged running state during evaluation. The early recovery also occurs
+with normal training-mode stochastic layers and the original momentum 0.1 while
+all weights remain fixed. Lagging statistics remain a plausible explanation;
+these results do not justify patching BatchNorm counters or update equations.
+Multi-seed/head held-out qualification and accounting for refresh cost remain
+necessary before adopting an explicit refresh recipe.
 
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.

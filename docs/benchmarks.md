@@ -2605,6 +2605,59 @@ argmax and matched replay reports, `batchnorm-report.json` and the stronger
 replays, four controlled refresh ablations and one stronger state-preservation
 repeat; no new speed, memory or target-hardware claim is made.
 
+### BatchNorm update equations and refresh controls
+
+At revision `fe15d3a`, an eager BF16 audit checks all 110 backbone BatchNorm
+modules in the float and native INT8 epoch-6 and epoch-20 checkpoints. The
+pretrained checkpoint contains 671,327 tracked batches per module. Both training
+precisions contain exactly 672,017 at epoch 6 and 673,627 at epoch 20: the
+pretrained count plus 115 updates per training epoch. No unexplained counter
+offset is present in these retained states.
+
+Forward hooks capture each layer's actual input statistics for one training
+batch. Every module executes once, increments its counter once, and follows
+momentum 0.1 for its running mean and unbiased variance. Expected values computed
+from the inputs pass `rtol=1e-4, atol=2e-5`; maximum absolute differences are
+3.81e-6 for means and 4.88e-4 for variances, consistent with floating reduction
+rounding at the observed scales. A subsequent evaluation forward leaves all
+running means, variances and counters exactly unchanged. No optimizer update is
+performed in this probe. This finds no update-equation or mode-handling defect
+in the examined eager path; it does not audit compiled graphs or distributed
+training, nor reconstruct every historical batch.
+
+Six additional epoch-6 refresh controls hold all weights fixed and vary averaging
+policy and stochastic-layer mode. Each resets BatchNorm state and processes the
+same training-only 115 batches, as in the preceding ablation. Full training mode
+retains normal stochastic depth/dropout; BatchNorm-only mode disables those
+stochastic layers. All parameter and non-BatchNorm buffer arrays remain exactly
+unchanged in every control.
+
+| Precision | Refresh mode | Momentum | Validation loss after | Leaf accuracy after (%) | Parent accuracy after (%) |
+| --- | --- | --- | ---: | ---: | ---: |
+| Float | BatchNorm only | 0.1 | 1.108 | 76.19 | 87.39 |
+| Float | Full training mode | 0.1 | 1.110 | 76.19 | 87.39 |
+| Float | Full training mode | Cumulative | 1.097 | 76.51 | 86.85 |
+| INT8 | BatchNorm only | 0.1 | 1.310 | 71.77 | 84.81 |
+| INT8 | Full training mode | 0.1 | 1.287 | 72.31 | 85.45 |
+| INT8 | Full training mode | Cumulative | 1.256 | 72.95 | 85.88 |
+
+The original validation losses were 1.567 float and 5.865 INT8. Recovery therefore
+occurs even with the normal training-mode stochastic layers and original
+momentum. It is not specific to cumulative averaging or disabling stochastic
+layers. Lag between the changing model and its running statistics is a working
+explanation consistent with these controls; the experiment does not fully
+establish how that lag arose or quantify each source of training instability.
+There is no evidence here for changing BatchNorm's update equations or patching
+its counters.
+
+Next qualify an explicit training-only refresh on additional heads/seeds with
+all five held-out metrics and the added pass cost, before proposing a default or
+production deployment recipe. These controls use validation batch-mean loss and
+accuracy, not held-out acceptance or target-hardware performance measurements.
+Scripts, per-module equation checks, pretrained counter evidence and six refresh
+reports are retained in ignored `tmp-batchnorm-update-audit/`. No library or
+training-default changes were made.
+
 ### Isolated 100k-class optimizer compilation comparison
 
 Revision `aff0807` exposes the existing optimizer compilation and graph options
