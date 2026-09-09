@@ -68,8 +68,10 @@ history remain the next reporting steps.
 A draft-release storage client now restores monthly compact archives and can
 explicitly append new records with byte-for-byte readback. Its simulated GitHub
 CLI tests cover pagination, immutable run identities and interrupted retries.
-Live storage verification, automated publication and public hosting remain open;
-the client alone is not evidence that results have been durably hosted.
+An opt-in publisher now connects the target job's exact compact artifact to draft
+storage and GitHub Pages from the default branch. Live storage verification,
+activation and browser qualification remain open; workflow wiring alone is not
+evidence that results have been durably hosted.
 
 ## Current evidence
 

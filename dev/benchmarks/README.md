@@ -1710,8 +1710,7 @@ archive its detailed evaluation report. Missing quality and undefined metrics
 remain visible, and completed evaluation is not displayed as production acceptance.
 
 The renderer currently supports TensorRT deployment records. CPU/ARM and training
-history adapters, persistent hosted storage and publication automation remain
-unfinished. No remote uploads occur from either command. Local HTML structure
+history adapters remain unfinished. No remote uploads occur from either command. Local HTML structure
 and escaping have tests; browser rendering still needs visual qualification.
 
 The target workflow now also calls `bash dev/check-report-history.sh RESULTS HISTORY`
@@ -1729,8 +1728,8 @@ the default is `false`. Failed evaluations remain excluded regardless of this se
 Run IDs include the workflow attempt, and source revision/run links come from Actions.
 Locally, supply `BENCHMARK_RUN_ID`, `BENCHMARK_REVISION`, `BENCHMARK_PROFILE`, and
 optionally `BENCHMARK_RUN_URL`, `BENCHMARK_NOTE`, `BENCHMARK_PERFORMANCE_VALID`.
-These artifacts still expire after 90 days: this wiring prepares publisher input,
-but does not yet provide persistent storage or a public historical website.
+These artifacts still expire after 90 days. The optional publisher below stores
+compact records separately and deploys the historical page.
 
 ### Draft release storage client
 
@@ -1771,7 +1770,44 @@ This avoids Actions artifact expiration when explicitly used, but maintainers ca
 still alter/delete draft assets. Keep an independent backup for stronger retention.
 Tests simulate the GitHub CLI boundary, pagination, conflicts, interrupted uploads,
 readback corruption and authentication failures. No live release upload has yet
-been verified, and the client is not connected to an automatic publisher or Pages.
+been verified; the optional workflow integration below still needs remote qualification.
 See the [GitHub CLI API options](https://cli.github.com/manual/gh_api) and
 [release API](https://docs.github.com/en/rest/releases/releases) for the underlying
 pagination and draft-release contract.
+
+### Opt-in public history publisher
+
+The TensorRT workflow includes a separate GitHub-hosted `publish-history` job.
+It downloads the GPU job's compact artifact by its output ID, restores all monthly
+records, appends new records with readback verification, and deploys the regenerated
+HTML and compact JSON to GitHub Pages. It does not download engines or predictions.
+The producing artifact ID survives a publisher-only retry; the new Pages artifact
+name includes the current attempt to avoid colliding with a previous upload.
+
+To activate after the workflow is merged to the default branch:
+
+1. Configure the target GPU job using the environment/data instructions above.
+2. Enable GitHub Pages with **GitHub Actions** as its publishing source and configure
+   the `github-pages` environment to permit the default branch. This workflow owns
+   the repository's Pages site, so incorporate any existing site before enabling it.
+3. Review `TRT_REPORT_PROFILE`, `TRT_REPORT_NOTE` and `TRT_PERFORMANCE_VALID` as public
+   metadata; set repository variable `ENABLE_BENCHMARK_HISTORY=true`.
+4. Dispatch TensorRT deployment on the default branch. Inspect the stored draft
+   assets, compare their bytes to the compact artifact, and open the deployment URL
+   shown on the `github-pages` environment. Confirm failed records and excluded
+   resource comparisons remain visible before relying on continuous publication.
+
+Feature-branch runs never publish. The publisher uses its job-scoped GitHub token
+with contents write, Pages write and OIDC permissions; the self-hosted GPU job
+retains read-only repository permissions. Publication is serialized and is eligible
+even when evaluation fails, provided a compact artifact was successfully uploaded.
+If archival or rendering fails, deployment does not proceed. If only Pages fails,
+stored records remain available and the publisher job can be rerun. Recover an
+expired or otherwise unavailable producing artifact from retained local records
+using the storage client; a new benchmark is not required to restore old evidence.
+
+This is implemented workflow wiring, not a verified live service. The feature
+branch has not enabled repository settings or published a site. Local validation
+covers YAML/Bash syntax and storage/report behavior; the first remote run must
+qualify GitHub authentication, release assets, Pages deployment and browser display.
+The setup follows [GitHub's custom Pages workflow requirements](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
