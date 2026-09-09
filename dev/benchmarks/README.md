@@ -1459,3 +1459,60 @@ quality results and the recorded timing/memory measurements remain valid within
 their stated scope. Do not treat the historical `best.pt` files as validated
 best-epoch choices. Restoring statistics changes logging overhead; rerun both
 precisions together before comparing new timing results with one another.
+
+### Representative paired EfficientNetV2 training profile
+
+`qt-efficientnet` composes the existing dataset runner, training-prediction adapter
+and five-metric evaluator. By default it trains pretrained EfficientNetV2-S with
+symmetric normalized flat and hierarchical heads, full and parameter-frozen
+backbones, seeds 42/43/44, BF16 and native INT8: 24 sequential training processes
+and twelve held-out comparisons. It uses the reviewed Blair taxonomy, five epochs,
+batch 32, 128px images, MuonAuxAdamW at learning rate 0.01, CPU caching and zero
+workers. Model/optimizer compilation is disabled. Odd seeds reverse precision and
+full/frozen ordering. Metric evaluation starts after every training process has
+finished, preserving isolation from that evaluation workload.
+
+Use explicitly prepared training and mini_metrics environments; the command
+installs nothing and does not assume a sibling checkout. The metrics interpreter
+is checked before training begins. Run from an otherwise idle allocation and
+record its actual hardware/runtime in the retained reports:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 PYTHONHASHSEED=0 \
+BENCHMARK_DATA_ROOT=/path/to/examples \
+BLAIR_CLASS_SPEC=/path/to/reviewed/class_spec.json \
+BENCHMARK_METRICS_PYTHON=/path/to/metrics-env/bin/python \
+bash dev/check-benchmarks.sh qt-efficientnet fresh-results
+```
+
+The following environment variables select a bounded diagnostic or longer budget:
+
+| Variable | Default | Accepted values |
+| --- | --- | --- |
+| `BENCHMARK_HEAD` | `both` | `both`, `flat`, `hierarchical` |
+| `BENCHMARK_TRAINING_MODE` | `both` | `both`, `full`, `frozen` |
+| `BENCHMARK_SEEDS` | `42 43 44` | Space-separated unique nonnegative integers |
+| `BENCHMARK_EPOCHS` | `5` | Positive integer; each model starts fresh with this schedule budget |
+| `BENCHMARK_PYTHON` | `.venv/bin/python` | Existing training interpreter |
+
+For example, set `BENCHMARK_HEAD=hierarchical`, `BENCHMARK_TRAINING_MODE=full`,
+`BENCHMARK_SEEDS=42` and `BENCHMARK_EPOCHS=20` for a fixed-seed longer-budget pair.
+This is a diagnostic, not a replacement for repeated-seed qualification. Choose
+the budget before examining held-out results; the command always evaluates final
+`last.pt` checkpoints and does not select a seed or threshold on the test split.
+
+The results directory must be new. It retains each training report, epoch CSV,
+checkpoints, predictions, pair input manifests, mini_metrics reports and logs.
+`summary.md` contains both training measurements and per-level quality differences
+for Macro-F1, Macro-Recall, Macro-Precision, Coverage and Theil's U. Differences
+are multiplied by 100, including Theil's U; undefined metrics remain explicit.
+Training or pairing/evaluation failures make the command return nonzero and are
+retained in reports and the summary. Other pairs still run so failures cannot
+silently remove difficult configurations from the evidence.
+
+The default matrix is substantially larger than the TinyConv `qt-real` profile.
+Size the allocation and artifact storage accordingly. This command is suitable
+for a configured target runner but is not yet wired into the scheduled GPU job;
+durable result hosting and joint quality/resource acceptance gates remain open.
+Local CUDA success does not establish HPC throughput, desktop ONNX performance
+or ARM inference support.

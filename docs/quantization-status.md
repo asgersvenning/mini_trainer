@@ -146,6 +146,17 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    five-metric evaluator without checkpoint or image transfers. It reproduced the
    pretrained fine-tuning metrics exactly; continuous orchestration and durable
    result publication remain to be completed.
+   The [representative training profile](../dev/benchmarks/README.md#representative-paired-efficientnetv2-training-profile)
+   now composes paired EfficientNetV2 training, prediction preparation, all five
+   metrics and visible summaries in one shared command, with selectable heads,
+   full/frozen modes, seeds and epoch budgets. Scheduled runner wiring, durable
+   hosting and deployment orchestration remain unfinished.
+   Validation passed static checks and 508 CPU-default tests, with 160 skips and
+   the known EMA expected failure. A bounded one-epoch hierarchical frozen
+   float/INT8 Blair pair completed through the shared command, including both
+   levels of mini_metrics and the combined summary. Reports remain in ignored
+   `tmp-representative-profile-smoke/`. CPU checks overlapped this smoke run, so
+   it supplies integration evidence only, not new performance or acceptance claims.
 
 2. **Find and verify the beneficial workload regimes.** Pair INT8 with practical
    FP16/BF16 baselines while varying batch size, resolution and head size in a

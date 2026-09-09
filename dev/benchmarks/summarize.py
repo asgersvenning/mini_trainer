@@ -15,8 +15,14 @@ def summarize(directory: Path) -> str:
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     reports = sorted(directory.rglob("report.json"))
+    quality_reports = []
+    training_reports = 0
     for path in reports:
         report = json.loads(path.read_text())
+        if "models" in report or report.get("benchmark_kind") == "paired_quality":
+            quality_reports.append((path, report))
+            continue
+        training_reports += 1
         accuracy = ", ".join(f"{value:.2%}" for value in report.get("level_accuracies", [])) or "—"
         seconds = report.get("training_wall_seconds")
         duration = f"{seconds:.2f}s" if seconds is not None else "—"
@@ -49,8 +55,30 @@ def summarize(directory: Path) -> str:
             f"| {name} | {report['status']} | {device} | {quantization} | {accuracy} | {parameter_bytes} | "
             f"{peak_memory} | {later_duration} | {duration} | {'frozen' if report.get('fine_tune') else 'trainable'} |"
         )
-    if not reports:
+    if not training_reports:
         lines.append("| No reports produced | incomplete | — | — | — | — | — | — | — | — |")
+    if quality_reports:
+        lines.extend(
+            [
+                "",
+                "## Paired held-out quality",
+                "",
+                "Differences are candidate minus baseline, multiplied by 100; they are not acceptance gates.",
+                "",
+                "| Pair / level | Status | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for path, report in quality_reports:
+            name = path.parent.relative_to(directory).as_posix()
+            if report["status"] != "evaluated":
+                lines.append(f"| {name} | {report['status']} | — | — | — | — | — |")
+                continue
+            for level in report["levels"]:
+                values = [level["candidate_minus_baseline"].get(metric) for metric in ("f1", "recall", "precision", "coverage", "theilU")]
+                formatted = " | ".join("undefined" if value is None else f"{100 * value:+.3f}" for value in values)
+                label = str(level["name"]).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+                lines.append(f"| {name} / {label} | evaluated | {formatted} |")
     lines.extend(
         [
             "",

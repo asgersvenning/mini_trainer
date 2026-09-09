@@ -278,3 +278,111 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path, monkeyp
     assert indices[0]["path"] == indices[1]["path"]
     assert indices[0]["split"] == indices[1]["split"]
     assert indices[0]["class"] == [labels[0] for labels in indices[1]["class"]]
+
+
+def test_representative_profile_retains_training_and_quality_failures(tmp_path):
+    import os
+    import shlex
+    import subprocess
+    import sys
+
+    runner = tmp_path / "python-wrapper"
+    runner.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-c" ]]; then exit 0; fi\n'
+        'if [[ "$1" == "-m" && "$2" == "dev.benchmarks.run" ]]; then exit 134; fi\n' + f'exec {shlex.quote(sys.executable)} "$@"\n'
+    )
+    runner.chmod(0o755)
+    output = tmp_path / "reports"
+    result = subprocess.run(
+        ["bash", "dev/check-benchmarks.sh", "qt-efficientnet", str(output)],
+        env={
+            **os.environ,
+            "BENCHMARK_PYTHON": str(runner),
+            "BENCHMARK_METRICS_PYTHON": str(runner),
+            "BENCHMARK_DATA_ROOT": str(tmp_path),
+            "BLAIR_CLASS_SPEC": str(tmp_path / "spec.json"),
+            "BENCHMARK_HEAD": "hierarchical",
+            "BENCHMARK_TRAINING_MODE": "frozen",
+            "BENCHMARK_SEEDS": "43",
+            "BENCHMARK_EPOCHS": "20",
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 1
+    for precision in ("float", "int8"):
+        report = json.loads((output / f"blair-hierarchical-frozen-{precision}-seed43/report.json").read_text())
+        assert report["status"] == "failed" and report["error"]["exit_code"] == 134
+        args = report["arguments"]
+        for option, value in (
+            ("--backbone", "efficientnet_v2_s"),
+            ("--head", "hierarchical"),
+            ("--hidden", "symmetric"),
+            ("--epochs", "20"),
+            ("--seed", "43"),
+            ("--dtype", "bfloat16"),
+        ):
+            assert args[args.index(option) + 1] == value
+        assert "--fine-tune" in args and "--pretrained" in args and "--normalized" in args
+        assert ("--quantized-training" in args) == (precision == "int8")
+    quality = json.loads((output / "blair-hierarchical-frozen-seed43-quality/report.json").read_text())
+    assert quality["status"] == "failed"
+    summary = (output / "summary.md").read_text()
+    assert "Paired held-out quality" in summary
+    assert "blair-hierarchical-frozen-seed43-quality | failed" in summary
+
+
+def test_summary_renders_paired_metrics_without_treating_them_as_training(tmp_path):
+    output = tmp_path / "pair"
+    output.mkdir()
+    (output / "report.json").write_text(
+        json.dumps(
+            {
+                "status": "evaluated",
+                "models": {},
+                "levels": [
+                    {
+                        "name": "parent",
+                        "candidate_minus_baseline": {
+                            "f1": -0.051,
+                            "recall": 0.02,
+                            "precision": None,
+                            "coverage": 0,
+                            "theilU": -0.01,
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    summary = summarize(tmp_path)
+    assert "| pair / parent | evaluated | -5.100 | +2.000 | undefined | +0.000 | -1.000 |" in summary
+    assert "| pair | evaluated | ? / ?" not in summary
+    assert "not acceptance gates" in summary
+
+
+@pytest.mark.parametrize("seeds", [" ", "42 42", "-1"])
+def test_representative_profile_rejects_invalid_seeds_before_output(tmp_path, seeds):
+    import os
+    import subprocess
+    import sys
+
+    output = tmp_path / "reports"
+    result = subprocess.run(
+        ["bash", "dev/check-benchmarks.sh", "qt-efficientnet", str(output)],
+        env={
+            **os.environ,
+            "BENCHMARK_PYTHON": sys.executable,
+            "BENCHMARK_METRICS_PYTHON": sys.executable,
+            "BENCHMARK_DATA_ROOT": str(tmp_path),
+            "BLAIR_CLASS_SPEC": str(tmp_path / "spec.json"),
+            "BENCHMARK_SEEDS": seeds,
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 2 and "BENCHMARK_SEEDS" in result.stderr
+    assert not output.exists()
