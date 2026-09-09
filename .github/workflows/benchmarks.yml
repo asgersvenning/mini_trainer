@@ -101,6 +101,9 @@ jobs:
       - name: Multi-seed large-batch quantized training
         if: (inputs.qt || vars.BENCHMARK_QT == 'true') && (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
         run: bash dev/check-benchmarks.sh qt-large-batch benchmark-qt-large-batch
+      - name: Multi-seed CUDA graph quantized training
+        if: (inputs.qt || vars.BENCHMARK_QT == 'true') && (inputs.real_data || vars.BENCHMARK_REAL_DATA == 'true') && !cancelled()
+        run: bash dev/check-benchmarks.sh qt-cudagraphs benchmark-qt-cudagraphs
       - name: Synthetic GPU precision profiles
         run: bash dev/check-benchmarks.sh gpu benchmark-gpu
       - name: Real-data progression
@@ -110,7 +113,7 @@ jobs:
         if: always()
         run: |
           python3 -m dev.benchmarks.summarize benchmark-gpu >> "$GITHUB_STEP_SUMMARY"
-          for qt_results in benchmark-qt benchmark-qt-real benchmark-qt-dense benchmark-qt-large-batch; do
+          for qt_results in benchmark-qt benchmark-qt-real benchmark-qt-dense benchmark-qt-large-batch benchmark-qt-cudagraphs; do
             if [[ -d "$qt_results" ]]; then
               python3 -m dev.benchmarks.summarize "$qt_results" >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -132,6 +135,7 @@ jobs:
             benchmark-qt-real/
             benchmark-qt-dense/
             benchmark-qt-large-batch/
+            benchmark-qt-cudagraphs/
             !benchmark-qt/**/data/**/*.png
             !benchmark-gpu/**/data/**/*.png
       - name: Remove the disposable GPU environment

@@ -464,3 +464,19 @@ preprocessing and batch logging, excludes validation/figures/checkpoints, and
 may still contain later compilation. Compiler caches are not cleared between
 runs: neither column establishes fresh-cache performance. Real-data completion
 still has no quality acceptance threshold; inspect accuracy for every seed.
+
+### CUDA graph comparison
+
+```bash
+CUDA_VISIBLE_DEVICES=0 BENCHMARK_DATA_ROOT=examples \
+  bash dev/check-benchmarks.sh qt-cudagraphs /tmp/qt-cudagraphs
+```
+
+This repeats the three-seed, batch-512, 60-epoch MNIST comparison with
+`--compile-mode reduce-overhead` for both float and INT8. All other settings and
+alternating execution order match `qt-large-batch`. Both profiles remain in the
+optional QT plus real-data GPU workflow, with summaries and retained artifacts.
+Explicit modes are recorded in JSON reports; process failures retain the exact
+arguments. Neither a mode flag nor a completed real-data run guarantees CUDA
+graph replay, convergence equivalence or a speedup. Compare all timings and
+memory against float under the same mode, rather than an older float baseline.

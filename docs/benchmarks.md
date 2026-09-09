@@ -581,3 +581,54 @@ defaults are unchanged, and adding a worker was slower on both datasets here.
 Results, per-file content hashes, versions and timing samples are retained under
 `/tmp/mini-trainer-reader-comparison`. The standalone CPU command can be reused in
 continuous validation wherever the corresponding dataset is available.
+
+### Explicit CUDA graph compilation
+
+The opt-in `qt-cudagraphs` profile repeats the batch-512, 60-epoch, three-seed
+comparison with `--compile-mode reduce-overhead` on **both** float and INT8.
+The preceding profiles retain their ordinary compilation settings. The optional
+QT plus real-data workflow runs this additional profile and retains its summaries
+and artifacts. Reproduction is documented in the
+[benchmark runner guide](../dev/benchmarks/README.md#cuda-graph-comparison).
+
+A separate warmed, batch-128 MNIST trace recorded 186 `cudaGraphLaunch` calls
+across its third training epoch, verifying actual replay with the retained opaque
+integer matrix operation. This is distinct from the rejected graph-visible
+matrix-operator experiment above. The trace is local at
+`/tmp/mini-trainer-cudagraph-epoch-trace.json`; profiling timings are not used below.
+
+The matched runs below used implementation commit `95ca909`, the same RTX 3080 Ti
+Laptop GPU and dependency versions as the preceding comparisons, one CPU and
+compiler thread, sequential GPU execution, and alternating float/INT8 order.
+Runtime source hash:
+`ee66fe6f88471cbbb798366f1ef056478ec569ca79140208d8928149cbbcaca2`.
+Lock hash:
+`43ad5c7df81212b3bcd536220201f8888666723507c317e8c86dd538fb595745`.
+All six reports record the explicit mode; paired manifests, test labels and paths
+match. Compiler caches were not cleared, and CUDA nondeterminism was permitted.
+
+| Seed | Execution | Test accuracy | Whole-run peak MiB | Median training epoch s, epochs 3–60 | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 42 | Float | 93.06% | 199.15 | 0.069 | 31.44 |
+| 42 | INT8 | 93.22% | 138.31 | 0.066 | 28.52 |
+| 43 | Float | 92.76% | 199.15 | 0.071 | 33.90 |
+| 43 | INT8 | 92.98% | 138.31 | 0.066 | 27.78 |
+| 44 | Float | 92.74% | 199.15 | 0.064 | 33.74 |
+| 44 | INT8 | 93.00% | 138.31 | 0.070 | 27.21 |
+
+INT8 uses 30.5% less peak allocation than the equally configured float model.
+Whole training calls are 9–19% shorter. Later training phases are 4–8% faster for
+two seeds and 9% slower for the third: a consistent steady-state speedup is still
+unproven. All six accuracies match their preceding ordinary-compilation runs;
+this is not a statistical quality-equivalence result. Validation, logging,
+checkpointing and compilation remain part of whole-call time. No cold-start,
+universal model-speed or cross-device claim follows from these runs.
+
+Reports and predictions are local under `/tmp/mini-trainer-mnist-cudagraph-pairs`.
+The new continuous profile preserves the same configuration and all unfavorable
+results alongside the earlier profiles, rather than replacing their baselines.
+
+The synthetic oracle also reached 100% after checkpoint reload for float and INT8
+with the same model mode and compiled MuonAuxAdamW updates. Those reports are at
+`/tmp/mini-trainer-cudagraph-oracle`. This checks the simple oracle task, not
+normalized-head convergence or general CUDA graph eligibility.

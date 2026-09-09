@@ -9,7 +9,7 @@ if [[ -e "$results" ]]; then
     echo 'Results directory must be new.' >&2
     exit 2
 fi
-case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense|qt-large-batch) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real, qt-dense or qt-large-batch.' >&2; exit 2 ;; esac
+case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense|qt-large-batch|qt-cudagraphs) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real, qt-dense, qt-large-batch or qt-cudagraphs.' >&2; exit 2 ;; esac
 mkdir -p -- "$results"
 status=0
 run_profile() {
@@ -56,7 +56,13 @@ elif [[ "$mode" == qt-dense ]]; then
             --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 15 --batch-size 128 --compile \
             --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --allow-nondeterministic "${quantization[@]}"
     done
-elif [[ "$mode" == qt-large-batch ]]; then
+elif [[ "$mode" == qt-large-batch || "$mode" == qt-cudagraphs ]]; then
+    compile_mode=()
+    profile=mnist-large-batch
+    if [[ "$mode" == qt-cudagraphs ]]; then
+        compile_mode=(--compile-mode reduce-overhead)
+        profile=mnist-cudagraphs
+    fi
     : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/}"
     for seed in 42 43 44; do
         precisions=(float int8)
@@ -64,9 +70,9 @@ elif [[ "$mode" == qt-large-batch ]]; then
         for precision in "${precisions[@]}"; do
             quantization=()
             if [[ "$precision" == int8 ]]; then quantization=(--quantized-training); fi
-            run_profile "mnist-large-batch-$precision-seed$seed" --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" \
+            run_profile "$profile-$precision-seed$seed" --dataset mnist --data-root "$BENCHMARK_DATA_ROOT/mnist" \
                 --seed "$seed" --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 60 --batch-size 512 \
-                --compile --compile-optimizer --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 \
+                --compile "${compile_mode[@]}" --compile-optimizer --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 \
                 --allow-nondeterministic "${quantization[@]}"
         done
     done
