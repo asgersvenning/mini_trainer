@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
 
-from .report_history import IDENTIFIER, REVISION, render
+from .report_history import IDENTIFIER, KINDS, REVISION, render
 
 ARCHIVE_TAG = re.compile(r"benchmark-history-\d{4}-(?:0[1-9]|1[0-2])")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
@@ -68,7 +68,7 @@ def record_identity(name, payload):
     run_id = record["run_id"]
     if not IDENTIFIER.fullmatch(run_id) or name != f"{run_id}.json":
         raise ValueError("History filename and run identity differ")
-    if record.get("schema_version") != 1 or record.get("kind") != "tensorrt_deployment":
+    if record.get("schema_version") != 1 or record.get("kind") not in KINDS:
         raise ValueError("Unsupported compact history schema")
     if not REVISION.fullmatch(record["revision"]):
         raise ValueError("History record requires a full source revision")

@@ -1668,7 +1668,7 @@ prepared environments are not uploaded by the workflow.
 
 ### Compact report history and local dashboard
 
-`dev.benchmarks.report_history` archives version-one composed TensorRT reports as
+`dev.benchmarks.report_history` archives version-one composed TensorRT and ONNX CPU reports as
 immutable, compact JSON records and renders a standalone HTML history. Use the
 repository's supported Python (3.12 or newer); the command itself only needs the
 standard library and does not load PyTorch, TensorRT or datasets.
@@ -1709,7 +1709,7 @@ failure before an evaluation report exists, pass the shared command's nonzero
 archive its detailed evaluation report. Missing quality and undefined metrics
 remain visible, and completed evaluation is not displayed as production acceptance.
 
-The renderer currently supports TensorRT deployment records. CPU/ARM and training
+The renderer supports TensorRT and ONNX CPU deployment records. Training
 history adapters remain unfinished. No remote uploads occur from either command. Local HTML structure
 and escaping have tests; browser rendering still needs visual qualification.
 
@@ -1730,6 +1730,30 @@ Locally, supply `BENCHMARK_RUN_ID`, `BENCHMARK_REVISION`, `BENCHMARK_PROFILE`, a
 optionally `BENCHMARK_RUN_URL`, `BENCHMARK_NOTE`, `BENCHMARK_PERFORMANCE_VALID`.
 These artifacts still expire after 90 days. The optional publisher below stores
 compact records separately and deploys the historical page.
+
+### CPU deployment history
+
+CPU reports use the same `report_history archive` command, with `--report` pointing
+to the composed `cpu_deployment` report. Retain its `quality/report.json`,
+`placement-ROLE/report.json`, and `trial-N-ROLE/report.json` children: the adapter
+checks their recorded hashes, quality deltas, operator-placement summaries,
+model identities, timing inputs, runtime/settings and resource ratios. The compact
+record contains actual ONNX Runtime provider/operation counts, model-file hashes
+and sizes, architecture, affinity, thread settings, and the five metrics.
+
+CPU rows explicitly compare **separate-process latency medians** and show process
+RSS and approximate peak RSS. They do not acquire GPU memory fields or adjacent
+GPU timing semantics. The resource declaration remains opt-in. Existing CPU
+reports record completed trial pairs but not the originally requested trial count;
+the archive records that completed count and cannot establish that a particular
+planned repetition budget was met. A completed report is still not acceptance.
+Failed CPU reports remain visible and never display eligible resource comparisons.
+
+The adapter was exercised on retained flat/hierarchical Blair x86 reports with
+three trials each. Synthetic `aarch64` metadata in tests checks display handling,
+not ARM execution. CPU records can share local history and draft storage with
+TensorRT records; the current automated producing workflow still runs TensorRT
+only. An ARM runner and its benchmark-to-publisher handoff remain to be qualified.
 
 ### Draft release storage client
 

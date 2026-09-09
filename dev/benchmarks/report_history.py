@@ -1,4 +1,4 @@
-"""Archive compact TensorRT comparison records and render a standalone HTML history."""
+"""Archive compact CPU/TensorRT comparisons and render a standalone HTML history."""
 
 import hashlib
 import html
@@ -16,6 +16,7 @@ METRICS = ("f1", "recall", "precision", "coverage", "theilU")
 METRIC_NAMES = dict(zip(METRICS, ("Macro-F1", "Macro-Recall", "Macro-Precision", "Coverage", "Theil U"), strict=True))
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
+KINDS = ("tensorrt_deployment", "onnx_cpu_deployment")
 
 
 def number(value):
@@ -25,6 +26,24 @@ def number(value):
     if type(value) not in (float, int) or not math.isfinite(value):
         raise ValueError("Expected a finite numeric value or null")
     return value
+
+
+def quality_metrics(quality):
+    result = []
+    for index, level in enumerate(quality.get("levels", [])):
+        item = {key: level[key] for key in ("name", "samples", "prediction_changes")}
+        item["metrics"] = {}
+        for metric in METRICS:
+            a, b = [number(quality["models"][role]["metrics"][metric][str(index)]) for role in ("baseline", "candidate")]
+            delta = number(level["candidate_minus_baseline"][metric])
+            if a is None or b is None:
+                if delta is not None:
+                    raise ValueError("Undefined metrics require an undefined delta")
+            elif delta is None or not math.isclose(delta, b - a, rel_tol=1e-10, abs_tol=1e-12):
+                raise ValueError("Metric delta disagrees with baseline/candidate values")
+            item["metrics"][metric] = {"baseline": a, "candidate": b, "delta": delta}
+        result.append(item)
+    return result
 
 
 def project(source):
@@ -48,20 +67,7 @@ def project(source):
             raise ValueError("Unexpected model role")
         engine = build["engine"]
         result["engines"][role] = {key: engine[key] for key in ("sha256", "bytes", "context_memory_bytes")}
-    quality = source.get("quality", {})
-    for index, level in enumerate(quality.get("levels", [])):
-        item = {key: level[key] for key in ("name", "samples", "prediction_changes")}
-        item["metrics"] = {}
-        for metric in METRICS:
-            a, b = [number(quality["models"][role]["metrics"][metric][str(index)]) for role in ("baseline", "candidate")]
-            delta = number(level["candidate_minus_baseline"][metric])
-            if a is None or b is None:
-                if delta is not None:
-                    raise ValueError("Undefined metrics require an undefined delta")
-            elif delta is None or not math.isclose(delta, b - a, rel_tol=1e-10, abs_tol=1e-12):
-                raise ValueError("Metric delta disagrees with baseline/candidate values")
-            item["metrics"][metric] = {"baseline": a, "candidate": b, "delta": delta}
-        result["quality"].append(item)
+    result["quality"] = quality_metrics(source.get("quality", {}))
     for trial in source.get("trials", []):
         item = {"trial": trial["trial"], "memory": {}}
         if "latency" in trial:
@@ -107,6 +113,99 @@ def runtime_metadata(source, root):
     return None
 
 
+def cpu_evidence(source, root):
+    """Read CPU measurements from their retained, hash-verified subprocess reports."""
+    if source.get("schema_version") != 1 or source.get("status") not in ("evaluated", "failed"):
+        raise ValueError("Expected a version-one composed CPU deployment report")
+    stages = {stage["name"]: stage for stage in source["stages"]}
+    if len(stages) != len(source["stages"]):
+        raise ValueError("Duplicate CPU stages")
+
+    def read(name, digest):
+        payload = (root / name / "report.json").read_bytes()
+        if hashlib.sha256(payload).hexdigest() != digest:
+            raise ValueError("CPU evidence changed since evaluation")
+        return json.loads(payload)
+
+    result = {"status": source["status"], "phase": source.get("phase"), "models": {}, "execution": {}, "quality": [], "resources": []}
+    comparison = {"required_candidate_ops": source["required_candidate_ops"]}
+    runtime = None
+    if "quality" in source:
+        quality = read("quality", source["quality"]["report_sha256"])
+        result["quality"] = quality_metrics(quality)
+        if result["quality"] != quality_metrics(source["quality"]):
+            raise ValueError("CPU quality summary disagrees with retained evidence")
+        comparison["manifest_sha256"] = quality["manifest"]["sha256"]
+    for role in source.get("execution", {}):
+        if role not in ("baseline", "candidate"):
+            raise ValueError("Unexpected CPU model role")
+        name = f"placement-{role}"
+        if stages[name]["status"] != "passed":
+            raise ValueError("CPU placement did not finish")
+        placement = read(name, stages[name]["report_sha256"])
+        model = placement["models"][0]
+        if model["execution"] != source["execution"][role]:
+            raise ValueError("CPU placement summary disagrees with retained evidence")
+        result["models"][role] = [{key: file[key] for key in ("sha256", "bytes")} for file in model["files"]]
+        result["execution"][role] = [{key: op[key] for key in ("op", "provider", "count")} for op in model["execution"]]
+        digest = placement["inputs"]["sha256"]
+        if comparison.get("inputs_sha256", digest) != digest:
+            raise ValueError("CPU placement inputs differ")
+        comparison["inputs_sha256"] = digest
+    for index, pair in enumerate(source["pairs"]):
+        if type(pair["trial"]) is not int or pair["trial"] != index:
+            raise ValueError("CPU trial indices must be consecutive")
+        children = {}
+        for role in ("baseline", "candidate"):
+            name = f"trial-{index}-{role}"
+            stage = stages[name]
+            if stage["status"] != "measured":
+                raise ValueError("CPU trial did not finish")
+            child = read(name, stage["report_sha256"])
+            if child["status"] != "measured":
+                raise ValueError("CPU child did not finish")
+            children[role] = child
+            files = [{key: file[key] for key in ("sha256", "bytes")} for file in child["model_files"]]
+            if role in result["models"] and files != result["models"][role]:
+                raise ValueError("CPU model identity changed across trials")
+            result["models"][role] = files
+            metadata = {
+                "versions": {key: child["versions"][key] for key in ("onnxruntime", "onnx", "numpy")},
+                "environment": {key: child["environment"][key] for key in ("platform", "machine", "python", "cpu_affinity")},
+                "runtime_build": child["runtime_build"],
+            }
+            if runtime is not None and runtime != metadata:
+                raise ValueError("CPU runtime changed across trials")
+            runtime = metadata
+            settings = {key: child["settings"][key] for key in ("threads", "inter_op_threads", "warmup", "repeats", "optimization")}
+            for key, value in (("settings", settings), ("inputs_sha256", child["inputs"]["sha256"])):
+                if key in comparison and comparison[key] != value:
+                    raise ValueError("CPU settings or inputs changed across trials")
+                comparison[key] = value
+        latency = {role: number(child["median_seconds"]) for role, child in children.items()}
+        memory = {
+            role: {key: number(child["memory"]["after_measurement"][key]) for key in ("resident_bytes", "peak_resident_bytes")}
+            for role, child in children.items()
+        }
+        for key, numerator, denominator in (
+            ("warm_latency", latency["candidate"], latency["baseline"]),
+            *((key, memory["candidate"][key], memory["baseline"][key]) for key in ("resident_bytes", "peak_resident_bytes")),
+        ):
+            ratio = number(pair["candidate_over_baseline"][key])
+            if denominator is None or denominator <= 0 or numerator is None or ratio is None:
+                raise ValueError("CPU resource measurements must have defined ratios")
+            if not math.isclose(ratio, numerator / denominator, rel_tol=1e-10, abs_tol=1e-12):
+                raise ValueError("CPU resource ratio disagrees with retained evidence")
+        result["resources"].append(
+            {"trial": index, "latency_seconds": latency, "latency_ratio": pair["candidate_over_baseline"]["warm_latency"], "memory": memory}
+        )
+    if source["status"] == "evaluated":
+        if not result["quality"] or not result["resources"] or set(result["execution"]) != {"baseline", "candidate"}:
+            raise ValueError("Completed CPU evaluation requires quality, placement and resource trials")
+    comparison["recorded_trials"] = len(result["resources"])
+    return result, runtime, comparison
+
+
 def archive(report, history, run_id, revision, profile, run_url=None, performance_valid=False, note=""):
     if not IDENTIFIER.fullmatch(run_id) or not REVISION.fullmatch(revision):
         raise ValueError("Require a safe run identifier and full hexadecimal source revision")
@@ -118,11 +217,15 @@ def archive(report, history, run_id, revision, profile, run_url=None, performanc
             raise ValueError("Run URL must be HTTPS without credentials")
     payload = Path(report).read_bytes()
     source = json.loads(payload)
-    evidence = project(source)
-    hardware = runtime_metadata(source, Path(report).parent)
+    cpu = "pairs" in source and "required_candidate_ops" in source and "builds" not in source
+    if cpu:
+        evidence, hardware, comparison = cpu_evidence(source, Path(report).parent)
+    else:
+        evidence = project(source)
+        hardware = runtime_metadata(source, Path(report).parent)
     record = {
         "schema_version": 1,
-        "kind": "tensorrt_deployment",
+        "kind": "onnx_cpu_deployment" if cpu else "tensorrt_deployment",
         "run_id": run_id,
         "revision": revision,
         "profile": profile,
@@ -151,6 +254,8 @@ def archive(report, history, run_id, revision, profile, run_url=None, performanc
             },
         },
     }
+    if cpu:
+        record["comparison"] = comparison
     records = Path(history) / "records"
     records.mkdir(parents=True, exist_ok=True)
     destination = records / f"{run_id}.json"
@@ -190,7 +295,7 @@ def render(history):
     records = []
     for path in sorted((history / "records").glob("*.json")):
         record = json.loads(path.read_text())
-        if record.get("schema_version") != 1 or record.get("kind") != "tensorrt_deployment":
+        if record.get("schema_version") != 1 or record.get("kind") not in KINDS:
             raise ValueError(f"Unsupported history record: {path.name}")
         if not IDENTIFIER.fullmatch(record["run_id"]) or path.name != record["run_id"] + ".json":
             raise ValueError("History filename and run identity differ")
@@ -226,8 +331,12 @@ def render(history):
             lines.append(f'<p><a href="{escape(record["run_url"])}">Original workflow run</a></p>')
         lines.append(f'<p class="note">{escape(record["note"])}</p>')
         hardware = record.get("runtime")
-        gpu = hardware["environment"]["gpu"] if hardware else "unrecorded"
-        lines.append(f"<p>Measured GPU: {escape(gpu)}. Source report <code>{escape(record['source_report_sha256'])}</code>.</p>")
+        cpu = record["kind"] == "onnx_cpu_deployment"
+        device = hardware["environment"]["machine" if cpu else "gpu"] if hardware else "unrecorded"
+        lines.append(
+            f"<p>Measured {'CPU architecture' if cpu else 'GPU'}: {escape(device)}. "
+            f"Source report <code>{escape(record['source_report_sha256'])}</code>.</p>"
+        )
         for level in evidence["quality"]:
             lines.append(
                 f"<h3>{escape(level['name'])}: {escape(level['samples'])} samples, "
@@ -241,7 +350,24 @@ def render(history):
                     f"<td>{display(values['candidate'])}</td><td>{display(values['delta'], 100)}</td></tr>"
                 )
             lines.append("</table>")
-        if record["performance_valid"] and evidence["status"] == "evaluated":
+        if record["performance_valid"] and evidence["status"] == "evaluated" and cpu:
+            lines.append(
+                "<p>Resource measurements marked usable by the publisher; this is not independently certified. "
+                "CPU latency compares separate-process medians and excludes image decoding/preprocessing. "
+                "RSS includes process overhead; peak RSS is approximate.</p>"
+                "<table><tr><th>Trial</th><th>CPU median latency ratio</th><th>Baseline RSS MiB</th>"
+                "<th>Candidate RSS MiB</th><th>Baseline approximate peak MiB</th><th>Candidate approximate peak MiB</th></tr>"
+            )
+            for trial in evidence["resources"]:
+                values = [str(trial["trial"]), display(trial["latency_ratio"])]
+                values += [
+                    display(trial["memory"][role][key], 1 / 2**20)
+                    for key in ("resident_bytes", "peak_resident_bytes")
+                    for role in ("baseline", "candidate")
+                ]
+                lines.append("<tr>" + "".join(f"<td>{escape(value)}</td>" for value in values) + "</tr>")
+            lines.append("</table><p>Ratios are candidate / baseline; below one is lower.</p>")
+        elif record["performance_valid"] and evidence["status"] == "evaluated":
             lines.append("<p>Resource measurements marked usable by the publisher; this is not independently certified.</p>")
             lines.append(
                 "<table><tr><th>Trial</th><th>Paired latency ratio</th><th>Baseline device MiB</th>"

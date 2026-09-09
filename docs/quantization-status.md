@@ -56,7 +56,7 @@ metadata, input identities, quality and resource scope survive the projection;
 local paths and prediction rows do not. Resource comparisons are excluded by
 default and remain excluded for these smokes. This prepares a reviewable reporting
 format, but live persistent storage and public hosting remain unverified;
-CPU/training adapters are still unimplemented.
+the training adapter is still unimplemented.
 
 The target workflow now prepares the compact record and standalone page as a
 separate small artifact, including early failures. Its shared command was checked
@@ -72,6 +72,12 @@ An opt-in publisher now connects the target job's exact compact artifact to draf
 storage and GitHub Pages from the default branch. Live storage verification,
 activation and browser qualification remain open; workflow wiring alone is not
 evidence that results have been durably hosted.
+
+ONNX CPU deployment history now retains hash-verified quality, observed provider
+operations, model identities, runtime settings, and separate-process latency/RSS
+measurements. Both retained Blair x86 evaluations archived successfully with three
+trials each. This makes the format usable for future ARM evidence, but neither
+the synthetic ARM display fixture nor the x86 reports establish ARM execution.
 
 ## Current evidence
 
