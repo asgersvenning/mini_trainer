@@ -100,6 +100,9 @@ separate option. See the [measured results](benchmarks.md#optimizer-fma-dispatch
 `--compile-optimizer --optimizer-cudagraphs` opts into optimizer graph replay.
 During AOT fake-tensor tracing, updates expose floating arithmetic followed by
 functional requantization and storage copies. Eager native updates are retained.
+Expected failed kernel-tuning candidates release their exception tracebacks
+promptly so temporary tensors do not outlive graph pool tracking during first
+use; unexpected kernel errors still propagate.
 Learning rates stay on CUDA during replay; checkpoints retain numeric values and
 explicit non-default rate precision. This leaves the AMP gate, scheduler and
 MuonAuxAdamW outer counter in their existing roles. The training loop explicitly

@@ -777,3 +777,44 @@ MPLCONFIGDIR=/tmp/mini-trainer-mpl MPLBACKEND=Agg \
 Add `--quantized-training` for INT8 and `--optimizer-cudagraphs` for optimizer
 replay. Fresh-cache failure reproduction and a fix must precede recommending
 this combination in a continuous benchmark profile.
+
+#### First-use tuning failure follow-up
+
+Forced retuning reproduced the first-backward pool failure three times with
+already compiled kernels. Allocation diagnostics showed that the mismatched
+storage reference expired during the graph check's garbage collection. Rejected
+Triton candidates had requested 122,880 bytes of shared memory on a GPU limited
+to 101,376 bytes; their exception tracebacks retained temporary tensors.
+
+The local benchmark callback now clears tracebacks for the same expected
+candidate failures that Triton already scores with infinite timing. This releases
+those tensors promptly. Unexpected errors still propagate, kernel arithmetic is
+unchanged, and CUDA graph assertions remain enabled. No global garbage collection
+or third-party monkey patch is added. A diagnostic two-epoch MNIST run completed
+with forced retuning after this change.
+
+Regression coverage includes immediate tensor release without `gc.collect()`,
+unexpected-error propagation, and three dense-model forward/backward/update
+iterations with fresh local tuning. The latter disables only that tuner's memory
+and disk result caches; it preserves installed dependencies and compiled kernel
+caches and requires no dataset download:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 RUN_CUDA_TESTS=1 OMP_NUM_THREADS=1 \
+TORCHINDUCTOR_COMPILE_THREADS=1 \
+bash dev/check.sh test tests/test_quantized_training.py -k fresh_kernel_tuning
+```
+
+This addresses the reproduced failure mechanism. The earlier timing table remains
+historical evidence, including its failed attempt; it does not become a controlled
+cold-start timing comparison or establish a general QT speed advantage.
+
+The production fix also completed the full 15-epoch MNIST configuration above
+with forced local retuning: 92.84% held-out accuracy, finite saved scores,
+167.60 MiB peak allocation, 0.203 s median train epoch 3–15, and 24.33 s training
+wall time. Checkpoint reload and inference completed. Results are retained in
+`tmp-optimizer-cudagraphs/tuning-fixed-mnist`; source hash
+`23df40b2027a8a18de797f60c93c84aad72653c797a35e0f1883e9efcccbf2e4`.
+This verifies the formerly failing path. It forces tuner results to be recomputed,
+not a completely empty compiler cache, and has no concurrent matched float run,
+so its timing is not evidence of a new speedup.

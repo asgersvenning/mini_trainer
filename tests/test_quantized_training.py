@@ -187,3 +187,80 @@ def test_compiled_integer_parameter_gradients():
         assert torch.count_nonzero(actual.grad) > 0
         error = (actual.grad.float() - expected.grad.float()).norm() / expected.grad.float().norm()
         assert error < 0.04
+
+
+@pytest.mark.parametrize("kind", ["resources", "ptxas"])
+def test_failed_tuning_candidate_releases_temporary_tensors(monkeypatch, kind):
+    import weakref
+
+    pytest.importorskip("torchao")
+    from triton.runtime.errors import OutOfResources, PTXASError
+
+    from mini_trainer.modeling import _quantized_matmul as matmul
+
+    error = OutOfResources(2, 1, "shared memory") if kind == "resources" else PTXASError("invalid candidate")
+    references = []
+
+    def candidate():
+        temporary = torch.ones(4)
+        references.append(weakref.ref(temporary))
+        raise error
+
+    monkeypatch.setattr(matmul, "do_bench_cudagraph", lambda kernel, **kwargs: kernel())
+    assert matmul._benchmark(candidate, (0.5, 0.2, 0.8)) == [float("inf")] * 3
+    # No gc.collect(): graph pool tracking needs prompt release on return.
+    assert references[0]() is None
+    assert error.__traceback__ is None
+
+
+def test_tuning_preserves_unexpected_failures(monkeypatch):
+    pytest.importorskip("torchao")
+    from mini_trainer.modeling import _quantized_matmul as matmul
+
+    def candidate():
+        raise RuntimeError("unexpected kernel failure")
+
+    monkeypatch.setattr(matmul, "do_bench_cudagraph", lambda kernel, **kwargs: kernel())
+    with pytest.raises(RuntimeError, match="unexpected kernel failure"):
+        matmul._benchmark(candidate, (0.5, 0.2, 0.8))
+
+
+def test_dense_backward_graph_with_fresh_kernel_tuning(monkeypatch):
+    pytest.importorskip("torchao")
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 for fresh INT8 kernel tuning in CUDA graphs")
+    from dev.benchmarks.models import DenseImageMLP
+    from mini_trainer.modeling import Classifier, EmbeddingContext
+    from mini_trainer.modeling import _quantized_matmul as matmul
+    from mini_trainer.modeling.quantized_training import prepare_quantized_training
+
+    torch._dynamo.reset()
+    torch.manual_seed(42)
+    monkeypatch.setattr(matmul._kernel, "cache", {})
+    monkeypatch.setattr(matmul._kernel, "cache_results", False)
+    calls = []
+    benchmark = matmul._kernel._do_bench
+
+    def record_tuning(kernel, quantiles):
+        calls.append(True)
+        return benchmark(kernel, quantiles)
+
+    monkeypatch.setattr(matmul._kernel, "_do_bench", record_tuning)
+    raw = DenseImageMLP()
+    raw.fc = Classifier(2048, 10, hidden=False, normalized=False)
+    raw.cuda()
+    prepare_quantized_training(raw)
+    model = torch.compile(raw, mode="reduce-overhead")
+    optimizer = torch.optim.SGD(raw.parameters(), lr=0.01)
+    images = torch.randn(128, 3, 28, 28, device="cuda")
+    labels = torch.arange(128, device="cuda") % 10
+    for _ in range(3):
+        torch.compiler.cudagraph_mark_step_begin()
+        optimizer.zero_grad()
+        with torch.autocast("cuda", dtype=torch.float16), EmbeddingContext():
+            loss = torch.nn.functional.cross_entropy(model(images), labels)
+        loss.backward()
+        assert torch.isfinite(loss)
+        assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in raw.parameters())
+        optimizer.step()
+    assert calls, "The regression must retune kernels even when disk caches are warm"

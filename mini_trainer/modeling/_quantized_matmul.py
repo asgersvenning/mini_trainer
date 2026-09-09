@@ -3,11 +3,20 @@
 import torch
 import triton
 from torchao.prototype.quantized_training.int8_mm import _scaled_int8_mm_kernel as _upstream_kernel
+from triton.compiler.errors import CompileTimeAssertionFailure
+from triton.runtime.errors import OutOfResources, PTXASError
 from triton.testing import do_bench_cudagraph
 
 
 def _benchmark(kernel, quantiles):
-    return do_bench_cudagraph(kernel, rep=5, quantiles=quantiles)
+    try:
+        return do_bench_cudagraph(kernel, rep=5, quantiles=quantiles)
+    except (OutOfResources, CompileTimeAssertionFailure, PTXASError) as error:
+        # Triton rejects these candidates with infinite timing. Release their
+        # traceback frames here: they can retain temporary tensors until GC,
+        # beyond the lifetime tracked by the surrounding model CUDA graph.
+        error.__traceback__ = None
+        return [float("inf")] * len(quantiles)
 
 
 # Reuse TorchAO's kernel and candidate configurations, but create a separate
