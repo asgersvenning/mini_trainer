@@ -15,6 +15,20 @@ on the same reviewed Blair splits. The dense MNIST model is a kernel diagnostic;
 TinyConv on Blair is an integration check. Neither establishes performance or
 quality for the primary model.
 
+Class count is an independent scaling dimension: production cases may have
+10,000–1,000,000 classes. At embedding width 1280, output weights alone occupy
+51.2 MB, 512 MB or 5.12 GB in FP32 at 10k, 100k or 1M classes. The 25-class Blair
+head is not representative of those parameter, gradient, optimizer-state or score
+storage costs. Include synthetic capacity probes alongside dataset quality runs;
+never infer large-vocabulary accuracy from randomly assigned synthetic labels.
+
+The [large-class probes](benchmarks.md#large-class-head-capacity-and-initialization)
+now exercise full EfficientNetV2-S training steps at 10k and 100k classes for both
+normalized heads. They exposed and motivated a quadratic-memory initialization
+fix. At 100k classes the current INT8 path saves parameter bytes but increases
+peak training allocation, making transient normalization/gradient storage a
+priority for investigation. A million-class training run remains unverified.
+
 | Deployment target | Execution path to validate | Required measurements |
 | --- | --- | --- |
 | HPC: A40, A100, B300-class GPU systems with AMD EPYC hosts | PyTorch GPU training | End-to-end training time, steady-state throughput, allocated/reserved GPU peaks, host memory, loading/transfer costs, convergence and checkpoint/resume; record actual GPU, allocation, precision and kernels separately for each system. |

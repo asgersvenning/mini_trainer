@@ -1078,3 +1078,67 @@ Further investigation should separate repeated-seed variation, optimizer updates
 and stochastic-layer effects before changing training numerics. The diagnostic
 script, exact image paths and results are retained beside the reports as
 `gradient_probe.py`, `gradient-probe.json` and `gradient-probe.log`.
+
+### Large-class head capacity and initialization
+
+The production envelope includes 10,000–1,000,000 classes. A 25-class head cannot
+represent that regime. Initial 100k-class capacity probes failed in both float
+and INT8 before training: spherical initialization evaluated `(W @ W.T) @ W`,
+requesting a 100k-by-100k FP32 intermediate (37.25 GiB). At one million classes
+that intermediate would require 3.64 TiB.
+
+The initializer now uses `W @ (W.T @ W)` when class count exceeds embedding
+width. This keeps the smaller Gram matrix (6.25 MiB at width 1280) while preserving
+the mathematical spherical-repulsion update. Floating-point association changes,
+so initialization is not bitwise identical for these tall heads. Tests compare
+100 iterations against the former formula and reject class-by-class allocations
+during construction of a 10k-class normalized head. Heads no taller than their
+embedding width retain the previous association.
+
+After that fix, eight fresh CUDA processes exercised full EfficientNetV2-S with
+random initialization, symmetric normalized heads, 32 synthetic uint8 images at
+128x128, FP16 AMP and eager MuonAuxAdamW. Hierarchical models used a synthetic
+two-level taxonomy with 100 leaf classes per parent. Three warmup steps preceded
+five measured steps; each measured loss was finite and each optimizer update
+executed. The probe follows the trainer's forward/zero-grad/backward/clip/update
+order, but excludes loading, logging, scheduling, checkpointing and deployment.
+
+| Classes | Head | Float / INT8 parameter MB | Float / INT8 peak allocated MiB | Float / INT8 median step ms |
+| --- | --- | ---: | ---: | ---: |
+| 10,000 | Flat | 138.56 / 95.29 | 1450.4 / 1373.2 | 89.78 / 78.68 |
+| 10,000 | Hierarchical | 138.56 / 95.29 | 1450.4 / 1373.2 | 91.96 / 89.65 |
+| 100,000 | Flat | 600.08 / 211.57 | 3910.4 / 4130.3 | 126.87 / 138.36 |
+| 100,000 | Hierarchical | 600.08 / 211.57 | 3910.4 / 4130.4 | 144.66 / 144.83 |
+
+MB here is decimal; MiB is binary. At 100k classes, the physical parameter
+reduction is substantial, but peak training allocation increases. QT's transient
+floating normalization/gradient/update tensors therefore need investigation;
+quantized parameter storage does not guarantee lower peak memory. These five-step,
+single-process samples are capacity diagnostics, not robust speed estimates or
+quality comparisons. Only head layers are quantized. No million-class training,
+ONNX runtime or target-hardware performance claim follows from them.
+
+The original failure logs and probe are retained under ignored
+`tmp-efficientnet-classes/`; rerun logs, script and JSON measurements are under
+`tmp-efficientnet-classes-fixed/`. Both used the local RTX 3080 Ti Laptop GPU.
+One-million-class validation should record initialization peak separately from
+training peak, then check actual updates, checkpoint/reload and deployment on a
+machine with enough memory. Eliminating the quadratic Gram matrix leaves linear
+parameter, gradient and temporary storage costs; it does not establish that a
+million-class run fits the local 16 GiB GPU.
+
+### Warmed training trace
+
+A separate pretrained 25-class float run captured three warmed training batches
+through the actual Blair training loop, including MuonAuxAdamW updates. The trace
+contains 137.85 ms of summed CUDA kernel/copy/memset event duration; a single
+NCHW-to-NHWC conversion kernel contributes 7.52 ms (5.45%). Depthwise convolution
+weight-gradient, batch normalization, SiLU and optimizer kernels are also visible.
+This suggests examining layout and backbone costs alongside the large-head cases.
+
+The denominator counts device events once and excludes nested CPU operators and
+GPU annotations. It is not wall time or a speedup prediction: profiling perturbs
+execution, and summed durations do not account for overlap. Raw trace, grouped
+operator data, script and run outputs are retained under ignored
+`tmp-efficientnet-profile/`. Do not sum the grouped operator table directly;
+it includes nested attribution as well as device events and would double-count.
