@@ -457,3 +457,45 @@ A separate eight-trial alternating dispatch probe compared the cached autotuner
 with direct launches of its identical selected kernel. Skipping tuner bookkeeping
 saved about 4 microseconds for the batch-128 square contraction, but less than
 2% for the three larger training shapes. A second launch cache was not added.
+
+### Avoiding disabled-EMA work
+
+The ordinary training loop previously preprocessed a second batch for the teacher
+even with EMA disabled. The disabled teacher returned a CUDA zero scalar, adding
+allocation and synchronization work despite contributing no loss. The loop now
+skips that teacher call and retains a floating zero. Enabled teacher behavior,
+loss checks, optimizer overflow handling and scheduler/update gating are unchanged.
+EMA itself remains temporarily unsupported.
+
+Custom preprocessing functions now run once per training batch when EMA is
+disabled. The former unused call could consume random numbers or cause other
+side effects; eliminating those effects is intentional. A regression checks
+call counts and exact student updates against direct SGD training.
+
+A warmed 31-batch INT8 training trace shows 62 CUDA stream synchronizations,
+down from 124, and 1,519 runtime kernel launches, down from 1,705. Separate
+unprofiled MNIST runs used the dense batch-128, 15-epoch, seed-42 recipe with
+both model and optimizer compilation. Before/after order alternated across
+two trials for float and INT8, with no concurrent GPU tests.
+
+| Precision | Trial | Accuracy, both paths | Median train epoch s before | After | Training wall s before | After |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Float | 1 | 92.44% | 0.179 | 0.181 | 11.50 | 11.48 |
+| Float | 2 | 92.44% | 0.196 | 0.187 | 12.79 | 12.14 |
+| INT8 | 1 | 93.26% | 0.239 | 0.226 | 12.07 | 11.71 |
+| INT8 | 2 | 93.26% | 0.275 | 0.255 | 13.26 | 12.99 |
+
+All paired prediction arrays, including every score, label and path, match
+exactly. INT8 later-phase time falls by 5–7% in these trials; float timing is
+mixed. Whole training calls are shorter in all pairs, but the smallest difference
+is within ordinary timing noise. This removes measured overhead from both paths;
+INT8 remains slower than float on this small-batch workload.
+
+The control ran from an isolated copy of `a7007ac`, with source hash
+`ae6843b04efb8697fd2b830b3be729cbf61a061d3439abc8673c1d1d752d4542`.
+The changed source hash is
+`f6069758fdf01810bb343c1042b6b24fbae7422a71b1f1d065957f6949241635`.
+Reports, logs and predictions are retained locally under
+`/tmp/mini-trainer-disabled-ema-comparison`; traces are
+`/tmp/mini-trainer-requant-epoch-trace.json` and
+`/tmp/mini-trainer-disabled-ema-epoch-trace.json`.

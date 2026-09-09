@@ -15,6 +15,46 @@ from tests.test_checkpoint_contract import assert_state_equal
 KINDS = ["muon", "adamw", "sgd", "fused_adamw", "fused_sgd"]
 
 
+def test_disabled_ema_does_not_preprocess_an_unused_teacher_batch():
+    from mini_trainer.modeling.ema import EMATeacher
+
+    torch.manual_seed(119)
+    model = torch.nn.Sequential(torch.nn.Flatten(), torch.nn.Linear(2, 2))
+    reference = copy.deepcopy(model)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    reference_optimizer = torch.optim.SGD(reference.parameters(), lr=0.1)
+    images = torch.tensor([[[[1.0, 2.0]]], [[[3.0, 4.0]]]])
+    targets = torch.tensor([0, 1])
+    loader = DataLoader(TensorDataset(images, targets), batch_size=1)
+    teacher = EMATeacher(enable=False, total_steps=2)
+    teacher.teach = Mock(side_effect=AssertionError("Disabled teacher must not be invoked"))
+    preprocess = Mock(side_effect=lambda batch: batch / 4)
+    logger = Mock()
+    logger.status.return_value = "disabled teacher regression"
+    criterion = torch.nn.CrossEntropyLoss()
+    train_one_epoch(
+        model,
+        teacher,
+        criterion,
+        optimizer,
+        torch.amp.GradScaler("cpu", enabled=False),
+        torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1),
+        loader,
+        0,
+        logger,
+        preprocess=preprocess,
+        clip_grad_norm=None,
+    )
+    for batch, target in loader:
+        reference_optimizer.zero_grad()
+        criterion(reference(batch / 4), target).backward()
+        reference_optimizer.step()
+    teacher.teach.assert_not_called()
+    assert preprocess.call_count == len(loader)
+    assert all(call.kwargs["distillation_loss"] == 0.0 for call in logger.consume.call_args_list)
+    assert_state_equal(model.state_dict(), reference.state_dict())
+
+
 def make_optimizer(kind, parameters, lr=0.01):
     if kind == "muon":
         return MuonAuxAdamW([{"params": list(parameters), "name": "head"}], lr=lr, weight_decay=0.01)
@@ -86,6 +126,7 @@ def test_epoch_only_advances_scheduler_and_ema_after_updates(kind, scaled, devic
     external_hook.remove()
     expected_steps = [6, 8] if scaled else [6, 7, 8]
     assert [call.args[0] for call in teacher.update_parameters.call_args_list] == expected_steps
+    assert teacher.teach.call_count == len(loader)
     assert all(call.args[1] is model for call in teacher.update_parameters.call_args_list)
     assert scheduler.last_epoch == len(expected_steps)
     assert optimizer.param_groups[0]["lr"] == pytest.approx(0.01 * 0.5 ** len(expected_steps))

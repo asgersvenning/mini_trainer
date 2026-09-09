@@ -131,7 +131,7 @@ def train_one_epoch(
             # TODO: Add optional contrastive path
             # ctr_loss = contrastive_criterion()
             # If EMA is disabled ``distill_loss`` is ``0.0``
-            distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits)
+            distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
