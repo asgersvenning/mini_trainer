@@ -187,10 +187,12 @@ mt_export --weights native-int8-last.pt --output materialized-onnx \
 The conversion checks the recorded native recipes, copies the state, materializes
 INT8 weight representations, and removes the recipe that would restore native
 training tensor types. It preserves class metadata, active-class masks and other
-buffers. Normalized directions use their integer codes with scale signs absorbed
-into the floating magnitudes. This follows the native effective-weight formula
+buffers. Normalized directions use signed integer codes, with magnitudes set to
+zero for zero-scale rows. This follows the native effective-weight formula
 and handles zero scales without introducing an ordinary weight-normalization
-divide-by-zero. Undefined zero-code directions and invalid/nonfinite states fail.
+divide-by-zero. Compatible parameter ties are retained by normal model loading;
+incompatible tied roles/views fail instead of silently loading different values
+into one shared parameter. Undefined zero-code directions and invalid/nonfinite states fail.
 The source checkpoint is never rewritten, and neither optimizers nor training
 state are carried into this deployment artifact.
 

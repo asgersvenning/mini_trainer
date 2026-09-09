@@ -71,6 +71,42 @@ def test_invalid_native_state_is_rejected(failure):
         materialize_quantized_training_state(state)
 
 
+def _shared_magnitude_model():
+    model = torch.nn.ModuleDict({name: torch.nn.utils.parametrizations.weight_norm(torch.nn.Linear(8, 3), dim=0) for name in ("a", "b")})
+    model["b"].parametrizations.weight.original0 = model["a"].parametrizations.weight.original0
+    return model
+
+
+def test_shared_magnitude_with_opposite_scale_signs_preserves_both_weights():
+    model = _shared_magnitude_model()
+    prepare_quantized_training(model)
+    model["b"].parametrizations.weight.original1.scale.neg_()
+    expected = {name: model[name].weight.dequantize().detach().clone() for name in ("a", "b")}
+    state, _ = materialize_quantized_training_state(model.state_dict())
+    restored = _shared_magnitude_model()
+    restored.load_state_dict(state, strict=True)
+    for name in expected:
+        torch.testing.assert_close(restored[name].weight, expected[name], rtol=1e-6, atol=1e-7)
+
+
+def test_incompatible_shared_magnitude_zero_scale_fails_explicitly():
+    model = _shared_magnitude_model()
+    prepare_quantized_training(model)
+    model["b"].parametrizations.weight.original1.scale[0].zero_()
+    with pytest.raises(ValueError, match="tied parameter"):
+        materialize_quantized_training_state(model.state_dict())
+
+
+def test_weight_shared_between_normalized_and_ordinary_roles_fails_explicitly():
+    model = torch.nn.ModuleDict(
+        {"a": torch.nn.Linear(8, 3), "b": torch.nn.utils.parametrizations.weight_norm(torch.nn.Linear(8, 3), dim=0)}
+    )
+    model["a"].weight = model["b"].parametrizations.weight.original1
+    prepare_quantized_training(model)
+    with pytest.raises(ValueError, match="tied parameter"):
+        materialize_quantized_training_state(model.state_dict())
+
+
 @pytest.mark.parametrize("head", [Classifier, HierarchicalClassifier])
 def test_masked_normalized_checkpoint_materializes_and_exports_on_cpu(tmp_path, head):
     pytest.importorskip("onnx")

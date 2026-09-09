@@ -171,8 +171,8 @@ def materialize_quantized_training_state(state_dict: dict, *, dtype=torch.float3
 
     This removes dynamic activation quantization and is not a training-resume
     conversion or a promise of native forward parity. Normalized directions use
-    integer codes as direction and absorb scale signs into their magnitudes,
-    including zero scales. The caller's tensors and recipes remain untouched.
+    signed integer codes; zero scales require zero magnitudes. Incompatible tied
+    parameter roles fail explicitly. Caller tensors and recipes remain untouched.
     """
     import copy
     from collections import OrderedDict
@@ -200,7 +200,7 @@ def materialize_quantized_training_state(state_dict: dict, *, dtype=torch.float3
     result = OrderedDict((key, copy.deepcopy(value)) for key, value in state_dict.items() if key not in recipes and key not in weights)
     if hasattr(state_dict, "_metadata"):
         result._metadata = copy.deepcopy(state_dict._metadata)
-    converted = []
+    converted, touched = [], set(weights)
     for key, weight in weights.items():
         codes, scales = weight.int_data, weight.scale
         if (
@@ -220,7 +220,10 @@ def materialize_quantized_training_state(state_dict: dict, *, dtype=torch.float3
                 raise ValueError(f"Invalid normalization magnitude: {magnitude_key}")
             if (torch.linalg.vector_norm(values.float(), dim=1) == 0).any():
                 raise ValueError(f"Native normalization has an undefined zero-code direction: {key}")
-            result[magnitude_key] = magnitude.to(dtype=dtype) * scales.sign().to(dtype=dtype).view(-1, 1)
+            signs = scales.sign().to(dtype=dtype)
+            values.mul_(torch.where(signs == 0, 1, signs).view(-1, 1))
+            result[magnitude_key] = magnitude.to(dtype=dtype) * (signs != 0).view(-1, 1)
+            touched.add(magnitude_key)
             if not torch.isfinite(result[magnitude_key]).all():
                 raise ValueError(f"Normalization magnitude overflows the materialization dtype: {key}")
         else:
@@ -229,11 +232,36 @@ def materialize_quantized_training_state(state_dict: dict, *, dtype=torch.float3
             raise ValueError(f"Represented weights overflow the materialization dtype: {key}")
         result[key] = values
         converted.append({"name": key, "shape": list(values.shape), "normalized": normalized, "source_compute_dtype": str(weight.dtype)})
+    # State loading can re-tie parameters through the architecture constructor.
+    # Different converted values for the same source storage would silently make
+    # the last loaded alias override another operation's intended representation.
+    aliases = {}
+    for key, value in state_dict.items():
+        if not isinstance(value, torch.Tensor) or not value.numel():
+            continue
+        tensors = (value.int_data, value.scale) if key in weights else (value,)
+        storage = tuple((str(t.device), t.untyped_storage().data_ptr()) for t in tensors)
+        aliases.setdefault(storage, []).append(key)
+    for group in aliases.values():
+        if len(group) < 2 or not touched.intersection(group):
+            continue
+        first = group[0]
+        for key in group[1:]:
+            a, b = state_dict[first], state_dict[key]
+            views = (a.int_data, b.int_data) if first in weights and key in weights else (a, b)
+            if (
+                views[0].shape != views[1].shape
+                or views[0].stride() != views[1].stride()
+                or views[0].storage_offset() != views[1].storage_offset()
+                or not torch.equal(result[first], result[key])
+            ):
+                raise ValueError(f"Materialization cannot preserve tied parameter roles/views: {group}")
     return result, {
         "schema_version": 1,
         "source_backend": "cuda-int8-linear",
         "target": "floating_weights_for_deployment_calibration",
         "dtype": str(dtype),
+        "normalization_parameterization": "signed codes; zero magnitude for zero scales",
         "converted_weights": converted,
         "source_recipes": copy.deepcopy(recipes),
         "dynamic_activation_quantization_preserved": False,
