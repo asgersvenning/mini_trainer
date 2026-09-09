@@ -3491,3 +3491,47 @@ full CPU-default suite: 521 passed, 162 skipped and the known EMA expected failu
 The two real GPU smoke runs above additionally exercised full held-out collection,
 separate `mini_metrics` evaluation, paired latency and fresh-process memory stages.
 No new production performance claim accompanies this harness milestone.
+
+### Target GPU workflow entry point
+
+`dev/check-tensorrt-deployment.sh` now runs explicit environment preflight,
+matching FP16-enabled baseline/candidate builds on the target, and the composed
+quality/resource evaluator. It records the source revision, harness hash and
+failure phase/exit code, preserves stage logs and rejects existing output paths.
+Its configuration uses quoted arguments rather than evaluating command strings;
+paths with spaces and shell metacharacters remain literal.
+
+The opt-in `tensorrt-deployment.yml` workflow uses that same command on a
+configured self-hosted Linux GPU runner. Manual invocation and an explicitly
+enabled weekly schedule produce job summaries and 90-day artifacts including
+engines, inspection, quality and resource evidence. It uses prepared environments
+without dependency synchronization, has read-only repository permissions, and
+rebuilds engines from configured ONNX sources instead of reusing laptop binaries.
+See the [runner setup](../dev/benchmarks/README.md#opt-in-target-gpu-workflow).
+This is a runner handoff, not evidence that unavailable hardware has passed, and
+90-day artifacts do not solve durable result publication.
+
+The exact shared command completed locally on the retained trained flat Blair
+ONNX sources: two fresh engine builds, 912-image paired quality, three paired
+latency processes and six isolated memory processes. Both builds used matching
+1/8/8 profiles, FP16 enabled, TF32 disabled, optimization level 1 and 1 GiB
+workspace. The top-level status records `phase=complete, exit_code=0` and the
+composed report records `evaluated`. All five metrics are defined; candidate minus
+baseline changes are -0.2768 pp Macro-F1, -0.4905 pp Macro-Recall, -0.0246 pp
+Macro-Precision, zero Coverage change and -0.5290 for Theil's U multiplied by 100.
+These rebuilt engines differ from earlier experiments; candidate FP16 is now
+allowed. No inference cost claim is made because CPU checks overlapped this
+correctness run. Full evidence is retained under ignored
+`tmp-target-trt-harness-smoke/`.
+
+Shell syntax, workflow YAML structure and embedded shell syntax passed local
+checks. Six harness tests cover build-before-evaluation ordering, matching flags,
+literal paths, output preservation, missing configuration and failure propagation
+from both environments, candidate build and evaluation. No remote GitHub job was
+launched. Default-branch activation, configured runner execution and durable
+publication remain unverified; local parser checks are not a GitHub execution test.
+
+The full CPU-default suite passed: 527 tests passed, 162 skipped and the known
+EMA expected failure, alongside the local real-data GPU workflow-command run.
+Static repository checks passed. The workflow itself has only local YAML/shell
+validation; execution by GitHub Actions on the intended runner is still required.

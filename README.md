@@ -127,6 +127,9 @@ Follow the [benchmark results and coverage](docs/benchmarks.md) and
 The suite progresses from an exact synthetic oracle to MNIST and hierarchical Blair,
 with separate CPU and GPU profiles, visible summaries, and retained reproduction artifacts.
 
+For configured GPU runners, the opt-in [TensorRT deployment workflow](dev/benchmarks/README.md#opt-in-target-gpu-workflow)
+rebuilds engines on the target and reports paired quality, latency and memory.
+
 ## Temporarily unsupported feature
 
 EMA (`--ema` / `ema=True`) is currently nonfunctional: classifier caches populated

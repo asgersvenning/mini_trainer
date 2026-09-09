@@ -1607,3 +1607,61 @@ and loading, and both engines coexist during timing. Memory comes from separate
 processes; device-wide snapshots are not per-process or transient peak readings.
 Use quiescent target hardware and record deployment conditions before making
 HPC, desktop/Spark or edge acceptance claims.
+
+### Opt-in target GPU workflow
+
+`.github/workflows/tensorrt-deployment.yml` runs the same target command as a
+local or manually allocated Linux GPU session:
+
+```bash
+export BENCHMARK_PYTHON=/absolute/path/to/prepared-tensorrt-env/bin/python
+export BENCHMARK_METRICS_PYTHON=/absolute/path/to/metrics-env/bin/python
+export TRT_BASELINE_MODEL=/absolute/path/to/float/model.onnx
+export TRT_CANDIDATE_MODEL=/absolute/path/to/calibrated/model.onnx
+export TRT_INFERENCE_MANIFEST=/absolute/path/to/heldout/manifest.json
+export TRT_INPUTS=/absolute/path/to/heldout/batch-00000.npz
+export TRT_PROFILES=/absolute/path/to/profiles.json
+CUDA_VISIBLE_DEVICES=0 bash dev/check-tensorrt-deployment.sh tensorrt-results
+```
+
+Keep ONNX external-weight files beside each model. Both models must implement
+the manifest's class order and score semantics. Supply a calibrated candidate;
+this command does not select calibration data or fit a quantizer. It checks
+runtime availability, rebuilds both engines on the actual runner, then invokes
+the composed evaluator. Both builds allow FP16, disable TF32, share the profile
+JSON, and default to optimization level 1 and 1 GiB workspace. Override those last
+two settings with `TRT_OPTIMIZATION` and `TRT_WORKSPACE_MIB`. Resource threads
+default to one (`BENCHMARK_THREADS`) and visible device index to zero
+(`BENCHMARK_DEVICE`). No environment installation, synchronization or deletion
+occurs. Relative paths resolve from the repository root.
+
+The GitHub workflow requires a configured self-hosted Linux GPU runner and these
+repository variables:
+
+| Repository variable | Meaning |
+| --- | --- |
+| `TRT_BENCHMARK_PYTHON` | Prepared TensorRT/CUDA Python; maps to `BENCHMARK_PYTHON` |
+| `BENCHMARK_METRICS_PYTHON` | Prepared `mini_metrics` Python |
+| `TRT_BASELINE_MODEL`, `TRT_CANDIDATE_MODEL` | Absolute source ONNX paths |
+| `TRT_INFERENCE_MANIFEST`, `TRT_INPUTS`, `TRT_PROFILES` | Absolute held-out contract, resource inputs and build profile paths |
+| `TRT_RUNNER_LABEL` | Additional self-hosted runner label; defaults to `gpu` |
+| `TRT_CUDA_VISIBLE_DEVICES` | Explicit visible GPU selection; defaults to `0` |
+| `TRT_THREADS`, `TRT_OPTIMIZATION`, `TRT_WORKSPACE_MIB` | Optional matching execution/build settings |
+| `ENABLE_TENSORRT_BENCHMARKS` | Set exactly `true` to enable weekly scheduled execution |
+
+Prepared environments and source artifacts should live outside the checkout,
+which the checkout action can clean between runs. Use quiescent, allocated target
+hardware; the workflow's concurrency group prevents overlapping executions of
+this workflow with the same runner label, but does not coordinate unrelated jobs.
+Manual dispatch is available independently of the schedule opt-in. GitHub requires
+the workflow on the default branch for manual/scheduled activation; scheduled
+start times can be delayed. See [GitHub's event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
+Every run retains the repository revision, harness hash, preflight/build/evaluation
+logs, failing phase/exit code, rebuilt engines and inspections, predictions,
+metrics, paired timings and memory reports. A completed comparison appears in
+the job summary. Failures instead show their status and point to retained logs.
+Artifacts are named by run ID and attempt and retained for 90 days. This supplies
+visible per-run evidence, **not durable cross-run history**; permanent publication
+and target acceptance still require additional work. Source models, datasets and
+prepared environments are not uploaded by the workflow.

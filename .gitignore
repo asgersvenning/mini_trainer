@@ -22,6 +22,7 @@
 **/__pycache__/**
 /tmp*
 /tmp/**
+/tensorrt-results/
 **.pyspy
 
 # Specific cases

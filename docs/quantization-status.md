@@ -45,9 +45,10 @@ The [composed TensorRT deployment command](benchmarks.md#composed-tensorrt-deplo
 now binds inspection, held-out quality, adjacent paired timing and isolated memory
 into one retained report. Real flat/hierarchical Blair smoke runs passed all
 stages and all five metrics across 912 held-out images; their resource readings
-are excluded because CPU correctness checks overlapped. The command is ready for
-target-runner qualification, while remote CI orchestration, durable reporting and
-production acceptance remain unfinished.
+are excluded because CPU correctness checks overlapped. An opt-in target GPU workflow now rebuilds both engines and invokes this command
+using explicitly configured environments, ONNX sources and held-out inputs.
+Its job summary and 90-day artifacts provide per-run visibility; remote execution,
+durable cross-run reporting and production acceptance remain unverified.
 
 ## Current evidence
 
