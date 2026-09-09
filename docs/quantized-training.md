@@ -83,9 +83,9 @@ learning-rate updates. The formerly failing twelve-group SGD regression passes,
 as does twelve-group AdamW, with hard failure enabled on compiler-cache fallback.
 This establishes compilation compatibility, not a performance recommendation:
 the batch-128 dense MNIST comparison is slower and less accurate with QT than float.
-The [larger-batch profile](benchmarks.md#larger-batches-and-direct-collation) shows
+The [larger-batch profile](archive/benchmark-history.md#larger-batches-and-direct-collation) shows
 lower memory and faster training in individual runs after compiler caches are
-populated. The [three-seed requantization comparison](benchmarks.md#functional-fused-requantization)
+populated. The [three-seed requantization comparison](archive/benchmark-history.md#functional-fused-requantization)
 shows lower memory and slightly higher accuracy than float, but later-phase
 speed remains mixed and broader workload validation is still required.
 Compiled stochastic requantization can follow a different random trajectory from
@@ -101,7 +101,7 @@ The random trajectory can differ from earlier compiled requantization.
 The earlier storage prototype's fake-tensor and dtype-cache failures are resolved
 by an explicit Triton kernel and custom-operator boundary; the storage kernel
 does not depend on Dynamo's per-frame variant cache. Model `--compile` remains a
-separate option. See the [measured results](benchmarks.md#optimizer-fma-dispatch).
+separate option. See the [measured results](archive/benchmark-history.md#optimizer-fma-dispatch).
 
 `--compile-optimizer --optimizer-cudagraphs` opts into optimizer graph replay.
 During AOT fake-tensor tracing, updates expose floating arithmetic followed by
@@ -174,11 +174,11 @@ parameter gradients with an embedding auxiliary loss and check stable compilatio
 after lazy classifier metadata initializes. AMP fusion can change rounding and
 INT8 activation bins; these checks do not promise bitwise-identical eager and
 compiled trajectories. Fewer graphs do not guarantee lower peak memory or shorter
-whole training calls; see the [measured tradeoffs](benchmarks.md#embedding-publication-without-graph-breaks).
+whole training calls; see the [measured tradeoffs](archive/benchmark-history.md#embedding-publication-without-graph-breaks).
 
 ## Evidence and remaining work
 
-The [developer probes](../dev/benchmarks/README.md#quantized-training-and-loader-performance)
+The [developer probes](../dev/benchmarks/training.md#quantized-training-and-loader-performance)
 record both positive and negative workload-dependent results. Compiler cache keys
 include backend source and tensor metadata to avoid reusing obsolete backward
 graphs. Numerical checks include small gradients, compiled/eager agreement,
@@ -186,7 +186,7 @@ weight storage, optimizer updates, regularization and model-state restoration.
 
 Kernel-probe results do not establish a real-model speedup or convergence. The
 integrated path now has paired synthetic-oracle, MNIST and hierarchical Blair
-smoke runs, recorded in [the dataset benchmark results](benchmarks.md#integrated-int8-training).
+smoke runs, recorded in [the dataset benchmark results](archive/benchmark-history.md#integrated-int8-training).
 Complete optimizer/resume coverage, demonstrated real-workload speedups and broader
 quantized operation coverage remain outstanding. These are requirements
 for the overall QT goal, not conclusions implied by this initial integration.
@@ -207,7 +207,7 @@ Initial zero direction rows are rejected before preparation mutates any weights;
 normalization is undefined for these rows. The mathematical contract follows
 [PyTorch weight normalization](https://docs.pytorch.org/docs/2.12/generated/torch.nn.utils.parametrizations.weight_norm.html).
 
-The [dense MNIST comparison](benchmarks.md#dense-mnist-profile-with-corrected-peak-measurements)
+The [dense MNIST comparison](archive/benchmark-history.md#dense-mnist-profile-with-corrected-peak-measurements)
 now exercises a quantized backbone through the compiled trainer. Its accuracy is
 similar for one seed, but QT is slower and uses a higher whole-training peak than
 the floating path despite substantially smaller parameter storage. Corrected
@@ -222,7 +222,7 @@ above 131,071, the backend now combines bounded INT32 dot products in INT64 befo
 converting and scaling the result. This prevents finite but saturated gradients
 for large vocabularies. Shorter contractions keep the existing tuned kernel.
 ONNX export also bounds integer partial products and combines them in INT64.
-See the [arithmetic regression and limits](benchmarks.md#long-contraction-int8-accumulator-correctness).
+See the [arithmetic regression and limits](archive/benchmark-history.md#long-contraction-int8-accumulator-correctness).
 A million-output Linear gradient test does not establish that a full million-class
 EfficientNetV2 training configuration fits the available GPU; parameter,
 initialization, gradient and optimizer storage still require separate measurement.

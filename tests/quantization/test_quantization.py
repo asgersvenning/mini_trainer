@@ -13,7 +13,7 @@ from mini_trainer.hierarchical.model import ConditionalClassifier, HierarchicalC
 from mini_trainer.modeling import Classifier
 from mini_trainer.modeling.quantization import load_int8, prepare_int8
 from mini_trainer.trainer import train_one_epoch
-from tests.test_checkpoint_contract import assert_state_equal
+from tests.training.test_checkpoint_contract import assert_state_equal
 
 pytestmark = pytest.mark.skipif(importlib.util.find_spec("torchao") is None, reason="Install mini_trainer[quantization]")
 

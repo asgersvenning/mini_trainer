@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from mini_trainer.trainer import _optimizer_step, train_one_epoch
 from mini_trainer.training import MuonAuxAdamW
-from tests.test_checkpoint_contract import assert_state_equal
+from tests.training.test_checkpoint_contract import assert_state_equal
 
 KINDS = ["muon", "adamw", "sgd", "fused_adamw", "fused_sgd"]
 

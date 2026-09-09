@@ -8,7 +8,7 @@ from mini_trainer.export import main as export_checkpoint
 from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.modeling.quantized_training import materialize_quantized_training_state, prepare_quantized_training
-from tests.test_integration_train import TinyMockModel
+from tests.integration.test_integration_train import TinyMockModel
 
 pytest.importorskip("torchao")
 pytest.importorskip("triton")

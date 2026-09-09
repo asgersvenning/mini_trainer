@@ -11,7 +11,7 @@ from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.modeling.onnx import export_onnx
 from mini_trainer.modeling.quantized_training import prepare_quantized_training
-from tests.test_integration_train import TinyMockModel
+from tests.integration.test_integration_train import TinyMockModel
 
 onnx = pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")

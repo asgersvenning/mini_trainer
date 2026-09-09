@@ -15,7 +15,7 @@ implementation into a new harness or implicitly sync the working environment.
   a wheel with core CPU dependencies, then checks it outside the checkout. An editable
   installation with all extras cannot establish minimal-install compatibility.
 - Checkpoint or training state: inspect `train.py` restoration and `trainer.py` saving
-  together. Run `tests/test_checkpoint_contract.py` plus the existing training and
+  together. Run `tests/training/test_checkpoint_contract.py` plus the existing training and
   CPU DDP integration tests. Compare predictions and state, not only file existence.
 - Data refactors: preserve train/inference worker caps, batch sampling, cache overrides,
   class ordering, and label shape/device behavior. Choose focused tests from `tests/`.

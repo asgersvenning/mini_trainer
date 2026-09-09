@@ -29,3 +29,4 @@
 examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml
+/local-evidence/

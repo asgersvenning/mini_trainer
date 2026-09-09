@@ -112,6 +112,7 @@ Feel free to contribute, but here are a few tips:
 
 Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
 their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).
+The quantization branch has a focused [bottleneck and handoff roadmap](docs/quantization-roadmap.md).
 
 ## ONNX export
 
@@ -127,7 +128,7 @@ Follow the [benchmark results and coverage](docs/benchmarks.md) and
 The suite progresses from an exact synthetic oracle to MNIST and hierarchical Blair,
 with separate CPU and GPU profiles, visible summaries, and retained reproduction artifacts.
 
-For configured GPU runners, the opt-in [TensorRT deployment workflow](dev/benchmarks/README.md#opt-in-target-gpu-workflow)
+For configured GPU runners, the opt-in [TensorRT deployment workflow](dev/benchmarks/reporting.md#opt-in-target-gpu-workflow)
 rebuilds engines on the target and reports paired quality, latency and memory.
 
 ## Temporarily unsupported feature

@@ -70,4 +70,4 @@ jobs:
       - name: QAT continuation and native INT8 inference
         env:
           OMP_NUM_THREADS: "1"
-        run: bash dev/check.sh test tests/test_quantization.py
+        run: bash dev/check.sh test tests/quantization/test_quantization.py

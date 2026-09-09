@@ -83,12 +83,12 @@ jobs:
       - name: CUDA optimizer and AMP step regressions
         env:
           RUN_CUDA_TESTS: "1"
-        run: '"$BENCHMARK_PYTHON" -m pytest tests/test_optimizer_steps.py -k cuda'
+        run: '"$BENCHMARK_PYTHON" -m pytest tests/training/test_optimizer_steps.py -k cuda'
       - name: CUDA INT8 model and checkpoint regressions
         if: inputs.qt || vars.BENCHMARK_QT == 'true'
         env:
           RUN_CUDA_TESTS: "1"
-        run: '"$BENCHMARK_PYTHON" -m pytest tests/test_quantized_training.py tests/test_quantized_training_model.py'
+        run: '"$BENCHMARK_PYTHON" -m pytest tests/quantization/test_quantized_training.py tests/quantization/test_quantized_training_model.py'
       - name: Paired synthetic quantized training
         if: (inputs.qt || vars.BENCHMARK_QT == 'true') && !cancelled()
         run: bash dev/check-benchmarks.sh qt benchmark-qt

@@ -141,8 +141,8 @@ def test_training_entrypoint_checkpoint_and_inference(tmp_path, normalized, comp
     from mini_trainer.modeling import Classifier
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.train import main
-    from tests.test_checkpoint_contract import DeterministicBuilder
-    from tests.test_integration_train import TinyMockModel
+    from tests.integration.test_integration_train import TinyMockModel
+    from tests.training.test_checkpoint_contract import DeterministicBuilder
 
     device = cuda()
     for label in ("class_a", "class_b"):

@@ -1,5 +1,9 @@
 # Development checks
 
+Tests are grouped by subsystem; see the [test suite map](../tests/README.md).
+For quantization work, follow the [branch roadmap](../docs/quantization-roadmap.md)
+and [benchmark command index](benchmarks/README.md).
+
 Use the uv-managed environment from the [installation guide](../README.md#local-installation).
 The default sync includes the development dependency group. Choose a PyTorch backend
 explicitly when syncing; checks use `.venv` without changing installed packages.
@@ -8,7 +12,7 @@ Run from the repository root:
 
 ```bash
 bash dev/check.sh static
-bash dev/check.sh test tests/test_config.py
+bash dev/check.sh test tests/core/test_config.py
 bash dev/check.sh all
 bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term
 bash dev/check-wheel.sh
@@ -69,13 +73,13 @@ inspect the lock diff, explicitly sync the desired backend, and validate before 
 
 ## Behavioral coverage and known limits
 
-Loader regressions live in `tests/utils/test_loader.py`. They simulate restricted
+Loader regressions live in `tests/data/test_loader.py`. They simulate restricted
 CPU affinity, Python/platform fallbacks, and explicit worker counts without starting
 large worker pools. Small image and RAM-cache fixtures check output compatibility,
 and the distributed loader check verifies sampler/spawn configuration. The full CPU
 DDP integration test remains the runtime check for distributed training.
 
-`tests/test_checkpoint_contract.py` compares live and reloaded predictions, verifies
+`tests/training/test_checkpoint_contract.py` compares live and reloaded predictions, verifies
 model/optimizer/scheduler/scaler state at the continuation boundary, and compares final
 checkpoint contents after uninterrupted and resumed CPU float32 training. It retains
 the original epoch budget and uses fixed data order with stochastic transforms disabled.
@@ -91,7 +95,7 @@ in pytest output and become failures if they unexpectedly pass.
 
 ## ONNX checks
 
-`tests/test_onnx.py` requires the `export` extra; optional backend cases additionally
+`tests/export/test_onnx.py` requires the `export` extra; optional backend cases additionally
 require `timm`, `transformers` and `bioclip`. CI's `all` extra includes these.
 Tests use randomly initialized offline models and check all classifier head families,
 representative backbones, state preservation, masks and structured outputs.
@@ -137,15 +141,15 @@ skip cannot be observed reliably. Arbitrary custom internal no-ops are not infer
 by inspecting parameters. This boundary must be rechecked when PyTorch changes its
 fused AMP contract.
 
-`tests/test_optimizer_steps.py` uses real GradScaler overflow, scale growth and
+`tests/training/test_optimizer_steps.py` uses real GradScaler overflow, scale growth and
 recovery on CPU and optionally CUDA, including native fused AdamW/SGD. It checks
 parameters, optimizer state, scheduler state and EMA call indices, as well as
 zero-LR steps, scale underflow and hook cleanup. Checkpoint regressions additionally
 compare uninterrupted/resumed MuonAuxAdamW, AdamW and momentum SGD training.
 
 ```bash
-bash dev/check.sh test tests/test_optimizer_steps.py tests/test_checkpoint_contract.py
-RUN_CUDA_TESTS=1 CUDA_VISIBLE_DEVICES=0 bash dev/check.sh test tests/test_optimizer_steps.py -k cuda
+bash dev/check.sh test tests/training/test_optimizer_steps.py tests/training/test_checkpoint_contract.py
+RUN_CUDA_TESTS=1 CUDA_VISIBLE_DEVICES=0 bash dev/check.sh test tests/training/test_optimizer_steps.py -k cuda
 ```
 
 The configured GPU benchmark workflow runs these CUDA regressions too. An explicitly
@@ -176,7 +180,7 @@ See [PyTorch stream semantics](https://docs.pytorch.org/docs/main/notes/cuda.htm
 
 This is an opt-in throughput/memory tradeoff. Actual gains depend on the balance
 between transfer and compute; compare peak allocation as well as wall time using
-[the transfer probe](benchmarks/README.md#cuda-transfer-overlap).
+[the transfer probe](benchmarks/training.md#cuda-transfer-overlap).
 
 ### Direct pinned cache batches
 
@@ -210,7 +214,7 @@ A one-thread cache benchmark with 4,096 uint8 RGB 28×28 images, batch size 128,
 and seven alternating trials measured approximately 0.52 million samples/s before
 this change and 2.22 million afterward. This isolates cached iteration; larger
 images, decoding, transfer and model compute change the overall benefit. See the
-[integrated measurements](../docs/benchmarks.md#larger-batches-and-direct-collation).
+[integrated measurements](../docs/archive/benchmark-history.md#larger-batches-and-direct-collation).
 
 ### Model compilation
 

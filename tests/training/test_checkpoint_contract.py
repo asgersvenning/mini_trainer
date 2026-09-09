@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from mini_trainer.modeling import Classifier, classification_module
-from tests.test_integration_train import MockBuilder, TinyMockModel
+from tests.integration.test_integration_train import MockBuilder, TinyMockModel
 
 train_module = importlib.import_module("mini_trainer.train")
 

@@ -27,7 +27,7 @@ def run_history(tmp_path):
     def run():
         return subprocess.run(
             ["bash", "dev/check-report-history.sh", str(results), str(history)],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=Path(__file__).resolve().parents[2],
             env=env,
             capture_output=True,
             text=True,

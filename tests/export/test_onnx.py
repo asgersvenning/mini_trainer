@@ -18,8 +18,8 @@ from mini_trainer.hierarchical.model import (
 )
 from mini_trainer.modeling import Classifier
 from mini_trainer.modeling.onnx import export_onnx
-from tests.test_checkpoint_contract import assert_state_equal
-from tests.test_integration_train import TinyMockModel
+from tests.integration.test_integration_train import TinyMockModel
+from tests.training.test_checkpoint_contract import assert_state_equal
 
 pytestmark = pytest.mark.skipif(
     any(importlib.util.find_spec(name) is None for name in ("onnx", "onnxscript", "onnxruntime")),

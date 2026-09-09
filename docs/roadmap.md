@@ -1,5 +1,9 @@
 # Repository strengthening roadmap
 
+The active quantization feature branch has a separate
+[execution roadmap](quantization-roadmap.md) covering measured bottlenecks,
+target-machine dependencies, integration gates and deferred work.
+
 This is the implementation order. Each increment should leave the existing default
 training and prediction interfaces working and include its own validation evidence.
 Items below are planned unless explicitly marked delivered.
@@ -109,14 +113,14 @@ An initial [CUDA INT8 Linear integration](quantized-training.md) connects model
 preparation and checkpoint loading to the training entry point. At that stage, broader operator
 and optimizer coverage, stronger convergence evidence and real-workload speedups
 remained required. Paired synthetic, MNIST and hierarchical Blair smoke runs now
-record quality, storage and timing; [these small workloads are slower under QT](benchmarks.md#integrated-int8-training).
+record quality, storage and timing; [these small workloads are slower under QT](archive/benchmark-history.md#integrated-int8-training).
 Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
 that target. The implementation and comparison plan is in
 [training feature validation](training-feature-validation.md).
 
 The explicit CUDA storage-update kernel and local matrix tuner now reduce
 whole-run peak allocation in the dense MNIST comparison by approximately 35%;
-[the batch-128 speed result remains unfavorable](benchmarks.md#explicit-cuda-kernels-and-local-tuning).
+[the batch-128 speed result remains unfavorable](archive/benchmark-history.md#explicit-cuda-kernels-and-local-tuning).
 The outer optimizer fallback was traced to missing FMA dispatch for tensor
 learning rates. Twelve-group SGD and AdamW now compile without cache fallback,
 and the former expected-failure marker is removed. The [paired compiled-optimizer
@@ -127,9 +131,9 @@ Direct collation removes redundant per-sample views from repository loaders whil
 preserving external default collation and shuffle RNG. A [larger-batch MNIST
 profile](benchmarks.md#larger-batches-and-direct-collation) now shows lower memory
 and faster training with populated compiler caches in individual runs. The first
-[three-seed comparison](benchmarks.md#continuous-multi-seed-large-batch-profile)
+[three-seed comparison](archive/benchmark-history.md#continuous-multi-seed-large-batch-profile)
 confirms 26–28% lower peak memory but mixed speed results and 0.10–0.54 percentage
-points lower accuracy. [Functional fused requantization](benchmarks.md#functional-fused-requantization)
+points lower accuracy. [Functional fused requantization](archive/benchmark-history.md#functional-fused-requantization)
 then reduced peak memory to 30–31% below float, with slightly higher accuracy in
 all three pairs. Whole-run times improved, but later-phase speed remained mixed.
 At that stage, reliable speed gains, cold-start cost, and broader workload validation remained open; see the current audit above.

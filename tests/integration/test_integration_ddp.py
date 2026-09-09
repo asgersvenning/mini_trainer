@@ -5,7 +5,7 @@ import torch
 import torch.multiprocessing as mp
 
 from mini_trainer.train import main as train_main
-from tests.test_integration_train import MockBuilder, TinyMockModel
+from tests.integration.test_integration_train import MockBuilder, TinyMockModel
 
 
 def _get_free_port():
@@ -84,7 +84,7 @@ def test_integration_ddp_cpu(tmp_path):
     cls_mod = classification_module(loaded_model)
     assert isinstance(cls_mod, Classifier)
     assert cls_mod.metadata["backbone_output_name"] == "fc"
-    assert cls_mod.metadata["backbone_class"] == "tests.test_integration_train:TinyMockModel"
+    assert cls_mod.metadata["backbone_class"] == "tests.integration.test_integration_train:TinyMockModel"
     assert loaded_preprocess is not None
     # Test that the custom preprocessing function runs
     dummy_input = torch.randn(3, 5, 5)
