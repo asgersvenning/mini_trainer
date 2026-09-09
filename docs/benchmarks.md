@@ -2405,6 +2405,82 @@ step checks described above. Hierarchical, larger-class and target-hardware
 conclusions require their own corresponding measurements.
 
 
+### Isolated three-seed hierarchical training comparison
+
+At revision `4c0ef1b`, twelve fresh-process runs extend the preceding flat study
+to the normalized symmetric `HierarchicalClassifier`. The pretrained
+EfficientNetV2-S backbone, reviewed Blair splits (3,704/912/1,161 images), seeds
+42/43/44, five epochs, batch 32, 128px inputs, BF16 AMP, MuonAuxAdamW at learning
+rate 0.01, CPU caching, zero workers and one PyTorch thread match that study.
+The hierarchical model uses its two-level training loss and 25 leaf/15 parent
+classes. Full and parameter-frozen training are separate; frozen parameters retain
+training-mode BatchNorm/dropout. Model and optimizer compilation are disabled.
+Seed 43 reverses training-mode and precision order; all processes run sequentially
+without competing benchmarks/tests. GPU clocks, thermals and background OS
+activity remain uncontrolled on the local RTX 3080 Ti Laptop GPU.
+
+All twelve runs completed training, checkpoint reload and finite held-out
+inference. Source hashes match across runs. All six paired evaluations passed
+configuration and dataset checks, and class mappings, sample identities, labels
+and recorded image hashes match across seeds/modes. Every final resume checkpoint
+records epoch 4, scheduler position 575 and Adam step 575. The maintained adapter
+and mini_metrics evaluator use fixed argmax predictions at threshold zero, with
+all five metrics evaluated independently at both levels; no held-out selection.
+
+| Mode | Seed | Float train epoch (s) | INT8 train epoch (s) | INT8 / float | Float training call (s) | INT8 training call (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Full | 42 | 12.393 | 15.555 | 1.255 | 72.289 | 88.361 |
+| Full | 43 | 13.809 | 13.932 | 1.009 | 84.263 | 86.504 |
+| Full | 44 | 14.200 | 14.217 | 1.001 | 89.357 | 86.489 |
+| Parameter frozen | 42 | 5.856 | 6.272 | 1.071 | 41.789 | 44.750 |
+| Parameter frozen | 43 | 6.916 | 6.099 | 0.882 | 46.162 | 44.124 |
+| Parameter frozen | 44 | 7.012 | 6.238 | 0.890 | 44.907 | 45.750 |
+
+Train times are medians of epochs 3–5, including loading, preprocessing, compute
+and batch logging. Whole training calls include setup, validation, figures and
+checkpoint writing, but exclude final held-out inference. Full INT8 train phases
+were tied with or slower than float, while frozen timings were mixed. Median
+paired train/call ratios were 1.009/1.027 full and 0.890/1.019 frozen: faster
+frozen train phases in two seeds did not consistently shorten the whole call.
+
+Scoped allocated peaks match across all seeds: full training used 1,230.659 MiB
+float versus 1,189.365 MiB INT8 (**3.4% lower**), and frozen training used 206.902
+versus 170.035 MiB (**17.8% lower**). These are allocator measurements, not total
+process memory. Convolutions, gradients and optimizer state remain floating.
+
+The table gives observed INT8-minus-float differences multiplied by 100, spanning
+three paired seeds. These ranges are not confidence intervals. Coverage is 1.0
+throughout.
+
+| Mode / level | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full / leaf | −3.450 to +4.970 | −3.622 to +5.164 | −3.979 to +5.054 | 0 | −1.936 to +2.599 |
+| Full / parent | −5.099 to −0.638 | −5.454 to +0.463 | −5.378 to −2.794 | 0 | −1.660 to +0.794 |
+| Parameter frozen / leaf | −2.215 to +0.100 | −3.081 to +0.630 | −1.215 to +1.496 | 0 | −1.911 to +0.999 |
+| Parameter frozen / parent | −2.770 to +0.427 | −2.580 to 0.000 | −3.073 to +1.550 | 0 | −1.301 to +0.178 |
+
+Full-training parent Macro-F1 and Macro-Precision fall in every seed, with losses
+up to about five points. This is a less favorable result than the flat study and
+does not justify recommending the current five-epoch hierarchical recipe for its
+3.4% memory saving. Leaf changes are mixed and cannot establish general quality
+superiority. Longer matched-quality training and investigation of the hierarchy's
+optimization sensitivity are warranted before production recommendations.
+
+Absolute leaf Macro-F1 is 0.692–0.725 float / 0.672–0.742 INT8 for full training,
+versus 0.480–0.489 / 0.467–0.481 frozen. Parent Macro-F1 is 0.838–0.860 /
+0.809–0.841 full, versus 0.624–0.639 / 0.597–0.643 frozen. As in the flat study,
+frozen training at this budget is not an equal-quality replacement for full
+training. These runs neither establish target-hardware gains nor compare trained
+ONNX deployment candidates.
+
+Ignored `tmp-isolated-hierarchical-training/` retains the protocol, drivers, logs,
+final/resume checkpoints, predictions, six quality bundles and metric reports,
+`comparison.json` and `checkpoint-checks.json`. Completed epoch-zero checkpoints
+were removed, retaining approximately 4 GiB of evidence. Validation consists of
+the twelve real training runs, six two-level metric evaluations and the identity,
+configuration and checkpoint checks above. No library code changed, so the
+previous full-suite result remains separate from this empirical study.
+
 ### Isolated 100k-class optimizer compilation comparison
 
 Revision `aff0807` exposes the existing optimizer compilation and graph options

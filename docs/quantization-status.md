@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the 100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison).
+recorded in [the hierarchical training study](benchmarks.md#isolated-three-seed-hierarchical-training-comparison).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -45,8 +45,18 @@ allocated peak memory. Parameter-frozen INT8 saved 17.8%, with mixed timings and
 a largest observed quality loss of 2.082 points in Macro-Precision. All five
 metrics and checkpoint step counts were checked. The absolute frozen-model
 quality remained well below full training at five epochs, and timing drift
-prevents claiming a stable speedup. Hierarchical and target-hardware replication
-and time-to-useful-quality evidence remain outstanding.
+prevents claiming a stable speedup. The hierarchical replication below is now
+complete; target-hardware replication and time-to-useful-quality evidence remain
+outstanding.
+
+The [hierarchical three-seed study](benchmarks.md#isolated-three-seed-hierarchical-training-comparison)
+completes twelve corresponding training/reload runs and six two-level metric
+comparisons. Memory savings match the flat study, with mixed timings. Full-training
+parent Macro-F1 and Macro-Precision fall in every seed, by up to 5.10 and 5.38
+points respectively; leaf changes are mixed. This negative result argues against
+recommending the five-epoch recipe for its 3.4% full-training memory saving.
+Longer matched-quality budgets and investigation of hierarchical optimization
+sensitivity remain necessary. All final checkpoint step checks passed.
 
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.
@@ -132,9 +142,9 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    [corrected allocation comparison](benchmarks.md#correcting-the-frozen-head-allocation-comparison)
    shows a 6.6% local peak reduction for both heads. Repeat the corrected probe
    across seeds and with realistic pretrained features and longer integrated training.
-   The flat pretrained Blair profile now has isolated three-seed comparisons
-   against full-backbone baselines. Extend that comparison to hierarchical models
-   and longer matched-quality budgets; the current five-epoch frozen models do
+   Both flat and hierarchical pretrained Blair profiles now have isolated
+   three-seed comparisons against full-backbone baselines. Extend them to longer
+   matched-quality budgets; the current five-epoch frozen models do
    not reach the full-training quality level. Investigate measured execution costs
    and larger-head regimes rather than inferring a general speedup from these runs.
 
