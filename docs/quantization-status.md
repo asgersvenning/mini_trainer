@@ -58,6 +58,13 @@ default and remain excluded for these smokes. This prepares a reviewable reporti
 format, but persistent storage, public hosting and CPU/training adapters are still
 unimplemented.
 
+The target workflow now prepares the compact record and standalone page as a
+separate small artifact, including early failures. Its shared command was checked
+against a retained real Blair evaluation; failure handling and repeated archival
+have subprocess regressions. This does not extend the 90-day artifact lifetime
+or establish that the workflow has run remotely. Durable storage and public
+history remain the next reporting steps.
+
 ## Current evidence
 
 | Workstream | Verified locally | What remains unproven |

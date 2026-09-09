@@ -55,3 +55,21 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           path: tensorrt-results/
+      - name: Prepare compact history record
+        if: always()
+        env:
+          BENCHMARK_RUN_ID: trt-${{ github.run_id }}-${{ github.run_attempt }}
+          BENCHMARK_REVISION: ${{ github.sha }}
+          BENCHMARK_PROFILE: ${{ vars.TRT_REPORT_PROFILE || 'TensorRT target deployment' }}
+          BENCHMARK_NOTE: ${{ vars.TRT_REPORT_NOTE }}
+          BENCHMARK_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BENCHMARK_PERFORMANCE_VALID: ${{ vars.TRT_PERFORMANCE_VALID || 'false' }}
+        run: bash dev/check-report-history.sh tensorrt-results tensorrt-results/history
+      - name: Retain compact history and standalone page
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tensorrt-history-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: tensorrt-results/history/

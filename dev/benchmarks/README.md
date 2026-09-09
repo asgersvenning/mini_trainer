@@ -1713,3 +1713,21 @@ The renderer currently supports TensorRT deployment records. CPU/ARM and trainin
 history adapters, persistent hosted storage and publication automation remain
 unfinished. No remote uploads occur from either command. Local HTML structure
 and escaping have tests; browser rendering still needs visual qualification.
+
+The target workflow now also calls `bash dev/check-report-history.sh RESULTS HISTORY`
+and uploads a separate `tensorrt-history-RUN-ATTEMPT` artifact containing only the
+compact record and standalone page. This runs after failed evaluations too; an
+invalid evaluation report fails archival instead of being replaced with a less
+detailed status. A missing report uses the target command's failure status.
+The reporting command uses the prepared `BENCHMARK_PYTHON` and needs no GPU imports.
+If that executable is missing, raw failure artifacts remain the diagnostic source.
+
+Set repository variables `TRT_REPORT_PROFILE` and `TRT_REPORT_NOTE` to describe
+the workload and measurement conditions for readers. Set `TRT_PERFORMANCE_VALID`
+to exactly `true` only for a runner whose conditions justify performance comparisons;
+the default is `false`. Failed evaluations remain excluded regardless of this setting.
+Run IDs include the workflow attempt, and source revision/run links come from Actions.
+Locally, supply `BENCHMARK_RUN_ID`, `BENCHMARK_REVISION`, `BENCHMARK_PROFILE`, and
+optionally `BENCHMARK_RUN_URL`, `BENCHMARK_NOTE`, `BENCHMARK_PERFORMANCE_VALID`.
+These artifacts still expire after 90 days: this wiring prepares publisher input,
+but does not yet provide persistent storage or a public historical website.
