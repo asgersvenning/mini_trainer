@@ -827,3 +827,66 @@ environment, set `CUDA_VISIBLE_DEVICES` and `RUN_CUDA_TESTS=1`, then run
 `bash dev/check.sh test tests/test_benchmark_tensorrt.py` to include real engine
 construction, successful reference matching, retained mismatches and parser
 failure diagnostics.
+
+### Maintained paired TensorRT timing command
+
+`dev.benchmarks.tensorrt_pair` compares two existing engines on the same named
+NPZ input arrays. It has no model/head or batch-size assumptions; prepare a
+separate NPZ for each workload shape, including all static inputs. Both engines
+must accept the same input dtypes/shapes in profile 0 and produce the same output
+names/shapes. Output precisions may differ and are recorded. It uses the explicit
+TensorRT/CUDA PyTorch environment from the build command and installs nothing.
+
+```bash
+OMP_NUM_THREADS=1 python -m dev.benchmarks.tensorrt_pair \
+    --baseline fp16/model.engine --candidate int8/model.engine \
+    --inputs preprocessed-batch.npz --output /tmp/pair-1
+OMP_NUM_THREADS=1 python -m dev.benchmarks.tensorrt_pair \
+    --baseline fp16/model.engine --candidate int8/model.engine \
+    --inputs preprocessed-batch.npz --output /tmp/pair-2 --reverse
+OMP_NUM_THREADS=1 python -m dev.benchmarks.tensorrt_pair \
+    --baseline fp16/model.engine --candidate int8/model.engine \
+    --inputs preprocessed-batch.npz --output /tmp/pair-3
+```
+
+Run processes sequentially, with no concurrent benchmarks, tests or training.
+Record power/thermal settings and concurrent system load alongside the reports.
+Use matched builder settings and practical baselines for the target hardware;
+these commands do not infer whether an engine uses INT8, FP16 or another precision.
+Rebuild engines for each destination device. Repeat batch sizes/resolutions and
+10k/100k-class local head workloads explicitly; reserve million-class full models
+for suitably sized systems.
+
+Defaults are 10 warmup pairs and 31 measured pairs. `--warmup`, `--repeats`,
+`--reverse` and `--device` are explicit controls. Each pair runs baseline and
+candidate adjacently; their order alternates, and `--reverse` reverses that order.
+The summary reports the median of **paired candidate/baseline ratios**, where
+less than one means lower candidate latency. Retain per-process results rather
+than treating repetitions from one process as independent device replications.
+
+Host wall time covers input copies to GPU, execution, output copies to CPU and
+stream synchronization, with preallocated buffers and a nondefault CUDA stream.
+Default host buffers are pageable; `--pinned` uses pinned buffers and nonblocking
+copies, with the same final synchronization. Compare these as separate IO regimes.
+No CUDA-event timing is used: earlier WSL event readings were inconsistent with
+enclosing host durations. This command excludes preprocessing, allocations,
+shape changes, engine loading and construction from steady-state measurements.
+It does not use CUDA graph capture. File reading and deserialization/context
+creation have separate observations, but these are not whole-process cold-start
+measurements and may benefit from caches.
+
+Both engines, contexts and IO buffers coexist. Engine file sizes and reported
+context-memory requirements are recorded, **not total runtime memory savings**.
+Profile shape tensors, nonlinear/host engine IO and unresolved/empty outputs are
+explicitly unsupported by this probe. This restriction concerns engine bindings;
+the command's host transfer buffers are separate from those device bindings.
+
+A new directory receives `report.json`, raw paired host durations, engine/input
+hashes, versions, GPU/thread information and final named output NPZs. Completed
+pairs and diagnostics survive later failures; existing output directories are
+refused. Final outputs must be finite, but this is not quality or numerical-parity
+acceptance. Use the separate full-dataset mini_metrics evaluation and engine
+inspection to establish the quality/efficiency trade-off. CPU tests cover pairing,
+summary arithmetic and invalid clocks; optional GPU tests cover actual multi-input
+execution, both transfer modes and retained failures in
+`tests/test_benchmark_tensorrt_pair.py`.

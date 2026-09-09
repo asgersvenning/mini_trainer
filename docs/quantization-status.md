@@ -16,7 +16,7 @@ or integer operator count sufficient evidence of production readiness.
 | --- | --- | --- |
 | Native PyTorch INT8 training | INT8 Linear weights and saved inputs, normalized symmetric flat/hierarchical heads, optimizer/AMP/checkpoint regressions, full EfficientNetV2-S updates at 100k classes; bounded preparation and initialization | Benefit on A40/A100/B300-class hardware; representative end-to-end training gains; integer convolution training; distributed QT |
 | Native QT ONNX export | Generic integer-forward export; full Blair predictions and five metrics preserved on the tested hybrid CUDA/CPU path, with strict score differences | Integer head execution on GPU: CUDA falls back to CPU for MatMulInteger; TensorRT rejects the native representation |
-| Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained calibration and build/inspection/smoke commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; maintained paired timing and dataset-quality commands |
+| Calibrated TensorRT inference | Both representative heads execute 170 INT8 convolutions and two INT8 head GEMMs; full 912-image Blair evaluation; maintained calibration, build/inspection/smoke and paired timing commands | Significant speed/runtime-memory benefit against FP16; target desktop/Spark results; maintained dataset-quality command |
 | CPU/edge inference | Calibrated ONNX CPU execution and quality measurements on x86; portable provider/timing runner | Raspberry Pi/ARM numerical behavior, sustained latency, throughput, process memory and deployment packaging |
 | Continuous validation/reporting | CPU safeguards, optional GPU training workflow, visible job summaries and 90-day artifacts | Latest TensorRT/paired-engine experiments in maintained commands and continuous profiles; durable cross-device result history and acceptance gates |
 
@@ -48,9 +48,11 @@ production acceptance study.
    [Calibration](../dev/benchmarks/README.md#maintained-onnx-calibration-command)
    also has a maintained command, verified to reproduce both candidates' ranges,
    initializer arrays and graph nodes from the retained 128 training samples.
-   Promote paired inference and dataset metric evaluation into maintained developer
-   commands with explicit optional environments; connect dataset preparation to
-   the calibration manifest contract.
+   [Paired inference timing](../dev/benchmarks/README.md#maintained-paired-tensorrt-timing-command)
+   now retains alternating host-time pairs in a maintained command, with explicit
+   pageable/pinned IO regimes. Promote dataset metric evaluation into a maintained
+   developer command with an explicit optional environment; connect dataset
+   preparation to the calibration manifest contract.
    Preserve calibration records, class/preprocessing contracts, hashes, failures
    and raw timing samples. Resolve or exclude inconsistent timing sources. The
    current detailed probes and engines are retained locally under ignored `tmp-*`

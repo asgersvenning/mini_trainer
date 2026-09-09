@@ -1845,6 +1845,46 @@ Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
 samples. This follow-up changes documentation only; all six benchmark processes
 and both full-validation cases completed with finite outputs.
 
+### Maintained paired TensorRT timing reproduction
+
+`dev.benchmarks.tensorrt_pair` now measures arbitrary existing engine pairs with
+named preprocessed inputs, alternating adjacent execution order, raw host durations
+and median paired candidate/baseline ratios. It supports pageable or pinned host
+IO, records hashes and final outputs, and retains completed pairs on later errors.
+It deliberately omits CUDA-event timing. See the
+[commands and measurement scope](../dev/benchmarks/README.md#maintained-paired-tensorrt-timing-command).
+
+The local validation reused the retained FP16 and signed-QDQ INT8 engines on the
+RTX 3080 Ti Laptop, TensorRT 10.16.1.11 and PyTorch 2.12.0+cu130. Each head used
+three fresh sequential processes, reversing execution order in the second run,
+with 10 warmup pairs and 31 measured pairs per process. Inputs were the same eight
+128px images, with pageable preallocated host IO. Both engines/contexts coexisted;
+the CPU and GPU test suites had finished before timing began.
+
+| Head | Run 1 median paired INT8/FP16 ratio | Run 2 | Run 3 |
+| --- | ---: | ---: | ---: |
+| Flat | 1.270 | 1.247 | 1.169 |
+| Hierarchical | 1.247 | 1.210 | 1.189 |
+
+Every ratio exceeded one: these local runs again found no INT8 host-latency
+advantage. These are transfer/execution/synchronization observations, not
+device-only time or evidence about the intended target GPUs. Unlike the earlier
+scratch runner, this command inserts no timing events, so the measurement code
+is not identical. Do not interpret differences from the earlier table as model
+performance regressions. No new full-dataset quality measurement was made.
+
+All final named outputs from all six processes matched the respective retained
+FP16/INT8 engine smoke references exactly. Raw trials, hashes, loading observations
+and outputs are in `tmp-trt-probe/pair-maintained-{flat,hierarchical}-{1,2,3}/`;
+the collected summaries are in `tmp-trt-probe/pair-maintained-summary.json`.
+No total runtime-memory reduction was established.
+
+Static checks and the full CPU-default suite passed: 425 passed, 151 skipped,
+and the known EMA expected failure. All 11 focused tests passed in the prepared
+GPU environment, including actual multiple-input execution with pageable and
+pinned buffers and retained deserialization failures. Pinned IO correctness was
+tested; the real-model timing table above uses pageable IO only.
+
 ### Maintained ONNX calibration reproduction
 
 `dev.benchmarks.onnx_calibration` now regenerates QDQ artifacts from explicit
