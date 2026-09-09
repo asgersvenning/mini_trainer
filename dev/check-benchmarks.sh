@@ -9,7 +9,7 @@ if [[ -e "$results" ]]; then
     echo 'Results directory must be new.' >&2
     exit 2
 fi
-case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense|qt-large-batch|qt-cudagraphs) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real, qt-dense, qt-large-batch or qt-cudagraphs.' >&2; exit 2 ;; esac
+case "$mode" in cpu|gpu|real|qt|qt-real|qt-dense|qt-large-batch|qt-cudagraphs|qt-optimizer-cudagraphs) ;; *) echo 'Mode must be cpu, gpu, real, qt, qt-real, qt-dense, qt-large-batch, qt-cudagraphs or qt-optimizer-cudagraphs.' >&2; exit 2 ;; esac
 mkdir -p -- "$results"
 status=0
 run_profile() {
@@ -56,12 +56,16 @@ elif [[ "$mode" == qt-dense ]]; then
             --model-profile dense --optimizer sgd --learning-rate 0.3 --epochs 15 --batch-size 128 --compile \
             --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 --allow-nondeterministic "${quantization[@]}"
     done
-elif [[ "$mode" == qt-large-batch || "$mode" == qt-cudagraphs ]]; then
+elif [[ "$mode" == qt-large-batch || "$mode" == qt-cudagraphs || "$mode" == qt-optimizer-cudagraphs ]]; then
     compile_mode=()
     profile=mnist-large-batch
-    if [[ "$mode" == qt-cudagraphs ]]; then
+    if [[ "$mode" == qt-cudagraphs || "$mode" == qt-optimizer-cudagraphs ]]; then
         compile_mode=(--compile-mode reduce-overhead)
         profile=mnist-cudagraphs
+    fi
+    if [[ "$mode" == qt-optimizer-cudagraphs ]]; then
+        compile_mode+=(--optimizer-cudagraphs)
+        profile=mnist-optimizer-cudagraphs
     fi
     : "${BENCHMARK_DATA_ROOT:?Set BENCHMARK_DATA_ROOT to the directory containing mnist/}"
     for seed in 42 43 44; do

@@ -480,3 +480,17 @@ Explicit modes are recorded in JSON reports; process failures retain the exact
 arguments. Neither a mode flag nor a completed real-data run guarantees CUDA
 graph replay, convergence equivalence or a speedup. Compare all timings and
 memory against float under the same mode, rather than an older float baseline.
+
+### Model and optimizer graph comparison
+
+```bash
+CUDA_VISIBLE_DEVICES=0 BENCHMARK_DATA_ROOT=examples \
+  bash dev/check-benchmarks.sh qt-optimizer-cudagraphs /tmp/qt-optimizer-cudagraphs
+```
+
+This adds `--optimizer-cudagraphs` to the same three-seed, batch-512, 60-epoch
+comparison for both float and INT8. The optional QT plus real-data GPU workflow
+runs it alongside the existing profiles, publishes its summary, and retains
+reports and failures for 90 days. Keep the older profiles as controls: optimizer
+graph replay is opt-in and does not improve every workload. See the
+[measured larger-batch results](../../docs/benchmarks.md#larger-batch-model-and-optimizer-graph-results).

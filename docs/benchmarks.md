@@ -905,3 +905,47 @@ weight arithmetic inside the row kernel did not improve this workload. Further
 performance validation should also include larger compute workloads, where the
 integer GEMMs have more opportunity to offset update and scheduling overhead,
 and should retain alternating run order and report variability.
+
+### Larger-batch model and optimizer graph results
+
+The current implementation at `1152b78` was measured with the shared
+`qt-cudagraphs` profile and a second pass enabling optimizer graph replay for
+both precisions. Each pass used seeds 42, 43 and 44, alternating float/INT8 order
+by seed, with the dense MNIST model, SGD (learning rate 0.3), batch 512, 60 epochs,
+FP16 AMP, CPU cache and zero workers. Both precisions used model `reduce-overhead`
+and optimizer compilation. Hardware was the RTX 3080 Ti Laptop GPU, PyTorch
+2.12.0/CUDA 13.0, with one Torch thread and one Inductor compiler thread.
+
+| Seed | Optimizer graphs | Float / INT8 accuracy | Float / INT8 peak MiB | Float / INT8 median train epoch 3–60 s | Float / INT8 training wall s |
+| --- | --- | --- | --- | --- | --- |
+| 42 | Off | 93.06% / 92.82% | 221.73 / 167.91 | 0.0640 / 0.0568 | 38.26 / 48.87 |
+| 43 | Off | 92.76% / 93.38% | 221.73 / 167.91 | 0.0581 / 0.0626 | 31.37 / 28.82 |
+| 44 | Off | 92.74% / 92.40% | 221.73 / 167.91 | 0.0604 / 0.0606 | 32.51 / 26.41 |
+| 42 | On | 93.06% / 92.82% | 221.74 / 171.92 | 0.0598 / 0.0577 | 29.11 / 28.14 |
+| 43 | On | 92.76% / 93.38% | 221.74 / 171.92 | 0.0623 / 0.0565 | 34.21 / 27.80 |
+| 44 | On | 92.74% / 92.40% | 221.74 / 171.92 | 0.0595 / 0.0566 | 33.12 / 26.55 |
+
+With optimizer replay enabled, INT8 used 22.5% less peak memory and its later
+training phases were 3.6%, 9.3% and 4.9% faster than float with the same setting.
+Whole-call times were also lower in all three pairs. Comparing INT8 replay with
+the faster float median observed across either setting for each seed leaves
+smaller advantages of 3.6%, 2.7% and 4.9%. These are measured benefits in this
+compute profile, not guarantees for other models or hardware. Without optimizer
+replay, the later-phase speed comparison was mixed.
+
+INT8-minus-float accuracy differences were −0.24, +0.62 and −0.34 percentage
+points. All 12 runs completed checkpoint reload and held-out inference with
+finite scores. Paired dataset manifests match; all runs share source hash
+`23df40b2027a8a18de797f60c93c84aad72653c797a35e0f1883e9efcccbf2e4`
+and the same lock hash. No tests or other benchmark runs overlapped these runs.
+Caches were not cleared: first-use costs and sequential cache warming affect
+whole-call comparisons, and these results do not establish cold-start speed or
+statistical quality equivalence. Accuracy still has no automated real-data gate.
+
+Reports and predictions are retained locally in
+`tmp-optimizer-cudagraphs/large-current` and `large-optimizer-graphs`. The second
+configuration is now reproducible through the shared
+`qt-optimizer-cudagraphs` mode and included in the optional QT plus real-data GPU
+workflow, with visible summaries and retained artifacts. Use
+[the shared command](../dev/benchmarks/README.md#model-and-optimizer-graph-comparison)
+for future comparisons rather than treating these timings as fixed thresholds.

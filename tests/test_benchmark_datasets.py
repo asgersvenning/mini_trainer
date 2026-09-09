@@ -70,7 +70,7 @@ def test_summary_preserves_failures_and_unmeasured_fields(tmp_path):
     assert "No reports produced" in summarize(Path(tmp_path / "missing"))
 
 
-@pytest.mark.parametrize("mode", ["qt", "qt-large-batch", "qt-cudagraphs"])
+@pytest.mark.parametrize("mode", ["qt", "qt-large-batch", "qt-cudagraphs", "qt-optimizer-cudagraphs"])
 def test_shared_harness_records_process_failures(tmp_path, mode):
     import os
     import shlex
@@ -92,7 +92,7 @@ def test_shared_harness_records_process_failures(tmp_path, mode):
         timeout=30,
     )
     assert result.returncode == 1
-    prefix = "mnist-cudagraphs" if mode == "qt-cudagraphs" else "mnist-large-batch"
+    prefix = {"qt-cudagraphs": "mnist-cudagraphs", "qt-optimizer-cudagraphs": "mnist-optimizer-cudagraphs"}.get(mode, "mnist-large-batch")
     profiles = (
         ("synthetic-float", "synthetic-int8")
         if mode == "qt"
@@ -105,11 +105,12 @@ def test_shared_harness_records_process_failures(tmp_path, mode):
         assert report["quantized_training"] == ("int8" in profile)
         assert "test_accuracy" not in report
         arguments = report["arguments"]
-        if mode == "qt-cudagraphs":
+        if mode in ("qt-cudagraphs", "qt-optimizer-cudagraphs"):
             assert arguments[arguments.index("--compile-mode") + 1] == "reduce-overhead"
             assert "--compile" in arguments and "--compile-optimizer" in arguments
         else:
             assert "--compile-mode" not in arguments
+        assert ("--optimizer-cudagraphs" in arguments) == (mode == "qt-optimizer-cudagraphs")
     assert "requested" in (output / "summary.md").read_text()
 
 
