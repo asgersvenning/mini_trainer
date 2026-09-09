@@ -1772,3 +1772,75 @@ runner options and recipe parameters are in the
 Static checks and 393 CPU-default tests passed, with 146 skips and the known EMA
 expected failure. Runtime regressions verify that the selected ORT optimization
 level changes the profiled graph while preserving fixture outputs.
+
+
+### TensorRT INT8 versus FP16: initial paired trade-off
+
+The user's acceptance criterion is conditional: a few percentage points of metric
+loss are tolerable with a substantial inference speed/cost or memory benefit.
+The comparator therefore includes a TensorRT FP16 deployment baseline, not just
+the full-FP32 validation reference. Both heads were built from the same floating
+checkpoints and preprocessing contracts. FP16 was enabled for the baseline;
+TF32 remained disabled. Workspace (1 GiB), builder optimization level (1), spatial
+size (128) and batch profiles (1–8) match the INT8 candidate. These build settings
+are a controlled initial comparison, not a tuning result.
+
+FP16 was checked on all 912 Blair validation images using the same five
+`mini_metrics` metrics and fixed policy:
+
+| FP16 output | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat | 0.759822 | 0.751879 | 0.787498 | 1.000000 | 0.813357 |
+| Hierarchical leaf | 0.709222 | 0.695729 | 0.798771 | 1.000000 | 0.782579 |
+| Hierarchical parent | 0.859365 | 0.827595 | 0.920382 | 1.000000 | 0.851394 |
+
+FP16 changed three flat predictions relative to FP32 and no hierarchical
+predictions. Strict score parity fails for both heads. Compared with this FP16
+baseline, INT8 Macro-F1 changes by approximately −0.40 percentage points flat,
++0.09 leaf and −1.23 parent. These remain single-checkpoint quality measurements.
+
+Timing then used three fresh processes per head with no concurrent validation or
+benchmark jobs. Each process held both engines, used a non-default CUDA stream,
+10 warmups and 31 measured repetitions per model/batch, alternated FP16/INT8 order
+within repetitions, and reversed ordering in the middle process. Preallocated
+CPU/GPU input and output buffers were reused. Host timing includes copies and
+synchronized engine execution, excluding decoding, preprocessing, allocation,
+engine loading/building and shape changes.
+
+The ranges below are the three process medians in milliseconds. Ratios are
+computed **within each paired process**, then summarized by their median; lower
+than one would favor INT8. Variation is retained rather than selecting one run.
+
+| Head | Batch | FP16 host ms range | INT8 host ms range | Median paired INT8 / FP16 |
+| --- | ---: | ---: | ---: | ---: |
+| flat | 1 | 3.444–3.887 | 4.288–4.384 | 1.233 |
+| flat | 8 | 3.371–4.528 | 4.230–5.624 | 1.242 |
+| hierarchical | 1 | 3.440–4.008 | 3.899–5.207 | 1.170 |
+| hierarchical | 8 | 3.609–3.823 | 4.134–4.559 | 1.152 |
+
+There is **no observed host-latency improvement** in these local small-batch
+probes. CUDA-event durations frequently exceeded their enclosing synchronized
+host durations; those counters are retained for diagnosis but excluded from
+GPU-only timing conclusions. No cause has been established for that discrepancy.
+The host measurements are limited observations from this WSL laptop and build
+configuration, not evidence about A100/B300, Spark/desktop GPU, or ARM performance.
+
+Serialized engines shrink from 46,089,148 to 26,406,668 bytes (flat) and 46,177,388
+to 26,519,700 bytes (hierarchical), approximately **43% smaller**. TensorRT's
+reported execution-context memory for the profile changes from 5,669,888 to
+5,586,944 bytes for both heads, only **1.46% lower**. These are engine-file size
+and a runtime-reported context requirement, not total GPU residency or peak
+process memory. They do not establish a substantial total-runtime-memory benefit.
+
+Thus quality is in the potentially tolerable range, but the desired speed or
+runtime-memory trade-off is **not yet demonstrated** against FP16. The storage
+benefit is real. Larger batches and large-class heads need separate paired probes,
+and the requested target machines remain necessary for deployment conclusions.
+The tested real-data heads have 25 leaves; they do not model 100k-class head costs.
+
+Ignored artifacts: `tmp-trt-probe/direct-{flat,hierarchical}-fp16/`,
+`full-validation-fp16/`, `paired-{flat,hierarchical}-{1,2,3}/`,
+`paired-summary.json`, and the `build_fp16.py`, `full_validation_fp16.py`, and
+`paired_inference.py` probes. Reports retain engine/source hashes and all timing
+samples. This follow-up changes documentation only; all six benchmark processes
+and both full-validation cases completed with finite outputs.
