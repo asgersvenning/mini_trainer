@@ -47,6 +47,14 @@ candidate recipes, retain negative results, and report uncertainty separately
 from speed and memory measurements. Target-machine runs and representative-model
 comparisons remain outstanding.
 
+The first [representative EfficientNetV2-S comparison](benchmarks.md#efficientnetv2-s-on-blair-initial-representative-model-comparison)
+now completes training/reload/inference for both heads and precisions on real
+Blair data with random initialization. It shows only 3.1–3.4% lower peak allocation,
+slower training and lower accuracy under current head-only QT, including a large
+flat-head regression. This is evidence against recommending the present recipe,
+not completion of the speed/quality target. Pretrained runs and numerical
+investigation are next; target-machine measurements and ONNX deployment remain open.
+
 ### EfficientNetV2-S structural coverage probe
 
 On 2026-09-09, CPU-only preparation through `Classifier.build` and

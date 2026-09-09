@@ -987,3 +987,48 @@ explicit overrides and the existing reserve/caps. Regression tests cover quota
 and namespace parsing, fractional/unlimited/malformed limits, scheduler budgets,
 and affinity fallbacks. This closes an allocation-aware defaulting gap; it does
 not infer the instantaneous load or private CPU shares of competing processes.
+## EfficientNetV2-S on Blair: initial representative-model comparison
+
+On 2026-09-09, revision `c06470c` completed four local CUDA runs using the actual
+EfficientNetV2-S backbone with a symmetric 1280-feature hidden layer and normalized
+flat or hierarchical classifiers. All four used the same reviewed Blair manifest
+(3,704 train / 912 validation / 1,161 test), seed 42, five epochs, size 128, batch
+32, MuonAuxAdamW at head LR 0.01, FP16 AMP, CPU cache, zero workers, no augmentation
+and no model/optimizer compilation. Backbone initialization was random, not
+pretrained; these are execution/convergence diagnostics rather than a reproduction
+of the notebook's pretrained training recipe.
+
+| Head | Precision | Fine accuracy | Parent accuracy | Peak allocated MiB | Median train phase, epochs 3–5 (s) | Training call (s) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Flat | Float | 56.33% | — | 1230.15 | 13.027 | 75.706 |
+| Flat | INT8 | 34.80% | — | 1191.86 | 15.433 | 102.584 |
+| Hierarchical | Float | 48.23% | 62.62% | 1230.16 | 15.061 | 93.804 |
+| Hierarchical | INT8 | 46.43% | 60.12% | 1188.37 | 16.457 | 99.235 |
+
+The current head-only recipe reduced whole-model parameter storage from 87,407,112
+to 82,401,132 bytes (5.73%). Peak allocated memory fell by about 3.1% for the flat
+head and 3.4% for the hierarchical head. Later training phases were approximately
+18.5% and 9.3% slower respectively. All 170 convolutions remained floating.
+
+The flat accuracy regression is material: -21.53 percentage points, versus -1.81
+points for hierarchical fine accuracy and -2.50 for parent accuracy. One short
+seed does not establish the cause or statistical generality, and matching seed
+values does not guarantee identical stochastic training trajectories under QT.
+Nevertheless, these results do not support recommending this recipe for the
+representative model. Next compare pretrained initialization and inspect the
+optimization/numerical behavior before interpreting broader quality effects.
+
+All four runs trained, reloaded their checkpoints and produced finite held-out
+scores. Source, lock and dataset manifest hashes match across the four reports.
+Source SHA256 is `8da1c2dbc1218d4d655925e0497fb0598ecd48bcafa6197c4ec8d5328fbb2bf6`;
+manifest SHA256 is `1cef6c7d9133d889b6c8eff0ffef29b1db5d6653ab4adf0c005739af8c2921c6`.
+Reports, logs, checkpoints and predictions are retained locally under ignored
+`tmp-efficientnet-baseline/`. Commands are in the
+[benchmark guide](../dev/benchmarks/README.md#representative-efficientnetv2-configuration).
+
+Hardware was the RTX 3080 Ti Laptop GPU; runtime versions are recorded per report.
+Runs were sequential in flat-float, flat-INT8, hierarchical-float,
+hierarchical-INT8 order without clearing compiler caches. Timings include local
+loading/logging effects and do not predict A40/A100/B300 or Spark/desktop speed.
+The missing optional dendrogram visualization dependencies emitted warnings;
+training and prediction completed. No ONNX or target-hardware inference was tested.
