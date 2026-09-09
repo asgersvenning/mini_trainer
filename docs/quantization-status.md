@@ -3,12 +3,20 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the held-out refresh qualification](benchmarks.md#held-out-qualification-of-training-only-batchnorm-refresh).
+recorded in [the 10,000-class TensorRT capacity study](benchmarks.md#ten-thousand-class-tensorrt-capacity-comparison).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
 or memory benefit. This does not make a quality-only result, smaller engine file,
 or integer operator count sufficient evidence of production readiness.
+
+A 10,000-class seeded random normalized head now builds and executes through
+calibrated TensorRT, including 170 INT8 convolutions and both INT8 head GEMMs.
+Across six fresh paired trials, INT8 was 12–17% slower than FP16 locally, despite
+a 45.2% smaller engine and 24.6% lower reported context requirement. Total runtime
+memory and trained quality were not measured. FP32 export needed an explicit
+absolute-tolerance override from 1e-5 to 1e-4; default parity qualification remains
+open. This capacity evidence is not target-hardware certification.
 
 ## Current evidence
 

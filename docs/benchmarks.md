@@ -3101,3 +3101,76 @@ messages and external-weight provenance. See the
 Validation passed static checks and 406 CPU-default tests (149 skips and the
 known EMA expected failure), plus all 16 focused checks in the prepared CUDA/
 TensorRT environment and both real-model reference comparisons above.
+
+### Ten-thousand-class TensorRT capacity comparison
+
+A bounded capacity study uses a pretrained EfficientNetV2-S backbone and a seeded
+random symmetric normalized flat head with 10,000 classes (seed 42, 14,462,240
+head parameters). This tests deployment capacity and execution; the random head
+cannot establish trained classification quality. All 128 training calibration
+images were checked against this model's preprocessing, with exact input-array
+equality. Inputs have shape `[batch, 3, 128, 128]`.
+
+The initial FP32 ONNX export **failed the default numerical tolerance**. The
+study explicitly used `rtol=1e-4, atol=1e-4` on retry; public defaults were not
+changed. Additional CPU comparisons at real batches 1, 2, 4 and 8 had maximum
+absolute score error 2.134e-5, respectively 7/9/8/12 scores outside the default
+tolerance, and no argmax changes. This limited check does not qualify default
+export parity or establish trained quality. The default failure remains an open
+large-head export qualification issue.
+
+The maintained calibration command used percentile 99.9, signed symmetric INT8
+activations, per-channel INT8 weights and floating biases, with asymmetric
+histogram collection. Both TensorRT engines used profiles min/opt/max 1/8/8,
+1 GiB workspace, optimization level 1, TF32 disabled, and **FP16 enabled in both**.
+Thus remaining floating operations in the INT8 candidate can execute in FP16;
+this differs from earlier studies that disabled FP16 for the INT8 engine.
+Build success establishes parsing and finite execution, not numerical acceptance.
+Inspection shows all 170 convolutions and both head GEMMs execute with INT8 in
+the candidate; the baseline uses half precision for those operations.
+
+| Artifact requirement | FP16 baseline | INT8 candidate | Reduction |
+| --- | ---: | ---: | ---: |
+| Serialized engine bytes | 71,603,924 | 39,234,916 | 45.2% |
+| Reported context memory bytes | 5,669,888 | 4,276,224 | 24.6% |
+
+Context requirements exclude weights and other process/runtime allocations;
+these are not measurements of total GPU memory savings.
+
+Three fresh paired timing processes per batch used the maintained
+`dev.benchmarks.tensorrt_pair` command, ten warmups and 31 alternating paired
+samples each. Trial two reversed the initial engine order and batch order.
+The GPU was idle before starting, with no competing GPU workload observed.
+Host IO was pageable. Timing includes preallocated H2D input copies, execution,
+D2H output copies and stream synchronization; it excludes preprocessing,
+allocation and loading. Both engines coexist. Hardware was the local RTX 3080 Ti
+Laptop GPU under WSL, with TensorRT 10.16.1.11 and one PyTorch intra-op thread.
+
+| Batch | Trial | FP16 median ms | INT8 median ms | Median paired INT8 / FP16 |
+| --- | --- | ---: | ---: | ---: |
+| 1 | 1 | 3.488 | 3.808 | 1.134 |
+| 1 | 2 | 3.214 | 3.714 | 1.170 |
+| 1 | 3 | 3.465 | 4.199 | 1.165 |
+| 8 | 1 | 3.642 | 4.079 | 1.158 |
+| 8 | 2 | 3.732 | 4.235 | 1.158 |
+| 8 | 3 | 3.775 | 4.216 | 1.120 |
+
+All six reports passed and retained finite outputs of shape `[batch, 10000]`.
+Engine hashes were verified across every trial. The INT8 candidate was 12–17%
+slower in these paired measurements. This configuration therefore supplies no
+local speed benefit; its smaller artifact does not establish the user's joint
+quality/efficiency acceptance criterion. It also does not predict behavior on
+Spark, the intended RTX desktop, HPC GPUs or ARM CPUs. A larger bounded head
+and isolated runtime-memory measurements remain useful next capacity checks.
+
+Inputs, checkpoint, exact build/timing commands, calibration provenance, engine
+inspection, raw timings and outputs are retained under ignored
+`tmp-large-head-deployment/`; `capacity.json` records the export override and
+`timing-summary.json` records the verified trials. Source checkpoint SHA256 is
+`30af5dd007656f2e5639012874e17e8b27231de99d3d063eb764de6077e3bc97`.
+FP16 engine SHA256 is
+`eba430f9ff1da76ed333cdb1bb145aba4bfb311dce2cfb7e8fd4ed6f4690cafa`;
+INT8 engine SHA256 is
+`53d3020e506e10c388cda6f1ae09c7bbf7554f95670c405fdb36dcf0f02f774d`.
+No implementation change or new trained mini_metrics comparison accompanies
+this capacity milestone.
