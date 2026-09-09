@@ -818,3 +818,51 @@ wall time. Checkpoint reload and inference completed. Results are retained in
 This verifies the formerly failing path. It forces tuner results to be recomputed,
 not a completely empty compiler cache, and has no concurrent matched float run,
 so its timing is not evidence of a new speedup.
+
+### Rejected experiment: compiler-visible row requantization
+
+After `48f8058`, a warmed fourth training epoch was profiled on the same dense
+MNIST configuration (31 batches of 128, FP16 AMP, CPU cache, zero workers).
+INT8 used model and optimizer graph replay; the float reference used model graph
+replay and the ordinary compiled optimizer. These are the respective configurations
+under investigation, not a controlled test of the optimizer graph flag alone.
+Profiler runs are diagnostic and must not be used as wall-time benchmarks.
+
+In the INT8 trace, the scaled matrix kernels accumulated 9.96 ms of device time,
+versus 19.89 ms for the large floating update kernels and 7.32 ms for row
+requantization. Gradient unscaling and clipping's scaling pass each took about
+7.4 ms. Nested compiled-region timings overlap their child kernel timings and
+must not be added to them. The traces identify update-buffer traffic and gradient
+handling as worthwhile targets; they do not establish a kernel-only speedup.
+Local traces and tables are retained under
+`tmp-optimizer-cudagraphs/profile-int8` and `profile-float`.
+
+A candidate replaced the opaque row requantization call during fake-tensor
+tracing with TorchAO's tensor arithmetic, intending to let Inductor fuse the
+floating update and row reduction. Eager execution was unchanged. All 67 CUDA
+model/optimizer regression cases passed, but the following real training results
+did not justify retaining it. The candidate was reverted.
+
+| Seed | Requantization | Test accuracy | Peak MiB | Median train epoch 3–15 s | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 42 | Existing kernel | 92.84% | 167.60 | 0.144 | 10.95 |
+| 42 | Tensor arithmetic candidate | 93.10% | 167.60 | 0.175 | 17.04 |
+| 43 | Existing kernel | 93.02% | 167.60 | 0.144 | 11.20 |
+| 43 | Tensor arithmetic candidate | 92.78% | 167.60 | 0.146 | 11.88 |
+
+Settings match the 15-epoch SGD/INT8 optimizer-graph MNIST probe above. Both
+baseline seeds ran before the candidate was installed; both candidate seeds ran
+after its CUDA checks finished. No tests or other benchmark runs overlapped the
+timed runs. Caches were not cleared, so the first candidate's whole-call time
+includes additional compilation work and is not a controlled cold-start measure.
+Peak memory did not fall, later-phase time did not improve, and stochastic
+rounding changed the trajectories. Two seeds do not establish quality equivalence.
+Reports are retained locally in `tmp-optimizer-cudagraphs/fusion-before-{42,43}`
+and `fusion-after-{42,43}`.
+
+The next update-path experiment should avoid constructing the full floating
+updated-weight buffer explicitly, while keeping new INT8 codes/scales as
+functional outputs and making the final parameter copies visible to the compiler.
+It must preserve optimizer state, scalar learning-rate precision, AMP gating,
+checkpoint behavior, and stochastic-rounding quality. Simply exposing more tensor
+arithmetic did not provide that improvement here.
