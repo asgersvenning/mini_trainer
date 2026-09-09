@@ -2658,6 +2658,76 @@ Scripts, per-module equation checks, pretrained counter evidence and six refresh
 reports are retained in ignored `tmp-batchnorm-update-audit/`. No library or
 training-default changes were made.
 
+### Held-out qualification of training-only BatchNorm refresh
+
+At revision `554313a`, the fixed BatchNorm-only cumulative refresh is applied to
+all twelve retained five-epoch full-training checkpoints: flat/hierarchical
+EfficientNetV2-S, float/native INT8, seeds 42/43/44. This extends the preceding
+early-checkpoint validation diagnostic to final-checkpoint held-out quality.
+The procedure, seeds, thresholds and checkpoint epochs are fixed before
+collecting the new held-out predictions.
+
+Each case reconstructs its original checkpoint, collects fresh before/after test
+predictions and verifies exact equality of parameters and every non-BatchNorm
+buffer array. Only the 110 backbone BatchNorm modules enter training mode. Their
+statistics are reset and accumulated over 115 training-only batches (3,680 images,
+batch 32, shuffle seed 42, BF16 AMP); other modules stay in evaluation mode.
+Current contents of all 5,777 source images were checked against the recorded
+hashes before the study. All twelve pre-refresh five-metric evaluations exactly
+reproduce the previous held-out results, and all saved buffer-override hashes
+were verified. The 1,161 test images never update running statistics.
+
+All twelve refresh cases and eighteen mini_metrics comparisons complete: twelve
+before/after comparisons, plus six float/INT8 comparisons after refreshing both.
+All five metrics are finite; coverage is 1.0 throughout. Tables show observed
+three-seed ranges of candidate-minus-baseline differences multiplied by 100,
+not confidence intervals.
+
+| Refresh effect on model | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat float / leaf | −0.802 to +1.602 | −0.725 to +1.660 | −1.330 to +1.364 | 0 | +0.186 to +0.582 |
+| Flat INT8 / leaf | −0.330 to +0.990 | −0.636 to +0.911 | −0.115 to +1.758 | 0 | −0.226 to +0.531 |
+| Hierarchical float / leaf | −0.876 to +0.314 | −0.840 to −0.157 | −0.748 to +0.979 | 0 | −0.523 to +0.274 |
+| Hierarchical float / parent | −0.445 to −0.163 | −1.604 to −0.238 | −0.995 to +1.164 | 0 | −0.700 to +0.096 |
+| Hierarchical INT8 / leaf | −0.491 to +2.034 | −0.640 to +1.673 | −0.500 to +1.610 | 0 | +0.029 to +0.451 |
+| Hierarchical INT8 / parent | −0.362 to +1.038 | −0.883 to +0.730 | −0.176 to +1.483 | 0 | −0.026 to +0.162 |
+
+Refresh has mixed effects on final-checkpoint quality. In particular, it lowers
+hierarchical float parent Macro-F1 in every seed. The strong early validation
+recovery therefore does not establish a generally beneficial final-model recipe.
+
+| INT8 minus float after both are refreshed | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / leaf | −2.370 to +3.640 | −3.070 to +4.635 | −0.854 to +2.139 | 0 | −1.107 to +2.731 |
+| Hierarchical / leaf | −3.516 to +5.356 | −3.050 to +5.363 | −3.829 to +5.303 | 0 | −1.765 to +3.249 |
+| Hierarchical / parent | −3.652 to −0.276 | −3.120 to +0.204 | −5.059 to −2.075 | 0 | −1.110 to +0.681 |
+
+Parent Macro-F1 and Macro-Precision still trail float in all three hierarchical
+pairs. After refresh, parent Macro-F1 spans 0.8340–0.8561 float versus
+0.8196–0.8376 INT8. Refresh does not resolve the earlier short-budget quality
+concern or establish accuracy superiority. Automatic refresh is not adopted.
+
+Each GPU case runs in a fresh sequential process; seed 43 reverses precision
+order. No tests, benchmarks or metric jobs overlap the refresh timings. The
+synchronized refresh pass takes **4.474–5.494 seconds**, with a separate
+**0.996–1.340 seconds** for training-cache construction on this laptop. The pass
+includes buffer reset, cached loading, preprocessing, forward computation and
+mode restoration; it excludes checkpoint/model loading, state verification and
+held-out inference. These local costs do not establish target-machine overhead,
+a cold-start measurement, added peak memory or an end-to-end training benefit.
+GPU clocks, thermals and background OS activity remain uncontrolled.
+
+Ignored `tmp-bn-refresh-qualification/` retains the exact driver and command
+protocol, source provenance, before/after scores and CSVs, all eighteen metric
+reports, timing/state checks and `verification.json`. Small
+`batchnorm-overrides.pt` files preserve the changed buffers without duplicating
+full checkpoints; apply them over the identified original checkpoint to reproduce
+the candidate state. The full study occupies about 36 MiB. No library defaults
+or original checkpoints changed. Frozen-backbone models, longer-budget repeated
+seeds and target hardware are not qualified by this study. The result favors
+keeping refresh as an explicit diagnostic and returning efficiency work to the
+large-head and deployment regimes where substantial benefits remain plausible.
+
 ### Isolated 100k-class optimizer compilation comparison
 
 Revision `aff0807` exposes the existing optimizer compilation and graph options

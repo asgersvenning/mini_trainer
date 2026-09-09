@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the BatchNorm update audit](benchmarks.md#batchnorm-update-equations-and-refresh-controls).
+recorded in [the held-out refresh qualification](benchmarks.md#held-out-qualification-of-training-only-batchnorm-refresh).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -104,6 +104,17 @@ all weights remain fixed. Lagging statistics remain a plausible explanation;
 these results do not justify patching BatchNorm counters or update equations.
 Multi-seed/head held-out qualification and accounting for refresh cost remain
 necessary before adopting an explicit refresh recipe.
+
+The [held-out refresh qualification](benchmarks.md#held-out-qualification-of-training-only-batchnorm-refresh)
+now covers all twelve five-epoch full-training checkpoints across both heads and
+three seeds, with eighteen paired five-metric evaluations. Effects are mixed;
+hierarchical parent Macro-F1 still trails float in every seed after both models
+are refreshed (−3.652 to −0.276 points), and parent precision losses reach 5.059
+points. The extra local cached pass costs 4.474–5.494 seconds, excluding model
+loading and inference. Automatic refresh is not adopted. This closes the bounded
+final-checkpoint qualification with a negative general-recipe result; it does not
+qualify frozen/longer-budget models or target hardware. Prioritize large-head
+training/deployment efficiency and the remaining target-runner/reporting work.
 
 The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
 now separates eager, compiled and graph execution in eighteen isolated processes.
