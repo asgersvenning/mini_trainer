@@ -717,3 +717,63 @@ predictions and the class specification are at `/tmp/mini-trainer-embedding-blai
 After this change, both synthetic CUDA oracle runs again reached 100% with model
 and MuonAuxAdamW optimizer compilation, `reduce-overhead`, FP16 AMP, training and
 checkpoint reload. Reports are at `/tmp/mini-trainer-embedding-oracle`.
+
+### Optimizer graph replay: iteration fix and first-use limitation
+
+Revision `0fd9e32` explicitly marks each training iteration when optimizer CUDA
+graphs are enabled. Before this fix, the separately compiled optimizer could
+access a gradient whose model graph storage had already been retired. Six-batch
+regressions now pass for SGD, AdamW and MuonAuxAdamW, with both floating and INT8
+weights; the composite optimizer's outer update counter remains intact.
+
+The following local MNIST runs used the same source and lock hashes, dataset
+manifest, seed 42, dense model, SGD (learning rate 0.3, momentum 0.9), batch 128,
+15 epochs, FP16 AMP, CPU cache, zero loader/cache workers, model compilation with
+`reduce-overhead`, and optimizer compilation. Hardware was the RTX 3080 Ti Laptop
+GPU with PyTorch 2.12.0/CUDA 13.0; Torch and Inductor each used one thread.
+All completed runs reloaded the checkpoint for held-out inference and saved
+finite scores. This is a single-seed functional/performance probe, not a quality
+gate or convergence comparison.
+
+| Weights | Optimizer graphs | Test accuracy | Peak MiB | Median train epoch 3–15 s | Training wall s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Float | Off | 93.12% | 217.41 | 0.193 | 14.56 |
+| Float | On | 93.12% | 217.42 | 0.209 | 15.43 |
+| INT8 | Off | 92.84% | 149.60 | 0.292 | 37.26 |
+| INT8 | On, warmed retry | 92.84% | 167.60 | 0.230 | 18.04 |
+
+**The first INT8 graph-enabled attempt failed**, during the first compiled
+backward before any optimizer update, with `These storage data ptrs are not
+allocated in pool (0, 1) but should be`. The baseline and subsequent graph-enabled
+retry completed. First-use kernel tuning or compilation is a suspected cause,
+not an established diagnosis; the warmed retry does not resolve this failure.
+Do not interpret these results as reliable cold-start support.
+
+Run order was float off, float on, failed INT8 on, INT8 off, INT8 on retry.
+Caches were not cleared, and no tests ran concurrently. The failed attempt
+warmed caches, so whole-call times are not a controlled comparison of compilation
+cost. Optimizer replay reduced the INT8 later-phase median by about 21%, but
+raised its peak allocation by 12%. INT8 with replay still ran about 19% slower
+per later epoch than float without replay, while using about 23% less peak
+memory. Float replay was slower. Keep optimizer graphs opt-in; these results
+do not establish a general QT speed advantage.
+
+Reports, predictions, logs, and the original failures are retained locally in
+`tmp-optimizer-cudagraphs/pairs` and `tmp-optimizer-cudagraphs/pairs-fixed`
+(ignored generated artifacts, not repository-hosted results). Reproduce each
+completed configuration with a fresh output directory:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1 \
+MPLCONFIGDIR=/tmp/mini-trainer-mpl MPLBACKEND=Agg \
+.venv/bin/python -m dev.benchmarks.run --output /tmp/mnist-optimizer-graphs \
+  --dataset mnist --data-root examples/mnist --seed 42 --model-profile dense \
+  --optimizer sgd --learning-rate 0.3 --epochs 15 --batch-size 128 \
+  --compile --compile-mode reduce-overhead --compile-optimizer \
+  --device cuda:0 --dtype float16 --cache CPU --cache-workers 0 \
+  --allow-nondeterministic
+```
+
+Add `--quantized-training` for INT8 and `--optimizer-cudagraphs` for optimizer
+replay. Fresh-cache failure reproduction and a fix must precede recommending
+this combination in a continuous benchmark profile.
