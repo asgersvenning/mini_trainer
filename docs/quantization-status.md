@@ -3,7 +3,7 @@
 The goal remains **incomplete**. There are working native INT8 training and
 calibrated INT8 inference paths, but the required benefit on the intended
 deployment regimes has not been established. The latest completed comparison is
-recorded in [the CPU recipe study](benchmarks.md#cpu-specific-activation-and-bias-calibration).
+recorded in [the 100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison).
 
 The acceptance principle is a joint trade-off: the user tolerates metric losses
 of a few percentage points when accompanied by a substantial inference speed/cost
@@ -47,6 +47,14 @@ metrics and checkpoint step counts were checked. The absolute frozen-model
 quality remained well below full training at five epochs, and timing drift
 prevents claiming a stable speedup. Hierarchical and target-hardware replication
 and time-to-useful-quality evidence remain outstanding.
+
+The [100k-class optimizer study](benchmarks.md#isolated-100k-class-optimizer-compilation-comparison)
+now separates eager, compiled and graph execution in eighteen isolated processes.
+Ordinary optimizer compilation improves both precisions' local update times and
+reduces INT8's steady allocated peak from 2.616 to 2.259 GiB. Setup peak remains
+2.616 GiB; graphs reduce steady allocation further but increase reserved memory
+and leave INT8 slower than graph float in all three trials. This is a synthetic
+capacity/execution result, not dataset quality or target-hardware acceptance.
 
 The earlier floating-checkpoint TensorRT timing comparison uses matched builder settings and three fresh
 paired processes per head. At batches 1 and 8, INT8 did not beat FP16 in local

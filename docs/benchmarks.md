@@ -2404,6 +2404,83 @@ six metric evaluations, cross-run identity/configuration checks and checkpoint
 step checks described above. Hierarchical, larger-class and target-hardware
 conclusions require their own corresponding measurements.
 
+
+### Isolated 100k-class optimizer compilation comparison
+
+Revision `aff0807` exposes the existing optimizer compilation and graph options
+in the maintained large-head probe. Eighteen fresh processes compare eager,
+compiled and compiled-with-graphs MuonAuxAdamW, each with float and native INT8
+weights, across three timing trials. The actual EfficientNetV2-S backbone is
+frozen in evaluation mode, with a symmetric normalized flat head, 100,000 classes,
+batch 32, 128px inputs and BF16 AMP. Model forward/backward remains eager.
+There are 129,642,240 trainable head parameters. This tests repeated synthetic
+inputs and labels; it does not measure dataset quality or real-image loading.
+
+Every run uses seed 42, eight warmup updates and twenty measured updates. All
+18 processes exited successfully with finite losses and 28 applied optimizer
+steps. Runner/input hashes, base settings and parameter counts match across all
+runs. Execution order is eager/compiled/graphs, graphs/compiled/eager, then
+compiled/eager/graphs; precision order reverses in trial two. No test or benchmark
+jobs overlapped timing. This is three timing repetitions, not three quality seeds.
+The local environment is PyTorch 2.12.0+cu130 on the RTX 3080 Ti Laptop GPU under
+WSL2. Clocks, thermals and background OS activity were not controlled.
+
+The table gives each run's median synchronized host time per complete update:
+
+| Optimizer execution | Precision | Trial 1 (ms) | Trial 2 (ms) | Trial 3 (ms) |
+| --- | --- | ---: | ---: | ---: |
+| Eager | Float | 59.757 | 61.961 | 63.978 |
+| Eager | INT8 | 59.852 | 57.971 | 63.903 |
+| Compiled | Float | 50.383 | 52.349 | 55.588 |
+| Compiled | INT8 | 48.948 | 52.282 | 56.059 |
+| Compiled with graphs | Float | 51.907 | 54.809 | 52.127 |
+| Compiled with graphs | INT8 | 55.695 | 62.919 | 55.946 |
+
+Compilation improves both precisions relative to their eager baseline in every
+trial. INT8 versus float is approximately tied or mixed without graphs; graph
+INT8 is 7.3–14.8% slower than graph float. These results support testing ordinary
+optimizer compilation on the target machines, but do not demonstrate a distinct
+INT8 speed advantage or justify changing the default execution policy.
+
+Allocator measurements were identical across trials within each configuration:
+
+| Optimizer execution | Precision | Setup peak allocated (GiB) | Measured peak allocated (GiB) | Measured peak reserved (GiB) |
+| --- | --- | ---: | ---: | ---: |
+| Eager | Float | 2.7999 | 2.7999 | 2.9492 |
+| Eager | INT8 | 2.6160 | 2.6160 | 2.9492 |
+| Compiled | Float | 2.7999 | 2.7999 | 2.9492 |
+| Compiled | INT8 | 2.6160 | 2.2588 | 2.9492 |
+| Compiled with graphs | Float | 2.7999 | 2.7989 | 3.4492 |
+| Compiled with graphs | INT8 | 2.6160 | 2.1263 | 3.5898 |
+
+Ordinary compilation lowers INT8's steady allocated peak, but its setup peak is
+unchanged: the existing compiler wrapper deliberately initializes optimizer state
+with a real eager update. Graphs lower steady allocation further while increasing
+reserved memory. Neither steady allocation improvement establishes a reduction
+in startup VRAM requirements or total process memory. A separate 100k-class
+hierarchical INT8 graph smoke run passed; an optimizer-only profile after eight
+warmups observed two `cudaGraphLaunch` events during an applied update. This
+confirms graph launches in that diagnostic, not capture of every operation or
+hierarchical timing parity.
+
+Reproduce each configuration with the existing CUDA environment, adding
+`--quantized`, `--compile-optimizer`, and then `--optimizer-cudagraphs` as applicable:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.benchmarks.large_head_training \
+  --classes 100000 --dtype bfloat16 --frozen --warmup 8 --steps 20 \
+  --seed 42 --output fresh-output
+```
+
+The exact driver, command protocol, raw samples and reports remain in ignored
+`tmp-large-head-optimizer/`; timing reports are under `timings/`, and separate
+execution/memory diagnostics and graph profiling are excluded from timing claims.
+Harness validation passed static checks, six focused CUDA/configuration checks,
+and the full CPU-default suite (503 passed, 160 skipped, one known EMA expected
+failure). No kernel or optimizer semantics changed in this milestone. Real
+hierarchical training, longer quality-matched budgets, larger target-machine
+workloads and sustained memory/throughput verification remain necessary.
+
 ### Maintained training prediction quality inputs
 
 `dev.benchmarks.training_predictions` now connects saved dataset benchmark runs
