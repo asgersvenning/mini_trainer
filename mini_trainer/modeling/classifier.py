@@ -45,7 +45,11 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             # is prohibitive for heads with tens of thousands of output classes.
             grad = w @ (w.t() @ w) if num_classes > w.size(1) else w @ w.t() @ w
             proj = (grad * w).sum(dim=1, keepdim=True) * w
-            w.sub_((lr / num_classes) * (grad - proj))
+            # Reuse the gradient buffer without changing arithmetic order.
+            # Release both full-size temporaries before the next iteration.
+            grad.sub_(proj).mul_(lr / num_classes)
+            w.sub_(grad)
+            del grad, proj
 
         w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
         return layer

@@ -72,3 +72,48 @@ def test_large_normalized_head_does_not_allocate_class_gram_matrix():
         head = Classifier(in_features=8, out_features=10000, hidden=True, normalized=True)
     assert torch.isfinite(head.linear.weight).all()
     torch.testing.assert_close(head.linear.weight.norm(dim=1), torch.ones(10000))
+
+
+@pytest.mark.parametrize("shape", [(8, 32), (32, 8), (32, 32)])
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_spherical_initialization_buffer_reuse_preserves_values(shape, device):
+    import os
+
+    from mini_trainer.modeling import Classifier
+
+    if device == "cuda":
+        if os.environ.get("RUN_CUDA_TESTS") != "1":
+            pytest.skip("Set RUN_CUDA_TESTS=1 for initializer CUDA parity")
+        if not torch.cuda.is_available():
+            pytest.fail("CUDA requested but unavailable")
+    layer = torch.nn.Linear(shape[1], shape[0], bias=False, device=device)
+    torch.manual_seed(73)
+    expected = torch.empty_like(layer.weight).normal_()
+    for _ in range(100):
+        expected.div_(expected.norm(dim=1, keepdim=True).clamp(min=1e-9))
+        gradient = expected @ (expected.t() @ expected) if shape[0] > shape[1] else expected @ expected.t() @ expected
+        projection = (gradient * expected).sum(dim=1, keepdim=True) * expected
+        expected.sub_((0.5 / shape[0]) * (gradient - projection))
+    expected.div_(expected.norm(dim=1, keepdim=True).clamp(min=1e-9))
+    torch.manual_seed(73)
+    Classifier.init_spherical_repulsion(layer)
+    torch.testing.assert_close(layer.weight, expected, rtol=0, atol=0)
+
+
+def test_spherical_initialization_bounds_cuda_temporaries():
+    import os
+
+    from mini_trainer.modeling import Classifier
+
+    if os.environ.get("RUN_CUDA_TESTS") != "1":
+        pytest.skip("Set RUN_CUDA_TESTS=1 for initializer allocation validation")
+    if not torch.cuda.is_available():
+        pytest.fail("CUDA requested but unavailable")
+    layer = torch.nn.Linear(1280, 10000, bias=False, device="cuda")
+    torch.cuda.reset_peak_memory_stats()
+    before = torch.cuda.memory_allocated()
+    Classifier.init_spherical_repulsion(layer, iterations=3)
+    extra = torch.cuda.max_memory_allocated() - before
+    # Two full-size buffers plus the small Gram matrix fit under this bound;
+    # retaining the prior iteration's gradient/projection does not.
+    assert extra < 3 * layer.weight.numel() * layer.weight.element_size()

@@ -1508,3 +1508,53 @@ input gradient (1,000,000 per element) and weight gradient (2 per element for a
 two-sample sum loss). This is a bounded gradient correctness check, **not** a
 million-class EfficientNetV2 training, optimizer-memory or deployment benchmark.
 Full-model initialization and training capacity remain open.
+
+### Million-class normalized-head initialization memory
+
+The normalized spherical initializer still retained several class-by-width
+intermediates after the earlier Gram-matrix fix. A one-million-class, 1280-wide
+symmetric normalized `Classifier` exposed this independently of training.
+An uncapped WSL run reached 25,619,099,648 allocated bytes (23.86 GiB) on the
+16 GiB laptop GPU and was interrupted, rather than treating driver-managed
+allocations beyond dedicated memory as a successful capacity result. Per-process
+GPU memory was unavailable from `nvidia-smi` in this environment.
+
+The repeat explicitly capped the PyTorch allocator at 90% of device capacity
+(about 14.4 GiB). The original implementation failed while requesting another
+4.77 GiB temporary, after reaching 15,383,099,904 allocated bytes. The OOM message's
+non-PyTorch usage field was nonsensical on this WSL build; the report retains it,
+but conclusions use the configured allocator limit and PyTorch allocation counters.
+
+The update now reuses the gradient buffer for subtraction and scaling, preserving
+the original arithmetic order, and releases gradient/projection buffers before
+the next iteration. This removes additional full-size result buffers and prevents
+the previous iteration's intermediates from overlapping the next one. The same
+one-million-class head then completed all 100 initialization iterations under the
+same cap, with peak allocated/reserved bytes 15,383,099,904 / 15,407,775,744.
+The uncapped observation was interrupted; it is not a completed baseline timing.
+The cap governs the PyTorch allocator, not independent driver-residency telemetry.
+
+Exact CPU and CUDA tests compare the old and new updates for tall, wide and square
+weights over 100 iterations. A CUDA regression also bounds temporary allocations
+on a 10k-by-1280 matrix across several iterations, so retaining old gradient and
+projection buffers would fail. Initializer parameters, iteration count, seeded
+arithmetic and classifier behavior are preserved.
+
+Reports and the capped probe are retained under ignored `tmp-million-head/`.
+This establishes normalized-head construction, not full EfficientNetV2 training,
+optimizer-state capacity, checkpoint/reload, large-vocabulary quality or target
+hardware performance. Those phases require their own evidence.
+
+A subsequent full EfficientNetV2-S flat-model probe used a 92% allocator cap
+(about 14.72 GiB), leaving room for the backbone. Construction completed with
+peak allocated/reserved bytes 15,471,561,728 / 15,485,370,368. It then failed during
+`prepare_quantized_training`, when the existing rowwise quantizer requested a
+full-size rounding buffer. No optimizer step ran, so the declared momentum-free
+SGD configuration is not a successful training result. The retained report is
+`tmp-million-head/full-flat/report.json`. Bounded quantization preparation is the
+next memory bottleneck; bypassing the cap or changing initialization iterations
+would not resolve it.
+
+Validation for the initializer change passed 381 CPU-default tests with 139 skips
+and the existing EMA expected failure. Seven focused CPU/CUDA parity and
+allocation cases passed with intentional GPU access. Static checks passed.
