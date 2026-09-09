@@ -203,3 +203,25 @@ def test_parity_failure_does_not_publish_bundle(tmp_path, monkeypatch):
     with pytest.raises(AssertionError, match="ONNX parity failed"):
         export_onnx(model, torch.randn(2, 3, 5, 5), tmp_path / "bundle")
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("head", [Classifier, HierarchicalClassifier])
+def test_efficientnet_v2_s_symmetric_normalized_heads(tmp_path, head):
+    torch.manual_seed(42)
+    kwargs = {}
+    if head is HierarchicalClassifier:
+        kwargs["sparse_masks"] = [torch.arange(25) % 15]
+    model, _ = head.build(
+        model_type="efficientnet_v2_s",
+        model_args={"pretrained": False},
+        num_classes=25,
+        hidden=True,
+        normalized=True,
+        **kwargs,
+    )
+    example = torch.randn(2, 3, 128, 128)
+    destination = export_onnx(model, example, tmp_path / "efficientnet-v2", verification_inputs=[torch.randn(3, 3, 128, 128)])
+    manifest = json.loads((destination / "manifest.json").read_text())
+    assert {case["batch_size"] for case in manifest["verification"]["cases"]} == {1, 2, 3, 4}
+    assert len(manifest["outputs"]) == (2 if head is HierarchicalClassifier else 1)
+    assert manifest["classifiers"][0]["metadata"]["in_features"] == 1280

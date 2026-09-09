@@ -98,7 +98,15 @@ used by BioCLIP, plus every classifier head family. This is representative backe
 coverage, not certification of every model in the catalog. Arbitrary custom
 operators and data-dependent Python control flow remain subject to the
 [PyTorch ONNX exporter's support](https://docs.pytorch.org/docs/stable/onnx_export.html).
-GPU providers, quantized graphs and arbitrary spatial dimensions are not validated.
+The actual EfficientNetV2-S backbone with symmetric normalized flat/hierarchical
+heads is also covered by offline dynamic-batch export tests. Trained Blair
+checkpoints passed ONNX Runtime CPU parity on real images; see the
+[deployment experiment](benchmarks.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
+GPU providers, ARM execution and arbitrary spatial dimensions remain unvalidated.
+An experimental ONNX static INT8 recipe executed on the local CPU but lost
+substantial accuracy and retained floating convolution execution. It is not a
+supported production recipe. Native CUDA QT checkpoints remain a separate backend
+and are not made ONNX-exportable by these floating-checkpoint experiments.
 
 These local bundles are a foundation for Hugging Face hosting. Model cards,
 evaluation attachments and Hub upload commands remain separate roadmap work.

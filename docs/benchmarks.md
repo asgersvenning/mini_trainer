@@ -1191,3 +1191,55 @@ quantized optimization trajectories. Reports are under `tmp-normalization-blair/
 with source SHA256 `6aba096dca741e09863487cf4ed96dce21dea44b68b5612625caa3f3beb347d2`.
 Repeated-seed convergence, million-class capacity, ONNX deployment and performance
 on the intended target machines remain open.
+
+### EfficientNetV2 ONNX CPU export and inference quantization
+
+The pretrained floating Blair checkpoints were exported through the existing
+generic API for both symmetric normalized EfficientNetV2-S heads. ONNX Runtime
+CPU parity passed at batch sizes 1, 2, 4 and 8, including 16 real held-out images.
+The maximum observed absolute score difference was 1.67e-5 for the flat head and
+1.29e-5 for the hierarchical head, within the existing combined rtol=1e-4,
+atol=1e-5 checks. The test suite now also exports both actual architectures with
+random initialization and verifies dynamic batch sizes 1–4 without downloads.
+
+Runtime dependencies were installed at the locked versions (ONNX 1.22.0,
+ONNX Runtime 1.29.0, ONNX Script 0.7.1), with constraints preserving the existing
+CUDA PyTorch, Torchvision, TorchAO and NumPy versions. This was an environment
+installation, not a dependency declaration or lock-file change.
+The experiment's complete package-version record is retained in
+`tmp-efficientnet-onnx/environment.json`; its protobuf dependency resolved to
+7.36.1 rather than the lock's 7.35.0, so this is not a fully locked-environment run.
+
+A separate exploratory post-training quantization trial used ONNX Runtime static
+QDQ with per-channel INT8 weights and signed INT8 activations, targeting Conv,
+Gemm and MatMul. MinMax calibration used 128 training images sampled with seed 42;
+neither validation nor test images entered calibration. The exported graph
+already folded BatchNorm into convolution; preprocessing ran shape inference
+without further graph optimization before quantization. This follows the starting
+point described in [ONNX Runtime's quantization guide](https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html),
+but the result is **not an acceptable deployment recipe**:
+
+| Head | Float / INT8 fine accuracy | Float / INT8 parent accuracy | Float / INT8 graph plus weight bytes |
+| --- | ---: | ---: | ---: |
+| Flat | 83.55% / 55.73% | — | 88,624,980 / 25,398,200 |
+| Hierarchical | 78.12% / 70.28% | 90.61% / 85.62% | 88,645,350 / 25,418,559 |
+
+All 1,161 held-out images produced finite outputs. Float and INT8 were evaluated
+through the same CPU provider and preprocessing; the floating accuracy differs
+slightly from the earlier CUDA AMP results. Artifacts are roughly 71% smaller,
+but the execution profile confirms only 63 QLinearConv operations and two QGemm
+operations, alongside 107 floating Conv operations. QDQ nodes and integer stored
+weights therefore do not establish integer execution throughout the backbone.
+
+These are exploratory held-out checks, not a confirmatory quality comparison or
+a timing study. Subsequent recipe tuning should use validation images, localize
+weight/activation error, and investigate incomplete quantized-operator fusion.
+Do not select a production recipe from artifact size alone. No ONNX GPU or ARM
+execution was tested, and no native QT checkpoint was converted in this trial.
+
+Exports, calibration records with source-image hashes, full predictions, runtime
+profiles, report JSON and scripts are retained under ignored
+`tmp-efficientnet-onnx/`. Preprocessing remains external to the graph; the local
+experiment used the checkpoint's repository preprocessing and does not yet provide
+a standalone raw-image deployment recipe. Missing telemetry/cache write access
+emitted environment warnings; export and inference completed.
