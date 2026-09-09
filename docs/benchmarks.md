@@ -2263,6 +2263,69 @@ Initially that test failed because no tuning callback ran; clearing only the
 tuner cache or disabling graph caches late in a shared process was insufficient.
 The isolated test retains its tuning, finite-gradient and optimizer assertions.
 
+### Pretrained parameter-frozen Blair fine-tuning
+
+The dataset runner now exposes the existing builder's `--fine-tune` option and
+records it in successful/failed reports and rendered summaries. Its floating
+backbone storage remains FP32, with the selected AMP compute dtype. Backbone
+parameters are frozen, while BatchNorm statistics and dropout retain normal
+training behavior. This differs from the evaluation-mode backbone in the
+synthetic capacity probe. CPU integration checks verify unchanged backbone
+parameters, head updates, checkpoint reload and matched splits for both real
+EfficientNetV2-S head configurations.
+
+The first local comparison uses cached pretrained EfficientNetV2-S, symmetric
+normalized flat/hierarchical heads, BF16 autocast, MuonAuxAdamW, learning rate
+0.01, five epochs, batch 32, image size 128 and seed 42. Data remain 3,704 training,
+912 validation and 1,161 held-out test images, with 25 leaves and 15 parents.
+The common dataset manifest SHA256 is
+`1cef6c7d9133d889b6c8eff0ffef29b1db5d6653ab4adf0c005739af8c2921c6`.
+The two native INT8 recipes quantize `classifier.hidden` and `classifier.linear`;
+convolutions, gradients and optimizer states remain floating. Each trained
+checkpoint was reloaded before collecting finite held-out predictions.
+
+`mini_metrics` evaluates fixed argmax predictions at threshold zero, with no
+abstention or threshold tuning, independently at each level. The following are
+unit-interval values, not percentages:
+
+| Head / level | Precision | Macro-F1 | Macro-Recall | Macro-Precision | Coverage | Theil's U |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Flat / leaf | Float | 0.479750 | 0.470175 | 0.530647 | 1.0 | 0.573066 |
+| Flat / leaf | INT8 | 0.482557 | 0.470687 | 0.533579 | 1.0 | 0.572262 |
+| Hierarchical / leaf | Float | 0.479853 | 0.468765 | 0.532174 | 1.0 | 0.566776 |
+| Hierarchical / leaf | INT8 | 0.480858 | 0.475068 | 0.530723 | 1.0 | 0.576768 |
+| Hierarchical / parent | Float | 0.638768 | 0.620933 | 0.683742 | 1.0 | 0.637285 |
+| Hierarchical / parent | INT8 | 0.643042 | 0.620931 | 0.699244 | 1.0 | 0.639065 |
+
+Macro-F1 differences are +0.281, +0.100 and +0.427 percentage points respectively.
+Other metrics move in both directions. Predictions change on 333, 327 and 214
+of the 1,161 images. These are separately trained stochastic models, not a score
+parity check or evidence that quantization generally improves quality. Matching
+the initial seed does not synchronize dropout with stochastic quantized updates.
+The absolute leaf Macro-F1 near 0.48 also does not establish useful production
+quality or parity with full-backbone training.
+
+Training allocated peaks were approximately 206.90 MiB float and 170.03 MiB INT8
+for both heads (17.8% lower). These are local PyTorch allocation measurements,
+not total process/device memory. CPU regression checks overlapped the GPU runs;
+their recorded durations are excluded from throughput or time-to-quality claims.
+Repeat isolated, alternating multi-seed comparisons and full-backbone baselines
+before accepting an efficiency/quality trade-off, then verify the target hardware.
+
+Ignored `tmp-fine-tune-blair/` retains the paired command driver, checkpoints,
+training reports, NPZ predictions, dataset manifests and logs. Its
+`prepare-quality.py` validates identities/labels/mappings and creates hashed CSV
+and held-out manifests for the maintained `dev.benchmarks.quality_compare`
+command, executed in the existing separate `mini_metrics` environment. Quality
+reports include source hashes for that package and all five metrics. Making the
+NPZ-to-quality adapter a generic maintained command and publishing durable results
+remain follow-up work; local artifacts alone are not a continuous pipeline.
+
+Validation passed static checks and 483 CPU-default tests, with 158 skips and
+the known EMA expected failure. Five additional focused summary/CLI checks passed
+after adding the visible backbone-policy column. All four real GPU training and
+reload runs and both five-metric evaluations completed successfully.
+
 ### Maintained image preparation reproduction
 
 `dev.benchmarks.prepare_inputs` now generates both calibration and held-out NPZ

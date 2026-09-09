@@ -29,6 +29,15 @@ that the native dynamic training quantizer exports unchanged into integer GPU
 execution. DDP/FSDP remain unsupported for native QT.
 EMA repair is explicitly deferred and is not a prerequisite for this goal.
 
+The dataset runner now exposes parameter-frozen fine-tuning through the existing
+builder. A [five-epoch pretrained Blair comparison](benchmarks.md#pretrained-parameter-frozen-blair-fine-tuning)
+completed both normalized symmetric heads with BF16 and native INT8 and evaluated
+all five requested metrics on 1,161 held-out images. Macro-F1 differences were
+small, with mixed changes in other metrics; this single seed is not evidence of
+a general quality improvement. Local allocated peaks were 17.8% lower, but CPU
+checks overlapped the runs, so no timing benefit is claimed. This regime retains
+training-mode BatchNorm/dropout, unlike the synthetic evaluation-mode backbone.
+
 The earlier floating-checkpoint TensorRT timing comparison uses matched builder settings and three fresh
 paired processes per head. At batches 1 and 8, INT8 did not beat FP16 in local
 host latency. Engines are approximately 43% smaller, while reported execution
@@ -100,6 +109,9 @@ checks and **470 tests**, with **152 skips** and **one known EMA expected failur
    [corrected allocation comparison](benchmarks.md#correcting-the-frozen-head-allocation-comparison)
    shows a 6.6% local peak reduction for both heads. Repeat the corrected probe
    across seeds and with realistic pretrained features and longer integrated training.
+   The initial parameter-frozen pretrained Blair study now provides execution and
+   quality evidence; repeat it in isolated processes across seeds alongside matched
+   full-backbone baselines to establish time to useful quality.
 
 3. **Qualify the trained-checkpoint-to-deployment contract.** Explicit conversion
    and calibration now connect the matched native QT checkpoints to distinct
