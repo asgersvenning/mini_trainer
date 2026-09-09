@@ -17,6 +17,8 @@ from mini_trainer.modeling.classifier import classification_module
 from mini_trainer.modeling.quantized_training import prepare_quantized_training
 from mini_trainer.trainer import _optimizer_step
 from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
+from mini_trainer.training.compilation import validate_optimizer_compilation
 
 
 def run(
@@ -33,8 +35,11 @@ def run(
     device="cuda:0",
     dtype="float16",
     backbone="efficientnet_v2_s",
+    compile_optimizer=False,
+    optimizer_cudagraphs=False,
 ):
     device = torch.device(device)
+    validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
     if min(classes, batch_size, image_size, warmup, steps) < 1 or classes < 2 or batch_size < 2:
         raise ValueError("Require at least two classes/samples and positive image size, warmup and steps")
     if device.type not in ("cpu", "cuda") or dtype not in ("float32", "float16", "bfloat16"):
@@ -66,12 +71,15 @@ def run(
             "backbone": backbone,
             "hidden": "symmetric",
             "normalized": True,
+            "compile_optimizer": compile_optimizer,
+            "optimizer_cudagraphs": optimizer_cudagraphs,
         },
         "environment": {"platform": platform.platform(), "torch": torch.__version__},
         "warmup": [],
         "steps": [],
         "scope": (
-            "Repeated fixed synthetic uint8 images and labels, eager MuonAuxAdamW and AMP. "
+            "Repeated fixed synthetic uint8 images and labels, MuonAuxAdamW and AMP. "
+            "Optimizer compilation/graph flags describe requested configuration, not verified graph replay. "
             "Full-model or frozen-backbone updates; no cached embeddings. "
             "No convergence, loader, checkpoint, distributed or target-hardware performance claims."
         ),
@@ -123,6 +131,8 @@ def run(
         if sum(p.numel() for p in head.parameters() if p.requires_grad) != report["head_trainable_parameters"]:
             raise RuntimeError("Freezing/preparation changed the head's trainable parameter contract")
         optimizer = BaseBuilder.build_optimizer(model, MuonAuxAdamW, lr=0.01, weight_decay=0.0)
+        if compile_optimizer:
+            prepare_compiled_optimizer(optimizer, cudagraphs=optimizer_cudagraphs)
         scaler = BaseBuilder.build_scaler(device.type, enabled=device.type == "cuda" and dtype == "float16")
         report["parameters"] = {
             "total": sum(p.numel() for p in model.parameters()),
@@ -179,6 +189,7 @@ def run(
         if frozen and any(p.grad is not None for p in model.parameters() if not p.requires_grad):
             raise RuntimeError("A frozen parameter received a gradient")
         report["median_seconds_per_update"] = statistics.median(s["seconds"] for s in report["steps"])
+        report["optimizer_steps"] = optimizer._step_count
         report["status"] = "measured"
     except Exception as error:
         report.update(status="failed", error=f"{type(error).__name__}: {error}")
@@ -193,7 +204,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     for name, default in (("classes", 10000), ("batch-size", 32), ("image-size", 128), ("seed", 42), ("warmup", 3), ("steps", 5)):
         parser.add_argument("--" + name, type=int, default=default)
-    for flag in ("hierarchical", "frozen", "quantized"):
+    for flag in ("hierarchical", "frozen", "quantized", "compile-optimizer", "optimizer-cudagraphs"):
         parser.add_argument("--" + flag, action="store_true")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", choices=["float32", "float16", "bfloat16"], default="float16")

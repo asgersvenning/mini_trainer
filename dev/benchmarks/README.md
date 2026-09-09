@@ -1339,7 +1339,7 @@ costs and actual target-device verification remain separate requirements.
 
 `dev.benchmarks.large_head_training` makes the earlier large-class probe reusable
 on the intended training machines. It builds the actual backbone with a symmetric,
-normalized flat or hierarchical head, then performs eager MuonAuxAdamW updates
+normalized flat or hierarchical head, then performs MuonAuxAdamW updates (eager by default)
 through the existing builder, scaler and optimizer-step helper. It uses fixed
 synthetic uint8 images and labels, not a convergence or dataset-quality benchmark.
 
@@ -1364,6 +1364,19 @@ forward computation still runs on every update; embeddings are not cached.
 `--dtype bfloat16` selects a separate AMP profile; `float32` disables autocast.
 Use `--device cpu --dtype float32` only for offline floating diagnostics. Native
 INT8 training requires an accessible CUDA device.
+
+Add `--compile-optimizer` to use the existing optimizer-compilation path, and
+optionally `--optimizer-cudagraphs` to request optimizer CUDA graphs. The model
+forward/backward remains eager. Apply the same execution settings to both
+precisions; `--warmup 8 --steps 5` provides a bounded initial comparison that
+includes the helper's real eager initialization update before compilation.
+Graph settings alone do not establish actual replay or a performance benefit.
+Reports retain both flags and the composite optimizer's applied step count.
+Compare setup peaks, measured allocated peaks and reserved memory separately:
+lower steady allocated memory does not establish a lower startup requirement,
+and graph pools may increase reserved memory. The probe has no scheduler or
+checkpoint/resume workload; those contracts remain covered by the integrated
+runner and optimizer tests.
 
 Use new output directories, matching settings, alternating float/INT8 order and
 paired seeds. A separate CPU generator fixes inputs independently of quantization
