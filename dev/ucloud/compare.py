@@ -43,6 +43,8 @@ def write_json(path, value):
 
 
 def validate(config):
+    if "figures" in config and type(config["figures"]) is not bool:
+        raise ValueError("figures must be a boolean")
     if "require_finite_losses" in config and type(config["require_finite_losses"]) is not bool:
         raise ValueError("require_finite_losses must be a boolean")
     if "budget_seconds" in config and (type(config["budget_seconds"]) is not int or config["budget_seconds"] < 1):

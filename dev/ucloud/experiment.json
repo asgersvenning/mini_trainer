@@ -1,6 +1,6 @@
 {
   "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
-  "output": "/work/results/global-lepi-expanded-1",
+  "output": "/work/results/global-lepi-expanded-nofigures-1",
   "environments": {
     "master": {
       "python": "/work/venvs/mt-master/bin/python",
@@ -32,5 +32,6 @@
   },
   "timeout_seconds": 300,
   "budget_seconds": 1800,
-  "require_finite_losses": true
+  "require_finite_losses": true,
+  "figures": false
 }

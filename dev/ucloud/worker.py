@@ -191,6 +191,15 @@ def prepare(config):
     progress("Preparation worker finished")
 
 
+def configure_figures(enabled):
+    """Suppress optional evaluation plots in this dedicated worker process."""
+    if not enabled:
+        from mini_trainer.logging import MultiLogger
+
+        MultiLogger.figures = lambda self, model: None
+        progress("Evaluation figures disabled; validation metrics and checkpoints remain enabled")
+
+
 def instrument(output):
     """Record synchronized phase times per rank without changing optimizer logic."""
     import torch
@@ -252,6 +261,7 @@ def train(config, name):
     write_json(directory / f"compiler-cache-rank{rank}.json", {"path": str(cache)})
     if not torch.cuda.is_available() or torch.cuda.device_count() < config["gpus"]:
         raise RuntimeError("Allocated GPUs no longer match configuration")
+    configure_figures(config.get("figures", True))
     instrument(directory)
     options = run["options"].copy()
     loader = {

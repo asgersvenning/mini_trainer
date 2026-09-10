@@ -1,5 +1,6 @@
 """Safety and real CPU round-trip checks for the external UCloud launch harness."""
 
+import csv
 import importlib
 import json
 import os
@@ -127,12 +128,21 @@ def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatc
 
     import mini_trainer.train as training
     from mini_trainer.hierarchical.integration import HierarchicalBuilder
+    from mini_trainer.logging import MultiLogger
     from mini_trainer.modeling import Classifier
 
     compare, worker = harness
     config.update(gpus=1, global_batch_size=4, epochs=1, size=32, seeds=[42], num_workers_per_rank=0)
     if qualification:
         config["qualification"] = {"seed": 42, "train": 4, "validation": 2, "test": 2}
+        config["figures"] = False
+
+        def reject_figures(*args, **kwargs):
+            pytest.fail("Figure generation must be bypassed for this experiment")
+
+        # Register restoration before the worker replaces the process-local hook.
+        monkeypatch.setattr(MultiLogger, "figures", MultiLogger.figures)
+        monkeypatch.setattr(MultiLogger, "confusion_matrix", reject_figures)
     root = Path(config["output"])
     root.mkdir()
     rows = []
@@ -194,6 +204,10 @@ def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatc
         training.main(**captured)
         directory = root / "runs" / "quant_eager_seed42" / "model"
         assert (directory / "weights" / "checkpoint_last.pth").is_file()
+        with (directory / "logs" / "summary.csv").open() as handle:
+            rows = list(csv.DictReader(handle))
+        assert [row["type"] for row in rows] == ["train", "eval"]
+        assert all("loss/lvl2" in row for row in rows)
         reloaded, preprocess = Classifier.build(weights=str(directory / "weights" / "best.pt"), model_args={"pretrained": False})
         reloaded.eval()
         with torch.inference_mode():

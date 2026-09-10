@@ -484,8 +484,17 @@ training losses do not establish that validation is numerically sound.
 
 There are 128 training batches and 32 validation batches per epoch. Compare the
 mean of epochs 2–4 (`later_epoch_mean_seconds`), and retain first-epoch and total
-wall times separately. The earlier 2,048-image timings suggest roughly 2–4 minutes
-per variant, but larger heads, new image reads and plotting can increase this.
+wall times separately. The expanded run measured about 31 seconds for the first
+training epoch and 25.5 seconds for later epochs, but its first validation phase
+(including figures) took 151 seconds and the run exceeded five minutes.
+The template now sets `figures: false` for every variant, bypassing confusion,
+class-distance and dendrogram figures (including species-name lookups). Scalar
+validation metrics, losses, checkpoint selection and saving still run. Existing
+configs default to figures enabled. This setting only changes the dedicated
+harness worker; no package reinstall is required. Allow roughly 2–3 minutes per
+variant based on those training times, with additional time possible for cold
+image reads and startup. Whole-run and validation-phase timings are not directly
+comparable to older runs with figures enabled.
 Each worker has a 300-second limit; timeout terminates the experiment rather than
 silently shortening its epochs. Process cleanup can take another 15 seconds.
 The overall prepare/train budget is 1,800 seconds, including pauses between stages.
@@ -554,7 +563,7 @@ bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage plan
 bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage prepare && \
     bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage train
 bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage summary
-cat /work/results/global-lepi-expanded-1/comparison.csv
+cat /work/results/global-lepi-expanded-nofigures-1/comparison.csv
 ```
 
 Run in tmux and retain all artifacts, including failed validation checks. A warm
