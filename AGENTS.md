@@ -7,6 +7,8 @@
 - Check `git status --short` and preserve unrelated work. Keep each change focused and reviewable.
 - This file is the repository-wide agent entry point. The files in `.agents/rules/`
   provide additional guidance; this file takes precedence where they conflict.
+- Follow [.agents/README.md](.agents/README.md) for agent material and commit boundaries.
+  Read only task-relevant notes and skills; they are not all startup context.
 
 ## Priorities
 
@@ -58,6 +60,14 @@ Complete a bounded, validated increment before moving to the next priority.
 
 ## Scope and artifacts
 
+- Put durable agent-only handoffs in `.agents/notes/` using its standard format;
+  keep temporary work in ignored `.agents/local/`. Do not scatter session notes
+  through `docs/`, `dev/` or the repository root.
+- Commit agent-only instructions and notes separately with an `agent:` prefix.
+  Source, tests, CI changes and developer-facing docs use separate normal commits,
+  even when authored by an agent. Inspect explicitly staged paths before committing.
+- Documentation-only agent changes need link/content and diff checks, not model
+  tests. Executable helpers, workflows and mixed changes require affected checks.
 - Treat `publication/` as reproducible research: preserve scripts, inputs, seeds,
   and recorded outputs unless the task specifically calls for changing them.
 - Keep downloaded models, datasets, credentials, and generated outputs out of commits.
