@@ -1,0 +1,40 @@
+{
+  "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
+  "output": "/work/results/global-lepi-combined-int8-1",
+  "environments": {
+    "master": {
+      "python": "/work/venvs/mt-master/bin/python",
+      "commit": "2ebbe39f2365bfea482d7ebc3d000cf4d2044918"
+    },
+    "quant": {
+      "python": "/work/venvs/mt-quant/bin/python",
+      "commit": "4ea6b9613fc29a8e33ef72f28885f4e2a0e5906b"
+    }
+  },
+  "gpus": 1,
+  "global_batch_size": 32,
+  "num_workers_per_rank": 2,
+  "epochs": 4,
+  "size": 384,
+  "seeds": [
+    42
+  ],
+  "variants": [
+    "quant_float_combined",
+    "master_eager",
+    "quant_compile_model",
+    "quant_eager",
+    "quant_compile_both",
+    "quant_int8_combined"
+  ],
+  "qualification": {
+    "seed": 42,
+    "train": 4096,
+    "validation": 1024,
+    "test": 128
+  },
+  "timeout_seconds": 300,
+  "budget_seconds": 1800,
+  "require_finite_losses": true,
+  "figures": false
+}

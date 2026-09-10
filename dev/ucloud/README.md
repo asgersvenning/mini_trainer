@@ -667,3 +667,69 @@ If master has `invalid_metrics`, `paired.json` will be empty because that report
 requires a completed master baseline. The CSV still contains the direct quant
 comparison. Preserve the loss-audit flag alongside exploratory timing conclusions;
 no dedicated numerical tracing is a prerequisite for this experiment.
+
+## Combined compilation, prefetch and native INT8
+
+`combined-int8.json` compares the following runs in this seeded execution order:
+
+| Variant | Installed branch | Native INT8 | Model compile | Optimizer compile | Prefetch |
+| --- | --- | --- | --- | --- | --- |
+| `quant_eager` | quant | No | No | No | No |
+| `master_eager` | master | No | No | No | No |
+| `quant_compile_model` | quant | No | Yes | No | No |
+| `quant_compile_both` | quant | No | Yes | Yes | No |
+| `quant_float_combined` | quant | No | Yes | Yes | Yes |
+| `quant_int8_combined` | quant | Yes | Yes | Yes | Yes |
+
+Both combined variants use the same pinned quant package. Here “float” means
+ordinary FP32 parameters with FP16 AMP, not a switch to FP32-only training.
+Native INT8 applies to eligible linear modules; convolutions, normalization,
+biases and other unsupported operations remain floating point. Check the
+`INT8 training coverage:` entry in the INT8 console log for the actual coverage.
+This is not an entirely INT8 EfficientNet. Optimizer CUDA graphs remain disabled.
+The older `quant_combined` name remains a floating-point variant for compatibility.
+
+The four-epoch, 4,096/1,024/128-image workload, batch 32, two workers, 384 pixels,
+seed 42, figures disabled and loss audit enabled are unchanged. Each worker has
+a 300-second timeout (plus up to 15 seconds cleanup). The entire experiment has
+a 1,800-second budget including preparation and gaps between stages. Six workers
+all reaching their limits would exceed that budget, so the controller may stop
+before the last run in that case. Based on previous timings, allow approximately
+20–25 minutes; INT8 and combined compilation are unverified on this allocation.
+Fresh compiler caches keep compilation cost in each run. No numerical tracing
+or extra warmup is required.
+
+Pull into the current job and run in tmux; existing venvs already include the
+quantization extra. Preparation checks the dependency and single-GPU restriction
+for any variant requesting INT8, including the new combined variant.
+
+```bash
+cd /work/mini_trainer
+git pull --ff-only
+bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage plan
+bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage prepare && \
+    bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage train
+# Run even if training reports a failure, timeout or invalid metrics.
+bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage summary
+cat /work/results/global-lepi-combined-int8-1/comparison.csv
+cat /work/results/global-lepi-combined-int8-1/paired.json
+```
+
+The controller continues after ordinary nonzero worker exits or invalid metrics,
+but stops on a timeout. Preserve the logs. If the floating combined worker times
+out and the overall budget has time left, launch just the not-yet-started INT8 run:
+
+```bash
+bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage train \
+    --only quant_int8_combined_seed42
+bash dev/ucloud/launch.sh dev/ucloud/combined-int8.json --stage summary
+```
+
+Do not rerun an existing failed directory or reset the experiment deadline.
+Compare model-only against both compilations to test their interaction, then
+both compilations against float combined to test prefetch, then float combined
+against INT8 combined to test quantized training. Use total wall time, first-epoch
+time, later-epoch mean and peak allocated memory, retaining loss-audit status.
+The automatic paired report uses master; the CSV supports these direct quant
+comparisons even when master is excluded by its loss audit. One seed does not
+establish quality equivalence or a small performance improvement.

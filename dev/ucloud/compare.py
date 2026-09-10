@@ -20,12 +20,19 @@ VARIANTS = {
     "quant_prefetch": ("quant", {"cuda_prefetch": True}),
     "quant_compile_model": ("quant", {"compile": True}),
     "quant_compile_optimizer": ("quant", {"compile_optimizer": True}),
+    "quant_compile_both": ("quant", {"compile": True, "compile_optimizer": True}),
+    "quant_float_combined": ("quant", {"compile": True, "compile_optimizer": True, "cuda_prefetch": True}),
+    "quant_int8_combined": ("quant", {"quantized_training": True, "compile": True, "compile_optimizer": True, "cuda_prefetch": True}),
     "quant_combined": ("quant", {"compile": True, "compile_optimizer": True, "cuda_prefetch": True}),
     # Qualification experiments, deliberately excluded from the default matrix.
     "quant_model_graphs": ("quant", {"compile": True, "compile_mode": "reduce-overhead"}),
     "quant_optimizer_graphs": ("quant", {"compile_optimizer": True, "optimizer_cudagraphs": True}),
     "quant_int8": ("quant", {"quantized_training": True}),
 }
+
+
+def uses_quantized_training(config):
+    return any(VARIANTS[name][1].get("quantized_training", False) for name in config["variants"])
 
 
 def digest(path):
@@ -76,7 +83,7 @@ def validate(config):
         raise ValueError("Supply unique variants")
     if set(config["variants"]) - VARIANTS.keys():
         raise ValueError("Unknown variant")
-    if "quant_int8" in config["variants"] and config["gpus"] != 1:
+    if uses_quantized_training(config) and config["gpus"] != 1:
         raise ValueError("Native INT8 training requires gpus=1; DDP is unsupported")
     if not {"master_eager", "quant_eager"}.issubset(config["variants"]):
         raise ValueError("Keep both eager controls")

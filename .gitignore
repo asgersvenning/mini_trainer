@@ -34,4 +34,5 @@ examples/test.ipynb
 !/dev/ucloud/experiment.json
 !/dev/ucloud/compilation.json
 !/dev/ucloud/optimizer-compilation.json
+!/dev/ucloud/combined-int8.json
 /local-evidence/

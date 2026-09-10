@@ -13,7 +13,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from compare import digest, plan, write_json
+from compare import digest, plan, uses_quantized_training, write_json
 
 
 def progress(message):
@@ -84,7 +84,7 @@ def preflight(config, branch, *, verify=False):
             with torch.cuda.device(index):
                 torch.ones(1, device=f"cuda:{index}").add_(1)
                 torch.cuda.synchronize()
-    if "quant_int8" in config["variants"]:
+    if uses_quantized_training(config):
         importlib.metadata.version("torchao")
     record = {
         "commit": commit,

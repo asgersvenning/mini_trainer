@@ -26,7 +26,8 @@ def config(tmp_path):
     return value
 
 
-def test_launch_topology_and_paired_plan(harness, config):
+@pytest.mark.parametrize("int8_variant", ["quant_int8", "quant_int8_combined"])
+def test_launch_topology_and_paired_plan(harness, config, int8_variant):
     compare, _ = harness
     compare.validate(config)
     runs = compare.plan(config)
@@ -39,11 +40,61 @@ def test_launch_topology_and_paired_plan(harness, config):
     assert argv[-3] == str(Path(config["output"]) / "comparison.json")
     config["gpus"] = 1
     assert "torch.distributed.run" not in compare.command(config, runs[0], "config.json")
-    config["variants"].append("quant_int8")
+    config["variants"].append(int8_variant)
     compare.validate(config)
     config["gpus"] = 2
     with pytest.raises(ValueError, match="DDP is unsupported"):
         compare.validate(config)
+
+
+def test_combined_int8_plan_isolates_each_added_option(harness):
+    compare, _ = harness
+    source = Path(__file__).resolve().parents[2] / "dev" / "ucloud" / "combined-int8.json"
+    config = compare.validate(json.loads(source.read_text()))
+    runs = compare.plan(config)
+    assert [run["name"] for run in runs] == [
+        f"{variant}_seed42"
+        for variant in (
+            "quant_eager",
+            "master_eager",
+            "quant_compile_model",
+            "quant_compile_both",
+            "quant_float_combined",
+            "quant_int8_combined",
+        )
+    ]
+    assert runs[3]["options"] == {**runs[2]["options"], "compile_optimizer": True}
+    assert runs[4]["options"] == {**runs[3]["options"], "cuda_prefetch": True}
+    assert runs[5]["options"] == {**runs[4]["options"], "quantized_training": True}
+    assert all(run["branch"] == "quant" for run in runs[2:])
+    assert compare.uses_quantized_training(config)
+    config["variants"].remove("quant_int8_combined")
+    assert not compare.uses_quantized_training(config)
+
+
+@pytest.mark.parametrize("variant", ["quant_compile_both", "quant_float_combined", "quant_int8_combined"])
+def test_combined_worker_routes_training_and_loader_options(harness, config, monkeypatch, variant):
+    import torch
+
+    import mini_trainer.train as training
+
+    compare, worker = harness
+    config.update(gpus=1, seeds=[42], variants=["master_eager", "quant_eager", variant])
+    captured = {}
+    monkeypatch.setattr(worker, "preflight", lambda *args, **kwargs: None)
+    monkeypatch.setattr(worker, "instrument", lambda *args: None)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(training, "main", lambda **kwargs: captured.update(kwargs))
+    for key in ("TORCHINDUCTOR_CACHE_DIR", "TRITON_CACHE_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    worker.train(config, f"{variant}_seed42")
+    expected = compare.VARIANTS[variant][1]
+    assert captured["compile"] and captured["compile_optimizer"]
+    assert captured.get("quantized_training", False) == expected.get("quantized_training", False)
+    assert captured["dataloader_builder_kwargs"].get("cuda_prefetch", False) == expected.get("cuda_prefetch", False)
+    assert "cuda_prefetch" not in captured
+    assert captured["ema"] is False
 
 
 def test_invalid_batch_and_duplicate_seeds(harness, config):
