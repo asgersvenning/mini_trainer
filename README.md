@@ -86,6 +86,9 @@ preloading; use uncached loading when you need that explicit bound.
 
 `mini_trainer` supports logging your training runs, including metrics, confusion matrices, and the probabilistic dendrogram, directly to [Weights & Biases](https://wandb.ai). 
 
+Class-matrix diagnostics use [log-domain probabilities](docs/prototype-diagnostics.md)
+to retain small tails during evaluation logging.
+
 To use this feature you must install `mini_trainer` with the `recommended` extras. See [Installation](#installation) for more information.
 
 1. **Login to your wandb account**:
