@@ -736,8 +736,8 @@ establish quality equivalence or a small performance improvement.
 
 ## Figures-enabled qualification
 
-`figures.json` exercises the simplified renderer, compact SVG export and local
-artifact saving for two
+`figures.json` exercises the simplified dendrogram renderer, compact SVG export,
+and bounded whole-matrix confusion reporting for two
 epochs on the existing 4,096/1,024/128-image subset. Use only
 `quant_compile_model_seed42`: floating-point training with model compilation,
 without optimizer compilation or prefetch. The eager variants remain in the
@@ -764,14 +764,18 @@ bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage prepare && \
     --only quant_compile_model_seed42
 # Summarize even if training reports a timeout or invalid metrics.
 bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage summary
-cat /work/results/global-lepi-figures-2/comparison.csv
+cat /work/results/global-lepi-figures-3/comparison.csv
 ```
 
 Inspect the console log's rendering/export timings and the saved figures under
-`/work/results/global-lepi-figures-2/runs/quant_compile_model_seed42/model/logs/figures/`.
-Both `epoch-0001` and `epoch-0002` should contain readable dendrogram SVGs and
-matrix PNGs. Compare first and second epoch reporting costs to check label-cache
-reuse. `paired.json` will be empty because no master run was selected; this is a
+`/work/results/global-lepi-figures-3/runs/quant_compile_model_seed42/model/logs/figures/`.
+Both `epoch-0001` and `epoch-0002` should contain readable dendrogram SVGs,
+captioned confusion overview PNGs and class-distance PNGs. The per-level
+`Confusion_matrix_lvlL/` and `Soft_confusion_matrix_lvlL/` subdirectories retain
+full-resolution PNGs, numerical data, class indices and color scales. Dashboard
+overviews cover every class in the original order. See
+[confusion reporting details and measurements](../benchmarks/reporting/confusion.md).
+Compare first and second epoch reporting costs to check label-cache reuse. `paired.json` will be empty because no master run was selected; this is a
 figure qualification, not a new branch comparison. Preserve any failed output
 and choose a new output path for a retry.
 

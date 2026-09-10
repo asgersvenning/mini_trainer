@@ -54,7 +54,8 @@ The soft NPY is deliberately uncompressed to avoid spending logging time
 compressing high-entropy floats. It is about 100 MB for 5,000 classes and 400 MB
 for 10,000 classes per saved epoch/level. Local storage therefore increases even
 though dashboard traffic decreases. NumPy can inspect it with `mmap_mode='r'`.
-Storage throughput on the production filesystem needs qualification. Full-size
+Storage throughput on the production filesystem needs qualification. Accumulation
+and exact matrix storage still scale quadratically with class count. Full-size
 PNGs remain large decoded images; the bounded preview is what protects dashboard
 responsiveness. This increment does not add a tile server or custom viewer.
 
@@ -111,3 +112,11 @@ environment described in [dendrogram.md](dendrogram.md), run:
     /tmp/confusion-before/dashboard.png /tmp/confusion-after/dashboard.png \
     --output /tmp/confusion-browser
 ```
+
+For the final 5,000-class dashboard PNGs, headless Chromium's median decode plus
+forced raster time (three interleaved runs per image/size, fresh contexts) was
+1,132 ms before versus 52.6 ms after at a 1,200-pixel display, and 1,242 ms versus
+170 ms at 4,800 pixels. This compares the old large dashboard image with the new
+captioned whole-matrix preview; it does not imply that the full-resolution local
+PNG is cheap to display. Timings exclude Python/browser startup, network transfer
+and PNG encoding. Live TensorBoard/W&B end-to-end performance was not measured.

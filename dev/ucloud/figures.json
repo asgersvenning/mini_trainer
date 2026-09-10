@@ -1,6 +1,6 @@
 {
   "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
-  "output": "/work/results/global-lepi-figures-2",
+  "output": "/work/results/global-lepi-figures-3",
   "environments": {
     "master": {
       "python": "/work/venvs/mt-master/bin/python",
@@ -8,7 +8,7 @@
     },
     "quant": {
       "python": "/work/venvs/mt-quant/bin/python",
-      "commit": "b73b81d5677251a91cb83bbb34516a97ba282ab6"
+      "commit": "42c0f065e899ef6866bcf1c9e1304251824a9d8a"
     }
   },
   "gpus": 1,
