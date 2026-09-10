@@ -1,6 +1,7 @@
 # Development checks
 
 Tests are grouped by subsystem; see the [test suite map](../tests/README.md).
+Use [local worktrees](worktrees.md) to develop independent branches concurrently.
 For quantization work, follow the [branch roadmap](../docs/quantization-roadmap.md)
 and [benchmark command index](benchmarks/README.md).
 For a mounted global_lepi dataset on a manually allocated UCloud node, use the
