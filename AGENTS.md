@@ -11,6 +11,20 @@
 - Follow [.agents/README.md](.agents/README.md) for agent material and commit boundaries.
   Read only task-relevant notes and skills; they are not all startup context.
 
+## Parallel work and worktrees
+
+- Before creating or using a linked worktree, or coordinating concurrent agents,
+  read [.agents/rules/worktrees.md](.agents/rules/worktrees.md). Setup commands are
+  in [dev/worktrees.md](dev/worktrees.md).
+- Assign each concurrent implementation task one branch, one absolute worktree
+  path and a bounded write scope. Pass that path explicitly to tools and agents;
+  never assume their default working directory changed with yours.
+- Preserve other worktrees and shared resources. Do not switch another agent's
+  branch, modify its files, or change a shared environment while it is in use.
+- Only the designated integrator merges completed work into the target branch,
+  after reviewing commits and validating the combined result. Worktree setup is
+  not itself an instruction to spawn agents.
+
 ## Priorities
 
 Follow the order in `docs/roadmap.md`: development safeguards; behavior-preserving
