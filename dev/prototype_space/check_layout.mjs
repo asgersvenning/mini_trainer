@@ -62,3 +62,38 @@ for(const hz of [30,60,120]){
 }
 for(let i=1;i<trajectories.length;i++)assert.ok(trajectories[i].samples.every((x,j)=>Math.abs(x-trajectories[0].samples[j])<1e-8),'same elapsed time yields same presentation across refresh rates');
 console.log(JSON.stringify({trajectories:trajectories.map(({samples,...metrics})=>metrics)}));
+
+// Drive the real animation coordinator with deterministic browser frames. An
+// arriving image must not cancel a frame, rewind destinations, or pause others.
+let queued=null,clock=0,cancellations=0;
+const coordinator=Function('requestAnimationFrame','cancelAnimationFrame','matchMedia',
+ source.slice(0,source.indexOf('function thumbnailFootprint'))+`
+ paintThumbnailMotion=()=>{};
+ return {set:boxes=>{mapThumbLayout=boxes;},start:animateThumbnails,
+ motion:()=>mapThumbMotion,stop:stopThumbnailMotion};
+`)(callback=>{queued=callback;return 1;},()=>{queued=null;cancellations++;},()=>({matches:false}));
+const actors=[box(0,200,200),box(1,220,200)];coordinator.set(actors);
+const config={width:600,height:400,size:64};
+const running=coordinator.start(config);
+const frame=()=>{clock+=1000/60;const callback=queued;queued=null;callback(clock);};
+for(let i=0;i<6;i++)frame();
+const original=coordinator.motion(),destination=original.byId.get(0),lastTime=original.last;
+const newcomer=box(2,500,300);newcomer.readyAt=clock+100;actors.unshift(newcomer);
+assert.equal(coordinator.start(config),running,'arrivals share the running completion promise');
+assert.equal(coordinator.motion(),original,'arrival preserves the animation loop');
+assert.equal(original.last,lastTime,'arrival does not reset frame time');
+const beforeArrival=actors[1].x,steps=original.state.steps;
+for(let i=0;i<4;i++)frame();
+assert.equal(cancellations,0,'image appearance must not cancel frames');
+assert.equal(original.byId.get(0),destination,'existing numerical targets survive arrival and reordering');
+assert.ok(original.state.steps>steps,'existing contacts advance while a newcomer waits');
+assert.ok(Math.abs(actors[1].x-beforeArrival)>.5,'existing image keeps moving during appearance delay');
+assert.equal(newcomer.x,500,'new image stays still until its own appearance delay');
+assert.ok(!original.byId.has(2),'waiting image exerts no collision force');
+for(let i=0;i<4;i++)frame();
+assert.ok(original.byId.has(2),'new image joins the same solver after appearing');
+assert.equal(original.byId.get(0),destination,'joining contacts preserve existing destinations');
+for(let i=0;i<600&&coordinator.motion();i++)frame();
+assert.equal(coordinator.motion(),null,'joined animation eventually settles');
+await running;
+console.log(JSON.stringify({arrivalContinuityChecks:12}));

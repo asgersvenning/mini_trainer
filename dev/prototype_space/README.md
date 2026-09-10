@@ -159,7 +159,10 @@ follows continuously with an 8/s response rate. This also bounds acceleration
 refresh rates; background pauses advance at most 50 ms instead of catching up.
 The animation continues after numerical convergence until displayed speed is
 below 0.02 px/s and target error below 0.005 px, with no final snap. Image arrivals
-retain the filter state; pan/zoom translates it with the anchor. Hit rectangles
+join the existing frame loop and completion promise, retaining its clock, solver
+destinations, and filter state. Each image waits independently for its appearance
+delay before joining rectangle contacts; existing contacts keep advancing.
+Targets follow class IDs even when admission order changes; pan/zoom translates it with the anchor. Hit rectangles
 and optional tethers follow displayed positions. Smoothing can leave temporary
 contacts during motion; energy descent describes numerical targets, not every
 displayed frame. `node dev/prototype_space/check_layout.mjs` checks full-motion
@@ -169,7 +172,9 @@ The status reports the remaining visible slots. Increase allowable overlap to tr
 a denser candidate set;
 this does not guarantee that every admitted image can be separated within the
 movement bounds. Initial viewport/density/overlap admission remains separate
-from settling; an admitted image is never removed merely because motion stops.
+from settling; an admitted image is never removed merely because motion stops. Thumbnails culled
+by viewport navigation fade out over 100 ms, with hit targets removed immediately.
+Reduced-motion preferences remove them immediately.
 
 Culling prioritizes the selected
 class and its original-space neighbours, then uses a stable mixed class order.

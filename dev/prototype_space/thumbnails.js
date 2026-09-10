@@ -115,17 +115,31 @@ function paintThumbnailMotion(){
 }
 let mapThumbRest=null;
 function animateThumbnails(config){
- stopThumbnailMotion();mapThumbRest=null;
- return new Promise(resolve=>{
-  const motion={frame:0,resolve,state:{},last:0,targets:mapThumbLayout.map(b=>({...b,vx:0,vy:0}))};mapThumbMotion=motion;
+ // Image arrivals join the existing frame loop; they never reset its clock,
+ // numerical destinations, or presentation velocity.
+ if(mapThumbMotion)return mapThumbMotion.promise;
+ mapThumbRest=null;
+ const motion={frame:0,state:{},last:0,targets:[],byId:new Map()};
+ mapThumbMotion=motion;
+ return motion.promise=new Promise(resolve=>{
+  motion.resolve=resolve;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const finish=()=>{
    const measured=thumbnailEnergy(mapThumbLayout);
    mapThumbRest={...motion.state.metrics,energy:measured.energy,overlap:measured.overlap,pairs:measured.pairs,reason:motion.state.reason,steps:motion.state.steps,presentationSpeed:motion.presentation?.speed||0};
    paintThumbnailMotion();mapThumbMotion=null;resolve();
   };
+  const syncTargets=time=>{
+   const active=mapThumbLayout.filter(b=>reduced||!b.readyAt||time>=b.readyAt);
+   const changed=active.length!==motion.byId.size||active.some(b=>!motion.byId.has(b.id));
+   motion.targets=active.map(b=>motion.byId.get(b.id)||({...b,vx:0,vy:0}));
+   motion.byId=new Map(motion.targets.map(b=>[b.id,b]));
+   if(changed)motion.state={};
+   return active.length===mapThumbLayout.length;
+  };
   const advance=()=>stepThumbnailForce(motion.targets,config.width,config.height,2*config.size,motion.state);
   if(reduced){
+   syncTargets(Infinity);
    while(!motion.state.done)advance();
    mapThumbLayout.forEach((b,i)=>{b.x=motion.targets[i].x;b.y=motion.targets[i].y;b.guideX=b.x;b.guideY=b.y;b.left=b.x-b.width/2;b.top=b.y-b.height/2;});
    finish();return;
@@ -133,13 +147,14 @@ function animateThumbnails(config){
   const tick=time=>{
    if(mapThumbMotion!==motion)return;
    const dt=motion.last?(time-motion.last)/1000:0;motion.last=time;
-   if(mapThumbLayout.every(b=>!b.readyAt||time>=b.readyAt)){
-    for(let i=0;i<2&&!motion.state.done;i++)advance();
-   }
-   // Existing images keep easing while newly decoded images start appearing.
-   motion.presentation=stepThumbnailPresentation(mapThumbLayout,motion.targets,dt);
+   const allReady=syncTargets(time);
+   for(let i=0;i<2&&!motion.state.done;i++)advance();
+   // Each new image waits independently; existing contacts and destinations
+   // continue evolving while it fades in. Match by ID, not admission order.
+   const targets=mapThumbLayout.map(b=>motion.byId.get(b.id)||b);
+   motion.presentation=stepThumbnailPresentation(mapThumbLayout,targets,dt);
    paintThumbnailMotion();
-   if(motion.state.done&&motion.presentation.done){finish();return;}
+   if(allReady&&motion.state.done&&motion.presentation.done){finish();return;}
    motion.frame=requestAnimationFrame(tick);
   };
   motion.frame=requestAnimationFrame(tick);
@@ -188,15 +203,28 @@ function showMapPhotoCredit(index){
  node.append(photoText('span',`${album.display_name} · class ${id} · ${photo.creator} · ${photo.license} · `),photoLink('Image source',photo.source),photoText('span',' · '),photoLink('GBIF record','https://www.gbif.org/occurrence/'+photo.occurrence_id));
 }
 let mapThumbCase=null,mapThumbKey='',mapThumbOffsets=new Map();
+function retireThumbnail(box){
+ // Remove interaction immediately; the short visual exit is independent of
+ // solver membership and cannot delay newly visible thumbnails.
+ box.button.disabled=true;box.button.style.pointerEvents='none';
+ box.button.setAttribute('aria-hidden','true');
+ for(const node of [box.button,box.tether]){
+  if(!node)continue;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){node.remove();continue;}
+  const opacity=getComputedStyle(node).opacity;
+  const fade=node.animate([{opacity},{opacity:0}],{duration:100,fill:'forwards'});
+  fade.onfinish=()=>node.remove();
+ }
+}
 function reanchorThumbnails(points,width,height){
  const kept=[];
  for(const box of mapThumbLayout){
-  const point=points[box.id];if(!point)continue;
+  const point=points[box.id];if(!point){retireThumbnail(box);continue;}
   const dx=box.x-box.anchorX,dy=box.y-box.anchorY;
   if(box.guideX!==undefined){box.guideX+=point[0]-box.anchorX;box.guideY+=point[1]-box.anchorY;}
   box.anchorX=point[0];box.anchorY=point[1];box.x=point[0]+dx;box.y=point[1]+dy;
   box.left=box.x-box.width/2;box.top=box.y-box.height/2;
-  if(box.left<0||box.top<0||box.left+box.width>width||box.top+box.height>height){box.button.remove();box.tether?.remove();continue;}
+  if(box.left<0||box.top<0||box.left+box.width>width||box.top+box.height>height){retireThumbnail(box);continue;}
   kept.push(box);
  }
  mapThumbLayout=kept;paintThumbnailMotion();
@@ -236,7 +264,7 @@ async function renderMapThumbnails(){
  const retained=new Map();
  for(const box of mapThumbLayout){
   if(ranks.has(box.id)&&box.photoChoice===(photoChoices.get(data.names[box.id])||0))retained.set(box.id,box);
-  else{box.button.remove();box.tether?.remove();}
+  else{retireThumbnail(box);}
  }
  mapThumbLayout=[...retained.values()].sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));
 

@@ -158,6 +158,15 @@ try{
  await new Promise(resolve=>setTimeout(resolve,300));
  check(crowded.every(b=>b.button.isConnected),'no deferred settling-time removal');
  for(const b of crowded){b.button.remove();b.tether.remove();}mapThumbLayout=savedLayout;paintThumbnailMotion();
+ const fading={...savedLayout[0],id:-100,button:savedLayout[0].button.cloneNode(true),tether:null};
+ document.getElementById('map-thumbnail-layer').append(fading.button);
+ // Exercise viewport culling with a valid, fully offscreen projected position.
+ mapThumbLayout=[{...fading,id:0}];reanchorThumbnails([[-1000,-1000]],motionConfig.width,motionConfig.height);
+ check(mapThumbLayout.length===0&&fading.button.isConnected&&fading.button.disabled&&fading.button.style.pointerEvents==='none','viewport culling removes hit targets immediately while keeping the exit visible');
+ check(fading.button.getAnimations().some(a=>a.effect.getTiming().duration===100),'culled thumbnail gets a fast exit animation');
+ await new Promise(resolve=>setTimeout(resolve,180));
+ check(!fading.button.isConnected,'culled thumbnail is removed after fading');
+ mapThumbLayout=savedLayout;paintThumbnailMotion();
  const cancelled=animateThumbnails(motionConfig);stopThumbnailMotion();await cancelled;
  check(mapThumbMotion===null,'force animation cancellation resolves pending work');
  document.getElementById('map-photos').checked=false;scheduleMapThumbnails();document.getElementById('map-photos').checked=true;document.getElementById('map-photo-density').value='5';mapThumbImages.clear();
