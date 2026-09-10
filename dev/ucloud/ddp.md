@@ -179,7 +179,7 @@ The planned command interface is:
 ```bash
 /work/venvs/mt-quant/bin/python -m torch.distributed.run \
   --standalone --nnodes=1 --nproc-per-node=4 --max-restarts=0 --no-python \
-  /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb
+  /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb --compile
 
 /work/venvs/mt-quant/bin/mt_hpredict --config /work/evaluation.yaml
 uvx --from "mini_metrics @ git+https://github.com/asgersvenning/mini_metrics.git@$METRICS_SHA" \
@@ -274,3 +274,61 @@ one epoch there is no warm-epoch result: inspect successive windows and first-ep
 cost separately. Reads use actual dataset storage without explicit RAM caching;
 do not flush shared caches. Disjoint images reduce reuse of the baseline sample
 but do not establish cold-cache conditions or certify full-dataset production I/O.
+
+## Generate the production CLI configuration
+
+`production.py` verifies the starting weights and full-taxonomy preparation artifacts
+and writes a new YAML file for the real `mt_htrain` CLI. It deliberately omits the
+qualification `data_index`: the CLI parses the complete source Parquet and preserves
+its supplied splits. The starting weights are the original pretrained initialization,
+not a model trained on the qualification subset. Full metadata parsing/broadcast and
+full validation have larger CPU/memory costs than qualification.
+
+Generate this only after the epoch horizon is reviewed from the broader storage
+measurement and remaining allocation time. The generator requires an explicit epoch
+count; it does not extrapolate the cached subset into a production schedule. It
+retains the qualified LR 0.001, weight decay 0.01 and 0.25-epoch warmup; larger global
+batches are not automatically assigned a linearly scaled learning rate.
+
+```bash
+# Set these to the final measured/reviewed choices before running this block.
+: "${BATCH:?selected per-GPU batch}"
+: "${WORKERS:?selected per-GPU workers}"
+: "${EPOCHS:?reviewed full-data epoch horizon}"
+PRODUCTION_OUTPUT=/work/results  # user-confirmed persistent storage for this job
+
+/work/venvs/mt-quant/bin/python dev/ucloud/production.py \
+  /work/results/global-lepi-ddp-4gpu-b32-2 /work/production.yaml \
+  --output "$PRODUCTION_OUTPUT" --name global-lepi-production-1 \
+  --batch "$BATCH" --workers "$WORKERS" --epochs "$EPOCHS"
+```
+
+Before launch, verify the generated YAML, available storage and the installed package
+pin against the successful qualification. Keep the same four GPUs and environment.
+The W&B project and shared run identity are set explicitly in YAML; `--wandb` is still
+required to enable the backend. Also pass `--compile` explicitly: the pinned CLI
+parser otherwise overrides YAML compilation with its false flag default.
+No UCloud credentials are involved.
+
+```bash
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 TORCHINDUCTOR_COMPILE_THREADS=1
+export MPLBACKEND=Agg PYTHONHASHSEED=0 TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_HOME=/work/.cache/torch
+/work/venvs/mt-quant/bin/python -m torch.distributed.run \
+  --standalone --nnodes=1 --nproc-per-node=4 --max-restarts=0 --no-python -- \
+  /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb --compile
+```
+
+Run in tmux and retain stdout/stderr. The pinned CLI writes `checkpoint_last.pth`
+after every completed epoch, `best.pt` after improvements, and numbered checkpoints
+every five epochs (zero-based 0, 5, 10, ...). These writes are not guaranteed atomic:
+if expiry interrupts a write, retain a previous intact numbered checkpoint. The
+qualification harness forces more frequent numbered checkpoints; that override does
+not carry over to the CLI. Do not assume a final `last.pt` exists after interruption.
+The best score on resume is not persisted by the current training loop; archive prior
+best artifacts before any separately reviewed resume into an existing output.
+
+The CLI does not inherit qualification-only finite-loss auditing or timing wrappers.
+Inspect the epoch summary and checkpoints during production; the full-dataset run
+has no harness wall-time guard and stops at its configured epoch horizon or when the
+job/process is terminated. Evaluation/export are separate post-training activities.

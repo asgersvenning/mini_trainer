@@ -721,3 +721,35 @@ def test_torchrun_parser_preserves_worker_run_argument(harness, config):
     parsed = parse_args(argv[3:])
     assert parsed.training_script == str(compare.HERE / "worker.py")
     assert parsed.training_script_args == ["train", "config with spaces.json", "--run", run["name"]]
+
+
+def test_production_config_uses_full_source_and_real_cli(harness, config, tmp_path, monkeypatch):
+    compare, _ = harness
+    production = importlib.import_module("production")
+    import mini_trainer.hierarchical.train as hierarchical
+
+    root = tmp_path / "prepared"
+    root.mkdir()
+    config.update(mode="scaling", full_taxonomy=True, gpus=4, seeds=[42])
+    compare.write_json(root / "comparison.json", config)
+    for filename in ("class_spec.json", "dataset.json", "initial_seed42.pt"):
+        (root / filename).write_text("{}")
+    compare.write_json(root / "prepared.json", {p.name: compare.digest(p) for p in root.iterdir()})
+    destination = tmp_path / "production.yaml"
+    production.generate(root, destination, tmp_path / "results", "production-1", 256, 8, 20, "production")
+    monkeypatch.setattr(sys, "argv", ["mt_htrain", "--config", str(destination), "--wandb", "--compile"])
+    args = hierarchical.cli()
+    assert args["input"] == config["parquet"]
+    assert "data_index" not in args["dataloader_builder_kwargs"]
+    assert args["dataloader_builder_kwargs"]["batch_size"] == 256
+    assert args["dataloader_builder_kwargs"]["splits"] == ["train", "val"]
+    assert args["compile"] and not args["ema"] and not args["quantized_training"]
+    assert args["model_builder_kwargs"]["weights"] == str(root / "initial_seed42.pt")
+    assert len(args["logger_builder_kwargs"]["logger_cls"]) == 2
+    assert args["logger_builder_kwargs"]["logger_cls_extra_kwargs"][1]["project"] == "production"
+    assert args["criterion_builder_kwargs"]["weights"] == [1, 1, 1]
+    with pytest.raises(FileExistsError):
+        production.generate(root, destination, tmp_path / "results", "production-1", 256, 8, 20, "production")
+    (root / "initial_seed42.pt").write_text("changed")
+    with pytest.raises(ValueError, match="Prepared artifact changed"):
+        production.generate(root, tmp_path / "other.yaml", tmp_path / "results", "production-2", 256, 8, 20, "production")
