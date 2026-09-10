@@ -12,7 +12,7 @@ const chrome=spawn(executable,['--headless','--no-sandbox','--disable-gpu','--di
 let sequence=0,buffer=Buffer.alloc(0);const pending=new Map();const errors=[];
 chrome.stdio[4].on('data',chunk=>{buffer=Buffer.concat([buffer,chunk]);let end;while((end=buffer.indexOf(0))!==-1){const msg=JSON.parse(buffer.subarray(0,end));buffer=buffer.subarray(end+1);if(msg.id){const cb=pending.get(msg.id);if(cb){pending.delete(msg.id);msg.error?cb.reject(Error(JSON.stringify(msg.error))):cb.resolve(msg.result);}}else if(msg.method==='Runtime.exceptionThrown')errors.push(msg.params.exceptionDetails);}});
 function send(method,params={},sessionId){const id=++sequence;return new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});chrome.stdio[3].write(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})})+'\0');});}
-const deadline=setTimeout(()=>{console.error('Browser smoke timed out');chrome.kill('SIGTERM');process.exitCode=1;},45000);
+const deadline=setTimeout(()=>{console.error('Browser smoke timed out');chrome.kill('SIGTERM');process.exitCode=1;},60000);
 try{
  const {targetId}=await send('Target.createTarget',{url:'about:blank'});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});
  const call=(m,p)=>send(m,p,sessionId);await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
@@ -108,7 +108,27 @@ try{
  check(JSON.stringify(projectionHits)===coordinatesBefore,'thumbnail relaxation preserves projected coordinates');
  const displaced=mapThumbLayout.find(b=>Math.hypot(b.x-b.anchorX,b.y-b.anchorY)>=.5);
  check(displaced&&document.querySelectorAll('.map-thumb-tether').length>0,'displaced photos retain visible anchor markers');
- check(mapThumbnailHit([displaced.x*1200/projectionCanvas.getBoundingClientRect().width,displaced.y*600/projectionCanvas.getBoundingClientRect().height])===displaced.id,'displaced thumbnail hit testing');
+ const motionConfig={width:projectionCanvas.getBoundingClientRect().width,height:projectionCanvas.getBoundingClientRect().height,size:64};
+ for(const b of mapThumbLayout){b.x=b.anchorX;b.y=b.anchorY;b.left=b.x-b.width/2;b.top=b.y-b.height/2;b.vx=0;b.vy=0;}
+ const startPositions=mapThumbLayout.map(b=>[b.x,b.y]);const moving=animateThumbnails(motionConfig);
+ await new Promise(resolve=>setTimeout(resolve,120));
+ check(mapThumbMotion!==null&&mapThumbLayout.some((b,i)=>Math.hypot(b.x-startPositions[i][0],b.y-startPositions[i][1])>.1),'force layout advances visibly over animation frames');
+ check(mapThumbLayout.every(b=>Math.abs(parseFloat(b.button.style.left)-b.x)<.01&&Math.abs(parseFloat(b.button.style.top)-b.y)<.01),'animated images and hit rectangles move together');
+ await moving;check(mapThumbMotion===null&&separate(mapThumbLayout),'force simulation cools and stops without residual overlaps');
+ const originalMatchMedia=window.matchMedia;window.matchMedia=()=>({matches:true});await animateThumbnails(motionConfig);window.matchMedia=originalMatchMedia;
+ check(mapThumbMotion===null&&separate(mapThumbLayout),'reduced motion settles without scheduling animation');
+ const cancelled=animateThumbnails(motionConfig);stopThumbnailMotion();await cancelled;
+ check(mapThumbMotion===null,'force animation cancellation resolves pending work');
+ document.getElementById('map-photo-density').value='5';mapThumbImages.clear();
+ const originalLoad=loadReferenceImage;let activeImages=0,maxImages=0;
+ loadReferenceImage=async(...args)=>{activeImages++;maxImages=Math.max(maxImages,activeImages);await new Promise(resolve=>setTimeout(resolve,100));const result=await originalLoad(...args);activeImages--;return result;};
+ scheduleMapThumbnails();clearTimeout(mapThumbTimer);const delayed=renderMapThumbnails();await new Promise(resolve=>setTimeout(resolve,40));
+ check(activeImages>1&&activeImages<=4&&mapThumbLayout.length===0&&mapThumbMotion===null,'bounded concurrent image loads do not move unloaded thumbnails');
+ await delayed;loadReferenceImage=originalLoad;
+ check(maxImages<=4&&mapThumbLayout.length>0&&mapThumbLayout.every(b=>b.button.querySelector('img').naturalWidth>0),'only visible decoded images enter force layout');
+
+
+ const currentBox=mapThumbLayout[0];check(mapThumbnailHit([currentBox.x*1200/projectionCanvas.getBoundingClientRect().width,currentBox.y*600/projectionCanvas.getBoundingClientRect().height])===currentBox.id,'displaced thumbnail hit testing');
  document.getElementById('map-photo-labels').checked=true;document.getElementById('map-photo-push').checked=false;document.getElementById('map-photo-overlap').value='0';document.getElementById('map-photo-density').value='40';
  scheduleMapThumbnails();clearTimeout(mapThumbTimer);await renderMapThumbnails();
  check([...document.querySelectorAll('.map-thumb')].every(b=>b.querySelector('span'))&&document.querySelectorAll('.map-thumb-tether').length===0,'label and fixed-position modes restore');

@@ -120,16 +120,22 @@ as needed. Names, IDs and credits remain available on hover or keyboard focus.
 
 Images initially stay centered on actual projected points. Enable **Push thumbnails
 apart** to admit candidates using the overlap setting, then separate their
-rectangles with bounded pairwise repulsion. Images may move up to twice their
-configured size in screen pixels. Anchor markers and leader lines identify the
+rectangles with animated soft repulsion, spring attraction toward their anchors,
+and damped velocity. Images may move up to twice their configured size in screen pixels. Anchor markers and leader lines identify the
 fixed prototype positions. Unresolved collisions are culled in priority order,
-so displayed rectangles do not overlap. The status reports the remaining slots
-and collision culls. Increase allowable overlap to try a denser candidate set;
+so settled rectangles do not overlap. Temporary overlap is visible during
+animation. The simulation cools over about 2.7 seconds after the last arrival,
+then stops requesting frames; reduced-motion preferences settle immediately.
+The status reports the remaining visible slots. Increase allowable overlap to try
+a denser candidate set;
 this does not guarantee that every candidate will fit after separation.
 
 Culling prioritizes the selected
 class and its original-space neighbours, then uses a stable mixed class order.
-Only fully visible, admitted rectangles trigger image requests. Pan/zoom cancels
+Only fully visible, admitted rectangles trigger image requests. Up to four images
+load concurrently. Each decoded image fades in at its anchor before it joins the
+force simulation; unloaded images neither appear as blank cards nor exert forces.
+Pan/zoom cancels
 stale loads, hides stale placements immediately, and recomputes after a short
 pause; no images are fetched while dragging continuously. Cached metadata is
 shared with the class cards, and changing a class example also refreshes map
@@ -154,7 +160,9 @@ reports a different accepted taxon ID.
 
 Only the visible neighbourhood is requested. Metadata and thumbnails are cached
 in a sibling `prototype-report-gbif-cache` directory; upstream requests are
-serialized. Synthetic cases never trigger lookups. Missing images or network
+serialized, while cached images and already-resolved class metadata bypass that
+queue. The browser can therefore load cached images while an upstream request
+is still pending. Synthetic cases never trigger lookups. Missing images or network
 access leave the numerical views usable. Media credits and licenses are shown
 when supplied; occurrence-data licenses are never substituted for image licenses.
 The service uses the [GBIF image API](https://techdocs.gbif.org/en/openapi/images).

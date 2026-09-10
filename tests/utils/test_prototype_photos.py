@@ -1,6 +1,7 @@
 """Photo labels preserve class identity and media provenance."""
 
 import hashlib
+import threading
 
 import pytest
 
@@ -49,3 +50,26 @@ def test_photo_service_restricts_requests_and_registers_images(monkeypatch):
     service.cache["prototype-image:" + path] = (b"cached image", "image/jpeg")
     assert service.image(path) == (b"cached image", "image/jpeg")
     assert len(calls) == 2
+
+
+def test_cached_photos_bypass_busy_upstream_connection(monkeypatch):
+    monkeypatch.setattr(serve.gbif, "retrive_request", lambda url: {"results": []})
+    service = serve.PhotoService({"42"}, {})
+    album = service.metadata("42")
+    path = "/gbif-image/9/" + "a" * 32
+    service.image_paths.add(path)
+    service.cache["prototype-image:" + path] = (b"cached", "image/jpeg")
+    results = []
+    done = threading.Event()
+
+    def cached_requests():
+        results.extend([service.metadata("42"), service.image(path)])
+        done.set()
+
+    with service.lock:
+        thread = threading.Thread(target=cached_requests)
+        thread.start()
+        bypassed = done.wait(timeout=1)
+    thread.join(timeout=2)
+    assert bypassed, "Cached responses must not wait behind an upstream download"
+    assert results == [album, (b"cached", "image/jpeg")]

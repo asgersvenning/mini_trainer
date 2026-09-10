@@ -85,6 +85,7 @@ class PhotoService:
         self.allowed_ids = set(allowed_ids)
         self.cache = cache
         self.image_paths = set()
+        self.metadata_cache = {}
         # GBIF asks scripted image-cache users to use a single HTTP connection.
         # Serialize all upstream requests, including image proxy requests.
         self.lock = threading.Lock()
@@ -92,18 +93,26 @@ class PhotoService:
     def metadata(self, class_id):
         if class_id not in self.allowed_ids or not class_id.isdigit():
             raise ValueError("Class is not a GBIF-ID candidate in this report")
+        if class_id in self.metadata_cache:
+            return self.metadata_cache[class_id]
         with self.lock:
+            if class_id in self.metadata_cache:
+                return self.metadata_cache[class_id]
             taxon = gbif.retrive_request(f"{gbif.GBIF_SPECIES_API_ENDPOINT}{class_id}")
             result = gbif.retrive_request(f"https://api.gbif.org/v1/occurrence/search?taxonKey={class_id}&mediaType=StillImage&limit=20")
             data = reference_photos(class_id, taxon, result.get("results", []))
             self.image_paths.update(photo["image_path"] for photo in data["photos"])
+            self.metadata_cache[class_id] = data
             return data
 
     def image(self, path):
+        if path not in self.image_paths:
+            raise ValueError("Image has not been resolved for a class in this report")
+        cache_key = "prototype-image:" + path
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
         with self.lock:
-            if path not in self.image_paths:
-                raise ValueError("Image has not been resolved for a class in this report")
-            cache_key = "prototype-image:" + path
             cached = self.cache.get(cache_key)
             if cached is not None:
                 return cached
