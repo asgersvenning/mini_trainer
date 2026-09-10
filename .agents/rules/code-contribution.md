@@ -1,7 +1,3 @@
----
-trigger: always_on
----
-
 # Contributions
 
 Follow [AGENTS.md](../../AGENTS.md) and the review checklist in [dev/README.md](../../dev/README.md).

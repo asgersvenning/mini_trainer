@@ -9,7 +9,7 @@ The root [AGENTS.md](../AGENTS.md) is the instruction entry point and takes prec
 
 | Location | Purpose | Read when |
 | --- | --- | --- |
-| [rules/](rules/) | Durable repository constraints | The task needs the rule |
+| [Contribution rule](rules/code-contribution.md) | Focused change/review guidance | Making repository changes |
 | [skills/mini-trainer-maintenance/](skills/mini-trainer-maintenance/) | Repeatable maintenance procedure | Editing or validating the package |
 | [notes/](notes/README.md) | Selected handoffs, decisions and research | A note matches the task |
 | `local/` (ignored) | Scratch plans, logs, session state and temporary experiments | Only in the current local workflow |
@@ -18,6 +18,8 @@ Start with `AGENTS.md`, then follow relevant links. Do not load every note or sk
 into every session. Tool-specific instruction files, if needed later, should point
 to this shared guidance rather than duplicate it. Do not assume a tool discovers
 arbitrary `.agents/rules/` files automatically.
+Architecture and environment constraints remain in `AGENTS.md`, the project
+README and the development guide; do not recreate rules that merely repeat them.
 
 Keep temporary work local. Create a committed note only when another session needs
 information that is not already in code, a test, an issue or maintained developer

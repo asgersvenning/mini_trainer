@@ -5,8 +5,9 @@
 - Read `README.md`, `docs/roadmap.md`, and the relevant code and tests before editing.
 - Read `[tool.importlinter.contracts]` in `pyproject.toml` before changing imports.
 - Check `git status --short` and preserve unrelated work. Keep each change focused and reviewable.
-- This file is the repository-wide agent entry point. The files in `.agents/rules/`
-  provide additional guidance; this file takes precedence where they conflict.
+- This file is the repository-wide agent entry point. Read the focused
+  [contribution guidance](.agents/rules/code-contribution.md) when making changes;
+  this file takes precedence where they conflict.
 - Follow [.agents/README.md](.agents/README.md) for agent material and commit boundaries.
   Read only task-relevant notes and skills; they are not all startup context.
 
