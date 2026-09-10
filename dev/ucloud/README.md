@@ -618,3 +618,52 @@ against quant eager to isolate the effect of compilation, with master eager as
 the branch control. A cold-start timeout establishes that this configuration
 does not fit the short-job budget; it does not rule out longer-run benefits.
 Small single-seed timing differences are exploratory, not established speedups.
+
+## Optimizer compilation comparison in the existing job
+
+`optimizer-compilation.json` tests optimizer compilation alone. It keeps the model
+eager, prefetch disabled and optimizer CUDA graphs disabled. The workload remains
+4,096 train / 1,024 validation / 128 test images, four epochs, seed 42, batch 32,
+two loader workers and 384 pixels on one GPU. Figures are disabled and the
+recorded-loss audit stays enabled. Installed master and quant revisions are unchanged.
+
+The seeded order is quant eager, master eager, then `quant_compile_optimizer`.
+Both controls therefore run before a possible compiler timeout. Each worker is
+limited to 300 seconds (plus up to 15 seconds cleanup), and the overall budget is
+1,800 seconds including preparation and pauses between stages. Allow roughly
+10–12 minutes including preparation, based on the previous eager timings and
+the compiled worker's limit; this does not guarantee compilation will finish.
+
+Run these commands in tmux in the current allocated job. No venv rebuild is
+needed. The new output directory preserves all earlier experiment artifacts.
+
+```bash
+cd /work/mini_trainer
+git pull --ff-only
+bash dev/ucloud/launch.sh dev/ucloud/optimizer-compilation.json --stage plan
+bash dev/ucloud/launch.sh dev/ucloud/optimizer-compilation.json --stage prepare && \
+    bash dev/ucloud/launch.sh dev/ucloud/optimizer-compilation.json --stage train
+# Run summary even after a timeout or an invalid-metrics report.
+bash dev/ucloud/launch.sh dev/ucloud/optimizer-compilation.json --stage summary
+cat /work/results/global-lepi-compile-optimizer-1/comparison.csv
+cat /work/results/global-lepi-compile-optimizer-1/paired.json
+```
+
+Monitor the compiled run from a second terminal:
+
+```bash
+tail -F /work/results/global-lepi-compile-optimizer-1/runs/quant_compile_optimizer_seed42/console.log
+```
+
+Compare the compiled optimizer primarily against quant eager within this run:
+`wall_seconds`, `first_epoch_seconds`, `later_epoch_mean_seconds` and
+`peak_allocated_bytes`. Compiler caches start fresh; no unmeasured compilation
+warmup is added. Later epochs can still incur recompilation, so keep warnings
+with the timing results. The existing optimizer, learning-rate schedule and AMP
+settings remain in effect. This experiment does not combine model compilation
+with optimizer compilation; it measures their effects separately first.
+
+If master has `invalid_metrics`, `paired.json` will be empty because that report
+requires a completed master baseline. The CSV still contains the direct quant
+comparison. Preserve the loss-audit flag alongside exploratory timing conclusions;
+no dedicated numerical tracing is a prerequisite for this experiment.
