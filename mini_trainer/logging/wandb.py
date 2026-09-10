@@ -30,6 +30,8 @@ class WandbLogger(_Logger):
         name: str | None = None,
         tag: str | list[str] | None = None,
         project: str | None = "mini_trainer",
+        run_name: str | None = None,
+        run_id: str | None = None,
     ):
         """Wandb logger."""
         global wandb
@@ -86,16 +88,18 @@ class WandbLogger(_Logger):
 
             tags = [t for t in tags if t]
 
+            display_name = run_name or name
             if is_dist_avail_and_initialized():
-                run_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:64]
+                run_id = run_id or "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:64]
                 settings = wandb.Settings(
                     mode="shared",
                     x_primary=(get_rank() == 0),
+                    x_update_finish_state=(get_rank() == 0),
                     x_label=f"rank_{get_rank()}",
                 )
                 wandb.init(
                     project=project,
-                    name=name,
+                    name=display_name,
                     id=run_id,
                     dir=output,
                     config=config,
@@ -105,7 +109,8 @@ class WandbLogger(_Logger):
             else:
                 wandb.init(
                     project=project,
-                    name=name,
+                    name=display_name,
+                    **({"id": run_id} if run_id is not None else {}),
                     dir=output,
                     config=config,
                     tags=tags if tags else None,

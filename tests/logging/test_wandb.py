@@ -37,6 +37,21 @@ def test_wandb_logger_add_stat():
         assert isinstance(logger.statistics["loss"], BaseStatistic)
 
 
+@pytest.mark.parametrize("rank", [0, 1])
+def test_distributed_trial_id_and_finish_owner(rank):
+    sdk = MagicMock()
+    sdk.run = None
+    with (
+        patch.object(wandb_module, "wandb", sdk),
+        patch.object(wandb_module, "is_dist_avail_and_initialized", return_value=True),
+        patch.object(wandb_module, "get_rank", return_value=rank),
+    ):
+        WandbLogger(steps=[0, 1], output=None, name="model", run_name="batch64", run_id="shared-trial")
+    assert sdk.init.call_args.kwargs["id"] == "shared-trial"
+    assert sdk.init.call_args.kwargs["name"] == "batch64"
+    assert sdk.Settings.call_args.kwargs["x_update_finish_state"] is (rank == 0)
+
+
 def test_wandb_logger_update_and_step():
     mock_wandb = MagicMock()
     mock_wandb.run = MagicMock()

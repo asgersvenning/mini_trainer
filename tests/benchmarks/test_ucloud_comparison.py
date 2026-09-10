@@ -169,7 +169,7 @@ def test_controller_freezes_inputs_and_never_retrains_completed_runs(harness, co
         compare.main()
 
 
-@pytest.mark.parametrize("qualification", [False, True])
+@pytest.mark.parametrize("qualification", [False, True, "full_taxonomy"])
 def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatch, qualification):
     """Actual hierarchy, frozen Parquet splits and EfficientNet; no downloads/GPU."""
     pa = pytest.importorskip("pyarrow")
@@ -217,6 +217,15 @@ def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatc
                 )
             )
     pq.write_table(pa.Table.from_pylist(rows), config["parquet"])
+    if qualification == "full_taxonomy":
+        config["full_taxonomy"] = True
+
+        def single_species_sample(settings):
+            path = root / "qualification.parquet"
+            pq.write_table(pa.Table.from_pylist(rows[:8]), path)
+            return str(path)
+
+        monkeypatch.setattr(worker, "qualification_parquet", single_species_sample)
     build_model = HierarchicalBuilder.build_model
 
     def offline_build(**kwargs):
@@ -245,7 +254,7 @@ def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatc
         with monkeypatch.context() as patch:
             patch.setattr(torch.cuda, "is_available", lambda: True)
             patch.setattr(torch.cuda, "device_count", lambda: 1)
-            patch.setattr(worker, "instrument", lambda _: None)
+            patch.setattr(worker, "instrument", lambda *args: None)
             patch.setattr(worker, "preflight", lambda *args, **kwargs: None)
             patch.setattr(training, "main", lambda **kwargs: captured.update(kwargs))
             worker.train(config, "quant_eager_seed42")
@@ -561,3 +570,99 @@ def test_fresh_job_setup_uses_pins_and_stops_on_install_failure(tmp_path, fail_s
     for command, branch in zip(installs, ("master", "quant"), strict=True):
         assert command[-1].endswith("@" + config["environments"][branch]["commit"])
         assert config["environments"][branch]["python"] == str(work / "venvs" / f"mt-{branch}" / "bin/python")
+
+
+def test_scaling_plan_and_trial_generation(harness, config, tmp_path):
+    compare, worker = harness
+    scaling = importlib.import_module("scaling")
+    config.update(
+        mode="scaling", gpus=8, global_batch_size=256, seeds=[42], variants=["quant_compile_model"], full_taxonomy=True, wandb=True
+    )
+    config["environments"].pop("master")
+    compare.validate(config)
+    assert compare.branches(config) == ["quant"]
+    run = compare.plan(config)[0]
+    assert run["options"] == {"compile": True}
+    assert "--nproc-per-node=8" in compare.command(config, run, "config.json")
+    base = tmp_path / "base.json"
+    compare.write_json(base, config)
+    derived = scaling.trial(base, tmp_path / "next.json", tmp_path / "next", 64, 3)
+    assert derived["global_batch_size"] == 512
+    assert derived["reuse_preparation"] == config["output"]
+    logging = worker.configure_wandb(config, run["name"])
+    other = worker.configure_wandb(derived, run["name"])
+    assert len(logging["logger_cls_extra_kwargs"]) == len(logging["logger_cls"]) == 2
+    assert logging["logger_cls_extra_kwargs"][1]["run_id"] != other["logger_cls_extra_kwargs"][1]["run_id"]
+
+
+def test_reused_preparation_integrity_and_shared_deadline(harness, config, tmp_path):
+    compare, _ = harness
+    source = Path(config["output"])
+    source.mkdir()
+    Path(config["parquet"]).write_bytes(b"source data")
+    compare.write_json(source / "comparison.json", config)
+    compare.write_json(source / "dataset.json", {"parquet_sha256": compare.digest(config["parquet"])})
+    (source / "class_spec.json").write_text("{}")
+    compare.write_json(source / "prepared.json", {name: compare.digest(source / name) for name in ("dataset.json", "class_spec.json")})
+    deadline = time.time() + 50
+    compare.write_json(source / "budget.json", {"deadline": deadline})
+    derived = dict(config, mode="scaling", reuse_preparation=str(source), output=str(tmp_path / "next"), budget_seconds=1800)
+    target = Path(derived["output"])
+    target.mkdir()
+    with compare.execution_budget(derived, "prepare") as inherited:
+        assert inherited == deadline
+        compare.reuse_preparation(derived, target)
+    assert (target / "class_spec.json").read_text() == "{}"
+    assert not (target / "budget.json").exists()
+    (source / "class_spec.json").write_text("changed")
+    with pytest.raises(ValueError, match="artifact changed"):
+        compare.reuse_preparation(derived, target)
+
+
+def test_timed_loader_and_rank_aggregation(harness, tmp_path):
+    compare, worker = harness
+    scaling = importlib.import_module("scaling")
+    batches = [([1, 2], [0, 1]), ([3], [0])]
+    loader = worker.TimedLoader(batches)
+    assert list(loader) == batches
+    assert loader.samples == 3 and loader.wait_seconds >= 0 and len(loader) == 2
+    compare.write_json(tmp_path / "comparison.json", {"gpus": 2, "global_batch_size": 64})
+    compare.write_json(tmp_path / "environment-quant.json", {"gpu_memory_bytes": [1000, 1000]})
+    run = tmp_path / "runs" / "example"
+    run.mkdir(parents=True)
+    compare.write_json(run / "result.json", {"status": "completed"})
+    for rank in range(2):
+        phases = [
+            dict(phase="train", epoch=e, samples=128, seconds=s, loader_wait_seconds=1, max_memory_reserved=700)
+            for e, s in enumerate([20, 4 + rank, 4 + rank])
+        ]
+        (run / f"phases-rank{rank}.jsonl").write_text("\n".join(map(json.dumps, phases)))
+    result = scaling.report(tmp_path)[0]
+    assert result["warm_images_per_second"] == 256 / 5
+    assert result["peak_reserved_fraction"] == 0.7
+    assert result["all_ranks_recorded"]
+
+
+def test_resume_hook_verifies_restored_state_before_updates(harness, monkeypatch, tmp_path):
+    import torch
+
+    import mini_trainer.train as training
+
+    _, worker = harness
+    model = torch.nn.Linear(2, 2)
+    optimizer = torch.optim.AdamW(model.parameters())
+    model(torch.ones(1, 2)).sum().backward()
+    optimizer.step()
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1)
+    scaler = torch.amp.GradScaler("cpu")
+    objects = dict(model=model, optimizer=optimizer, lr_scheduler=scheduler, scaler=scaler)
+    checkpoint = tmp_path / "checkpoint.pth"
+    torch.save(dict(epoch=1, **{k: v.state_dict() for k, v in objects.items()}), checkpoint)
+    monkeypatch.setattr(training, "train", lambda **kwargs: kwargs["weight_store_rate"])
+    worker.configure_training_checks({"checkpoint": str(checkpoint), "resume_epoch": 2}, tmp_path)
+    assert training.train(start_epoch=2, **objects) == 1
+    assert json.loads((tmp_path / "restore-rank0.json").read_text())["model_optimizer_scheduler_scaler_restored"]
+    with torch.no_grad():
+        model.weight.add_(1)
+    with pytest.raises(AssertionError):
+        training.train(start_epoch=2, **objects)

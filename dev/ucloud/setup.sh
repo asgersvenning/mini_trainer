@@ -24,8 +24,8 @@ case "$backend" in
     cu126|cu130|cu132) ;;
     *) echo 'MT_TORCH_BACKEND must be cu126, cu130 or cu132' >&2; exit 2 ;;
 esac
-template="$script_dir/qualification.json"
-master_sha=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["environments"]["master"]["commit"])' "$template")
+template=${MT_TEMPLATE:-$script_dir/qualification.json}
+master_sha=$(python3 -c 'import json,sys; envs=json.load(open(sys.argv[1]))["environments"]; print(envs.get("master", envs["quant"])["commit"])' "$template")
 quant_sha=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["environments"]["quant"]["commit"])' "$template")
 for sha in "$master_sha" "$quant_sha"; do
     git -C "$repo_root" cat-file -e "$sha^{commit}" || { echo "Missing pinned commit $sha; fetch full repository history" >&2; exit 2; }
@@ -44,7 +44,8 @@ uv export --directory "$export_dir" --locked --no-dev --no-emit-project \
     --extra recommended --extra "$backend" --extra export --extra quantization \
     --output-file "$requirements" >/dev/null
 
-for branch in master quant; do
+mapfile -t branches < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["environments"]))' "$template")
+for branch in "${branches[@]}"; do
     env_dir="$work_root/venvs/mt-$branch"
     if [[ ! -x "$env_dir/bin/python" ]]; then
         uv venv --python 3.12 "$env_dir"
@@ -69,7 +70,7 @@ from pathlib import Path
 template, parquet, work_root, destination = map(Path, sys.argv[1:])
 config = json.loads(template.read_text())
 config["parquet"] = str(parquet.resolve())
-config["output"] = str(work_root / "results" / "global-lepi-smoke-1")
+config["output"] = str(work_root / "results" / Path(config["output"]).name)
 for branch, entry in config["environments"].items():
     entry["python"] = str(work_root / "venvs" / f"mt-{branch}" / "bin" / "python")
 with destination.open("x") as handle:

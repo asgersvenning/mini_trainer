@@ -3,6 +3,7 @@
 import argparse
 import functools
 import importlib.metadata
+import inspect
 import json
 import os
 import platform
@@ -86,8 +87,14 @@ def preflight(config, branch, *, verify=False):
                 torch.cuda.synchronize()
     if uses_quantized_training(config):
         importlib.metadata.version("torchao")
+    if config.get("wandb"):
+        importlib.metadata.version("wandb")
+    gpu_memory = [torch.cuda.get_device_properties(i).total_memory for i in range(config["gpus"])]
+    if config.get("minimum_gpu_memory_gib") and min(gpu_memory) < config["minimum_gpu_memory_gib"] * 2**30:
+        raise RuntimeError("GPU memory below qualification requirement; allocate full GPUs, not MIG fractions")
     record = {
         "commit": commit,
+        "gpu_memory_bytes": gpu_memory,
         "package": mini_trainer.__file__,
         "python_version": platform.python_version(),
         "platform": platform.platform(),
@@ -121,7 +128,8 @@ def prepare(config):
     output = Path(config["output"])
     metadata_path = qualification_parquet(config) if config.get("qualification") else config["parquet"]
     progress("Building taxonomy")
-    spec = HierarchicalBuilder.build_class_spec(dir=metadata_path, levels=3)
+    taxonomy_path = config["parquet"] if config.get("full_taxonomy") else metadata_path
+    spec = HierarchicalBuilder.build_class_spec(dir=taxonomy_path, levels=3)
     spec["resize_size"] = config["size"]
     write_json(output / "class_spec.json", spec)
     progress(f"Parsing image metadata; classes per level: {spec['num_classes']}")
@@ -161,6 +169,7 @@ def prepare(config):
             "parquet_sha256": digest(config["parquet"]),
             "counts": counts,
             "num_classes": spec["num_classes"],
+            "taxonomy_scope": "full_source" if config.get("full_taxonomy") else "indexed_rows",
             "label_smoothing_per_level": [1 - (1 - smoothing) ** (1 / (i + 1)) for i in range(3)],
             "image_integrity": "All indexed paths checked; image bytes are not hashed or decoded during preparation. Keep mount immutable.",
             "test_used_for_training_or_selection": False,
@@ -200,7 +209,34 @@ def configure_figures(enabled):
         progress("Evaluation figures disabled; validation metrics and checkpoints remain enabled")
 
 
-def instrument(output):
+class TimedLoader:
+    """Measure host time waiting for next batches without synchronizing the GPU."""
+
+    def __init__(self, loader):
+        self.loader, self.wait_seconds, self.samples = loader, 0.0, 0
+
+    def __len__(self):
+        return len(self.loader)
+
+    def __getattr__(self, key):
+        return getattr(self.loader, key)
+
+    def __iter__(self):
+        started = time.monotonic()
+        iterator = iter(self.loader)
+        while True:
+            try:
+                batch = next(iterator)
+            except StopIteration:
+                self.wait_seconds += time.monotonic() - started
+                return
+            self.wait_seconds += time.monotonic() - started
+            self.samples += len(batch[0])
+            yield batch
+            started = time.monotonic()
+
+
+def instrument(output, config=None):
     """Record synchronized phase times per rank without changing optimizer logic."""
     import torch
 
@@ -218,10 +254,16 @@ def instrument(output):
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
             started = time.monotonic()
-            value = function(*args, **kwargs)
+            bound = inspect.signature(function).bind(*args, **kwargs)
+            loader = TimedLoader(bound.arguments["data_loader"])
+            bound.arguments["data_loader"] = loader
+            value = function(*bound.args, **bound.kwargs)
             torch.cuda.synchronize()
             record = {
                 "phase": phase,
+                "epoch": bound.arguments["epoch"],
+                "samples": loader.samples,
+                "loader_wait_seconds": loader.wait_seconds,
                 "seconds": time.monotonic() - started,
                 "max_memory_allocated": torch.cuda.max_memory_allocated(),
                 "max_memory_reserved": torch.cuda.max_memory_reserved(),
@@ -230,12 +272,104 @@ def instrument(output):
                 record["selection_metric"] = float(value)
             with (output / f"phases-rank{rank}.jsonl").open("a") as handle:
                 handle.write(json.dumps(record) + "\n")
+            if config and config.get("wandb"):
+                import torch.distributed as dist
+                import wandb
+
+                totals = torch.tensor(
+                    [record["seconds"], record["max_memory_allocated"], record["max_memory_reserved"], loader.wait_seconds],
+                    device="cuda",
+                    dtype=torch.float64,
+                )
+                if dist.is_initialized():
+                    dist.all_reduce(totals, op=dist.ReduceOp.MAX)
+                if rank == 0:
+                    seconds, allocated, reserved, wait = totals.tolist()
+                    wandb.log(
+                        {
+                            f"qualification/{phase}_images_per_second": loader.samples * config["gpus"] / seconds,
+                            f"qualification/{phase}_seconds": seconds,
+                            f"qualification/{phase}_peak_allocated_bytes": allocated,
+                            f"qualification/{phase}_peak_reserved_bytes": reserved,
+                            f"qualification/{phase}_loader_wait_seconds": wait,
+                            "qualification/epoch": bound.arguments["epoch"],
+                        }
+                    )
+                    write_json(output / "wandb-run.json", {"id": wandb.run.id, "url": wandb.run.url})
             return value
 
         return measured
 
     trainer.train_one_epoch = wrap(trainer.train_one_epoch, "train")
     trainer.evaluate = wrap(trainer.evaluate, "validation")
+
+
+def configure_wandb(config, name):
+    if not config.get("wandb"):
+        return {}
+    # Authentication remains the existing W&B integration's responsibility.
+    # A trial-specific shared ID keeps eight ranks together and trials separate.
+    import hashlib
+
+    from mini_trainer.logging import MetricLogger, WandbLogger
+
+    run_id = hashlib.sha256(f"{config['output']}/{name}".encode()).hexdigest()[:16]
+    return {
+        "logger_cls": [MetricLogger, WandbLogger],
+        "logger_cls_extra_kwargs": [
+            {},
+            {
+                "project": os.environ.get("WANDB_PROJECT", "mini-trainer-ddp"),
+                "run_name": f"{Path(config['output']).name}-{name}",
+                "run_id": run_id,
+            },
+        ],
+    }
+
+
+def configure_training_checks(config, directory):
+    """Check restored state before DDP wrapping/compilation and optimizer updates."""
+    import torch
+
+    import mini_trainer.train as train_module
+
+    original = train_module.train
+
+    def equal(actual, expected):
+        if isinstance(expected, torch.Tensor):
+            assert actual.dtype == expected.dtype and torch.equal(actual.detach().cpu(), expected)
+        elif isinstance(expected, dict):
+            assert actual.keys() == expected.keys()
+            for key in expected:
+                equal(actual[key], expected[key])
+        elif isinstance(expected, (list, tuple)):
+            assert len(actual) == len(expected)
+            for a, b in zip(actual, expected, strict=True):
+                equal(a, b)
+        else:
+            assert actual == expected
+
+    def checked(**kwargs):
+        kwargs["weight_store_rate"] = 1
+        if config.get("checkpoint"):
+            saved = torch.load(config["checkpoint"], map_location="cpu", weights_only=False)
+            assert kwargs["start_epoch"] == saved["epoch"] + 1 == config["resume_epoch"]
+            for key in ("model", "optimizer", "lr_scheduler", "scaler"):
+                if key == "scaler" and kwargs[key] is None:
+                    continue
+                equal(kwargs[key].state_dict(), saved[key])
+            write_json(
+                directory / f"restore-rank{os.environ.get('RANK', '0')}.json",
+                {
+                    "checkpoint_sha256": digest(config["checkpoint"]),
+                    "start_epoch": kwargs["start_epoch"],
+                    "model_optimizer_scheduler_scaler_restored": True,
+                },
+            )
+            del saved
+        return original(**kwargs)
+
+    train_module.train = checked
 
 
 def train(config, name):
@@ -262,8 +396,11 @@ def train(config, name):
     if not torch.cuda.is_available() or torch.cuda.device_count() < config["gpus"]:
         raise RuntimeError("Allocated GPUs no longer match configuration")
     configure_figures(config.get("figures", True))
-    instrument(directory)
+    instrument(directory, config)
     options = run["options"].copy()
+    logging_options = configure_wandb(config, name)
+    if config.get("checkpoint") or config.get("mode") == "scaling":
+        configure_training_checks(config, directory)
     loader = {
         "batch_size": config["global_batch_size"] // config["gpus"],
         "num_workers": config["num_workers_per_rank"],
@@ -279,6 +416,7 @@ def train(config, name):
         output=str(directory),
         name="model",
         class_spec=str(root / "class_spec.json"),
+        checkpoint=config.get("checkpoint"),
         builder=HierarchicalBuilder,
         epochs=config["epochs"],
         size=config["size"],
@@ -303,6 +441,7 @@ def train(config, name):
         # Predeclare hierarchical columns: otherwise the logger first writes a
         # flat CSV header, then rejects additional columns after validation.
         logger_builder_kwargs={
+            **logging_options,
             "verbose": True,
             "statistics": [
                 "acc1",
@@ -327,6 +466,10 @@ def train(config, name):
         },
         **options,
     )
+    if config.get("wandb"):
+        import wandb
+
+        wandb.finish()
 
 
 def main():

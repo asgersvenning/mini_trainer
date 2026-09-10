@@ -8,6 +8,7 @@ import json
 import math
 import os
 import random
+import shutil
 import signal
 import subprocess
 import time
@@ -49,7 +50,27 @@ def write_json(path, value):
     temporary.replace(path)
 
 
+def branches(config):
+    return sorted({VARIANTS[name][0] for name in config["variants"]}) if config.get("mode") == "scaling" else ["master", "quant"]
+
+
 def validate(config):
+    if config.get("mode", "comparison") not in ("comparison", "scaling"):
+        raise ValueError("mode must be comparison or scaling")
+    for key in ("prepare_timeout_seconds", "minimum_gpu_memory_gib"):
+        if key in config and (type(config[key]) is not int or config[key] < 1):
+            raise ValueError(f"{key} must be a positive integer")
+    for key in ("full_taxonomy", "wandb"):
+        if key in config and type(config[key]) is not bool:
+            raise ValueError(f"{key} must be a boolean")
+    if config.get("checkpoint"):
+        if type(config.get("resume_epoch")) is not int or not 0 < config["resume_epoch"] < config["epochs"]:
+            raise ValueError("checkpoint requires resume_epoch between zero and epochs")
+        config["checkpoint"] = str(Path(config["checkpoint"]).expanduser().resolve())
+    elif "resume_epoch" in config:
+        raise ValueError("resume_epoch requires checkpoint")
+    if config.get("reuse_preparation"):
+        config["reuse_preparation"] = str(Path(config["reuse_preparation"]).expanduser().resolve())
     if "figures" in config and type(config["figures"]) is not bool:
         raise ValueError("figures must be a boolean")
     if "require_finite_losses" in config and type(config["require_finite_losses"]) is not bool:
@@ -85,9 +106,9 @@ def validate(config):
         raise ValueError("Unknown variant")
     if uses_quantized_training(config) and config["gpus"] != 1:
         raise ValueError("Native INT8 training requires gpus=1; DDP is unsupported")
-    if not {"master_eager", "quant_eager"}.issubset(config["variants"]):
+    if config.get("mode") != "scaling" and not {"master_eager", "quant_eager"}.issubset(config["variants"]):
         raise ValueError("Keep both eager controls")
-    for branch in ("master", "quant"):
+    for branch in branches(config):
         entry = config["environments"][branch]
         if len(entry["commit"]) != 40 or any(c not in "0123456789abcdef" for c in entry["commit"]):
             raise ValueError("Pin each environment to a full Git commit")
@@ -106,6 +127,27 @@ def plan(config):
             branch, options = VARIANTS[variant]
             runs.append({"name": f"{variant}_seed{seed}", "seed": seed, "branch": branch, "options": options})
     return runs
+
+
+def reuse_preparation(config, output):
+    """Copy verified model/data artifacts; keep the new trial's budget and plan."""
+    source = Path(config["reuse_preparation"])
+    original = json.loads((source / "comparison.json").read_text())
+    for key in ("parquet", "size", "seeds", "qualification", "full_taxonomy", "environments"):
+        if config.get(key) != original.get(key):
+            raise ValueError(f"Cannot reuse preparation with different {key}")
+    manifest = json.loads((source / "prepared.json").read_text())
+    for name, expected in manifest.items():
+        if digest(source / name) != expected:
+            raise ValueError(f"Prepared artifact changed: {name}")
+        if name.endswith(".py") and digest(HERE / name) != expected:
+            raise ValueError(f"Harness changed after preparation: {name}")
+    if digest(config["parquet"]) != json.loads((source / "dataset.json").read_text())["parquet_sha256"]:
+        raise ValueError("Source Parquet changed")
+    for name in manifest:
+        if not name.endswith(".py") and name != "budget.json":
+            shutil.copyfile(source / name, output / name)
+    (output / "prepare.log").write_text(f"Reused verified preparation from {source}\n")
 
 
 def command(config, run, config_path):
@@ -152,9 +194,9 @@ def execute(args, log, cwd, timeout):
             raise
 
 
-def audit_losses(path, epochs):
+def audit_losses(path, epochs, start_epoch=0):
     """Check recorded train/eval losses, without changing the measured GPU loop."""
-    expected = {(str(epoch), phase) for epoch in range(epochs) for phase in ("train", "eval")}
+    expected = {(str(epoch), phase) for epoch in range(start_epoch, epochs) for phase in ("train", "eval")}
     seen = set()
     issues = []
     try:
@@ -249,6 +291,9 @@ def execution_budget(config, stage):
         return
     if stage == "prepare":
         deadline = time.time() + config["budget_seconds"]
+        if config.get("mode") == "scaling" and config.get("reuse_preparation"):
+            source_budget = Path(config["reuse_preparation"]) / "budget.json"
+            deadline = min(deadline, json.loads(source_budget.read_text())["deadline"])
     else:
         path = Path(config["output"]) / "budget.json"
         if not path.is_file():
@@ -323,7 +368,7 @@ def run_stage(config, args, deadline=None):
         # Preserve the harness itself independently of either installed branch.
         for file in HERE.glob("*.py"):
             (output / file.name).write_bytes(file.read_bytes())
-        for branch in ("master", "quant"):
+        for branch in branches(config):
             print(f"Checking {branch}; log: {output}/preflight-{branch}.log", flush=True)
             result = execute(
                 [config["environments"][branch]["python"], str(HERE / "worker.py"), "preflight", str(config_path), "--branch", branch],
@@ -333,17 +378,23 @@ def run_stage(config, args, deadline=None):
             )
             if result:
                 raise RuntimeError(f"Preflight failed: see {output}/preflight-{branch}.log")
-        master = json.loads((output / "environment-master.json").read_text())
-        quant = json.loads((output / "environment-quant.json").read_text())
-        if master["dependencies"] != quant["dependencies"] or master["python_version"] != quant["python_version"]:
-            raise RuntimeError("Environment versions differ; use the same locked dependencies and Python for both branches")
+        if set(branches(config)) == {"master", "quant"}:
+            master = json.loads((output / "environment-master.json").read_text())
+            quant = json.loads((output / "environment-quant.json").read_text())
+            if master["dependencies"] != quant["dependencies"] or master["python_version"] != quant["python_version"]:
+                raise RuntimeError("Environment versions differ; use the same locked dependencies and Python for both branches")
         print(f"Preparing dataset and starting weights; follow: tail -f {output}/prepare.log", flush=True)
-        result = execute(
-            [config["environments"]["master"]["python"], str(HERE / "worker.py"), "prepare", str(config_path)],
-            output / "prepare.log",
-            output,
-            config["timeout_seconds"],
-        )
+        if config.get("reuse_preparation"):
+            reuse_preparation(config, output)
+            result = 0
+        else:
+            preparation_branch = "master" if "master" in branches(config) else "quant"
+            result = execute(
+                [config["environments"][preparation_branch]["python"], str(HERE / "worker.py"), "prepare", str(config_path)],
+                output / "prepare.log",
+                output,
+                config.get("prepare_timeout_seconds", config["timeout_seconds"]),
+            )
         if result:
             raise RuntimeError(f"Preparation failed: see {output}/prepare.log; use a new output for a fresh attempt")
         files = ["class_spec.json", "data_index.json", "dataset.json", "preprocessing.txt"]
@@ -353,6 +404,9 @@ def run_stage(config, args, deadline=None):
             files.append("qualification.parquet")
         if deadline is not None:
             files.append("budget.json")
+        if config.get("checkpoint"):
+            write_json(output / "resume-source.json", {"path": config["checkpoint"], "sha256": digest(config["checkpoint"])})
+            files.append("resume-source.json")
         write_json(output / "prepared.json", {name: digest(output / name) for name in files})
         print(f"Preparation complete: {output}/prepared.json", flush=True)
         return
@@ -367,6 +421,10 @@ def run_stage(config, args, deadline=None):
             raise ValueError(f"Harness changed after preparation: {name}")
     if digest(config["parquet"]) != json.loads((output / "dataset.json").read_text())["parquet_sha256"]:
         raise ValueError("Source Parquet changed")
+    if config.get("checkpoint"):
+        source = json.loads((output / "resume-source.json").read_text())
+        if digest(config["checkpoint"]) != source["sha256"]:
+            raise ValueError("Resume checkpoint changed since preparation")
     if args.only and args.only not in {run["name"] for run in runs}:
         raise ValueError("--only must match a name in --stage plan")
     failed = False
@@ -395,7 +453,7 @@ def run_stage(config, args, deadline=None):
             if result["status"] == "completed":
                 result.update(checkpoint=str(checkpoint), checkpoint_sha256=digest(checkpoint))
                 if config.get("require_finite_losses", False):
-                    issues = audit_losses(directory / "model" / "logs" / "summary.csv", config["epochs"])
+                    issues = audit_losses(directory / "model" / "logs" / "summary.csv", config["epochs"], config.get("resume_epoch", 0))
                     result["loss_check"] = "failed" if issues else "passed"
                     if issues:
                         result.update(status="invalid_metrics", loss_issues=issues)
