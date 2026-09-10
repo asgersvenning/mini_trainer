@@ -66,7 +66,11 @@ def test_get_scaled_matrix_for_display():
 
 
 @pytest.mark.skipif(not has_dendrogram_deps, reason="Dendrogram dependencies (scipy, biopython, pycirclize) not installed")
-def test_plot_probabilistic_dendrogram():
+def test_plot_probabilistic_dendrogram(monkeypatch):
+    import mini_trainer.visualization.dendrogram as dendrogram
+
+    dendrogram._resolve_labels.cache_clear()
+    monkeypatch.setattr(dendrogram, "resolve_name_or_id", MagicMock(side_effect=ValueError("offline test labels")))
     mock_model = MagicMock()
     mock_model_module = MagicMock()
 

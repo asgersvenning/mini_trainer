@@ -1,11 +1,14 @@
 import math
 import os
+import re
+import shutil
 import time
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain, repeat
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock
 from typing import Any, TextIO, TypeVar
@@ -20,6 +23,7 @@ except ImportError:
     psutil = None
 import torch
 from matplotlib import pyplot as plt
+from matplotlib import rc_context
 from matplotlib.figure import Figure
 from torch import nn
 
@@ -1097,10 +1101,32 @@ class MultiLogger:
         return figs
 
     def add_figure(self, name: str, figure: Figure | np.ndarray | torch.Tensor | str):
-        for logger in self.loggers:
-            logger.add_figure(name=name, figure=figure, epoch=self._epoch)
-        if isinstance(figure, Figure):
-            plt.close(figure)
+        try:
+            if self.output_dir is not None and get_rank() == 0:
+                epoch = "unknown" if self._epoch is None else f"{self._epoch + 1:04d}"
+                directory = Path(self.output_dir) / "figures" / f"epoch-{epoch}"
+                directory.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^\w.-]+", "_", name).strip(".") or "figure"
+                if isinstance(figure, Figure):
+                    figure.savefig(directory / f"{stem}.png", bbox_inches="tight")
+                elif isinstance(figure, str):
+                    if "<svg" in figure[:500].lower():
+                        (directory / f"{stem}.svg").write_text(figure)
+                    else:
+                        suffix = Path(figure).suffix or ".png"
+                        shutil.copyfile(figure, directory / f"{stem}{suffix}")
+                else:
+                    array = figure.detach().cpu().numpy() if isinstance(figure, torch.Tensor) else figure
+                    if isinstance(figure, torch.Tensor) and array.ndim == 3 and array.shape[0] in (1, 3, 4):
+                        array = array.transpose(1, 2, 0)
+                    if array.ndim == 3 and array.shape[-1] == 1:
+                        array = array[..., 0]
+                    plt.imsave(directory / f"{stem}.png", array)
+            for logger in self.loggers:
+                logger.add_figure(name=name, figure=figure, epoch=self._epoch)
+        finally:
+            if isinstance(figure, Figure):
+                plt.close(figure)
 
     def synchronize_between_processes(self):
         for logger in self.loggers:
@@ -1118,11 +1144,17 @@ class MultiLogger:
                 for lvl, fig in enumerate(cdm_figs):
                     self.add_figure(f"Class distance matrix/lvl{lvl}", fig)
                 try:
+                    started = time.monotonic()
+                    get_logger().info("Generating probabilistic dendrogram diagnostics...")
                     dendrograms = plot_probabilistic_dendrogram(model)
-                    for lvl, (pd_fig, _) in enumerate(dendrograms):
-                        with NamedTemporaryFile(suffix=".svg") as tmp_file:
-                            pd_fig.savefig(tmp_file.name, bbox_inches="tight")
-                            self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
-                        plt.close(pd_fig)
+                    try:
+                        for lvl, (pd_fig, _) in enumerate(dendrograms):
+                            with NamedTemporaryFile(suffix=".svg") as tmp_file, rc_context({"svg.fonttype": "none"}):
+                                pd_fig.savefig(tmp_file.name, bbox_inches="tight")
+                                self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
+                        get_logger().info(f"Dendrogram diagnostics saved in {time.monotonic() - started:.1f}s")
+                    finally:
+                        for pd_fig, _ in dendrograms:
+                            plt.close(pd_fig)
                 except Exception as e:
                     warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)

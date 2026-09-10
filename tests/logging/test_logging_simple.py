@@ -11,6 +11,60 @@ def test_format_duration():
     assert format_duration(60) == "01m00s"
 
 
+def test_dendrogram_export_retains_text_and_closes_all_figures_on_failure(monkeypatch):
+    from contextlib import nullcontext
+    from pathlib import Path
+
+    from matplotlib import pyplot as plt
+
+    import mini_trainer.logging.core as core
+
+    logger = core.MultiLogger.__new__(core.MultiLogger)
+    monkeypatch.setattr(logger, "confusion_matrix", lambda: {})
+    monkeypatch.setattr(core, "main_process_first", nullcontext)
+    monkeypatch.setattr(core, "get_rank", lambda: 0)
+    monkeypatch.setattr(core, "plot_class_distance_matrix", lambda model: [])
+    figures = [plt.figure(), plt.figure()]
+    figures[0].text(0.5, 0.5, "Species test")
+    monkeypatch.setattr(core, "plot_probabilistic_dendrogram", lambda model: [(fig, {}) for fig in figures])
+    exported = []
+
+    def write(name, path):
+        exported.append(Path(path).read_text())
+        raise OSError("simulated writer failure")
+
+    monkeypatch.setattr(logger, "add_figure", write)
+    with pytest.warns(UserWarning, match="simulated writer failure"):
+        logger.figures(object())
+    assert "<text" in exported[0] and "Species test" in exported[0]
+    assert not any(plt.fignum_exists(fig.number) for fig in figures)
+
+
+def test_figures_saved_locally_without_external_backend(tmp_path, monkeypatch):
+    import numpy as np
+    from matplotlib import pyplot as plt
+
+    import mini_trainer.logging.core as core
+
+    logger = core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=str(tmp_path), name="run")
+    logger.update(epoch=0, type="eval")
+    monkeypatch.setattr(core, "get_rank", lambda: 0)
+    source = tmp_path / "temporary.svg"
+    source.write_text('<svg xmlns="http://www.w3.org/2000/svg"><text>Species</text></svg>')
+    logger.add_figure("Probabilistic dendrogram/lvl0", str(source))
+    source.unlink()
+    logger.add_figure("Confusion matrix/lvl0", np.zeros((10, 10, 3), dtype=np.uint8))
+    fig = plt.figure()
+    logger.add_figure("Example", fig)
+    destination = tmp_path / "run" / "logs" / "figures" / "epoch-0001"
+    assert "Species" in (destination / "Probabilistic_dendrogram_lvl0.svg").read_text()
+    assert (destination / "Confusion_matrix_lvl0.png").is_file()
+    assert not plt.fignum_exists(fig.number)
+    monkeypatch.setattr(core, "get_rank", lambda: 1)
+    logger.add_figure("rank1", np.zeros((10, 10, 3), dtype=np.uint8))
+    assert not (destination / "rank1.png").exists()
+
+
 def test_Timer():
     t = Timer()
     assert not t.running

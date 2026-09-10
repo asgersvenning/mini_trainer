@@ -38,7 +38,7 @@ def retrive_request(req: str) -> Any:
     if cached_result is not None:
         return cached_result
 
-    with urlopen(req) as resp:
+    with urlopen(req, timeout=10) as resp:
         if resp.status != 200:
             raise RuntimeError(f"Unable to resolve request, received status {resp.status} from {req}.")
         data = json.load(resp)
