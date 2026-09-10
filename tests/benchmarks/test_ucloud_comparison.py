@@ -710,3 +710,14 @@ def test_timing_windows_survive_completed_chunks(harness):
     assert [w["samples"] for w in saved] == [64, 6]
     assert len(synchronized) == 2
     assert sum(w["loader_wait_seconds"] for w in saved) <= loader.wait_seconds
+
+
+def test_torchrun_parser_preserves_worker_run_argument(harness, config):
+    from torch.distributed.run import parse_args
+
+    compare, _ = harness
+    run = compare.plan(config)[0]
+    argv = compare.command(config, run, "config with spaces.json")
+    parsed = parse_args(argv[3:])
+    assert parsed.training_script == str(compare.HERE / "worker.py")
+    assert parsed.training_script_args == ["train", "config with spaces.json", "--run", run["name"]]

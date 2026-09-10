@@ -179,6 +179,7 @@ def command(config, run, config_path):
         "--nnodes=1",
         f"--nproc-per-node={config['gpus']}",
         "--max-restarts=0",
+        "--",  # Stop torchrun from abbreviating worker flags such as --run.
         *worker,
     ]
 
