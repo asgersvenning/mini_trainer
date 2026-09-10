@@ -120,9 +120,15 @@ as needed. Names, IDs and credits remain available on hover or keyboard focus.
 
 Images initially stay centered on actual projected points. Enable **Push thumbnails
 apart** to admit candidates using the overlap setting, then separate their
-rectangles with animated soft repulsion, spring attraction toward their anchors,
-and damped velocity. Images may move up to twice their configured size in screen pixels. Anchor markers and leader lines identify the
-fixed prototype positions. Unresolved collisions are culled in priority order,
+rectangles with animated contact repulsion, spring attraction toward their anchors,
+and damped velocity. Contacts use the rendered CSS border boxes (including labels
+when enabled), with a two-pixel clearance and softly blended corner normals.
+Separated boxes outside that clearance do not repel. Sizes, clearance, offsets
+and velocities are measured in screen pixels, independent of projection zoom.
+Images may move up to twice their configured size in screen pixels.
+**Show thumbnail anchors** toggles the anchor markers and leader lines without
+reloading images or restarting the simulation. They are hidden by default.
+Unresolved collisions are culled in priority order,
 so settled rectangles do not overlap. Temporary overlap is visible during
 animation. The simulation cools over about 2.7 seconds after the last arrival,
 then stops requesting frames; reduced-motion preferences settle immediately.
@@ -135,9 +141,13 @@ class and its original-space neighbours, then uses a stable mixed class order.
 Only fully visible, admitted rectangles trigger image requests. Up to four images
 load concurrently. Each decoded image fades in at its anchor before it joins the
 force simulation; unloaded images neither appear as blank cards nor exert forces.
-Pan/zoom cancels
-stale loads, hides stale placements immediately, and recomputes after a short
-pause; no images are fetched while dragging continuously. Cached metadata is
+Pan/zoom cancels stale requests and pauses the simulation. Loaded thumbnails
+follow their transformed anchors immediately, retaining their screen-pixel
+offsets and DOM image nodes. After a short pause, the visible candidate set is
+updated and collision adjustment resumes; surviving images are neither reloaded
+nor faded in again. No new images are fetched while dragging continuously.
+Changing image size, label mode, push mode, case or projection plane rebuilds the
+layout because its footprints or coordinate meaning have changed. Cached metadata is
 shared with the class cards, and changing a class example also refreshes map
 thumbnails. Decoded image references are bounded to 128 entries; server caching
 remains shared. Missing photos leave the underlying point visible. Retry clears

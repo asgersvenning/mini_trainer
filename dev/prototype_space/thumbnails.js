@@ -9,16 +9,17 @@ function thumbnailSharedArea(a,b){
 function stepThumbnailForce(boxes,width,height,maxShift,heat){
  const forces=boxes.map(b=>[(b.anchorX-b.x)*.014*heat,(b.anchorY-b.y)*.014*heat]);
  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){
-  const a=boxes[i],b=boxes[j];let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
-  if(d<.001){const angle=((a.id*137.508+b.id*71.3)%360)*Math.PI/180;dx=Math.cos(angle);dy=Math.sin(angle);d=1;}
-  // A soft elliptical exclusion field gives radial forces instead of snapping
-  // along the horizontal/vertical minimum-overlap axis. Slight clearance leaves
-  // room for anchor attraction while rectangles remain separate after cooling.
-  const nx=dx/d,ny=dy/d,rx=(a.width+b.width)/2+3,ry=(a.height+b.height)/2+3;
-  const radius=Math.SQRT2/Math.sqrt((nx/rx)**2+(ny/ry)**2);
-  if(d>=radius)continue;
-  const force=(radius-d)*.16;
-  forces[i][0]-=nx*force;forces[i][1]-=ny*force;forces[j][0]+=nx*force;forces[j][1]+=ny*force;
+  const a=boxes[i],b=boxes[j],dx=b.x-a.x,dy=b.y-a.y;
+  // Contact energy uses the actual CSS border boxes with a two-pixel clearance.
+  // A soft minimum blends the two contact normals near corners, avoiding
+  // axis-snapping without repelling distant, nonintersecting rectangles.
+  const px=(a.width+b.width)/2+2-Math.abs(dx),py=(a.height+b.height)/2+2-Math.abs(dy);
+  if(px<=0||py<=0)continue;
+  const depth=Math.min(px,py),wx=Math.exp(-(px-depth)/4),wy=Math.exp(-(py-depth)/4);
+  const angle=((a.id*137.508+b.id*71.3)%360)*Math.PI/180;
+  const sx=dx===0?(Math.cos(angle)<0?-1:1):Math.sign(dx),sy=dy===0?(Math.sin(angle)<0?-1:1):Math.sign(dy);
+  const fx=sx*.24*depth*wx/(wx+wy),fy=sy*.24*depth*wy/(wx+wy);
+  forces[i][0]-=fx;forces[i][1]-=fy;forces[j][0]+=fx;forces[j][1]+=fy;
  }
  let speed=0;
  boxes.forEach((b,i)=>{
@@ -49,7 +50,10 @@ function stopThumbnailMotion(){
 function paintThumbnailMotion(){
  for(const box of mapThumbLayout){
   box.button.style.left=box.x+'px';box.button.style.top=box.y+'px';
+  if(!box.tether)continue;
   const line=box.tether.querySelector('line');
+  line.setAttribute('x1',box.anchorX);line.setAttribute('y1',box.anchorY);
+  const dot=box.tether.querySelector('circle');dot.setAttribute('cx',box.anchorX);dot.setAttribute('cy',box.anchorY);
   line.setAttribute('x2',Math.max(box.left,Math.min(box.left+box.width,box.anchorX)));
   line.setAttribute('y2',Math.max(box.top,Math.min(box.top+box.height,box.anchorY)));
   box.tether.style.visibility=Math.hypot(box.x-box.anchorX,box.y-box.anchorY)<.5?'hidden':'visible';
@@ -114,10 +118,32 @@ function showMapPhotoCredit(index){
  const photo=album.photos[(photoChoices.get(id)||0)%album.photos.length];
  node.append(photoText('span',`${album.display_name} · class ${id} · ${photo.creator} · ${photo.license} · `),photoLink('Image source',photo.source),photoText('span',' · '),photoLink('GBIF record','https://www.gbif.org/occurrence/'+photo.occurrence_id));
 }
+let mapThumbCase=null,mapThumbKey='',mapThumbOffsets=new Map();
+function reanchorThumbnails(points,width,height){
+ const kept=[];
+ for(const box of mapThumbLayout){
+  const point=points[box.id];if(!point)continue;
+  const dx=box.x-box.anchorX,dy=box.y-box.anchorY;
+  box.anchorX=point[0];box.anchorY=point[1];box.x=point[0]+dx;box.y=point[1]+dy;
+  box.left=box.x-box.width/2;box.top=box.y-box.height/2;
+  if(box.left<0||box.top<0||box.left+box.width>width||box.top+box.height>height){box.button.remove();box.tether?.remove();continue;}
+  kept.push(box);
+ }
+ mapThumbLayout=kept;paintThumbnailMotion();
+}
+function setThumbnailAnchors(){
+ $('map-thumbnail-layer').classList.toggle('hide-thumb-anchors',!$('map-photo-anchors').checked);
+}
 function scheduleMapThumbnails(){
  clearTimeout(mapThumbTimer);stopThumbnailMotion();mapThumbController?.abort();++mapThumbGeneration;
- mapThumbLayout=[];$('map-thumbnail-layer').replaceChildren();
  const size=Number($('map-photo-size').value),density=Number($('map-photo-density').value),overlap=Number($('map-photo-overlap').value);
+ const key=[size,$('map-photo-labels').checked,$('map-photo-push').checked,$('projection-plane').value].join(':');
+ if($('map-photos').checked&&mapThumbCase===data&&mapThumbKey===key){
+  const rect=projectionCanvas.getBoundingClientRect();
+  reanchorThumbnails(projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/600]),rect.width,rect.height);
+  mapThumbOffsets=new Map(mapThumbLayout.map(b=>[b.id,[b.x-b.anchorX,b.y-b.anchorY]]));
+ }else{mapThumbOffsets.clear();mapThumbLayout=[];$('map-thumbnail-layer').replaceChildren();}
+ mapThumbCase=data;mapThumbKey=key;
  $('map-size-value').value=size+' px';$('map-density-value').value=density+' / MP';$('map-overlap-value').value=overlap+'%';
  if(!$('map-photos').checked){$('map-photo-status').textContent='Enable map thumbnails to interpret numeric class IDs as GBIF taxa. Push apart connects displaced images to their fixed prototype points.';return;}
  if(data.metadata.synthetic){$('map-photo-status').textContent='Synthetic case: no GBIF photo requests.';return;}
@@ -135,15 +161,24 @@ async function renderMapThumbnails(){
  const remaining=data.names.map((_,i)=>i).sort((a,b)=>(Math.imul(a,2654435761)>>>0)-(Math.imul(b,2654435761)>>>0));
  const priority=[selected,...data.neighbours[selected],...remaining].filter(i=>photoNumber(data.names[i])&&!mapThumbFailures.has(data.names[i]));
  const {boxes,budget}=thumbnailLayout(points,priority,{...config,push:false});
+ const ranks=new Map(boxes.map((b,i)=>[b.id,i]));
+ const retained=new Map();
+ for(const box of mapThumbLayout){
+  if(ranks.has(box.id)&&box.photoChoice===(photoChoices.get(data.names[box.id])||0))retained.set(box.id,box);
+  else{box.button.remove();box.tether?.remove();}
+ }
+ mapThumbLayout=[...retained.values()].sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));
+
  let motionFinished=false;
  let loaded=0,unavailable=0;
  const status=()=>{$('map-photo-status').textContent=`${loaded} images loaded · ${motionFinished?mapThumbLayout.length:boxes.length} visible slots · budget ${budget} for this viewport. ${config.push?`Push apart: ${motionFinished?'settled; displayed rectangles do not overlap':'spring attraction and soft repulsion; temporary overlap while moving'}. Images move at most ${2*size} px.`:`Maximum pairwise rectangle overlap ${Math.round(config.overlap*100)}%.`} ${unavailable} unavailable. Hover for names and credits; click to inspect. Prototype coordinates and neighbour ranks stay fixed.`;};
  if(!boxes.length){status();return;}
- try{const health=await fetch('/api/health',{signal});if(!health.ok||!(await health.json()).photo_api)throw Error('Photo server unavailable');}
+ try{if(boxes.some(b=>!retained.has(b.id))){const health=await fetch('/api/health',{signal});if(!health.ok||!(await health.json()).photo_api)throw Error('Photo server unavailable');}}
  catch(error){if(!signal.aborted)$('map-photo-status').textContent='Map photos require the local GBIF photo server. Numerical views remain available.';return;}
  const loadBox=async box=>{
   if(signal.aborted||generation!==mapThumbGeneration||data!==caseData)return;
   const id=data.names[box.id];
+  if(retained.has(box.id)){loaded++;const old=retained.get(box.id);old.button.style.zIndex=String(boxes.length-ranks.get(box.id));old.button.style.borderColor=box.id===selected?'#c2344b':data.neighbours[selected].includes(box.id)?'#087e8b':'#7c90a3';return;}
   try{
    let album=photoAlbums.get(id);
    if(!album){const response=await fetch('/api/gbif/'+id,{signal});album=await response.json();if(!response.ok)throw Error(album.error||'Photo lookup failed');photoAlbums.set(id,album);}
@@ -160,9 +195,12 @@ async function renderMapThumbnails(){
    const okay=(image.complete&&image.naturalWidth>0)||await loadReferenceImage(image,photo.image_path,signal);
    if(signal.aborted||generation!==mapThumbGeneration)return;
    if(okay){
-    box.button=button;box.tether=tether;box.readyAt=performance.now()+80;
+    box.button=button;box.tether=tether;box.photoChoice=photoChoices.get(id)||0;box.readyAt=performance.now()+80;
+    const offset=config.push?mapThumbOffsets.get(box.id):null;
+    if(offset){box.x=Math.max(box.width/2,Math.min(config.width-box.width/2,box.anchorX+offset[0]));box.y=Math.max(box.height/2,Math.min(config.height-box.height/2,box.anchorY+offset[1]));box.left=box.x-box.width/2;box.top=box.y-box.height/2;button.style.left=box.x+'px';button.style.top=box.y+'px';}
     if(tether)$('map-thumbnail-layer').append(tether);$('map-thumbnail-layer').append(button);
-    mapThumbLayout.push(box);mapThumbLayout.sort((a,b)=>boxes.indexOf(a)-boxes.indexOf(b));
+    const bounds=button.getBoundingClientRect();box.width=bounds.width;box.height=bounds.height;box.left=box.x-box.width/2;box.top=box.y-box.height/2;
+    mapThumbLayout.push(box);mapThumbLayout.sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));
     if(config.push)animateThumbnails(config);
     loaded++;mapThumbImages.delete(photo.image_path);mapThumbImages.set(photo.image_path,image);while(mapThumbImages.size>128)mapThumbImages.delete(mapThumbImages.keys().next().value);}
    else{button.remove();tether?.remove();mapThumbLayout=mapThumbLayout.filter(b=>b!==box);mapThumbFailures.add(id);unavailable++;}
@@ -179,5 +217,6 @@ async function renderMapThumbnails(){
 }
 for(const name of ['map-photos','map-photo-size','map-photo-density','map-photo-overlap','map-photo-labels','map-photo-push'])$(name).oninput=drawProjection;
 $('map-photo-retry').onclick=()=>{mapThumbFailures.clear();scheduleMapThumbnails();};
+$('map-photo-anchors').oninput=setThumbnailAnchors;setThumbnailAnchors();
 new ResizeObserver(scheduleMapThumbnails).observe(projectionCanvas);
 scheduleMapThumbnails();

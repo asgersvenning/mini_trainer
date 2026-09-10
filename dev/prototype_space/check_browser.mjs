@@ -79,6 +79,16 @@ try{
  document.getElementById('photo-enabled').checked=false;await renderPhotos();
  document.getElementById('case').value='Production checkpoint';document.getElementById('case').dispatchEvent(new Event('change'));
  const fixturePoints=[[60,60],[100,60],[260,100],[450,50]], config={width:400,height:200,size:64,density:200,overlap:0};
+ const forcePair=(size,gap,dy=0)=>[{id:0,x:200,y:200,anchorX:200,anchorY:200,width:size,height:size},{id:1,x:200+gap,y:200+dy,anchorX:200+gap,anchorY:200+dy,width:size,height:size}];
+ const distant=forcePair(64,70);stepThumbnailForce(distant,1000,800,128,0);
+ check(distant.every(b=>b.vx===0&&b.vy===0),'separate thumbnail boxes exert no repulsion beyond two-pixel clearance');
+ const small=forcePair(32,50),large=forcePair(64,50);stepThumbnailForce(small,1000,800,128,0);stepThumbnailForce(large,1000,800,128,0);
+ check(small.every(b=>b.vx===0)&&large.some(b=>Math.abs(b.vx)>0),'contact uses thumbnail image size');
+ const corners=forcePair(64,67,67);stepThumbnailForce(corners,1000,800,128,0);
+ check(corners.every(b=>b.vx===0&&b.vy===0),'diagonally separated rectangles do not repel as oversized ellipses');
+ const translated=forcePair(64,50),base=forcePair(64,50);for(const b of translated){b.x+=100;b.anchorX+=100;b.y+=50;b.anchorY+=50;}stepThumbnailForce(base,1000,800,128,0);stepThumbnailForce(translated,1000,800,128,0);
+ check(base.every((b,i)=>Math.abs(b.vx-translated[i].vx)<1e-10&&Math.abs(b.vy-translated[i].vy)<1e-10),'screen-space forces are invariant to viewport translation');
+
  check(thumbnailLayout(fixturePoints,[0,1,2,3],config).boxes.map(b=>b.id).join(',')==='0,2','thumbnail viewport and overlap culling');
  check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,overlap:.5}).boxes.length===3,'thumbnail allowable overlap');
  check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,density:5}).boxes.length===1,'thumbnail density budget');
@@ -108,6 +118,19 @@ try{
  check(JSON.stringify(projectionHits)===coordinatesBefore,'thumbnail relaxation preserves projected coordinates');
  const displaced=mapThumbLayout.find(b=>Math.hypot(b.x-b.anchorX,b.y-b.anchorY)>=.5);
  check(displaced&&document.querySelectorAll('.map-thumb-tether').length>0,'displaced photos retain visible anchor markers');
+ const anchorNodes=[...document.querySelectorAll('.map-thumb-tether')];
+ check(anchorNodes.every(n=>getComputedStyle(n).display==='none'),'thumbnail anchors default to hidden');
+ const layoutBeforeToggle=mapThumbLayout;
+ document.getElementById('map-photo-anchors').checked=true;document.getElementById('map-photo-anchors').dispatchEvent(new Event('input'));
+ check(anchorNodes.every(n=>getComputedStyle(n).display!=='none')&&mapThumbLayout===layoutBeforeToggle,'anchor toggle does not restart or reload thumbnails');
+ document.getElementById('map-photo-anchors').checked=false;setThumbnailAnchors();
+ const beforeView={...projectionView},beforeNodes=new Map(mapThumbLayout.map(b=>[b.id,{button:b.button,x:b.x,anchorX:b.anchorX,offset:b.x-b.anchorX,width:b.width}]));
+ projectionView.x+=2/projectionView.scale;projectionView.scale*=1.01;drawProjection();clearTimeout(mapThumbTimer);
+ check(mapThumbLayout.length>0&&mapThumbLayout.every(b=>b.button===beforeNodes.get(b.id).button&&Math.abs(b.x-b.anchorX-beforeNodes.get(b.id).offset)<1e-8&&b.width===beforeNodes.get(b.id).width),'pan and zoom preserve loaded DOM nodes, pixel offsets and image dimensions');
+ const fetchBefore=window.fetch;let refreshRequests=0;window.fetch=async(...args)=>{refreshRequests++;return fetchBefore(...args);};await renderMapThumbnails();window.fetch=fetchBefore;
+ check(mapThumbLayout.some(b=>beforeNodes.get(b.id)?.button===b.button),'settled viewport refresh reuses surviving thumbnail nodes');
+ projectionView=beforeView;drawProjection();clearTimeout(mapThumbTimer);await renderMapThumbnails();
+
  const motionConfig={width:projectionCanvas.getBoundingClientRect().width,height:projectionCanvas.getBoundingClientRect().height,size:64};
  for(const b of mapThumbLayout){b.x=b.anchorX;b.y=b.anchorY;b.left=b.x-b.width/2;b.top=b.y-b.height/2;b.vx=0;b.vy=0;}
  const startPositions=mapThumbLayout.map(b=>[b.x,b.y]);const moving=animateThumbnails(motionConfig);
@@ -119,7 +142,7 @@ try{
  check(mapThumbMotion===null&&separate(mapThumbLayout),'reduced motion settles without scheduling animation');
  const cancelled=animateThumbnails(motionConfig);stopThumbnailMotion();await cancelled;
  check(mapThumbMotion===null,'force animation cancellation resolves pending work');
- document.getElementById('map-photo-density').value='5';mapThumbImages.clear();
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();document.getElementById('map-photos').checked=true;document.getElementById('map-photo-density').value='5';mapThumbImages.clear();
  const originalLoad=loadReferenceImage;let activeImages=0,maxImages=0;
  loadReferenceImage=async(...args)=>{activeImages++;maxImages=Math.max(maxImages,activeImages);await new Promise(resolve=>setTimeout(resolve,100));const result=await originalLoad(...args);activeImages--;return result;};
  scheduleMapThumbnails();clearTimeout(mapThumbTimer);const delayed=renderMapThumbnails();await new Promise(resolve=>setTimeout(resolve,40));
