@@ -57,6 +57,35 @@ The environment needs the existing visualization dependencies (including SciPy).
    edge cases. All use the real embedding width, but have much smaller class
    counts. Their nearest-neighbour distributions are not matched packing controls.
 
+## Spatial projection
+
+The map projects all prototype directions into a common 2D coordinate system.
+Choose **PCA 1–2** or **PCA 3–4**, scroll to zoom, drag to pan, and click a point
+to update the existing inspector and image browser. **Fit selected neighbourhood**
+zooms to the selected class and its original-space neighbours without refitting
+the projection. Selection preserves the viewing transform; **Fit all** resets it.
+
+The calculation normalizes effective rows using the same directional geometry as
+the cosine diagnostic, centers them, and computes PCA through float32 covariance
+eigendecomposition. No whitening or per-feature standardization is applied.
+Axes use equal spatial scale. Eigenvector signs are fixed for reproducibility;
+degenerate eigenspaces can still rotate between numerical implementations. See
+the [PCA reference](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html).
+
+Each plane reports its retained variance and the overlap between its Euclidean
+top-k neighbours and the original z-ranked top-k neighbours, averaged across all
+classes and for the selected class. Projected ties use checkpoint row order. Teal
+points and links identify original-space neighbours; orange rings identify extra
+2D neighbours. A low overlap is evidence that this view loses local geometry.
+Neither projected proximity nor a visible gap replaces the original scores.
+Each synthetic case is projected independently; axes are not aligned across cases.
+
+For the epoch-4 checkpoint, PC 1–2 retains 0.6784% of directional variance and
+0.6551% of original top-12 neighbours on average; PC 3–4 retains 0.6234% and
+0.7026%, respectively. These measured values show that global two-axis PCA is
+very lossy for these weights. It provides a linear reference for future
+neighbourhood-preserving projections.
+
 ## Class image labels
 
 Enable **Interpret numeric class IDs as GBIF taxa and load photos** to see the

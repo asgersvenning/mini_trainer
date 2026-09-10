@@ -17,6 +17,8 @@ from torch import nn
 from mini_trainer.modeling import Classifier, class_distance, class_log_similarity, class_similarity
 from mini_trainer.visualization._dendrogram_layout import linkage_layout
 
+from .projection import prototype_projections
+
 
 def weight_model(weight: torch.Tensor) -> nn.Module:
     """A linear-only diagnostic head: values are already effective weights."""
@@ -195,6 +197,7 @@ def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None):
         row[i] = -np.inf
         profiles[i] = -np.partition(-row, np.asarray(ranks) - 1)[np.asarray(ranks) - 1]
     return {
+        "projections": prototype_projections(weight, near.tolist()),
         "metadata": metadata or {},
         "stats": stats,
         "names": names,
@@ -251,7 +254,9 @@ def main():
     (args.output / "report-data.json").write_text(payload)
     template = Path(__file__).with_name("report.html").read_text()
     (args.output / "explorer.html").write_text(
-        template.replace("__REPORT_DATA__", payload).replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
+        template.replace("__REPORT_DATA__", payload)
+        .replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
+        .replace("__PROJECTION_SCRIPT__", Path(__file__).with_name("projection.js").read_text())
     )
     summary = {name: {"metadata": case["metadata"], "stats": case["stats"]} for name, case in cases.items()}
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

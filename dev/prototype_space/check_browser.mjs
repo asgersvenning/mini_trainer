@@ -21,6 +21,22 @@ try{
  if(!ready)throw Error('Inspector did not render: '+JSON.stringify(errors));
  const result=await call('Runtime.evaluate',{expression:`(()=>{const checks=[];function check(v,s){if(!v)throw Error(s);checks.push(s)}
  check(document.querySelectorAll('#stats .stat').length===4,'production summary');
+ check(projectionHits.length===data.names.length,'projection contains every class');
+ check(document.getElementById('projection-quality').textContent.includes('Variance retained'),'projection reports distortion');
+ const projectionBefore=document.getElementById('projection-map').toDataURL();
+ document.getElementById('projection-plane').selectedIndex=1;document.getElementById('projection-plane').dispatchEvent(new Event('change'));
+ check(document.getElementById('projection-map').toDataURL()!==projectionBefore,'alternate PCA plane');
+ document.getElementById('projection-plane').selectedIndex=0;document.getElementById('projection-plane').dispatchEvent(new Event('change'));
+ const allScale=projectionView.scale;document.getElementById('projection-focus').click();check(projectionView.scale>=allScale,'fit selected projected neighbourhood');
+ document.getElementById('projection-reset').click();
+ const canvas=document.getElementById('projection-map'),bounds=canvas.getBoundingClientRect();
+ const oldScale=projectionView.scale;canvas.dispatchEvent(new WheelEvent('wheel',{clientX:bounds.left+bounds.width/2,clientY:bounds.top+bounds.height/2,deltaY:-150,cancelable:true}));check(projectionView.scale>oldScale,'projection zoom');
+ const oldX=projectionView.x;projectionDrag={point:projectionMouse({clientX:bounds.left+100,clientY:bounds.top+100}),view:{...projectionView},moved:false};canvas.onpointermove({clientX:bounds.left+150,clientY:bounds.top+100});canvas.onpointerup({pointerId:1});check(projectionView.x!==oldX,'projection pan');
+ document.getElementById('projection-reset').click();
+ const target=projectionHits.findIndex(([x,y],i)=>i!==selected&&x>20&&x<1180&&y>20&&y<580&&projectionHit([x,y])===i);check(target>=0,'projected class is selectable');
+ const [px,py]=projectionHits[target];const event={button:0,pointerId:1,clientX:bounds.left+px*bounds.width/1200,clientY:bounds.top+py*bounds.height/600};projectionDrag={point:projectionMouse(event),view:{...projectionView},moved:false};canvas.onpointerup(event);
+ check(selected===target&&document.getElementById('selected-name').textContent===data.names[target],'projection selection updates inspector');
+
  check(document.querySelectorAll('#neighbours tr').length===data.stats.k,'production neighbours');
  check(Number.isFinite(Number(document.querySelector('#neighbours tr').children[3].textContent)),'finite float32 log tail in neighbour table');
  document.getElementById('range-preset').value='full';document.getElementById('range-preset').dispatchEvent(new Event('change'));const logImage=document.getElementById('matrix-min').toDataURL();document.getElementById('global-metric').value='baseline';document.getElementById('global-metric').dispatchEvent(new Event('change'));check(document.getElementById('matrix-min').toDataURL()!==logImage,'legacy versus log-domain global matrix');document.getElementById('global-metric').value='logtail';document.getElementById('global-metric').dispatchEvent(new Event('change'));
@@ -38,6 +54,9 @@ try{
  document.getElementById('case').value='Production checkpoint';document.getElementById('case').dispatchEvent(new Event('change'));
  return checks;})()`,returnByValue:true});
  if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));if(errors.length)throw Error(JSON.stringify(errors));
+ await call('Runtime.evaluate',{expression:'document.getElementById("projection-panel").scrollIntoView()'});
+ const projectionShot=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(output,'projection.png'),Buffer.from(projectionShot.data,'base64'));
+ await call('Runtime.evaluate',{expression:'window.scrollTo(0,0)'});
  const shot=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(output,'overview.png'),Buffer.from(shot.data,'base64'));
  await call('Runtime.evaluate',{expression:'document.getElementById("inspector").scrollIntoView()'});
  const local=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(output,'neighbourhood.png'),Buffer.from(local.data,'base64'));
