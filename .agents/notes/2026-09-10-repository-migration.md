@@ -1,6 +1,6 @@
 # Repository agent-material migration
 
-Status: active
+Status: completed
 Updated: 2026-09-10
 Scope: tracked documentation and agent instructions, audited at `e8302d7`
 Related: [workspace policy](../README.md), [cleanup handoff](2026-09-09-quantization-cleanup.md)
@@ -35,23 +35,19 @@ historical-only caveat. Original artifact paths and restore commands remain usab
 archive availability and checksums have not been revalidated. Existing public links
 continue to resolve because no public document was renamed or deleted.
 
-Review relative links, `git diff --check`, and the staged path list. No imports,
+Relative links, `git diff --check`, and the staged path boundaries passed review. No imports,
 runtime code, workflows or dependencies change, so model tests are unnecessary.
 Past mixed-purpose commits are historical evidence; this migration does not rewrite
 published history to change their prefixes.
 
 ## Next actions
 
-Review two deliberately separate commit batches:
+None for this migration. The user reviewed and approved both batches, committed
+separately as:
 
-1. **Staged agent-only batch:** the `.agents/` additions/removals/index updates and
-   `AGENTS.md` link update. Suggested message:
-   `agent: consolidate guidance and preserve historical cleanup handoff`.
-2. **Prepared but unstaged developer-doc batch:** `docs/quantization-artifacts.md`,
-   `docs/quantized-training-validation.md`, `dev/benchmarks/README.md`.
-   Suggested message: `docs: separate local handoff history from developer guides`.
+- `8d178f8` — agent guidance consolidation and historical cleanup handoff.
+- `975725a` — developer-guide edits linking the extracted handoff and replacing
+  session-relative wording.
 
-Commit the first batch before staging the second. The first adds the target of the
-second batch's new public link. The temporary overlap preserves context between
-commits. Do not combine both into one staged set or rewrite existing commits.
-After both are accepted, mark this migration completed in an `agent:` update.
+The agent batch preceded the public link updates. Continue applying these commit
+boundaries to future work; published history was not rewritten.

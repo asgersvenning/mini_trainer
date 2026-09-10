@@ -32,8 +32,8 @@ their location with an availability caveat. Commit notes separately using `agent
 
 Current durable references:
 
-- [Repository migration](2026-09-10-repository-migration.md) — active; audit findings
-  and the two prepared commit batches.
+- [Repository migration](2026-09-10-repository-migration.md) — completed; audit
+  findings and the two approved migration commits.
 - [Quantization cleanup handoff](2026-09-09-quantization-cleanup.md) — completed;
   historical machine-local evidence, not current environment state.
 - [Repository agent workflow research](2026-09-10-agent-workflow.md) — completed;
