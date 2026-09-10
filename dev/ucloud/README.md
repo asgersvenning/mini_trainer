@@ -573,3 +573,48 @@ with one paired seed, not a statistical quality comparison. Do not interpret
 small accuracy or timing differences as established improvements. If the replay
 finds non-finite values, keep prefetch results diagnostic while investigating them;
 eager controls remain useful. Compiler variants are a subsequent experiment.
+
+## Model compilation comparison in the existing job
+
+Use `compilation.json` after the expanded eager/prefetch experiment. It keeps
+4,096 training / 1,024 validation / 128 test images, four epochs, seed 42,
+batch 32, two workers, 384 pixels, figures disabled and the same pinned venvs.
+It replaces prefetch with `quant_compile_model` (model compilation only).
+The deterministic run order is quant eager, master eager, then quant model
+compilation, so both controls finish before a possible compilation timeout.
+No dedicated NaN tracing or replay is required for this experiment. The existing
+recorded-loss audit remains enabled; `invalid_metrics` retains timing evidence
+but excludes that run from the automatic successful-pair report.
+
+Pull into the current job and run in tmux. The template uses the dataset and venv
+paths from the existing job and a fresh output directory; no installation is
+needed. If those paths differ, copy the JSON and edit it before preparation.
+Do not reuse or modify an already prepared output directory.
+
+```bash
+cd /work/mini_trainer
+git pull --ff-only
+bash dev/ucloud/launch.sh dev/ucloud/compilation.json --stage plan
+bash dev/ucloud/launch.sh dev/ucloud/compilation.json --stage prepare && \
+    bash dev/ucloud/launch.sh dev/ucloud/compilation.json --stage train
+# Run summary even if training reports a timeout or invalid metrics.
+bash dev/ucloud/launch.sh dev/ucloud/compilation.json --stage summary
+cat /work/results/global-lepi-compile-model-1/comparison.csv
+cat /work/results/global-lepi-compile-model-1/paired.json
+```
+
+Each worker has a 300-second limit, with up to 15 seconds for termination cleanup.
+The 1,800-second overall budget includes preparation and gaps between commands.
+Based on the existing eager runs, allow about five minutes for the two controls
+combined, up to five minutes for compilation/training, plus preparation. This is
+an estimate, not a promise that the compiled variant will finish.
+
+The harness creates fresh compiler cache directories for each run. No separate
+compiled warmup is performed: cold compilation cost belongs in `wall_seconds`
+and the first epoch. Compare those with `later_epoch_mean_seconds` (epochs 2–4),
+`train_seconds`, and `peak_allocated_bytes`. Later epochs may still include
+recompilation; retain the console log when interpreting them. Compare primarily
+against quant eager to isolate the effect of compilation, with master eager as
+the branch control. A cold-start timeout establishes that this configuration
+does not fit the short-job budget; it does not rule out longer-run benefits.
+Small single-seed timing differences are exploratory, not established speedups.

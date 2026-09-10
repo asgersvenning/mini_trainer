@@ -32,4 +32,5 @@ examples/test.ipynb
 !/dev/ucloud/comparison.json
 !/dev/ucloud/qualification.json
 !/dev/ucloud/experiment.json
+!/dev/ucloud/compilation.json
 /local-evidence/
