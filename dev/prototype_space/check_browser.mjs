@@ -110,7 +110,7 @@ try{
  check(JSON.stringify(fixturePoints)===originalPoints&&JSON.stringify(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,overlap:.5,push:true}))===JSON.stringify(pushed),'push apart is deterministic and preserves source points');
  const dense=Array.from({length:60},(_,i)=>[40+(i%10)*18,40+Math.floor(i/10)*18]);
  const tight=thumbnailLayout(dense,dense.map((_,i)=>i),{...config,width:260,height:180,labels:false,overlap:.75,push:true,density:2000});
- check(tight.boxes.length>0&&separate(tight.boxes)&&tight.boxes.every(b=>b.left>=0&&b.top>=0&&b.left+b.width<=260&&b.top+b.height<=180),'crowded boundary fixture resolves or culls collisions');
+ check(tight.boxes.length>0&&tight.culled===0&&tight.boxes.every(b=>b.left>=0&&b.top>=0&&b.left+b.width<=260&&b.top+b.height<=180),'crowded boundary fixture retains all admitted boxes within bounds');
  document.getElementById('map-photos').checked=true;scheduleMapThumbnails();clearTimeout(mapThumbTimer);await renderMapThumbnails();
  check(document.querySelectorAll('.map-thumb').length>0,'map thumbnails load');
  check([...document.querySelectorAll('.map-thumb img')].every(img=>img.naturalWidth>0),'map thumbnails decode');
@@ -121,7 +121,7 @@ try{
  document.getElementById('map-photo-labels').checked=false;document.getElementById('map-photo-push').checked=true;document.getElementById('map-photo-overlap').value='75';document.getElementById('map-photo-density').value='200';
  scheduleMapThumbnails();clearTimeout(mapThumbTimer);await renderMapThumbnails();
  check(document.querySelectorAll('.map-thumb').length>0&&[...document.querySelectorAll('.map-thumb')].every(b=>!b.querySelector('span')&&getComputedStyle(b).padding==='0px'&&getComputedStyle(b).borderWidth==='0px'),'image-only toggle removes labels and whitespace');
- check(separate(mapThumbLayout)&&document.getElementById('map-photo-status').textContent.includes('displayed rectangles do not overlap'),'rendered push mode has no overlaps');
+ check(mapThumbRest&&mapThumbRest.pairs===thumbnailEnergy(mapThumbLayout).pairs&&document.getElementById('map-photo-status').textContent.includes('overlapping pairs retained'),'settled status reports residual overlap without hiding it');
  check(JSON.stringify(projectionHits)===coordinatesBefore,'thumbnail relaxation preserves projected coordinates');
  const displaced=mapThumbLayout.find(b=>Math.hypot(b.x-b.anchorX,b.y-b.anchorY)>=.5);
  check(displaced&&document.querySelectorAll('.map-thumb-tether').length>0,'displaced photos retain visible anchor markers');
@@ -144,23 +144,20 @@ try{
  await new Promise(resolve=>setTimeout(resolve,120));
  check(mapThumbMotion!==null&&mapThumbLayout.some((b,i)=>Math.hypot(b.x-startPositions[i][0],b.y-startPositions[i][1])>.1),'force layout advances visibly over animation frames');
  check(mapThumbLayout.every(b=>Math.abs(parseFloat(b.button.style.left)-b.x)<.01&&Math.abs(parseFloat(b.button.style.top)-b.y)<.01),'animated images and hit rectangles move together');
- await moving;check(mapThumbMotion===null&&separate(mapThumbLayout),'force simulation cools and stops without residual overlaps');
+ await moving;check(mapThumbMotion===null&&mapThumbLayout.length===startPositions.length,'solver stops without removing thumbnails');
  const originalMatchMedia=window.matchMedia;window.matchMedia=()=>({matches:true});await animateThumbnails(motionConfig);window.matchMedia=originalMatchMedia;
- check(mapThumbMotion===null&&separate(mapThumbLayout),'reduced motion settles without scheduling animation');
+ check(mapThumbMotion===null&&mapThumbLayout.length===startPositions.length,'reduced motion preserves the same thumbnail population');
  const savedLayout=mapThumbLayout;
  const makeCrowded=()=>[0,1].map(i=>{
   const b={id:i,x:32,y:32,anchorX:32,anchorY:32,left:0,top:0,width:64,height:64,vx:0,vy:0};
   b.button=savedLayout[0].button.cloneNode(true);b.tether=thumbnailTether(b,true);document.getElementById('map-thumbnail-layer').append(b.button,b.tether);return b;
  });
- mapThumbLayout=makeCrowded();const crowded=mapThumbLayout;const fading=animateThumbnails({width:64,height:64,size:64});mapThumbMotion.step=159;
- await new Promise(resolve=>setTimeout(resolve,100));
- check(mapThumbMotion?.phase==='fading'&&crowded.every(b=>b.button.isConnected)&&Number(crowded[1].button.style.opacity)>0&&Number(crowded[1].button.style.opacity)<1,'unresolved collision fades before thumbnail removal');
- await fading;check(mapThumbLayout.length===1&&!crowded[1].button.isConnected,'collision removal completes after fade');crowded[0].button.remove();crowded[0].tether.remove();
- mapThumbLayout=makeCrowded();const interruptedBoxes=mapThumbLayout;const interruptedFade=animateThumbnails({width:64,height:64,size:64});mapThumbMotion.step=159;
- await new Promise(resolve=>setTimeout(resolve,90));stopThumbnailMotion();await interruptedFade;await new Promise(resolve=>setTimeout(resolve,300));
- check(interruptedBoxes.every(b=>b.button.isConnected&&b.button.style.opacity===''),'interrupted fade restores thumbnails without delayed removal');
- for(const b of interruptedBoxes){b.button.remove();b.tether.remove();}mapThumbLayout=savedLayout;paintThumbnailMotion();
-
+ mapThumbLayout=makeCrowded();const crowded=mapThumbLayout;await animateThumbnails({width:64,height:64,size:64});
+ check(mapThumbLayout===crowded&&crowded.every(b=>b.button.isConnected&&b.button.style.opacity===''),'impossible packing keeps both thumbnails visible at rest');
+ check(mapThumbRest.reason==='resting'&&mapThumbRest.pairs===1&&mapThumbRest.steps<480,'constrained equilibrium stops on measured stability and reports overlap');
+ await new Promise(resolve=>setTimeout(resolve,300));
+ check(crowded.every(b=>b.button.isConnected),'no deferred settling-time removal');
+ for(const b of crowded){b.button.remove();b.tether.remove();}mapThumbLayout=savedLayout;paintThumbnailMotion();
  const cancelled=animateThumbnails(motionConfig);stopThumbnailMotion();await cancelled;
  check(mapThumbMotion===null,'force animation cancellation resolves pending work');
  document.getElementById('map-photos').checked=false;scheduleMapThumbnails();document.getElementById('map-photos').checked=true;document.getElementById('map-photo-density').value='5';mapThumbImages.clear();

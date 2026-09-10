@@ -136,16 +136,26 @@ and velocities are measured in screen pixels, independent of projection zoom.
 Images may move up to twice their configured size in screen pixels.
 **Show thumbnail anchors** toggles the anchor markers and leader lines without
 reloading images or restarting the simulation. They are hidden by default.
-Residual motion eases to rest over the final 24 simulation steps. Unresolved
-collisions then fade out over 280 ms before removal, in priority order, so settled
-rectangles do not overlap. Pan/zoom or new arrivals cancel a pending fade and
-restore its thumbnails; no delayed removal survives that interruption. Reduced
-motion skips the fade. Temporary overlap is visible during
-animation. The simulation cools over about 2.7 seconds after the last arrival,
-then stops requesting frames; reduced-motion preferences settle immediately.
+Settling never removes or fades an admitted thumbnail. The solver minimizes a
+fixed sum of anchor displacement energy and squared, smoothed rectangle-contact
+penetration. Contact curvature scales each coordinate's step; damped momentum
+and backtracking keep accepted steps from increasing that energy. Anchor
+attraction does not decay on a timer.
+
+Rest requires eight consecutive steps with movement below 0.04 CSS pixels,
+energy change below 0.002 per thumbnail, and maximum overlap-fraction change
+below 0.0001. At most two solver steps run per animation frame. A 480-step work
+limit bounds expensive cases; the status distinguishes **resting** from **work
+limit** and reports overlapping pairs that remain visible. Neither resting nor
+the work limit guarantees zero overlap or a global energy minimum. Viewport and
+movement bounds can make overlap unavoidable. Reduced-motion preferences run
+the same bounded solver without animation.
+
 The status reports the remaining visible slots. Increase allowable overlap to try
 a denser candidate set;
-this does not guarantee that every candidate will fit after separation.
+this does not guarantee that every admitted image can be separated within the
+movement bounds. Initial viewport/density/overlap admission remains separate
+from settling; an admitted image is never removed merely because motion stops.
 
 Culling prioritizes the selected
 class and its original-space neighbours, then uses a stable mixed class order.
@@ -230,6 +240,7 @@ view payload is in `report-data.json`. Generated data and weights stay out of Gi
 
 ```bash
 bash dev/check.sh static
+node dev/prototype_space/check_layout.mjs
 bash dev/check.sh test tests/utils/test_prototype_exploration.py \
   tests/utils/test_dendrogram.py tests/utils/test_plot.py
 ```
