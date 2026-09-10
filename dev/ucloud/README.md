@@ -471,3 +471,96 @@ restriction. The repository-wide suite was interrupted in an unrelated long-runn
 benchmark; it was not completed. No GPU was available locally. These checks do not
 establish CUDA/DDP compilation, INT8 correctness or global_lepi convergence and
 throughput on UCloud; run the qualification configuration there first.
+
+## Expanded single-GPU experiment and validation-loss diagnosis
+
+`experiment.json` increases the qualification to 4,096 train / 1,024 validation /
+128 test images and four epochs. Existing split assignments remain intact; the
+sample builds its own taxonomy, so this still does not measure full-head quality.
+It keeps batch 32, two loader workers, 384 pixels, seed 42 and the same pinned
+packages. The three variants are master eager, quant eager and quant prefetch.
+Prefetch remains diagnostic after an observed first-epoch validation NaN; finite
+training losses do not establish that validation is numerically sound.
+
+There are 128 training batches and 32 validation batches per epoch. Compare the
+mean of epochs 2–4 (`later_epoch_mean_seconds`), and retain first-epoch and total
+wall times separately. The earlier 2,048-image timings suggest roughly 2–4 minutes
+per variant, but larger heads, new image reads and plotting can increase this.
+Each worker has a 300-second limit; timeout terminates the experiment rather than
+silently shortening its epochs. Process cleanup can take another 15 seconds.
+The overall prepare/train budget is 1,800 seconds, including pauses between stages.
+A fresh job is unnecessary; pull the harness update and use a new output directory.
+
+`require_finite_losses: true` audits all expected training and validation epoch
+rows in `model/logs/summary.csv`. Missing, malformed or non-finite total/per-level
+losses produce `status=invalid_metrics` and `loss_check=failed`, even with exit code
+zero. `result.json` identifies the affected epoch and phase. Checkpoints and timing
+artifacts remain available, but such runs are excluded from successful paired
+comparisons. This is a recorded-loss check, not a claim that the optimizer failed,
+nor a guarantee that every intermediate tensor was finite. Existing configs retain
+their previous behavior unless the flag is enabled.
+
+First replay the affected checkpoint in four fresh processes. This uses the frozen
+validation images, training class frequencies, smoothing and saved preprocessing.
+FP16 means FP32 model parameters with FP16 autocast; FP32 disables autocast and
+builds the criterion in FP32. No optimizer, augmentation or training runs. Each
+case records parameter finiteness, per-batch input/output/loss finiteness and input
+and label hashes under a new output directory. It never rewrites the old run.
+Use the pinned quant interpreter, with the same thread settings as the launcher:
+
+```bash
+cd /work/mini_trainer
+git pull --ff-only
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+for precision in fp16 fp32; do
+    for loader in eager prefetch; do
+        replay_args=()
+        if [[ "$loader" == prefetch ]]; then replay_args+=(--prefetch); fi
+        timeout --kill-after=15s 300s /work/venvs/mt-quant/bin/python \
+            dev/ucloud/replay_validation.py \
+            /work/results/global-lepi-prefetch-1 quant_prefetch_seed42 \
+            --precision "$precision" "${replay_args[@]}" \
+            --output "/work/results/prefetch-replay-1-$precision-$loader" || break 2
+    done
+done
+```
+
+A completed diagnostic writes `result.json` even when it finds non-finite values;
+inspect all four reports and `batches.jsonl`. Matching input/target hashes help
+check that cases consumed identical batches. FP16-only failure points toward a
+precision-dependent evaluation issue; prefetch-only failure warrants transfer-path
+investigation. Neither outcome alone proves the root cause. Reloading clears
+in-memory model caches, and per-batch checks synchronize CUDA, so a clean replay
+cannot rule out a timing-sensitive failure in the original process. This is not a
+speed benchmark. The original NaN occurred during evaluation, not recorded training
+loss, and does not by itself demonstrate training divergence.
+
+Then generate the expanded config, preserving this job's dataset and environment
+paths. It intentionally creates a fresh preparation and starting weights:
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+config = json.loads(Path('dev/ucloud/experiment.json').read_text())
+previous = json.loads(Path('/work/qualification-prefetch.json').read_text())
+for key in ('parquet', 'environments'):
+    config[key] = previous[key]
+with Path('/work/qualification-expanded.json').open('x') as handle:
+    json.dump(config, handle, indent=2)
+    handle.write('\n')
+PY
+bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage plan
+bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage prepare && \
+    bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage train
+bash dev/ucloud/launch.sh /work/qualification-expanded.json --stage summary
+cat /work/results/global-lepi-expanded-1/comparison.csv
+```
+
+Run in tmux and retain all artifacts, including failed validation checks. A warm
+first epoch is kept in the results, not discarded from model training; the later
+three epochs provide the timing comparison. This is a larger exploratory test
+with one paired seed, not a statistical quality comparison. Do not interpret
+small accuracy or timing differences as established improvements. If the replay
+finds non-finite values, keep prefetch results diagnostic while investigating them;
+eager controls remain useful. Compiler variants are a subsequent experiment.

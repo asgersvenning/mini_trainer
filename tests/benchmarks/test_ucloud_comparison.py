@@ -205,8 +205,106 @@ def test_parquet_preparation_training_and_reload_cpu(harness, config, monkeypatc
             for key, value in reloaded.state_dict().items()
             if key in initial_state and isinstance(value, torch.Tensor) and value.is_floating_point()
         )
+        replay = importlib.import_module("replay_validation").replay
+        destination = root / "replay"
+        destination.mkdir()
+        report = replay(
+            config,
+            index,
+            json.loads((root / "class_spec.json").read_text()),
+            str(directory / "weights" / "best.pt"),
+            precision="fp32",
+            prefetch=False,
+            output=destination,
+            device="cpu",
+        )
+        assert report["parameters_finite"]
+        assert report["images"] == dataset["counts"]["validation"]
+        batches = [json.loads(line) for line in (destination / "batches.jsonl").read_text().splitlines()]
+        assert all(batch["finite"]["input"] and all(batch["finite"]["outputs"]) for batch in batches)
+        assert len(batches[0]["losses"]) == 3
     finally:
         torch.set_num_threads(old_threads)
+
+
+def test_loss_audit_distinguishes_validation_nan_and_incomplete_logs(harness, tmp_path):
+    compare, _ = harness
+    path = tmp_path / "summary.csv"
+    header = "epoch,type,loss,loss/lvl0,loss/lvl1,loss/lvl2\n"
+    rows = ["0,train,3,1,1,1\n", "0,eval,3,1,1,1\n", "1,train,3,1,1,1\n", "1,eval,3,1,1,1\n"]
+    path.write_text(header + "".join(rows))
+    assert compare.audit_losses(path, 2) == []
+    rows[1] = "0,eval,nan,nan,nan,nan\n"
+    path.write_text(header + "".join(rows))
+    issues = compare.audit_losses(path, 2)
+    assert len(issues) == 4
+    assert all("epoch=0 phase=eval" in issue for issue in issues)
+    path.write_text(header + rows[0])
+    assert len(compare.audit_losses(path, 2)) == 3
+    path.unlink()
+    assert compare.audit_losses(path, 2)
+
+
+def test_validation_nan_excluded_from_successful_pairs(harness, config, monkeypatch):
+    compare, _ = harness
+    config.update(seeds=[42], variants=["master_eager", "quant_eager"], epochs=1, require_finite_losses=True)
+    compare.validate(config)
+    root = Path(config["output"])
+    (root / "runs").mkdir(parents=True)
+    source = root / "comparison.json"
+    compare.write_json(source, config)
+    Path(config["parquet"]).write_bytes(b"fixture")
+    compare.write_json(root / "dataset.json", {"parquet_sha256": compare.digest(config["parquet"])})
+    compare.write_json(root / "prepared.json", {"dataset.json": compare.digest(root / "dataset.json")})
+
+    def execute(argv, *args):
+        model = root / "runs" / argv[-1] / "model"
+        (model / "weights").mkdir(parents=True)
+        (model / "weights" / "best.pt").write_bytes(b"checkpoint")
+        (model / "logs").mkdir()
+        loss = "nan" if argv[-1].startswith("quant") else "3"
+        (model / "logs" / "summary.csv").write_text(
+            f"epoch,type,loss,loss/lvl0,loss/lvl1,loss/lvl2\n0,train,3,1,1,1\n0,eval,{loss},1,1,1\n"
+        )
+        return 0
+
+    monkeypatch.setattr(compare, "execute", execute)
+    monkeypatch.setattr("sys.argv", ["compare.py", str(source), "--stage", "train"])
+    with pytest.raises(SystemExit, match="Some runs failed"):
+        compare.main()
+    result = json.loads((root / "runs" / "quant_eager_seed42" / "result.json").read_text())
+    assert result["returncode"] == 0
+    assert result["status"] == "invalid_metrics"
+    assert result["loss_issues"] == ["epoch=0 phase=eval loss='nan'"]
+    assert Path(result["checkpoint"]).is_file()
+    assert [row["name"] for row in json.loads((root / "paired.json").read_text())] == ["master_eager_seed42"]
+
+
+def test_replay_accepts_original_manifest_and_rejects_changed_index(harness, tmp_path, monkeypatch):
+    compare, _ = harness
+    module = importlib.import_module("replay_validation")
+    root = tmp_path / "old"
+    run = root / "runs" / "quant_prefetch_seed42"
+    run.mkdir(parents=True)
+    checkpoint = run / "best.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    compare.write_json(run / "result.json", {"checkpoint": str(checkpoint), "checkpoint_sha256": compare.digest(checkpoint)})
+    compare.write_json(root / "comparison.json", {"gpus": 1})
+    for name in ("data_index.json", "class_spec.json"):
+        compare.write_json(root / name, {})
+    # Original manifests hash these artifacts, but do not hash comparison.json.
+    compare.write_json(root / "prepared.json", {name: compare.digest(root / name) for name in ("data_index.json", "class_spec.json")})
+    captured = []
+    monkeypatch.setattr(module, "replay", lambda *args, **kwargs: captured.append((args, kwargs)))
+    destination = tmp_path / "replay"
+    monkeypatch.setattr("sys.argv", ["replay_validation.py", str(root), run.name, "--precision", "fp16", "--output", str(destination)])
+    module.main()
+    assert captured[0][1]["precision"] == "fp16"
+    assert captured[0][1]["prefetch"] is False
+    assert (destination / "source.json").is_file()
+    (root / "data_index.json").write_text("changed")
+    with pytest.raises(ValueError, match="Frozen artifact changed"):
+        module.main()
 
 
 def test_qualification_sampling_is_bounded_paired_and_preserves_splits(harness, config):

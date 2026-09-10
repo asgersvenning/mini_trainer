@@ -31,4 +31,5 @@ examples/test.ipynb
 !conda.yaml
 !/dev/ucloud/comparison.json
 !/dev/ucloud/qualification.json
+!/dev/ucloud/experiment.json
 /local-evidence/

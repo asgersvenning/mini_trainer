@@ -5,6 +5,7 @@ import contextlib
 import csv
 import hashlib
 import json
+import math
 import os
 import random
 import signal
@@ -42,6 +43,8 @@ def write_json(path, value):
 
 
 def validate(config):
+    if "require_finite_losses" in config and type(config["require_finite_losses"]) is not bool:
+        raise ValueError("require_finite_losses must be a boolean")
     if "budget_seconds" in config and (type(config["budget_seconds"]) is not int or config["budget_seconds"] < 1):
         raise ValueError("budget_seconds must be a positive integer")
     qualification = config.get("qualification")
@@ -140,6 +143,31 @@ def execute(args, log, cwd, timeout):
             raise
 
 
+def audit_losses(path, epochs):
+    """Check recorded train/eval losses, without changing the measured GPU loop."""
+    expected = {(str(epoch), phase) for epoch in range(epochs) for phase in ("train", "eval")}
+    seen = set()
+    issues = []
+    try:
+        with Path(path).open() as handle:
+            for row in csv.DictReader(handle):
+                key = (row.get("epoch"), row.get("type"))
+                if key not in expected or key in seen:
+                    issues.append(f"Unexpected or duplicate epoch/phase: {key}")
+                seen.add(key)
+                for column in ("loss", "loss/lvl0", "loss/lvl1", "loss/lvl2"):
+                    try:
+                        finite = math.isfinite(float(row.get(column, "")))
+                    except (TypeError, ValueError):
+                        finite = False
+                    if not finite:
+                        issues.append(f"epoch={key[0]} phase={key[1]} {column}={row.get(column)!r}")
+    except OSError as error:
+        issues.append(str(error))
+    issues.extend(f"Missing epoch={epoch} phase={phase}" for epoch, phase in sorted(expected - seen))
+    return issues
+
+
 def summary(output):
     rows = [json.loads(p.read_text()) for p in sorted((output / "runs").glob("*/result.json"))]
     for row in rows:
@@ -162,6 +190,7 @@ def summary(output):
         "branch",
         "seed",
         "status",
+        "loss_check",
         "scope",
         "returncode",
         "wall_seconds",
@@ -356,6 +385,11 @@ def run_stage(config, args, deadline=None):
             result["status"] = "completed" if result["returncode"] == 0 and checkpoint.is_file() else "failed"
             if result["status"] == "completed":
                 result.update(checkpoint=str(checkpoint), checkpoint_sha256=digest(checkpoint))
+                if config.get("require_finite_losses", False):
+                    issues = audit_losses(directory / "model" / "logs" / "summary.csv", config["epochs"])
+                    result["loss_check"] = "failed" if issues else "passed"
+                    if issues:
+                        result.update(status="invalid_metrics", loss_issues=issues)
         except KeyboardInterrupt:
             result.update(status="interrupted", error="Interrupted by user or termination signal")
             raise SystemExit(130) from None
