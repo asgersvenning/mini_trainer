@@ -59,6 +59,10 @@ The environment needs the existing visualization dependencies (including SciPy).
 
 ## Spatial projection
 
+See the [hyperspherical visualization review](../../docs/hyperspherical-visualization.md)
+for the geometry, measured compression losses, projection alternatives, Python
+and browser implementations, and proposed anchor/slice experiments.
+
 The map projects all prototype directions into a common 2D coordinate system.
 Choose **Angular t-SNE**, **PCA 1–2** or **PCA 3–4**, scroll to zoom, drag to pan, and click a point
 to update the existing inspector and image browser. **Fit selected neighbourhood**
