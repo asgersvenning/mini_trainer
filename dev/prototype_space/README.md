@@ -114,9 +114,17 @@ image size (32–160 CSS pixels), density (5–200 images per megapixel of map v
 and allowable pairwise rectangle overlap (0–75%). The density gives a maximum
 budget, capped at 200 images; viewport and overlap culling can produce fewer.
 The overlap fraction uses the full thumbnail rectangle including its class label
-when labels are enabled. Disable **Labels beneath images** for square image-only
+when labels are enabled, normalized by the smaller rectangle for unequal sizes.
+Disable **Labels beneath images** for square image-only
 thumbnails with no caption, border or padding; images fill the square by cropping
-as needed. Names, IDs and credits remain available on hover or keyboard focus.
+as needed. Enable **Original aspect ratio** to preserve image proportions without
+cropping; the size slider then sets the longest image edge. This works with or
+without labels. Collision forces use the measured rectangular footprint. Cached
+image proportions also inform candidate culling; unknown images initially reserve
+a conservative square until decoding supplies their dimensions. With pushing
+disabled, unknown proportions reserve nonoverlapping squares so a later narrow
+image cannot become fully covered under a misleading overlap fraction. Names, IDs and
+credits remain available on hover or keyboard focus.
 
 Images initially stay centered on actual projected points. Enable **Push thumbnails
 apart** to admit candidates using the overlap setting, then separate their
@@ -128,8 +136,11 @@ and velocities are measured in screen pixels, independent of projection zoom.
 Images may move up to twice their configured size in screen pixels.
 **Show thumbnail anchors** toggles the anchor markers and leader lines without
 reloading images or restarting the simulation. They are hidden by default.
-Unresolved collisions are culled in priority order,
-so settled rectangles do not overlap. Temporary overlap is visible during
+Residual motion eases to rest over the final 24 simulation steps. Unresolved
+collisions then fade out over 280 ms before removal, in priority order, so settled
+rectangles do not overlap. Pan/zoom or new arrivals cancel a pending fade and
+restore its thumbnails; no delayed removal survives that interruption. Reduced
+motion skips the fade. Temporary overlap is visible during
 animation. The simulation cools over about 2.7 seconds after the last arrival,
 then stops requesting frames; reduced-motion preferences settle immediately.
 The status reports the remaining visible slots. Increase allowable overlap to try
@@ -146,7 +157,7 @@ follow their transformed anchors immediately, retaining their screen-pixel
 offsets and DOM image nodes. After a short pause, the visible candidate set is
 updated and collision adjustment resumes; surviving images are neither reloaded
 nor faded in again. No new images are fetched while dragging continuously.
-Changing image size, label mode, push mode, case or projection plane rebuilds the
+Changing image size, aspect ratio mode, label mode, push mode, case or projection plane rebuilds the
 layout because its footprints or coordinate meaning have changed. Cached metadata is
 shared with the class cards, and changing a class example also refreshes map
 thumbnails. Decoded image references are bounded to 128 entries; server caching

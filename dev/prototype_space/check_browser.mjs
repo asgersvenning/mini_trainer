@@ -95,6 +95,13 @@ try{
  check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,size:140}).boxes.length===1,'thumbnail size changes culling');
  const compact=thumbnailLayout([[32,32],[96,32]],[0,1],{...config,width:128,height:64,labels:false,density:2000});
  check(compact.boxes.length===2&&compact.boxes.every(b=>b.width===64&&b.height===64),'image-only culling has no label or padding footprint');
+ const wideFootprint=thumbnailFootprint(80,false,2),tallFootprint=thumbnailFootprint(80,true,.5);
+ check(wideFootprint.width===80&&wideFootprint.height===40&&tallFootprint.width===48&&tallFootprint.height===104,'original aspect footprints include image proportions and optional labels');
+ const aspectSlots=thumbnailLayout([[40,20],[40,60]],[0,1],{width:80,height:80,size:80,density:1000,overlap:0,labels:false,aspects:[2,2]});
+ check(aspectSlots.boxes.length===2,'aspect-aware culling uses rectangular footprints');
+ check(thumbnailLayout([[100,100],[130,100]],[0,1],{width:200,height:200,size:64,density:200,overlap:.75,unknownOverlap:0,labels:false}).boxes.length===1,'unknown aspect ratios reserve nonoverlapping boxes when forces are disabled');
+ check(thumbnailLayout([[100,100],[100,100]],[0,1],{width:200,height:200,size:64,density:200,overlap:.5,labels:false,aspects:[4,1]}).boxes.length===1,'overlap limit protects the smaller rectangle from being covered');
+
  const originalPoints=JSON.stringify(fixturePoints),pushed=thumbnailLayout(fixturePoints,[0,1,2,3],{...config,overlap:.5,push:true});
  check(pushed.boxes.length===3&&pushed.boxes.some(b=>b.x!==b.anchorX||b.y!==b.anchorY),'push apart retains and separates overlapping candidates');
  const separate=boxes=>boxes.every((b,i)=>boxes.slice(i+1).every(other=>thumbnailSharedArea(b,other)<1e-8));
@@ -140,6 +147,20 @@ try{
  await moving;check(mapThumbMotion===null&&separate(mapThumbLayout),'force simulation cools and stops without residual overlaps');
  const originalMatchMedia=window.matchMedia;window.matchMedia=()=>({matches:true});await animateThumbnails(motionConfig);window.matchMedia=originalMatchMedia;
  check(mapThumbMotion===null&&separate(mapThumbLayout),'reduced motion settles without scheduling animation');
+ const savedLayout=mapThumbLayout;
+ const makeCrowded=()=>[0,1].map(i=>{
+  const b={id:i,x:32,y:32,anchorX:32,anchorY:32,left:0,top:0,width:64,height:64,vx:0,vy:0};
+  b.button=savedLayout[0].button.cloneNode(true);b.tether=thumbnailTether(b,true);document.getElementById('map-thumbnail-layer').append(b.button,b.tether);return b;
+ });
+ mapThumbLayout=makeCrowded();const crowded=mapThumbLayout;const fading=animateThumbnails({width:64,height:64,size:64});mapThumbMotion.step=159;
+ await new Promise(resolve=>setTimeout(resolve,100));
+ check(mapThumbMotion?.phase==='fading'&&crowded.every(b=>b.button.isConnected)&&Number(crowded[1].button.style.opacity)>0&&Number(crowded[1].button.style.opacity)<1,'unresolved collision fades before thumbnail removal');
+ await fading;check(mapThumbLayout.length===1&&!crowded[1].button.isConnected,'collision removal completes after fade');crowded[0].button.remove();crowded[0].tether.remove();
+ mapThumbLayout=makeCrowded();const interruptedBoxes=mapThumbLayout;const interruptedFade=animateThumbnails({width:64,height:64,size:64});mapThumbMotion.step=159;
+ await new Promise(resolve=>setTimeout(resolve,90));stopThumbnailMotion();await interruptedFade;await new Promise(resolve=>setTimeout(resolve,300));
+ check(interruptedBoxes.every(b=>b.button.isConnected&&b.button.style.opacity===''),'interrupted fade restores thumbnails without delayed removal');
+ for(const b of interruptedBoxes){b.button.remove();b.tether.remove();}mapThumbLayout=savedLayout;paintThumbnailMotion();
+
  const cancelled=animateThumbnails(motionConfig);stopThumbnailMotion();await cancelled;
  check(mapThumbMotion===null,'force animation cancellation resolves pending work');
  document.getElementById('map-photos').checked=false;scheduleMapThumbnails();document.getElementById('map-photos').checked=true;document.getElementById('map-photo-density').value='5';mapThumbImages.clear();
@@ -149,6 +170,14 @@ try{
  check(activeImages>1&&activeImages<=4&&mapThumbLayout.length===0&&mapThumbMotion===null,'bounded concurrent image loads do not move unloaded thumbnails');
  await delayed;loadReferenceImage=originalLoad;
  check(maxImages<=4&&mapThumbLayout.length>0&&mapThumbLayout.every(b=>b.button.querySelector('img').naturalWidth>0),'only visible decoded images enter force layout');
+ const wideImage='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="teal"/></svg>');
+ const portraitImage='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="120"><rect width="60" height="120" fill="orange"/></svg>');
+ let albumIndex=0;for(const album of photoAlbums.values()){for(const photo of album.photos)photo.image_path=albumIndex%2?wideImage:portraitImage;albumIndex++;}
+ document.getElementById('map-photo-aspect').checked=true;document.getElementById('map-photo-aspect').dispatchEvent(new Event('input'));clearTimeout(mapThumbTimer);await renderMapThumbnails();
+ check(mapThumbLayout.length>0&&mapThumbLayout.every(b=>{const image=b.button.querySelector('img'),rect=image.getBoundingClientRect();return Math.abs(rect.width/rect.height-image.naturalWidth/image.naturalHeight)<.002&&Math.abs(b.width-rect.width)<.02&&Math.abs(b.height-rect.height)<.02;}),'original aspect option displays uncropped images with matching collision boxes');
+ document.getElementById('map-photo-aspect').checked=false;document.getElementById('map-photo-aspect').dispatchEvent(new Event('input'));clearTimeout(mapThumbTimer);await renderMapThumbnails();
+ check(mapThumbLayout.every(b=>Math.abs(b.width-b.height)<.01&&getComputedStyle(b.button.querySelector('img')).objectFit==='cover'),'square crop remains selectable');
+
 
 
  const currentBox=mapThumbLayout[0];check(mapThumbnailHit([currentBox.x*1200/projectionCanvas.getBoundingClientRect().width,currentBox.y*600/projectionCanvas.getBoundingClientRect().height])===currentBox.id,'displaced thumbnail hit testing');

@@ -45,7 +45,9 @@ function relaxThumbnails(boxes,width,height,maxShift){
 let mapThumbMotion=null;
 function stopThumbnailMotion(){
  if(!mapThumbMotion)return;
- cancelAnimationFrame(mapThumbMotion.frame);mapThumbMotion.resolve();mapThumbMotion=null;
+ cancelAnimationFrame(mapThumbMotion.frame);
+ for(const box of mapThumbMotion.fading||[]){box.button.style.removeProperty('opacity');box.tether?.style.removeProperty('opacity');}
+ mapThumbMotion.resolve();mapThumbMotion=null;
 }
 function paintThumbnailMotion(){
  for(const box of mapThumbLayout){
@@ -62,14 +64,36 @@ function paintThumbnailMotion(){
 function animateThumbnails(config){
  stopThumbnailMotion();
  return new Promise(resolve=>{
-  const motion={frame:0,step:0,resolve,last:0};mapThumbMotion=motion;
+  const motion={frame:0,step:0,resolve,last:0,phase:'moving',fading:[]};mapThumbMotion=motion;
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const finish=()=>{
    const kept=cullThumbnailCollisions(mapThumbLayout),keep=new Set(kept);
-   for(const box of mapThumbLayout)if(!keep.has(box)){box.button.remove();box.tether.remove();}
-   mapThumbLayout=kept;paintThumbnailMotion();mapThumbMotion=null;resolve();
+   motion.fading=mapThumbLayout.filter(box=>!keep.has(box));
+   const remove=()=>{
+    for(const box of motion.fading){box.button.remove();box.tether?.remove();}
+    mapThumbLayout=kept;paintThumbnailMotion();mapThumbMotion=null;resolve();
+   };
+   if(reduced||!motion.fading.length){remove();return;}
+   motion.phase='fading';let started=null;
+   const fade=time=>{
+    if(mapThumbMotion!==motion)return;
+    started??=time;const t=Math.min(1,(time-started)/280),opacity=1-t*t*(3-2*t);
+    for(const box of motion.fading){box.button.style.opacity=opacity; if(box.tether)box.tether.style.opacity=opacity;}
+    if(t===1){remove();return;}
+    motion.frame=requestAnimationFrame(fade);
+   };
+   motion.frame=requestAnimationFrame(fade);
   };
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const advance=()=>{stepThumbnailForce(mapThumbLayout.filter(b=>reduced||!b.readyAt||performance.now()>=b.readyAt),config.width,config.height,2*config.size,Math.max(0,1-motion.step/120));motion.step++;};
+  const advance=()=>{
+   const active=mapThumbLayout.filter(b=>reduced||!b.readyAt||performance.now()>=b.readyAt);
+   const previous=active.map(b=>[b.x,b.y]);
+   stepThumbnailForce(active,config.width,config.height,2*config.size,Math.max(0,1-motion.step/120));
+   // Ease residual movement to rest instead of freezing nonzero velocity on
+   // the final frame. Interpolating within each step retains viewport bounds.
+   const ease=reduced?1:Math.min(1,((159-motion.step)/24)**2);
+   active.forEach((b,i)=>{b.x=previous[i][0]+(b.x-previous[i][0])*ease;b.y=previous[i][1]+(b.y-previous[i][1])*ease;b.vx*=ease;b.vy*=ease;b.left=b.x-b.width/2;b.top=b.y-b.height/2;});
+   motion.step++;
+  };
   if(reduced){while(motion.step<160)advance();finish();return;}
   const tick=time=>{
    if(mapThumbMotion!==motion)return;
@@ -82,15 +106,21 @@ function animateThumbnails(config){
   motion.frame=requestAnimationFrame(tick);
  });
 }
-function thumbnailLayout(points, priority, {width,height,size,density,overlap,labels=true,push=false}) {
+function thumbnailFootprint(size,labels,aspect=1){
+ const ratio=Number.isFinite(aspect)&&aspect>0?aspect:1;
+ const imageWidth=size*Math.min(1,ratio),imageHeight=size*Math.min(1,1/ratio);
+ return {imageWidth,imageHeight,width:imageWidth+(labels?8:0),height:imageHeight+(labels?24:0)};
+}
+function thumbnailLayout(points, priority, {width,height,size,density,overlap,labels=true,push=false,aspects=[],unknownOverlap=overlap}) {
  const budget=Math.min(200,Math.max(1,Math.floor(width*height*density/1e6)));
- const chosen=[],used=new Set();const boxWidth=labels?size+8:size,boxHeight=labels?size+24:size;
+ const chosen=[],used=new Set();
  for(const id of priority){
   if(used.has(id))continue;used.add(id);const [x,y]=points[id];
+  const {width:boxWidth,height:boxHeight}=thumbnailFootprint(size,labels,aspects[id]);
   const box={id,x,y,anchorX:x,anchorY:y,left:x-boxWidth/2,top:y-boxHeight/2,width:boxWidth,height:boxHeight};
   if(box.left<0||box.top<0||box.left+boxWidth>width||box.top+boxHeight>height)continue;
   const area=boxWidth*boxHeight;
-  const blocked=chosen.some(other=>thumbnailSharedArea(box,other)/area>overlap+1e-12);
+  const blocked=chosen.some(other=>{const limit=aspects[id]>0&&aspects[other.id]>0?overlap:unknownOverlap;return thumbnailSharedArea(box,other)/Math.min(area,other.width*other.height)>limit+1e-12;});
   if(!blocked)chosen.push(box);if(chosen.length>=budget)break;
  }
  const boxes=push?relaxThumbnails(chosen,width,height,2*size):chosen;
@@ -137,7 +167,7 @@ function setThumbnailAnchors(){
 function scheduleMapThumbnails(){
  clearTimeout(mapThumbTimer);stopThumbnailMotion();mapThumbController?.abort();++mapThumbGeneration;
  const size=Number($('map-photo-size').value),density=Number($('map-photo-density').value),overlap=Number($('map-photo-overlap').value);
- const key=[size,$('map-photo-labels').checked,$('map-photo-push').checked,$('projection-plane').value].join(':');
+ const key=[size,$('map-photo-labels').checked,$('map-photo-push').checked,$('map-photo-aspect').checked,$('projection-plane').value].join(':');
  if($('map-photos').checked&&mapThumbCase===data&&mapThumbKey===key){
   const rect=projectionCanvas.getBoundingClientRect();
   reanchorThumbnails(projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/600]),rect.width,rect.height);
@@ -154,13 +184,14 @@ async function renderMapThumbnails(){
  const generation=mapThumbGeneration,caseData=data;
  mapThumbController=new AbortController();const signal=mapThumbController.signal;
  const rect=projectionCanvas.getBoundingClientRect(),size=Number($('map-photo-size').value);
- const config={width:rect.width,height:rect.height,size,density:Number($('map-photo-density').value),overlap:Number($('map-photo-overlap').value)/100,labels:$('map-photo-labels').checked,push:$('map-photo-push').checked};
+ const config={width:rect.width,height:rect.height,size,density:Number($('map-photo-density').value),overlap:Number($('map-photo-overlap').value)/100,labels:$('map-photo-labels').checked,push:$('map-photo-push').checked,aspect:$('map-photo-aspect').checked};
+ if(config.aspect)config.aspects=data.names.map(id=>{const album=photoAlbums.get(id),photo=album?.photos[(photoChoices.get(id)||0)%(album?.photos.length||1)],image=photo&&mapThumbImages.get(photo.image_path);return image?.naturalWidth/image?.naturalHeight;});
  const points=projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/600]);
  // Selected class first, then its true neighbours; other classes have stable
  // mixed row order so dense regions do not win simply by checkpoint ordering.
  const remaining=data.names.map((_,i)=>i).sort((a,b)=>(Math.imul(a,2654435761)>>>0)-(Math.imul(b,2654435761)>>>0));
  const priority=[selected,...data.neighbours[selected],...remaining].filter(i=>photoNumber(data.names[i])&&!mapThumbFailures.has(data.names[i]));
- const {boxes,budget}=thumbnailLayout(points,priority,{...config,push:false});
+ const {boxes,budget}=thumbnailLayout(points,priority,{...config,push:false,unknownOverlap:config.aspect&&!config.push?0:config.overlap});
  const ranks=new Map(boxes.map((b,i)=>[b.id,i]));
  const retained=new Map();
  for(const box of mapThumbLayout){
@@ -187,7 +218,7 @@ async function renderMapThumbnails(){
    const choice=(photoChoices.get(id)||0)%album.photos.length,photo=album.photos[choice];
    let image=mapThumbImages.get(photo.image_path)?.cloneNode();
    const button=photoText('button','','map-thumb');button.type='button';button.style.left=box.x+'px';button.style.top=box.y+'px';button.style.width=box.width+'px';button.style.height=box.height+'px';button.style.zIndex=String(boxes.length-boxes.indexOf(box));button.style.borderColor=box.id===selected?'#c2344b':data.neighbours[selected].includes(box.id)?'#087e8b':'#7c90a3';button.setAttribute('aria-label',`Inspect ${album.display_name}, class ${id}`);button.onclick=()=>selectClass(box.id);button.onfocus=()=>showMapPhotoCredit(box.id);
-   button.classList.toggle('image-only',!config.labels);button.title=`${album.display_name} · class ${id}`;
+   button.classList.toggle('image-only',!config.labels);button.classList.toggle('original-aspect',config.aspect);button.title=`${album.display_name} · class ${id}`;
    if(!image){image=new Image();image.decoding='async';}
    image.draggable=false;image.alt=album.display_name;image.style.height=size+'px';
    button.append(image);if(config.labels)button.append(photoText('span',id));
@@ -195,6 +226,9 @@ async function renderMapThumbnails(){
    const okay=(image.complete&&image.naturalWidth>0)||await loadReferenceImage(image,photo.image_path,signal);
    if(signal.aborted||generation!==mapThumbGeneration)return;
    if(okay){
+    const footprint=thumbnailFootprint(size,config.labels,config.aspect?image.naturalWidth/image.naturalHeight:1);
+    box.width=footprint.width;box.height=footprint.height;box.left=box.x-box.width/2;box.top=box.y-box.height/2;
+    button.style.width=box.width+'px';button.style.height=box.height+'px';image.style.height=footprint.imageHeight+'px';
     box.button=button;box.tether=tether;box.photoChoice=photoChoices.get(id)||0;box.readyAt=performance.now()+80;
     const offset=config.push?mapThumbOffsets.get(box.id):null;
     if(offset){box.x=Math.max(box.width/2,Math.min(config.width-box.width/2,box.anchorX+offset[0]));box.y=Math.max(box.height/2,Math.min(config.height-box.height/2,box.anchorY+offset[1]));box.left=box.x-box.width/2;box.top=box.y-box.height/2;button.style.left=box.x+'px';button.style.top=box.y+'px';}
@@ -215,7 +249,7 @@ async function renderMapThumbnails(){
  if(config.push&&!signal.aborted&&generation===mapThumbGeneration)await animateThumbnails(config);
  if(generation===mapThumbGeneration){motionFinished=true;status();showMapPhotoCredit(selected);}
 }
-for(const name of ['map-photos','map-photo-size','map-photo-density','map-photo-overlap','map-photo-labels','map-photo-push'])$(name).oninput=drawProjection;
+for(const name of ['map-photos','map-photo-size','map-photo-density','map-photo-overlap','map-photo-labels','map-photo-push','map-photo-aspect'])$(name).oninput=drawProjection;
 $('map-photo-retry').onclick=()=>{mapThumbFailures.clear();scheduleMapThumbnails();};
 $('map-photo-anchors').oninput=setThumbnailAnchors;setThumbnailAnchors();
 new ResizeObserver(scheduleMapThumbnails).observe(projectionCanvas);
