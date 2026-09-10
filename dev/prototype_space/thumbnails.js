@@ -65,6 +65,36 @@ function relaxThumbnails(boxes,width,height,maxShift){
  const state={};while(!state.done)stepThumbnailForce(boxes,width,height,maxShift,state);
  return boxes;
 }
+// Cascaded time-domain filters separate solver convergence from visible motion.
+// A speed-limited guide and its continuous follower use CSS pixels and seconds.
+// Convex combinations preserve viewport and anchor-radius bounds; retaining the
+// guide on each box preserves velocity when loading or navigation reheats layout.
+function stepThumbnailPresentation(boxes,targets,seconds){
+ const omega=8,maxSpeed=140;
+ let remaining=Math.min(.05,Math.max(0,seconds));
+ while(remaining>1e-9){
+  const dt=Math.min(1/240,remaining);remaining-=dt;
+  boxes.forEach((b,i)=>{
+   const target=targets[i];b.guideX??=b.x;b.guideY??=b.y;
+   const dx=target.x-b.guideX,dy=target.y-b.guideY,distance=Math.hypot(dx,dy);
+   const fraction=distance?Math.min(1-Math.exp(-omega*dt),maxSpeed*dt/distance):0;
+   const decay=Math.exp(-omega*dt);
+   for(const [key,guide] of [['x','guideX'],['y','guideY']]){
+    const start=b[guide],velocity=(target[key]-start)*fraction/dt;
+    // Exact follower response to a linearly moving guide in this substep.
+    b[key]=start+velocity*dt-velocity/omega+(b[key]-start+velocity/omega)*decay;
+    b[guide]=start+velocity*dt;
+   }
+  });
+ }
+ let speed=0,error=0;
+ boxes.forEach((b,i)=>{
+  b.left=b.x-b.width/2;b.top=b.y-b.height/2;
+  speed=Math.max(speed,omega*Math.hypot((b.guideX??b.x)-b.x,(b.guideY??b.y)-b.y));
+  error=Math.max(error,Math.hypot(targets[i].x-b.x,targets[i].y-b.y),Math.hypot(targets[i].x-(b.guideX??b.x),targets[i].y-(b.guideY??b.y)));
+ });
+ return {speed,error,done:speed<.02&&error<.005};
+}
 let mapThumbMotion=null;
 function stopThumbnailMotion(){
  if(!mapThumbMotion)return;
@@ -87,25 +117,29 @@ let mapThumbRest=null;
 function animateThumbnails(config){
  stopThumbnailMotion();mapThumbRest=null;
  return new Promise(resolve=>{
-  const motion={frame:0,resolve,state:{},last:0};mapThumbMotion=motion;
+  const motion={frame:0,resolve,state:{},last:0,targets:mapThumbLayout.map(b=>({...b,vx:0,vy:0}))};mapThumbMotion=motion;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const finish=()=>{
-   for(const box of mapThumbLayout){box.vx=0;box.vy=0;}
-   mapThumbRest={...motion.state.metrics,reason:motion.state.reason,steps:motion.state.steps};
+   const measured=thumbnailEnergy(mapThumbLayout);
+   mapThumbRest={...motion.state.metrics,energy:measured.energy,overlap:measured.overlap,pairs:measured.pairs,reason:motion.state.reason,steps:motion.state.steps,presentationSpeed:motion.presentation?.speed||0};
    paintThumbnailMotion();mapThumbMotion=null;resolve();
   };
-  const advance=()=>{
-   const active=mapThumbLayout.filter(b=>reduced||!b.readyAt||performance.now()>=b.readyAt);
-   if(active.length!==mapThumbLayout.length)return;
-   stepThumbnailForce(active,config.width,config.height,2*config.size,motion.state);
-  };
-  if(reduced){while(!motion.state.done)advance();finish();return;}
+  const advance=()=>stepThumbnailForce(motion.targets,config.width,config.height,2*config.size,motion.state);
+  if(reduced){
+   while(!motion.state.done)advance();
+   mapThumbLayout.forEach((b,i)=>{b.x=motion.targets[i].x;b.y=motion.targets[i].y;b.guideX=b.x;b.guideY=b.y;b.left=b.x-b.width/2;b.top=b.y-b.height/2;});
+   finish();return;
+  }
   const tick=time=>{
    if(mapThumbMotion!==motion)return;
-   // Fixed 60 Hz presentation; at most two solver steps per frame and no
-   // catch-up burst after a background tab resumes.
-   if(!motion.last||time-motion.last>=15){advance();if(!motion.state.done)advance();motion.last=time;paintThumbnailMotion();}
-   if(motion.state.done){finish();return;}
+   const dt=motion.last?(time-motion.last)/1000:0;motion.last=time;
+   if(mapThumbLayout.every(b=>!b.readyAt||time>=b.readyAt)){
+    for(let i=0;i<2&&!motion.state.done;i++)advance();
+   }
+   // Existing images keep easing while newly decoded images start appearing.
+   motion.presentation=stepThumbnailPresentation(mapThumbLayout,motion.targets,dt);
+   paintThumbnailMotion();
+   if(motion.state.done&&motion.presentation.done){finish();return;}
    motion.frame=requestAnimationFrame(tick);
   };
   motion.frame=requestAnimationFrame(tick);
@@ -159,6 +193,7 @@ function reanchorThumbnails(points,width,height){
  for(const box of mapThumbLayout){
   const point=points[box.id];if(!point)continue;
   const dx=box.x-box.anchorX,dy=box.y-box.anchorY;
+  if(box.guideX!==undefined){box.guideX+=point[0]-box.anchorX;box.guideY+=point[1]-box.anchorY;}
   box.anchorX=point[0];box.anchorY=point[1];box.x=point[0]+dx;box.y=point[1]+dy;
   box.left=box.x-box.width/2;box.top=box.y-box.height/2;
   if(box.left<0||box.top<0||box.left+box.width>width||box.top+box.height>height){box.button.remove();box.tether?.remove();continue;}

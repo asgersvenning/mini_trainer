@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('./thumbnails.js',import.meta.url),'utf8');
-const {thumbnailEnergy,stepThumbnailForce}=Function(source.slice(source.indexOf('function thumbnailSharedArea'),source.indexOf('let mapThumbMotion'))+'return {thumbnailEnergy,stepThumbnailForce};')();
+const {thumbnailEnergy,stepThumbnailForce,stepThumbnailPresentation}=Function(source.slice(source.indexOf('function thumbnailSharedArea'),source.indexOf('let mapThumbMotion'))+'return {thumbnailEnergy,stepThumbnailForce,stepThumbnailPresentation};')();
 const box=(id,x,y,width=64,height=64)=>({id,x,y,anchorX:x,anchorY:y,width,height});
 const gradientCase=[box(0,100,100,72,60),box(1,149,127,64,80),box(2,210,150,50,64)];
 gradientCase[0].anchorX-=12;
@@ -35,3 +35,30 @@ for(const fixture of [
  results.push({fixture:fixture.name,steps:state.steps,overlappingPairs:state.metrics.pairs});
 }
 console.log(JSON.stringify({gradientChecks:6,fixtures:results}));
+
+// Measure the complete visible trajectory, including startup, a target reversal,
+// and the deceleration tail, using real seconds at different display rates.
+const trajectories=[];
+for(const hz of [30,60,120]){
+ const boxes=[box(0,100,100)],target=[box(0,228,100)];
+ let previousX=100,previousVelocity=0,peakSpeed=0,peakAcceleration=0,firstStep=0,result;
+ const samples=[];
+ for(let frame=1;frame<=hz*5;frame++){
+  if(frame===hz+1)target[0].x=68;
+  result=stepThumbnailPresentation(boxes,target,1/hz);
+  const velocity=(boxes[0].x-previousX)*hz;
+  peakSpeed=Math.max(peakSpeed,Math.abs(velocity));
+  peakAcceleration=Math.max(peakAcceleration,Math.abs(velocity-previousVelocity)*hz);
+  if(frame===1)firstStep=boxes[0].x-100;
+  assert.ok(boxes[0].x>=68&&boxes[0].x<=228,'display remains inside feasible convex region');
+  previousX=boxes[0].x;previousVelocity=velocity;
+  if(frame%(hz/10)===0)samples.push(boxes[0].x);
+ }
+ assert.ok(peakSpeed<=140.01,'visible speed bounded in CSS pixels per second');
+ assert.ok(peakAcceleration<2240,'acceleration bounded even at target reversal');
+ assert.ok(firstStep<.6,'startup must ease in instead of jumping a solver step');
+ assert.ok(result.done&&result.speed<.02,'motion stops only after the slow tail');
+ trajectories.push({hz,peakSpeed,peakAcceleration,firstStep,samples});
+}
+for(let i=1;i<trajectories.length;i++)assert.ok(trajectories[i].samples.every((x,j)=>Math.abs(x-trajectories[0].samples[j])<1e-8),'same elapsed time yields same presentation across refresh rates');
+console.log(JSON.stringify({trajectories:trajectories.map(({samples,...metrics})=>metrics)}));

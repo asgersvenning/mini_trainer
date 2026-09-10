@@ -151,6 +151,20 @@ the work limit guarantees zero overlap or a global energy minimum. Viewport and
 movement bounds can make overlap unavoidable. Reduced-motion preferences run
 the same bounded solver without animation.
 
+Numerical targets are separate from displayed thumbnail centers. Two cascaded
+filters ease visible motion in and out, using elapsed seconds and CSS pixels:
+a guide approaches the target at at most 140 px/s, and the displayed image
+follows continuously with an 8/s response rate. This also bounds acceleration
+(to 2240 px/s², including reversals). Substeps keep motion consistent across
+refresh rates; background pauses advance at most 50 ms instead of catching up.
+The animation continues after numerical convergence until displayed speed is
+below 0.02 px/s and target error below 0.005 px, with no final snap. Image arrivals
+retain the filter state; pan/zoom translates it with the anchor. Hit rectangles
+and optional tethers follow displayed positions. Smoothing can leave temporary
+contacts during motion; energy descent describes numerical targets, not every
+displayed frame. `node dev/prototype_space/check_layout.mjs` checks full-motion
+speed and acceleration, reversals, and 30/60/120 Hz agreement.
+
 The status reports the remaining visible slots. Increase allowable overlap to try
 a denser candidate set;
 this does not guarantee that every admitted image can be separated within the
