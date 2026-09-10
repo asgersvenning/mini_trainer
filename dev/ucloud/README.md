@@ -780,3 +780,10 @@ figure qualification, not a new branch comparison. Preserve any failed output
 and choose a new output path for a retry.
 
 See [renderer measurements and limitations](../benchmarks/reporting/dendrogram.md).
+
+## Scaling the selected configuration
+
+For eight full GPUs with figures, W&B, a bounded batch sweep and checkpoint
+continuation, use [the DDP qualification and production handoff](ddp.md).
+Production training uses `mt_htrain` under `torchrun`; the Python API harness
+remains a qualification tool.

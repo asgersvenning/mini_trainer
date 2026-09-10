@@ -37,3 +37,4 @@ examples/test.ipynb
 !/dev/ucloud/combined-int8.json
 !/dev/ucloud/figures.json
 /local-evidence/
+!/dev/ucloud/ddp.json
