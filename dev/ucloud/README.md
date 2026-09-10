@@ -112,9 +112,10 @@ REPO_URL=file:///work/mini-trainer-source
 # Then use the same pinned uv pip install commands above with this REPO_URL.
 ```
 
-Keep the
-harness separately (it was added after the pinned quant commit), e.g. copy this
-whole `dev/ucloud` directory to `/work/comparison`. Save the exported requirements.
+Keep the harness separately: it was added after the pinned quant commit and is
+not installed by `uv pip install mini_trainer`. Use a checkout containing
+`dev/ucloud/launch.sh`, not a checkout reset to `QUANT_SHA`, for the copy below.
+Save the exported requirements.
 The export and quantization extras are installed equally in both environments so
 optional follow-ups do not change the dependency comparison.
 Use the same backend in **both** the export's `--extra` and the installs'
@@ -128,7 +129,31 @@ the convolutional backbone or all optimizer state integer.
 
 ## Configure and launch
 
-Copy `comparison.json` and edit `parquet`, `output`, both Python paths and `gpus`.
+First copy the harness and example configuration onto the node. If a checkout
+containing `dev/ucloud` is already on the node, run from that checkout's root:
+
+```bash
+mkdir -p /work/comparison
+cp -i dev/ucloud/launch.sh dev/ucloud/compare.py dev/ucloud/worker.py \
+    dev/ucloud/export_followup.py dev/ucloud/comparison.json /work/comparison/
+```
+
+Otherwise, run this from the checkout root on your development machine, replacing
+`UCLOUD_SSH_HOST` with the SSH destination you use for the allocated node (and
+adding your usual SSH port/key options if needed):
+
+```bash
+ssh UCLOUD_SSH_HOST 'mkdir -p /work/comparison'
+scp dev/ucloud/launch.sh dev/ucloud/compare.py dev/ucloud/worker.py \
+    dev/ucloud/export_followup.py dev/ucloud/comparison.json UCLOUD_SSH_HOST:/work/comparison/
+```
+
+Copy once before configuring; preserve an already edited node configuration when
+updating scripts. Creating `/work/comparison` alone does not populate it. Keep the
+three Python scripts alongside `launch.sh`, which resolves them relative to itself.
+
+On the node, edit `/work/comparison/comparison.json`: set `parquet`, `output`, both
+Python paths and `gpus`.
 The Parquet must sit beside `images/<speciesKey>/<filename>` as expected by
 `mini_trainer`. Preparation checks every image path, rejects duplicates and missing
 labels, freezes the taxonomy/index, and retains the existing `set` mapping:
