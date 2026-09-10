@@ -62,3 +62,51 @@ def prototype_projections(weight, neighbours):
             "method": "Centered PCA of unit prototype directions; float32 covariance eigendecomposition; no whitening",
         }
     return result
+
+
+def angular_distances(z, dimensions):
+    """Invert the repository's clamped cosine-to-z transform to radians."""
+    angles = np.maximum(0, np.pi / 2 - np.asarray(z, dtype=np.float32) / np.sqrt(np.float32(dimensions - 2)))
+    np.fill_diagonal(angles, 0)
+    return angles
+
+
+def angular_tsne(z, dimensions, neighbours, seed=42, *, iterations=1000):
+    """An explicit nonlinear display of angular neighbourhoods, not a new metric."""
+    from sklearn.manifold import TSNE
+
+    perplexity = min(30.0, (len(z) - 1) / 3)
+    estimator = TSNE(
+        metric="precomputed",
+        init="random",
+        perplexity=perplexity,
+        random_state=seed,
+        learning_rate="auto",
+        max_iter=iterations,
+        method="barnes_hut",
+        angle=0.5,
+        n_jobs=4,
+    )
+    points = estimator.fit_transform(angular_distances(z, dimensions))
+    near = projected_neighbours(points, len(neighbours[0]))
+    retained = [len(set(a).intersection(b)) / len(a) for a, b in zip(neighbours, near)]
+    return {
+        "coordinates": points.tolist(),
+        "axes": ["t-SNE 1", "t-SNE 2"],
+        "variance_fraction": None,
+        "neighbours": near,
+        "retained_fraction": retained,
+        "mean_retained_fraction": float(np.mean(retained)),
+        "method": (
+            "t-SNE of angular distances recovered from repository z; map areas and inter-cluster gaps are not spherical areas or distances"
+        ),
+        "parameters": {
+            "perplexity": perplexity,
+            "seed": seed,
+            "iterations": iterations,
+            "init": "random",
+            "metric": "precomputed angular radians",
+            "angle": 0.5,
+        },
+        "kl_divergence": float(estimator.kl_divergence_),
+    }

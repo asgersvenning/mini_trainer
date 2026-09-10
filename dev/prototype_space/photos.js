@@ -61,6 +61,7 @@ async function showReference(card, album, classIndex, generation, signal) {
     photoChoices.set(album.class_id, choice + 1);
     card.next.disabled = true;
     await showReference(card, album, classIndex, generation, signal);
+    if(typeof scheduleMapThumbnails==='function')scheduleMapThumbnails();
     card.next.disabled = false;
   };
   const loaded = await loadReferenceImage(card.image, photo.image_path, signal);

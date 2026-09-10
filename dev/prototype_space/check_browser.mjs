@@ -22,7 +22,7 @@ try{
  const result=await call('Runtime.evaluate',{expression:`(()=>{const checks=[];function check(v,s){if(!v)throw Error(s);checks.push(s)}
  check(document.querySelectorAll('#stats .stat').length===4,'production summary');
  check(projectionHits.length===data.names.length,'projection contains every class');
- check(document.getElementById('projection-quality').textContent.includes('Variance retained'),'projection reports distortion');
+ check(document.getElementById('projection-quality').textContent.includes('neighbours retained'),'projection reports distortion');
  const projectionBefore=document.getElementById('projection-map').toDataURL();
  document.getElementById('projection-plane').selectedIndex=1;document.getElementById('projection-plane').dispatchEvent(new Event('change'));
  check(document.getElementById('projection-map').toDataURL()!==projectionBefore,'alternate PCA plane');
@@ -76,7 +76,31 @@ try{
  check(selected===expected,'photo navigates to neighbour');
  document.getElementById('case').value='Algebraic edge cases';document.getElementById('case').dispatchEvent(new Event('change'));await renderPhotos();
  check(document.getElementById('photo-status').textContent.includes('No online lookup'),'synthetic case skips photo lookup');
- document.getElementById('photo-enabled').checked=false;await renderPhotos();window.fetch=originalFetch;
+ document.getElementById('photo-enabled').checked=false;await renderPhotos();
+ document.getElementById('case').value='Production checkpoint';document.getElementById('case').dispatchEvent(new Event('change'));
+ const fixturePoints=[[60,60],[100,60],[260,100],[450,50]], config={width:400,height:200,size:64,density:200,overlap:0};
+ check(thumbnailLayout(fixturePoints,[0,1,2,3],config).boxes.map(b=>b.id).join(',')==='0,2','thumbnail viewport and overlap culling');
+ check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,overlap:.5}).boxes.length===3,'thumbnail allowable overlap');
+ check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,density:5}).boxes.length===1,'thumbnail density budget');
+ check(thumbnailLayout(fixturePoints,[0,1,2,3],{...config,size:140}).boxes.length===1,'thumbnail size changes culling');
+ document.getElementById('map-photos').checked=true;scheduleMapThumbnails();clearTimeout(mapThumbTimer);await renderMapThumbnails();
+ check(document.querySelectorAll('.map-thumb').length>0,'map thumbnails load');
+ check([...document.querySelectorAll('.map-thumb img')].every(img=>img.naturalWidth>0),'map thumbnails decode');
+ const first=mapThumbLayout[0];check(mapThumbnailHit([first.x*1200/projectionCanvas.getBoundingClientRect().width,first.y*600/projectionCanvas.getBoundingClientRect().height])===first.id,'thumbnail hit testing');
+ showMapPhotoCredit(first.id);check(document.getElementById('map-photo-credit').textContent.includes('Fixture photographer'),'map thumbnail attribution');
+ document.querySelector('.map-thumb').click();check(selected===first.id,'thumbnail selection updates class');
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();check(document.querySelectorAll('.map-thumb').length===0,'map thumbnail toggle clears images');
+
+ const fixtureFetch=window.fetch;let release;
+ window.fetch=()=>new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({photo_api:true})})});
+ document.getElementById('map-photos').checked=true;scheduleMapThumbnails();clearTimeout(mapThumbTimer);const pendingMap=renderMapThumbnails();
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();release();await pendingMap;
+ check(document.querySelectorAll('.map-thumb').length===0,'cancelled thumbnail load stays hidden');
+ let syntheticRequests=0;window.fetch=async()=>{syntheticRequests++;throw Error('Unexpected synthetic lookup')};
+ document.getElementById('case').value='Algebraic edge cases';document.getElementById('case').dispatchEvent(new Event('change'));document.getElementById('map-photos').checked=true;scheduleMapThumbnails();
+ check(syntheticRequests===0&&document.getElementById('map-photo-status').textContent.includes('Synthetic'),'synthetic map skips photo requests');
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();window.fetch=fixtureFetch;
+ window.fetch=originalFetch;
  document.getElementById('case').value='Production checkpoint';document.getElementById('case').dispatchEvent(new Event('change'));
  return checks;
  })()`,awaitPromise:true,returnByValue:true});

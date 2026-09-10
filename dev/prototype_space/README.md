@@ -14,7 +14,7 @@ Run from the feature worktree with the existing environment:
 export PYTHONPATH="$PWD"
 CUDA_VISIBLE_DEVICES='' .venv/bin/python -m dev.prototype_space.explore \
   --weights /absolute/path/to/best_global-lepi-production-w32-1_epoch4.pt \
-  --output tmp/prototype-report
+  --output tmp/prototype-report --angular-tsne
 ```
 
 Open `tmp/prototype-report/explorer.html` in a browser. The numerical views are self-contained. For optional GBIF image labels and a
@@ -60,12 +60,12 @@ The environment needs the existing visualization dependencies (including SciPy).
 ## Spatial projection
 
 The map projects all prototype directions into a common 2D coordinate system.
-Choose **PCA 1–2** or **PCA 3–4**, scroll to zoom, drag to pan, and click a point
+Choose **Angular t-SNE**, **PCA 1–2** or **PCA 3–4**, scroll to zoom, drag to pan, and click a point
 to update the existing inspector and image browser. **Fit selected neighbourhood**
 zooms to the selected class and its original-space neighbours without refitting
 the projection. Selection preserves the viewing transform; **Fit all** resets it.
 
-The calculation normalizes effective rows using the same directional geometry as
+The PCA calculation normalizes effective rows using the same directional geometry as
 the cosine diagnostic, centers them, and computes PCA through float32 covariance
 eigendecomposition. No whitening or per-feature standardization is applied.
 Axes use equal spatial scale. Eigenvector signs are fixed for reproducibility;
@@ -85,6 +85,46 @@ For the epoch-4 checkpoint, PC 1–2 retains 0.6784% of directional variance and
 0.7026%, respectively. These measured values show that global two-axis PCA is
 very lossy for these weights. It provides a linear reference for future
 neighbourhood-preserving projections.
+
+### Angular map
+
+`--angular-tsne` also fits a nonlinear map using angular distances in radians,
+recovered from the unchanged repository transform as `pi/2 - z/sqrt(D-2)`.
+This retains its cosine clamping and avoids the saturated CDF. t-SNE uses those
+precomputed angular distances, random initialization with seed 42, perplexity
+`min(30, (classes-1)/3)`, automatic learning rate, 1,000 iterations and Barnes-Hut
+angle 0.5. It does not use PCA preprocessing. The angular map is selected first
+when present; omit the flag for the faster PCA-only report.
+
+On the real checkpoint it retains 48.62% of original top-12 neighbours, compared
+with 0.66% for PC1–2. This is an observed result for these settings and weights,
+not evidence that map areas, gaps between groups or relative group sizes measure
+spherical geometry. Variance explained is not defined for this map. Its
+parameters, KL divergence and neighbour overlap are stored with the coordinates.
+See the [t-SNE reference](https://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html).
+
+### Thumbnails on the map
+
+Enable **GBIF thumbnails on map** independently of the image-card panel. Configure
+image size (32–160 CSS pixels), density (5–200 images per megapixel of map viewport)
+and allowable pairwise rectangle overlap (0–75%). The density gives a maximum
+budget, capped at 200 images; viewport and overlap culling can produce fewer.
+The overlap fraction uses the full thumbnail rectangle including its class label.
+
+Images stay centered on actual projected points. Culling prioritizes the selected
+class and its original-space neighbours, then uses a stable mixed class order.
+Only fully visible, admitted rectangles trigger image requests. Pan/zoom cancels
+stale loads, hides stale placements immediately, and recomputes after a short
+pause; no images are fetched while dragging continuously. Cached metadata is
+shared with the class cards, and changing a class example also refreshes map
+thumbnails. Decoded image references are bounded to 128 entries; server caching
+remains shared. Missing photos leave the underlying point visible. Retry clears
+failed lookups. Synthetic cases make no photo requests.
+
+Click a thumbnail to inspect the class. Hover or keyboard focus exposes the
+scientific name, exact ID, creator, image license and source links below the map.
+Culling never changes scores, coordinates or neighbour ranks. The controls affect
+only which image labels are displayed.
 
 ## Class image labels
 

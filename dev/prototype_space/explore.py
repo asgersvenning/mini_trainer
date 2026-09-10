@@ -17,7 +17,7 @@ from torch import nn
 from mini_trainer.modeling import Classifier, class_distance, class_log_similarity, class_similarity
 from mini_trainer.visualization._dendrogram_layout import linkage_layout
 
-from .projection import prototype_projections
+from .projection import angular_tsne, prototype_projections
 
 
 def weight_model(weight: torch.Tensor) -> nn.Module:
@@ -121,7 +121,7 @@ def block_extrema(matrix, order, size=640):
     return lows, highs, block
 
 
-def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None):
+def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None, include_tsne=False):
     n, dim = weight.shape
     if n < 2 or dim <= 2 or neighbours < 1:
         raise ValueError("Need >=2 classes, >2 dimensions and >=1 neighbour")
@@ -196,8 +196,12 @@ def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None):
         row = z[i].copy()
         row[i] = -np.inf
         profiles[i] = -np.partition(-row, np.asarray(ranks) - 1)[np.asarray(ranks) - 1]
+    projections = prototype_projections(weight, near.tolist())
+    if include_tsne:
+        print("Fitting angular t-SNE", flush=True)
+        projections["Angular t-SNE"] = angular_tsne(z, dim, near.tolist(), seed)
     return {
-        "projections": prototype_projections(weight, near.tolist()),
+        "projections": projections,
         "metadata": metadata or {},
         "stats": stats,
         "names": names,
@@ -242,13 +246,16 @@ def main():
     parser.add_argument("--weights", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--angular-tsne", action="store_true", help="Also fit an angular-distance t-SNE map")
     args = parser.parse_args()
     torch.set_num_threads(args.threads)
     weight, names, groups, provenance = load_prototypes(args.weights)
-    cases = {"Production checkpoint": analyze(weight, names, groups, metadata=provenance)}
+    cases = {"Production checkpoint": analyze(weight, names, groups, metadata=provenance, include_tsne=args.angular_tsne)}
     for name, sample in synthetic_cases(weight.shape[1]).items():
         labels = [f"synthetic-{i}" for i in range(len(sample))]
-        cases[name] = analyze(sample, labels, [[label] for label in labels], metadata={"seed": 42, "synthetic": True})
+        cases[name] = analyze(
+            sample, labels, [[label] for label in labels], metadata={"seed": 42, "synthetic": True}, include_tsne=args.angular_tsne
+        )
     args.output.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(cases, separators=(",", ":"), allow_nan=False).replace("<", "\\u003c")
     (args.output / "report-data.json").write_text(payload)
@@ -257,6 +264,7 @@ def main():
         template.replace("__REPORT_DATA__", payload)
         .replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
         .replace("__PROJECTION_SCRIPT__", Path(__file__).with_name("projection.js").read_text())
+        .replace("__THUMBNAIL_SCRIPT__", Path(__file__).with_name("thumbnails.js").read_text())
     )
     summary = {name: {"metadata": case["metadata"], "stats": case["stats"]} for name, case in cases.items()}
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
