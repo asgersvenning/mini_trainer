@@ -293,6 +293,36 @@ Capture eligibility, extra gradient copies, graph workspace memory and first-use
 compilation costs still depend on the optimizer and workload. Measure both float
 and INT8 with the same options; enabling graphs alone is not evidence of a speedup.
 
+## Agent-only changes and CI
+
+Material primarily for coding agents lives in [`.agents/`](../.agents/README.md),
+with root [`AGENTS.md`](../AGENTS.md) as the entry point. Durable notes use the
+[shared format](../.agents/notes/README.md); scratch work belongs in ignored
+`.agents/local/`. Developer-facing documentation remains in `docs/` and `dev/`.
+
+Use separate `agent:` commits for agent instructions and notes. This prefix marks
+purpose, not authorship, and does not disable checks. CI workflow changes, executable
+helpers and application changes receive normal separate commits.
+
+The CI and dataset benchmark workflows skip pushes that change only `AGENTS.md`,
+Markdown inside `.agents/`, or `.agents/.gitignore`. Other Markdown, code, scripts,
+configuration and workflow changes still run the usual checks. On pull requests,
+a small `scope` job compares the complete PR diff; agent-only changes skip costly
+jobs while preserving job statuses. Mixed changes run checks regardless of commit
+messages. Scheduled and manual benchmarks keep their existing behavior.
+
+`dev/ci_scope.py` uses Git and the Python standard library, with no environment
+installation. Missing/unreadable/empty comparisons run checks conservatively;
+renames inspect both old and new paths. If classification fails, downstream checks
+still run unless the workflow was cancelled. The push patterns are also checked
+against the classifier by `tests/core/test_ci_scope.py`.
+
+Do not use `[skip ci]` as an alternative: GitHub documents that workflow-level
+skipping can leave [required PR checks pending](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore).
+Agent-only edits need content/link review and `git diff --check`; changes to the
+classifier or workflows need their focused checks. Release-tag, scheduled and
+manual workflows are not disabled by agent commit messages.
+
 ## Automatic CPU budgets
 
 Automatic loader and cache worker counts now use the smallest detected process

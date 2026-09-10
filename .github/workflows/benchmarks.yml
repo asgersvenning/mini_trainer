@@ -5,6 +5,11 @@ on:
     branches: ["master"]
   push:
     branches: ["master"]
+    # Only agent documents are exempt; source, public docs and workflow edits run checks.
+    paths-ignore:
+      - 'AGENTS.md'
+      - '.agents/**/*.md'
+      - '.agents/.gitignore'
   schedule:
     - cron: "0 5 * * 4"
   workflow_dispatch:
@@ -31,7 +36,26 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    name: Classify changed files
+    runs-on: ubuntu-latest
+    outputs:
+      run_checks: ${{ steps.scope.outputs.run_checks }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Keep code checks for mixed or uncertain changes
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 dev/ci_scope.py >> "$GITHUB_OUTPUT"
+
   cpu:
+    needs: scope
+    if: always() && !cancelled() && needs.scope.outputs.run_checks != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,7 +86,8 @@ jobs:
             !benchmark-results/**/data/**/*.png
 
   gpu:
-    if: (github.event_name == 'workflow_dispatch' && inputs.gpu) || (github.event_name == 'schedule' && vars.ENABLE_GPU_BENCHMARKS == 'true')
+    needs: scope
+    if: always() && !cancelled() && needs.scope.outputs.run_checks != 'false' && ((github.event_name == 'workflow_dispatch' && inputs.gpu) || (github.event_name == 'schedule' && vars.ENABLE_GPU_BENCHMARKS == 'true'))
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 45
     env:
