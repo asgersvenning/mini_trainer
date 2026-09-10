@@ -1,4 +1,4 @@
-"""Measure SVG decoding and forced rasterization in a disposable Chromium page."""
+"""Measure SVG/PNG decoding and forced rasterization in a disposable Chromium page."""
 
 import argparse
 import base64
@@ -21,7 +21,12 @@ def main():
     except ImportError as error:
         raise SystemExit("Install playwright and its Chromium browser in a disposable environment; see dendrogram.md") from error
 
-    sources = {name: base64.b64encode(path.read_bytes()).decode() for name, path in (("before", args.before), ("after", args.after))}
+    sources = {}
+    for name, path in (("before", args.before), ("after", args.after)):
+        if path.suffix.lower() not in (".svg", ".png"):
+            parser.error("Input files must be SVG or PNG")
+        mime = "image/svg+xml" if path.suffix.lower() == ".svg" else "image/png"
+        sources[name] = f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
     args.output.mkdir(parents=True, exist_ok=False)
     samples = {}
     with sync_playwright() as playwright:
@@ -36,7 +41,7 @@ def main():
                         result = page.evaluate(
                             """async ({svg, size}) => {
                                 const image = new Image(); const start = performance.now();
-                                image.src = 'data:image/svg+xml;base64,' + svg;
+                                image.src = svg;
                                 await image.decode(); const decoded = performance.now();
                                 const canvas = document.createElement('canvas');
                                 canvas.width = canvas.height = size;
