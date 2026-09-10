@@ -16,6 +16,13 @@ All code in `mini_trainer` should follow the following core principles:
 * All hyperparameters and system configuration should have smart defaults that are as general as possible
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
 
+## Explore model prototypes
+
+With the optional `explorer` dependencies installed, run `mt_explore weights.pt`
+to open the interactive prototype explorer, or `mt_explore` to choose weights in
+the browser. See the [prototype explorer guide](docs/prototype-explorer.md) for
+installation, portable exports, supported checkpoints, and interpretation.
+
 # Installation
 
 We recommend using `uv` for package and environment management.

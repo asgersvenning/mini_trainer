@@ -1,6 +1,9 @@
 # Prototype-space exploration
 
-This is an offline interactive feature prototype. The accompanying
+The reusable tool is installed as `mt_explore`; see the
+[launcher and export guide](../../docs/prototype-explorer.md). Runtime code and
+viewer assets live in `mini_trainer.visualization.prototype_space`. These developer
+commands remain as compatibility entry points and regression tools. The accompanying
 [log-domain diagnostic API](../../docs/prototype-diagnostics.md) also supports
 evaluation logging during training. The existing weight parametrization,
 similarity transform and class distance remain the empirical reference.
@@ -296,3 +299,23 @@ CHROMIUM_BIN=/absolute/path/to/chrome node dev/prototype_space/check_browser.mjs
 
 No browser dependency is installed by this helper. Screenshots and the interaction
 check report stay in the ignored output directory.
+
+## Packaged launcher checks
+
+`tests/utils/test_prototype_launcher.py` checks portable generation, class order,
+HTTP upload, invalid-file recovery, and separation of weights from served files.
+`dev/check-wheel.sh` checks the installed entry point, bundled assets, and the
+missing-extra message in a minimal environment.
+
+For the browser file-picker path, start `mt_explore --no-browser` (or its module
+equivalent) and run:
+
+```bash
+CHROMIUM_BIN=/path/to/chrome node dev/prototype_space/check_launcher.mjs \
+  http://localhost:PORT/ tmp/launcher-check /absolute/path/to/small-weights.pt
+```
+
+This selects the file with Chromium's native input, generates the default angular
+map, opens the report, and returns to the picker. Use a small supported checkpoint
+for this bounded regression check. The original `check_browser.mjs` exercises the
+full real-checkpoint report with its three synthetic comparison cases.
