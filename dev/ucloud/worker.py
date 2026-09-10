@@ -16,6 +16,51 @@ from pathlib import Path
 from compare import digest, plan, write_json
 
 
+def progress(message):
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
+
+
+def qualification_parquet(config):
+    """Reservoir-sample each existing split with memory bounded by sample size."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from mini_trainer.integrations.parquet import COLUMNS, iter_parquet_batches, set2split
+
+    settings = config["qualification"]
+    rng = random.Random(settings["seed"])
+    selected = {split: [] for split in ("train", "validation", "test")}
+    seen = Counter()
+    scanned = 0
+    next_report = 1_000_000
+    progress("Selecting qualification rows from existing splits (one streaming Parquet scan)")
+    for batch in iter_parquet_batches(config["parquet"]):
+        for row in batch.to_pylist():
+            split = set2split(int(row["set"]))
+            seen[split] += 1
+            scanned += 1
+            reservoir = selected[split]
+            limit = settings[split]
+            if len(reservoir) < limit:
+                reservoir.append((scanned, row))
+            else:
+                index = rng.randrange(seen[split])
+                if index < limit:
+                    reservoir[index] = (scanned, row)
+        if scanned >= next_report:
+            progress(f"Scanned {scanned:,} included rows; retained {sum(map(len, selected.values())):,}")
+            next_report = scanned + 1_000_000
+    if any(seen[split] < settings[split] for split in selected):
+        raise ValueError(f"Not enough rows for requested qualification sample; available: {dict(seen)}")
+    rows = [row for _, row in sorted(item for reservoir in selected.values() for item in reservoir)]
+    source_schema = pq.read_schema(config["parquet"])
+    schema = pa.schema([source_schema.field(column) for column in COLUMNS])
+    destination = Path(config["output"]) / "qualification.parquet"
+    pq.write_table(pa.Table.from_pylist(rows, schema=schema), destination)
+    progress(f"Saved {len(rows):,} qualification rows; original split counts: {dict(seen)}")
+    return str(destination)
+
+
 def preflight(config, branch, *, verify=False):
     import torch
 
@@ -30,7 +75,10 @@ def preflight(config, branch, *, verify=False):
     if compiler is None:
         raise RuntimeError("A C++ compiler is required, including for existing compiled augmentation kernels")
     if not torch.cuda.is_available() or torch.cuda.device_count() < config["gpus"]:
-        raise RuntimeError(f"Need {config['gpus']} visible CUDA GPUs")
+        raise RuntimeError(
+            f"Need {config['gpus']} visible CUDA GPUs; available={torch.cuda.is_available()}, "
+            f"count={torch.cuda.device_count()}, torch={torch.__version__}, CUDA build={torch.version.cuda}"
+        )
     if not verify:
         for index in range(config["gpus"]):
             with torch.cuda.device(index):
@@ -45,6 +93,9 @@ def preflight(config, branch, *, verify=False):
         "platform": platform.platform(),
         "compiler": compiler,
         "cuda": torch.version.cuda,
+        "cpu_affinity_count": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count(),
+        "torch_threads": torch.get_num_threads(),
+        "shared_memory_bytes": shutil.disk_usage("/dev/shm").total if Path("/dev/shm").exists() else None,
         "gpus": [torch.cuda.get_device_name(i) for i in range(config["gpus"])],
         "dependencies": {
             d.metadata["Name"].lower(): d.version
@@ -68,25 +119,42 @@ def prepare(config):
     from mini_trainer.integrations.parquet import get_metadata_from_parquet
 
     output = Path(config["output"])
-    spec = HierarchicalBuilder.build_class_spec(dir=config["parquet"], levels=3)
+    metadata_path = qualification_parquet(config) if config.get("qualification") else config["parquet"]
+    progress("Building taxonomy")
+    spec = HierarchicalBuilder.build_class_spec(dir=metadata_path, levels=3)
     spec["resize_size"] = config["size"]
     write_json(output / "class_spec.json", spec)
-    data = get_metadata_from_parquet(config["parquet"], cls2idx=spec["cls2idx"])
+    progress(f"Parsing image metadata; classes per level: {spec['num_classes']}")
+    data = get_metadata_from_parquet(metadata_path, cls2idx=spec["cls2idx"])
+    if config.get("qualification"):
+        # The sampled Parquet is an artifact; images still live beside the source.
+        source_root = Path(config["parquet"]).resolve().parent
+        sample_root = Path(metadata_path).resolve().parent
+        data["path"] = [str(source_root / Path(path).relative_to(sample_root)) for path in data["path"]]
     counts = Counter(data["split"])
     if not all(counts[split] for split in ("train", "validation", "test")):
         raise ValueError(f"Require nonempty existing train/validation/test splits, got {counts}")
+    progress(f"Checking duplicates and {len(data['path']):,} image paths")
     if len(set(data["path"])) != len(data["path"]):
         raise ValueError("Duplicate image paths; resolve duplicates/split leakage before comparing")
-    for path, labels in zip(data["path"], data["class"], strict=True):
+    checked_at = time.monotonic()
+    for index, (path, labels) in enumerate(zip(data["path"], data["class"], strict=True), 1):
         if not Path(path).is_file():
             raise FileNotFoundError(f"Expected Parquet-adjacent images/<speciesKey>/<filename>: {path}")
         if any(value is None for value in labels):
             raise ValueError(f"Unmapped taxonomy: {path}")
+        if time.monotonic() - checked_at >= 10:
+            progress(f"Checked {index:,}/{len(data['path']):,} image paths")
+            checked_at = time.monotonic()
     per_rank = config["global_batch_size"] // config["gpus"]
     if counts["train"] // config["gpus"] < per_rank:
         raise ValueError("Not enough training images for one global batch")
+    progress("Saving dataset index")
     write_json(output / "data_index.json", data)
+    # Model construction does not need the per-image lists.
+    del data
     smoothing = 1 / spec["num_classes"][0]
+    progress("Hashing source Parquet and saving dataset provenance")
     write_json(
         output / "dataset.json",
         {
@@ -94,11 +162,15 @@ def prepare(config):
             "counts": counts,
             "num_classes": spec["num_classes"],
             "label_smoothing_per_level": [1 - (1 - smoothing) ** (1 / (i + 1)) for i in range(3)],
-            "image_integrity": "All paths checked; image bytes are not hashed or decoded during preparation. Keep mount immutable.",
+            "image_integrity": "All indexed paths checked; image bytes are not hashed or decoded during preparation. Keep mount immutable.",
             "test_used_for_training_or_selection": False,
+            "scope": "qualification_subset" if config.get("qualification") else "full_dataset",
+            "qualification": config.get("qualification"),
         },
     )
     for seed in config["seeds"]:
+        progress(f"Building CPU FP32 starting model for seed {seed}; math threads={torch.get_num_threads()}")
+        progress("Pretrained download and normalized-head initialization may take time; no training is running yet")
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -112,9 +184,11 @@ def prepare(config):
             droprate=0.1,
             fine_tune=False,
         )
+        progress(f"Saving starting weights for seed {seed}")
         torch.save(model.state_dict(), output / f"initial_seed{seed}.pt")
         (output / "preprocessing.txt").write_text(repr(preprocess) + "\n")
         del model
+    progress("Preparation worker finished")
 
 
 def instrument(output):

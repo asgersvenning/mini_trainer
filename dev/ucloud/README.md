@@ -64,6 +64,57 @@ is excluded because it replicates the dataset per DDP rank and can exhaust node
 memory; both branches use uncached image loading. W&B is disabled to avoid requiring
 credentials; local logs and checkpoints are retained.
 
+## Fresh job setup
+
+For the first bounded test, select one MIG in UCloud and mount the global_lepi
+dataset. Internet access is needed for the source checkout, Python dependencies
+and the first pretrained-weight download. CPU and RAM come with the selected
+GPU product; the host totals reported inside the container are not your budget.
+
+Clone the branch containing the current harness, then install uv if the image
+does not already provide it. Follow the [official uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+```bash
+git clone --branch quant https://github.com/asgersvenning/mini_trainer.git /work/mini_trainer
+# Only if `uv --version` is unavailable:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+cd /work/mini_trainer
+bash dev/ucloud/setup.sh /work/YOUR_DATASET/YOUR_METADATA.parquet
+```
+
+The setup script reads the pinned commits from `qualification.json`, exports the
+quant commit's lockfile into `/work/requirements-mt.txt`, creates two Python 3.12
+environments and checks their dependencies. It uses explicit indexes and required
+hashes, stops on the first error, and generates `/work/qualification.json` with the
+supplied dataset path and a new smoke-test output path. It does not start training
+or touch the dataset. No editable package is installed, and the checkout stays on
+the harness branch. Do not reset it to the older pinned package commits.
+
+`MT_WORK_ROOT` overrides `/work`, `MT_CONFIG` chooses another generated config path,
+and `MT_TORCH_BACKEND` selects `cu126`, `cu130` (default) or `cu132`. A failed setup can
+be rerun: it synchronizes only its dedicated `venvs/mt-master` and `venvs/mt-quant`
+environments, removing leftover packages there. An existing generated config is
+never overwritten. The UV download cache defaults to `/work/.cache/uv`; installation
+time and disk space depend on the node and network and are outside the test budget.
+
+Once setup succeeds:
+
+```bash
+cd /work/mini_trainer/dev/ucloud
+export TORCH_HOME=/work/.cache/torch
+bash launch.sh /work/qualification.json --stage plan
+bash launch.sh /work/qualification.json --stage prepare && \
+    bash launch.sh /work/qualification.json --stage train
+bash launch.sh /work/qualification.json --stage summary
+```
+
+Preparation and both eager runs share a 30-minute wall-clock budget. It does not
+terminate the UCloud job; choose the allocation lifetime separately, allowing for
+installation. See the qualification and resource discussion below before expanding
+the matrix. The manual setup below remains available for full-dataset comparisons.
+
 ## Fresh environment setup (manual)
 
 Use the same Python and exact dependency versions for both packages. The runner
@@ -90,8 +141,10 @@ Keep the NVIDIA driver information from `nvidia-smi` with your results.
 uv export --locked --no-dev --no-emit-project --extra recommended --extra cu130 --extra export --extra quantization --output-file /work/requirements-mt.txt
 uv venv --python 3.12 /work/venvs/mt-master
 uv venv --python 3.12 /work/venvs/mt-quant
-uv pip install --python /work/venvs/mt-master/bin/python --torch-backend=cu130 --require-hashes -r /work/requirements-mt.txt
-uv pip install --python /work/venvs/mt-quant/bin/python --torch-backend=cu130 --require-hashes -r /work/requirements-mt.txt
+export UV_LINK_MODE=copy
+unset UV_TORCH_BACKEND
+uv pip install --python /work/venvs/mt-master/bin/python --index https://pypi.org/simple --default-index https://download.pytorch.org/whl/cu130 --index-strategy unsafe-first-match --require-hashes -r /work/requirements-mt.txt
+uv pip install --python /work/venvs/mt-quant/bin/python --index https://pypi.org/simple --default-index https://download.pytorch.org/whl/cu130 --index-strategy unsafe-first-match --require-hashes -r /work/requirements-mt.txt
 uv pip install --python /work/venvs/mt-master/bin/python --no-deps "mini_trainer @ git+$REPO_URL@$MASTER_SHA"
 uv pip install --python /work/venvs/mt-quant/bin/python --no-deps "mini_trainer @ git+$REPO_URL@$QUANT_SHA"
 uv pip check --python /work/venvs/mt-master/bin/python
@@ -118,8 +171,14 @@ not installed by `uv pip install mini_trainer`. Use a checkout containing
 Save the exported requirements.
 The export and quantization extras are installed equally in both environments so
 optional follow-ups do not change the dependency comparison.
-Use the same backend in **both** the export's `--extra` and the installs'
-`--torch-backend`; exported requirements do not carry the custom PyTorch index.
+Use the same backend in the export's `--extra` and the installs' explicit CUDA
+index URL. Exported requirements do not carry the custom PyTorch index.
+PyPI is searched first, then the CUDA index when the pinned version is absent.
+Keep hashes enabled. Avoid `--torch-backend` for this exported lock: it also
+redirects `torchao`, which is locked from PyPI, and can trigger an unpinned
+requirement error in a fresh environment. Stop on any installation failure before
+continuing to the next command. The copy link mode avoids cross-filesystem
+hardlink warnings; it does not affect training speed.
 
 Preparation downloads torchvision's pretrained weights if absent. For offline
 jobs, populate a shared writable `TORCH_HOME` ahead of time using the same locked
@@ -129,13 +188,26 @@ the convolutional backbone or all optimizer state integer.
 
 ## Configure and launch
 
+If you cloned a branch containing this harness directly onto the node, run from
+that checkout's `dev/ucloud` directory. No `/work/comparison` directory or copy is
+needed. Keep the checkout there; the launcher resolves its sibling scripts itself
+and runs workers outside the checkout with the configured installed interpreters.
+For example:
+
+```bash
+cd /work/mini_trainer/dev/ucloud
+```
+
+The following copy instructions are an alternative for transferring just the harness
+when environments already exist. `setup.sh` requires a Git checkout with the pinned
+package commits and is intended for the fresh-job workflow above.
 First copy the harness and example configuration onto the node. If a checkout
 containing `dev/ucloud` is already on the node, run from that checkout's root:
 
 ```bash
 mkdir -p /work/comparison
 cp -i dev/ucloud/launch.sh dev/ucloud/compare.py dev/ucloud/worker.py \
-    dev/ucloud/export_followup.py dev/ucloud/comparison.json /work/comparison/
+    dev/ucloud/export_followup.py dev/ucloud/comparison.json dev/ucloud/qualification.json /work/comparison/
 ```
 
 Otherwise, run this from the checkout root on your development machine, replacing
@@ -145,7 +217,7 @@ adding your usual SSH port/key options if needed):
 ```bash
 ssh UCLOUD_SSH_HOST 'mkdir -p /work/comparison'
 scp dev/ucloud/launch.sh dev/ucloud/compare.py dev/ucloud/worker.py \
-    dev/ucloud/export_followup.py dev/ucloud/comparison.json UCLOUD_SSH_HOST:/work/comparison/
+    dev/ucloud/export_followup.py dev/ucloud/comparison.json dev/ucloud/qualification.json UCLOUD_SSH_HOST:/work/comparison/
 ```
 
 Copy once before configuring; preserve an already edited node configuration when
@@ -170,12 +242,112 @@ bash launch.sh comparison.json --stage summary
 ```
 
 `prepare` requires a **new** output directory and verifies CUDA in both environments.
-It is CPU-heavy when parsing and initializing models. Start with a separate
-qualification config/output: one seed, one epoch, and the two eager controls plus
-the acceleration settings you intend to test. Use the same global batch and image
-size as the full study. This is a real-data qualification run, not a substitute for
-the full 18-run comparison. Eight workers per rank can mean 64 workers on eight
-GPUs; reduce consistently if the allocated CPU or shared-memory budget requires it.
+It is CPU-heavy when parsing and initializing models. Start with the bounded
+qualification profile below: one epoch of the full six-million-image dataset is
+still a long run. Eight workers per rank can mean 64 workers on eight GPUs; reduce
+consistently if the allocated CPU or shared-memory budget requires it.
+
+### Bounded qualification on one MIG device
+
+Use `qualification.json` for the first setup test. Edit its dataset path and
+environment entries to match your node, and choose a new output path. It selects
+one visible CUDA device, batch size 32, two loader workers, one epoch and one seed,
+with both eager controls. The source splits are preserved, and a fixed seed selects
+2,048 training, 512 validation and 128 test rows by uniform reservoir sampling within
+each split. Both branches use exactly the same saved sample and starting weights.
+Test images are checked for existence but are not used in training or validation.
+
+This gives **64 training batches and 16 validation batches per branch**. Selection
+still streams the source Parquet once, but retains only 2,688 rows plus one batch
+in memory. Only selected image paths are checked. The taxonomy and classifier head
+are built from the selected rows, reducing the pinned master's expensive normalized
+head initialization. Duplicate/path validation covers the sample, not the entire
+source dataset. The selected Parquet, mappings, index and seed are retained and
+hashed with the other preparation artifacts.
+
+This is an infrastructure smoke test, **not a full-taxonomy performance or quality
+comparison**. Random sampling can leave validation species absent from the training
+sample. Do not interpret its accuracy, loss weighting or timing as representative
+of the complete dataset. Results carry `scope=qualification_subset`, including in
+the paired report. Omitting `qualification` preserves the full-dataset workflow.
+
+```bash
+# From the node's checkout, after editing qualification.json:
+cd /work/mini_trainer/dev/ucloud
+bash launch.sh qualification.json --stage plan
+bash launch.sh qualification.json --stage prepare && \
+    bash launch.sh qualification.json --stage train
+bash launch.sh qualification.json --stage summary
+```
+
+The profile's `budget_seconds: 1800` sets one wall-clock deadline beginning at
+`prepare`, shared by preflights, preparation and both training runs. Time between
+commands also counts; chain preparation and training as above. The launcher stops
+active workers when the deadline expires (cleanup may take up to 15 additional
+seconds), records an interrupted/timed-out run when applicable, and preserves all
+logs. This is a time bound, not a promise that both runs finish on every allocation.
+`timeout_seconds` additionally caps each worker call. Summary remains available
+after the deadline. The budget does not stop the UCloud allocation or include manual
+environment installation; set the job lifetime in UCloud separately.
+
+After the eager pair passes, use another new output and add `quant_prefetch` first.
+Test compilation variants separately: cold compilation can consume much of a short
+budget. For timing comparisons, increase to at least two epochs to distinguish
+first-use costs from subsequent execution, and keep sample seed, batch size,
+image size, resource allocation and thread settings fixed across variants. Full
+taxonomy, full-data convergence, INT8 and multi-GPU/DDP qualification remain separate.
+
+### Job resources and bottlenecks
+
+[UCloud's resource guide](https://docs.cloud.sdu.dk/guide/resources-products.html)
+describes one MIG as one seventh of a B200 and allows one to four MIGs per job.
+The UI's `4/7` selection provides four separate `1g.23gb` devices, not a single
+device with four times the memory. CPU and system RAM allocations scale with the
+selected product. Use the vCPU/RAM values shown for that selection; `nproc` and
+`free` can expose host totals (384 vCPUs and roughly 2.2 TiB on this node type).
+Keep the existing one-MIG allocation for the initial eager test; four devices
+would additionally exercise DDP and would not accelerate the serial preparation.
+
+The profile's batch size 32 leaves more headroom than the observed full-head
+batch-64 run, which used about 16 GiB of a 20.5 GiB device. Keep 384-pixel inputs to
+exercise the intended preprocessing. Two loader workers are a conservative starting
+point for a fractional allocation. The reported 34 GiB `/dev/shm` is not a small
+default shared-memory mount; there is no evidence so far that it needs increasing.
+Avoid full-dataset RAM caching. If loaders later starve the GPU, compare two and
+four workers within the actual CPU quota before increasing further; keep the same
+worker count for paired branches. Container CPU quotas may be lower than affinity.
+
+The launcher defaults to one CPU math thread and one compiler worker per rank.
+Changing `OMP_NUM_THREADS` and `MKL_NUM_THREADS` before launch affects both branches;
+two math threads can be tested if the allocated CPU budget leaves room alongside
+the loaders. Do not set them from the host CPU count. Preflight records the actual
+PyTorch thread count, visible CPU affinity count and shared-memory capacity. Keep
+the pretrained weight cache (`TORCH_HOME`) on persistent writable storage to avoid
+repeated downloads. If file I/O remains dominant, stage only the small sample's
+images on confirmed fast node-local storage for a separate, identically staged
+comparison; moving the full dataset is unnecessary for a smoke test.
+
+### Preparation progress and interrupted runs
+
+The launcher prints the preflight and preparation log paths. `prepare.log` includes
+timestamped sampling, taxonomy, path-checking, index-writing, hashing and model
+construction messages, with periodic counts while scanning and checking paths.
+CPU model construction can still be silent inside the pinned package's initializer.
+JSON is written incrementally, and per-image metadata is released before building
+starting models to reduce preparation's temporary memory requirements.
+
+```bash
+output_dir=$(python3 -c 'import json; print(json.load(open("qualification.json"))["output"])')
+tail -f "$output_dir/prepare.log"
+```
+
+`prepared.json` is the completion marker. Its absence can mean preparation is still
+running; check the original launcher and worker processes before starting another
+attempt. An existing output cannot be prepared again, and training now reports an
+explicit incomplete-preparation error. Preserve an interrupted attempt and use a
+new output path. Ctrl-C stops the worker process group and records `interrupted`
+for an active training run; it exits with code 130 without a Python traceback.
+Neither interrupted nor timed-out runs enter paired completed-run comparisons.
 
 `--only quant_eager_seed42` selects a planned run. Run `train` again to skip
 completed, checksum-verified runs and continue pending ones. Failed/interrupted
@@ -267,6 +439,23 @@ require their explicit CUDA-reference export path and are rejected by this FP32
 follow-up. Calibrate PTQ on training images only.
 
 ## Local validation and limits
+
+The bounded qualification increment has 16 focused passing cases covering the
+bootstrap's success/failure flow with a fake installer, reproducible split sampling,
+CPU preparation/training/reload with real EfficientNetV2-S, artifact checks,
+interruption records, and deadline termination of a real worker. The core harness
+tests also passed against the pinned master source. The bootstrap's real locked
+export and dependency-sync dry run resolved the Python 3.12 CUDA 13.0 environment;
+a complete fresh GPU environment was not installed locally.
+
+Static checks passed. The repository-wide run completed its benchmark group, then
+stalled in a spawned loader test in the sandbox; the remaining suite was rerun
+outside the sandbox with one CPU math thread: 377 passed, 149 skipped, and the known
+EMA expected failure. Skips include unavailable GPU/optional/slow coverage. Warnings
+include upstream deprecations and missing optional dendrogram plotting dependencies.
+There is no new B200/MIG runtime measurement for the bounded profile yet.
+
+Initial harness validation, before the bounded profile:
 
 The launch planner, input freezing, completed-run skipping, shell syntax, Ruff and
 import contracts were checked. A small Parquet fixture ran through preparation,

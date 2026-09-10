@@ -30,4 +30,5 @@ examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml
 !/dev/ucloud/comparison.json
+!/dev/ucloud/qualification.json
 /local-evidence/
