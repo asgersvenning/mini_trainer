@@ -23,7 +23,6 @@ except ImportError:
     psutil = None
 import torch
 from matplotlib import pyplot as plt
-from matplotlib import rc_context
 from matplotlib.figure import Figure
 from torch import nn
 
@@ -34,6 +33,7 @@ from mini_trainer.visualization import (
     plot_class_distance_matrix,
     plot_heatmap,
     plot_probabilistic_dendrogram,
+    save_dendrogram_svg,
 )
 
 
@@ -1149,8 +1149,8 @@ class MultiLogger:
                     dendrograms = plot_probabilistic_dendrogram(model)
                     try:
                         for lvl, (pd_fig, _) in enumerate(dendrograms):
-                            with NamedTemporaryFile(suffix=".svg") as tmp_file, rc_context({"svg.fonttype": "none"}):
-                                pd_fig.savefig(tmp_file.name, bbox_inches="tight")
+                            with NamedTemporaryFile(suffix=".svg") as tmp_file:
+                                save_dendrogram_svg(pd_fig, tmp_file.name)
                                 self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
                         get_logger().info(f"Dendrogram diagnostics saved in {time.monotonic() - started:.1f}s")
                     finally:

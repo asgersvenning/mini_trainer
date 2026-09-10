@@ -123,3 +123,60 @@ def test_failed_later_level_closes_earlier_figures(monkeypatch):
     with pytest.raises(ValueError, match="non-finite"):
         d.plot_probabilistic_dendrogram(None)
     assert plt.get_fignums() == before
+
+
+def test_short_arc_chords_respect_geometric_error_and_keep_endpoints():
+    from matplotlib.path import Path
+
+    from mini_trainer.visualization._dendrogram_layout import _arc, _point
+
+    tolerance = 0.002
+    for radius in (32.75, 82.25, 89):
+        for sweep in np.linspace(-np.pi, np.pi, 101):
+            vertices, codes = [], []
+            _arc(vertices, codes, 0.4, 0.4 + sweep, radius, tolerance)
+            np.testing.assert_allclose(vertices[-1], _point(0.4 + sweep, radius))
+            if codes == [Path.LINETO]:
+                # Maximum deviation from a circular arc is at its midpoint.
+                midpoint = (np.array(_point(0.4, radius)) + vertices[-1]) / 2
+                assert radius - np.linalg.norm(midpoint) <= tolerance + 1e-12
+            else:
+                assert all(code == Path.CURVE4 for code in codes)
+                previous = np.array(_point(0.4, radius))
+                t = np.linspace(0, 1, 101)[:, None]
+                for index in range(0, len(vertices), 3):
+                    p1, p2, end = np.asarray(vertices[index : index + 3])
+                    curve = (1 - t) ** 3 * previous + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t**2 * p2 + t**3 * end
+                    assert np.max(np.abs(np.linalg.norm(curve, axis=1) - radius)) <= 4.3e-6 * radius
+                    previous = end
+    vertices, codes = [], []
+    _arc(vertices, codes, 0, 0.001, 89, tolerance)
+    assert codes == [Path.LINETO]
+
+
+def test_compact_svg_preserves_text_styles_transforms_and_rounds_only_paths(tmp_path):
+    from mini_trainer.visualization._svg import compact_svg, save_dendrogram_svg
+
+    fig, _ = d._plot_probabilistic_dendrogram(np.ones((3, 3)) - np.eye(3), ["A & B", "same", "same"])
+    try:
+        original = io.StringIO()
+        with rc_context({"svg.fonttype": "none"}):
+            fig.savefig(original, format="svg", bbox_inches="tight")
+        source = original.getvalue()
+        compact = compact_svg(source)
+        before, after = ElementTree.fromstring(source), ElementTree.fromstring(compact)
+        ns = {"s": "http://www.w3.org/2000/svg"}
+        css = "".join(node.text or "" for node in after.findall(".//s:style", ns))
+        for old, new in zip(before.findall(".//s:text", ns), after.findall(".//s:text", ns), strict=True):
+            assert old.text == new.text
+            assert f"text.{new.attrib['class']}{{{old.attrib['style']}}}" in css
+            assert {k: v for k, v in old.attrib.items() if k != "style"} == {k: v for k, v in new.attrib.items() if k != "class"}
+        assert compact_svg(compact) == compact
+        path = tmp_path / "tree.svg"
+        save_dendrogram_svg(fig, path)
+        assert len(ElementTree.parse(path).findall(".//s:text", ns)) == 3
+        fixture = '<svg><defs></defs><path d="M -0.00001 1.23456 L 1e2 -2.34567"/><text x="1.23456">1.23456</text></svg>'
+        assert 'd="M 0 1.235 L 100 -2.346"' in compact_svg(fixture)
+        assert '<text x="1.23456">1.23456</text>' in compact_svg(fixture)
+    finally:
+        plt.close(fig)
