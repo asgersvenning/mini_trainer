@@ -1,6 +1,6 @@
-# Eight-GPU qualification and production handoff
+# Four-GPU qualification and production handoff
 
-Use one manually allocated UCloud node with **eight full B200 GPUs**, the actual
+Use one manually allocated UCloud node with **four full B200 GPUs**, the actual
 Parquet and image storage, and internet access. `ddp.json` rejects devices below
 140 GiB each, so this is not a continuation on the fractional-GPU job.
 
@@ -8,6 +8,11 @@ The chosen configuration is floating-point training on `quant`: FP16 AMP, model
 compilation, figures, W&B, loss auditing and checkpoints. Optimizer compilation,
 explicit CUDA prefetch, INT8 and EMA remain off. Qualification alone uses the
 Python API. Production will use `mt_htrain` under `torchrun`.
+
+This campaign qualifies four ranks. It does not establish eight-rank scaling or
+full-dataset I/O throughput. If eight GPUs become available later, qualify that
+allocation separately. At the same per-GPU batch, four GPUs halve the global batch;
+review the production batch and learning-rate schedule explicitly before training.
 
 ## Setup and authentication
 
@@ -37,9 +42,11 @@ The installed quant environment contains the pinned package and locked dependenc
 
 ## Baseline and batch sweep
 
-Preparation samples 65,536 training, 8,192 validation and 128 test images from the
+Preparation samples 32,768 training, 4,096 validation and 128 test images from the
 **existing splits**, but builds the head from the **full source taxonomy**. It
-preserves class order across trials. This tests production head/figure dimensions
+preserves class order across trials. The subset is half the eight-GPU proposal,
+keeping 256 training steps and 32 validation steps per rank at batch 32.
+This tests production head/figure dimensions
 without training on all six million rows. Read `prepare.log` for actual class
 counts. The test split is reserved for later evaluation, not batch selection.
 
@@ -47,7 +54,9 @@ There is one **30-minute wall-clock budget** shared by baseline preparation and
 all derived trials, including gaps between commands. Individual training workers
 have a 600-second guard; initial preparation has a 900-second guard. Neither is
 an expected duration. If the campaign expires, retain its results and review
-before allocating another campaign. Figures and W&B stay enabled.
+before starting another qualification campaign in the same allocated job.
+Figures and W&B stay enabled. Qualification deadlines stop child processes, not
+the UCloud allocation.
 
 Define this helper in the foreground terminal or tmux session:
 
@@ -68,19 +77,19 @@ run_trial() {
 run_trial /work/ddp-b32.json
 ```
 
-The baseline is three epochs at 32 images per GPU (global batch 256), with four
-loader workers per rank. Eight GPUs are launched with `torchrun`, no Slurm.
-Check all eight ranks completed, losses passed, figures look correct in W&B,
+The baseline is three epochs at 32 images per GPU (global batch 128), with four
+loader workers per rank. Four GPUs are launched with `torchrun`, no Slurm.
+Check all four ranks completed, losses passed, figures look correct in W&B,
 and reserved GPU memory has headroom before increasing the batch:
 
 ```bash
 python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-b64.json \
-  --output /work/results/global-lepi-ddp-b64-1 --batch 64
+  --output /work/results/global-lepi-ddp-4gpu-b64-1 --batch 64
 run_trial /work/ddp-b64.json
 
 # Only after the 64/GPU result passes and has memory headroom:
 python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-b128.json \
-  --output /work/results/global-lepi-ddp-b128-1 --batch 128
+  --output /work/results/global-lepi-ddp-4gpu-b128-1 --batch 128
 run_trial /work/ddp-b128.json
 ```
 
@@ -107,28 +116,54 @@ full-dataset distributed-I/O throughput for a 24-hour run.
 ## Stability and checkpoint continuation
 
 Reserve time for this gate instead of chasing every batch size. Set `BATCH` to
-the selected **per-GPU** batch. Keep the scheduler horizon at four epochs for
+the selected **per-GPU** batch. Request a four-epoch scheduler horizon and preserve the generated horizon for
 both the source and restored trial:
 
 ```bash
 BATCH=64  # replace with the measured choice
+WORKERS=4  # replace with the measured worker count
 python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-stability.json \
-  --output /work/results/global-lepi-ddp-stability-1 --batch "$BATCH" --epochs 4
+  --output /work/results/global-lepi-ddp-4gpu-stability-1 --batch "$BATCH" --workers "$WORKERS" --epochs 4
 run_trial /work/ddp-stability.json
+HORIZON=$(python3 -c 'import json; print(json.load(open("/work/ddp-stability.json"))["epochs"])')
 
 python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-restore.json \
-  --output /work/results/global-lepi-ddp-restore-1 --batch "$BATCH" --epochs 4 \
-  --checkpoint /work/results/global-lepi-ddp-stability-1/runs/quant_compile_model_seed42/model/weights/checkpoint_1.pth \
+  --output /work/results/global-lepi-ddp-4gpu-restore-1 --batch "$BATCH" --workers "$WORKERS" --epochs "$HORIZON" \
+  --checkpoint /work/results/global-lepi-ddp-4gpu-stability-1/runs/quant_compile_model_seed42/model/weights/checkpoint_1.pth \
   --resume-epoch 2
 run_trial /work/ddp-restore.json
 ```
 
-The restored run starts at epoch 2 (zero-based), trains the remaining two epochs,
+The restored run starts at epoch 2 (zero-based), trains the remaining epochs,
 and uses a new output and W&B run. Each rank checks model, optimizer, scheduler
 and scaler state against the source checkpoint **before any updates**. Require
-eight successful `restore-rank*.json` records, finite train/eval losses, stable
+four successful `restore-rank*.json` records, finite train/eval losses, stable
 memory, and working figures/checkpoints after restoration. This tests state
 restoration and continued execution, not bitwise reproduction of augmentation RNG.
+
+## Keep the allocation and hand off immediately
+
+Qualification and production run in the **same allocated UCloud job**. Do not
+terminate/release the job, rebuild its environment, or wait for a new allocation
+between them. The separate storage campaign below means a separate harness budget
+and output directory, not another UCloud job. Do not enable the continuous-benchmark
+provisioning/cleanup policy for this production allocation.
+
+Before qualification, prepare the production CLI configuration and verify its paths,
+full-dataset splits, pinned environment, W&B authentication, output location and
+learning-rate/epoch recipe. Leave only measured batch and worker choices to finalize.
+Keep the selected environment and caches warm. Reserve qualification time **in
+addition to** the intended production duration in the UCloud job lifetime, plus
+checkpoint/finalization margin; verify remaining time before launch. If the job
+lifetime is insufficient, resolve its extension or a shorter reviewed training
+budget while qualification runs rather than releasing the allocation.
+
+After the required gates pass, record the selected batch/workers and qualification
+report, finalize the pre-reviewed production configuration, and launch `mt_htrain`
+under four-rank `torchrun` immediately in the existing terminal/tmux session. Do not
+spend the allocation completing optional sweep points once the choice is supported.
+The production configuration is still an explicit prerequisite, not generated or
+validated by these qualification commands.
 
 ## Production uses the public CLIs
 
@@ -143,7 +178,7 @@ The planned command interface is:
 
 ```bash
 /work/venvs/mt-quant/bin/python -m torch.distributed.run \
-  --standalone --nnodes=1 --nproc-per-node=8 --max-restarts=0 --no-python \
+  --standalone --nnodes=1 --nproc-per-node=4 --max-restarts=0 --no-python \
   /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb
 
 /work/venvs/mt-quant/bin/mt_hpredict --config /work/evaluation.yaml
@@ -166,3 +201,76 @@ ONNX parity following [the export guide](../../docs/onnx.md).
 
 A later full `master` training comparison remains optional and separate. This
 qualification deliberately selects and stress-tests one configuration.
+
+## Bounded resource-utilization decisions
+
+Run only the next informative trial; do not execute this as an unattended matrix.
+Keep the initial 30-minute campaign and reserve time for checkpoint continuation.
+A minimum campaign is baseline, one larger batch, one worker comparison, then
+restoration. The time guards can expire before all gates finish; retain evidence
+and review any additional campaign rather than silently extending its budget.
+
+Trial generation automatically raises the epoch count when needed to plan at least
+100 training steps after the first epoch. At 256/GPU this subset requires five
+rather than three epochs. `scaling.py report` exposes actual `warm_steps` and
+`sufficient_warm_steps`; incomplete/failed runs are not performance-qualified merely
+because their planned duration was sufficient. Changing the epoch horizon also
+changes the learning-rate schedule, so these are throughput trials, not matched
+convergence comparisons.
+
+After selecting a batch, compare workers while holding batch, subset and epoch
+horizon fixed. Start with 8/GPU; try 16/GPU only if loading/throughput evidence
+justifies it. A small timing difference is not enough to select a winner.
+
+```bash
+BATCH=64  # replace with measured choice
+python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-w8.json \
+  --output /work/results/global-lepi-ddp-4gpu-w8-1 --batch "$BATCH" --workers 8
+run_trial /work/ddp-w8.json
+
+# Optional, after reviewing w8:
+python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-w16.json \
+  --output /work/results/global-lepi-ddp-4gpu-w16-1 --batch "$BATCH" --workers 16
+run_trial /work/ddp-w16.json
+```
+
+Use `--workers "$WORKERS"` for both stability and restoration trials once workers
+are selected. Read the generated stability config's actual `epochs` and pass that
+same value to the restore trial; automatic warm-step sizing may have increased it.
+A restore run keeps its explicit horizon and excludes its own first epoch from warm
+performance reporting because it starts a fresh compiled process.
+
+Reports retain per-rank phase records, training rank-time ratios, allocation peaks
+and 32-batch timing windows (including a final partial window). Completed windows are also appended immediately
+to `windows-rank*.jsonl` so a timeout retains them. Windows synchronize
+CUDA at their boundaries, adding some overhead consistently across trials. They
+measure rank-local elapsed time, not pure disk throughput. Figure and checkpoint
+call durations are recorded separately in `components-rank*.jsonl`; figures are
+also inside validation phase time, so do not add these overlapping totals. These
+component measurements are host elapsed time and include backend logging costs.
+
+### Separate broader storage pass
+
+This is explicitly launched with its own budget. It requires fresh preparation,
+selects 262,144 training / 8,192 validation / 128 test images, and excludes all image
+identities in the baseline selection. The full taxonomy remains in use. The
+baseline selection hash is checked, and `selection.json` records the new Parquet
+hash and exclusion provenance; both are frozen in the preparation manifest.
+
+```bash
+BATCH=64    # selected batch
+WORKERS=8   # selected worker count
+python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-storage.json \
+  --output /work/results/global-lepi-ddp-4gpu-storage-1 \
+  --batch "$BATCH" --workers "$WORKERS" --storage
+run_trial /work/ddp-storage.json
+```
+
+The worker runs one epoch with a 600-second guard; the separate campaign allows
+1,800 seconds including preparation (up to 900 seconds) and operator gaps. These
+are limits, not runtime estimates or UCloud allocation extensions. A timeout may
+leave partial window/phase evidence and must not be reported as success. With only
+one epoch there is no warm-epoch result: inspect successive windows and first-epoch
+cost separately. Reads use actual dataset storage without explicit RAM caching;
+do not flush shared caches. Disjoint images reduce reuse of the baseline sample
+but do not establish cold-cache conditions or certify full-dataset production I/O.

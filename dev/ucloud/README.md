@@ -783,7 +783,7 @@ See [renderer measurements and limitations](../benchmarks/reporting/dendrogram.m
 
 ## Scaling the selected configuration
 
-For eight full GPUs with figures, W&B, a bounded batch sweep and checkpoint
+For four full GPUs with figures, W&B, a bounded batch sweep and checkpoint
 continuation, use [the DDP qualification and production handoff](ddp.md).
 Production training uses `mt_htrain` under `torchrun`; the Python API harness
 remains a qualification tool.

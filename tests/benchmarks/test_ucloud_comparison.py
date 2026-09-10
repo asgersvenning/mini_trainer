@@ -425,6 +425,18 @@ def test_qualification_sampling_is_bounded_paired_and_preserves_splits(harness, 
     worker.qualification_parquet(config)
     assert pq.read_table(sample).to_pylist() != first
     assert compare.digest(config["parquet"]) == source_hash
+    excluded = Path(config["output"]) / "excluded.parquet"
+    excluded.write_bytes(Path(sample).read_bytes())
+    excluded_names = {row["filename"] for row in pq.read_table(excluded).to_pylist()}
+    config.update(exclude_qualification=str(excluded), exclude_qualification_sha256=compare.digest(excluded))
+    worker.qualification_parquet(config)
+    assert not excluded_names.intersection(row["filename"] for row in pq.read_table(sample).to_pylist())
+    assert json.loads((Path(config["output"]) / "selection.json").read_text())["sha256"] == compare.digest(sample)
+    expected_hash = config["exclude_qualification_sha256"]
+    config["exclude_qualification_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="Exclusion sample changed"):
+        worker.qualification_parquet(config)
+    config["exclude_qualification_sha256"] = expected_hash
     config["qualification"]["test"] = 31
     with pytest.raises(ValueError, match="Not enough rows"):
         worker.qualification_parquet(config)
@@ -666,3 +678,35 @@ def test_resume_hook_verifies_restored_state_before_updates(harness, monkeypatch
         model.weight.add_(1)
     with pytest.raises(AssertionError):
         training.train(start_epoch=2, **objects)
+
+
+def test_scaling_workers_warm_steps_and_separate_storage(harness, tmp_path):
+    compare, _ = harness
+    scaling = importlib.import_module("scaling")
+    cfg = json.loads((Path(__file__).resolve().parents[2] / "dev/ucloud/ddp.json").read_text())
+    cfg["output"] = str(tmp_path / "baseline")
+    Path(cfg["output"]).mkdir()
+    compare.write_json(Path(cfg["output"]) / "prepared.json", {"qualification.parquet": "a" * 64})
+    base = tmp_path / "base.json"
+    compare.write_json(base, cfg)
+    derived = scaling.trial(base, tmp_path / "large.json", tmp_path / "large", 256, 3, workers=8)
+    assert derived["epochs"] == 5
+    assert derived["num_workers_per_rank"] == 8
+    storage = scaling.trial(base, tmp_path / "storage.json", tmp_path / "storage", 128, 3, workers=16, storage=True)
+    assert "reuse_preparation" not in storage
+    assert storage["epochs"] == 1 and storage["timeout_seconds"] == 600
+    assert storage["qualification"]["train"] == 262144
+    assert storage["exclude_qualification_sha256"] == "a" * 64
+    with pytest.raises(ValueError, match="num_workers"):
+        scaling.trial(base, tmp_path / "invalid.json", tmp_path / "invalid", 64, 3, workers=-1)
+
+
+def test_timing_windows_survive_completed_chunks(harness):
+    _, worker = harness
+    saved, synchronized = [], []
+    loader = worker.TimedLoader([([1, 2], [0, 1])] * 35, synchronize=lambda: synchronized.append(True), on_window=saved.append)
+    assert len(list(loader)) == 35
+    assert [w["steps"] for w in saved] == [32, 3]
+    assert [w["samples"] for w in saved] == [64, 6]
+    assert len(synchronized) == 2
+    assert sum(w["loader_wait_seconds"] for w in saved) <= loader.wait_seconds

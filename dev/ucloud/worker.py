@@ -28,6 +28,14 @@ def qualification_parquet(config):
 
     from mini_trainer.integrations.parquet import COLUMNS, iter_parquet_batches, set2split
 
+    excluded = set()
+    exclusion = config.get("exclude_qualification")
+    if exclusion:
+        if digest(exclusion) != config["exclude_qualification_sha256"]:
+            raise ValueError("Exclusion sample changed since trial generation")
+        excluded = {
+            (str(row["speciesKey"]), row["filename"]) for row in pq.read_table(exclusion, columns=["speciesKey", "filename"]).to_pylist()
+        }
     settings = config["qualification"]
     rng = random.Random(settings["seed"])
     selected = {split: [] for split in ("train", "validation", "test")}
@@ -37,6 +45,8 @@ def qualification_parquet(config):
     progress("Selecting qualification rows from existing splits (one streaming Parquet scan)")
     for batch in iter_parquet_batches(config["parquet"]):
         for row in batch.to_pylist():
+            if (str(row["speciesKey"]), row["filename"]) in excluded:
+                continue
             split = set2split(int(row["set"]))
             seen[split] += 1
             scanned += 1
@@ -58,6 +68,17 @@ def qualification_parquet(config):
     schema = pa.schema([source_schema.field(column) for column in COLUMNS])
     destination = Path(config["output"]) / "qualification.parquet"
     pq.write_table(pa.Table.from_pylist(rows, schema=schema), destination)
+    if any((str(row["speciesKey"]), row["filename"]) in excluded for row in rows):
+        raise ValueError("Qualification selection overlaps excluded images")
+    write_json(
+        Path(config["output"]) / "selection.json",
+        {
+            "sha256": digest(destination),
+            "excluded_sha256": config.get("exclude_qualification_sha256"),
+            "excluded_images": len(excluded),
+            "eligible_split_counts": dict(seen),
+        },
+    )
     progress(f"Saved {len(rows):,} qualification rows; original split counts: {dict(seen)}")
     return str(destination)
 
@@ -212,8 +233,11 @@ def configure_figures(enabled):
 class TimedLoader:
     """Measure host time waiting for next batches without synchronizing the GPU."""
 
-    def __init__(self, loader):
+    def __init__(self, loader, synchronize=None, on_window=None):
         self.loader, self.wait_seconds, self.samples = loader, 0.0, 0
+        self.steps, self.windows = 0, []
+        self.on_window = on_window or (lambda window: None)
+        self.synchronize = synchronize or (lambda: None)
 
     def __len__(self):
         return len(self.loader)
@@ -222,6 +246,8 @@ class TimedLoader:
         return getattr(self.loader, key)
 
     def __iter__(self):
+        window_start = time.monotonic()
+        window_samples, window_steps, window_wait = 0, 0, 0.0
         started = time.monotonic()
         iterator = iter(self.loader)
         while True:
@@ -232,7 +258,22 @@ class TimedLoader:
                 return
             self.wait_seconds += time.monotonic() - started
             self.samples += len(batch[0])
+            self.steps += 1
             yield batch
+            if self.steps % 32 == 0 or self.steps == len(self.loader):
+                self.synchronize()
+                now = time.monotonic()
+                self.windows.append(
+                    {
+                        "steps": self.steps - window_steps,
+                        "samples": self.samples - window_samples,
+                        "seconds": now - window_start,
+                        "loader_wait_seconds": self.wait_seconds - window_wait,
+                    }
+                )
+                self.on_window(self.windows[-1])
+                window_start, window_samples = now, self.samples
+                window_steps, window_wait = self.steps, self.wait_seconds
             started = time.monotonic()
 
 
@@ -248,6 +289,21 @@ def instrument(output, config=None):
     MultiLogger._reset_cuda_memory_stats = staticmethod(lambda: None)
     rank = int(os.environ.get("RANK", "0"))
 
+    def component_timer(function, component):
+        @functools.wraps(function)
+        def measured(*args, **kwargs):
+            started = time.monotonic()
+            try:
+                return function(*args, **kwargs)
+            finally:
+                with (output / f"components-rank{rank}.jsonl").open("a") as handle:
+                    handle.write(json.dumps({"component": component, "seconds": time.monotonic() - started}) + "\n")
+
+        return measured
+
+    MultiLogger.figures = component_timer(MultiLogger.figures, "figures")
+    trainer.save_on_master = component_timer(trainer.save_on_master, "checkpoint")
+
     def wrap(function, phase):
         @functools.wraps(function)
         def measured(*args, **kwargs):
@@ -255,7 +311,12 @@ def instrument(output, config=None):
             torch.cuda.reset_peak_memory_stats()
             started = time.monotonic()
             bound = inspect.signature(function).bind(*args, **kwargs)
-            loader = TimedLoader(bound.arguments["data_loader"])
+
+            def save_window(window):
+                with (output / f"windows-rank{rank}.jsonl").open("a") as handle:
+                    handle.write(json.dumps({"phase": phase, "epoch": bound.arguments["epoch"], **window}) + "\n")
+
+            loader = TimedLoader(bound.arguments["data_loader"], torch.cuda.synchronize, save_window)
             bound.arguments["data_loader"] = loader
             value = function(*bound.args, **bound.kwargs)
             torch.cuda.synchronize()
@@ -263,6 +324,8 @@ def instrument(output, config=None):
                 "phase": phase,
                 "epoch": bound.arguments["epoch"],
                 "samples": loader.samples,
+                "steps": loader.steps,
+                "windows": loader.windows,
                 "loader_wait_seconds": loader.wait_seconds,
                 "seconds": time.monotonic() - started,
                 "max_memory_allocated": torch.cuda.max_memory_allocated(),

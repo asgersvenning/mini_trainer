@@ -77,6 +77,13 @@ def validate(config):
         raise ValueError("require_finite_losses must be a boolean")
     if "budget_seconds" in config and (type(config["budget_seconds"]) is not int or config["budget_seconds"] < 1):
         raise ValueError("budget_seconds must be a positive integer")
+    if config.get("exclude_qualification"):
+        if config.get("reuse_preparation") or not config.get("qualification"):
+            raise ValueError("Disjoint selection requires fresh qualification preparation")
+        config["exclude_qualification"] = str(Path(config["exclude_qualification"]).resolve())
+        expected = config.get("exclude_qualification_sha256", "")
+        if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+            raise ValueError("Disjoint selection requires a pinned exclusion hash")
     qualification = config.get("qualification")
     if qualification is not None:
         if not isinstance(qualification, dict) or set(qualification) != {"seed", "train", "validation", "test"}:
@@ -133,7 +140,16 @@ def reuse_preparation(config, output):
     """Copy verified model/data artifacts; keep the new trial's budget and plan."""
     source = Path(config["reuse_preparation"])
     original = json.loads((source / "comparison.json").read_text())
-    for key in ("parquet", "size", "seeds", "qualification", "full_taxonomy", "environments"):
+    for key in (
+        "parquet",
+        "size",
+        "seeds",
+        "qualification",
+        "full_taxonomy",
+        "environments",
+        "exclude_qualification",
+        "exclude_qualification_sha256",
+    ):
         if config.get(key) != original.get(key):
             raise ValueError(f"Cannot reuse preparation with different {key}")
     manifest = json.loads((source / "prepared.json").read_text())
@@ -401,7 +417,7 @@ def run_stage(config, args, deadline=None):
         files += [p.name for p in HERE.glob("*.py")]
         files += [f"initial_seed{s}.pt" for s in config["seeds"]]
         if config.get("qualification"):
-            files.append("qualification.parquet")
+            files.extend(["qualification.parquet", "selection.json"])
         if deadline is not None:
             files.append("budget.json")
         if config.get("checkpoint"):

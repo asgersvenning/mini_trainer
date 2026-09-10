@@ -1,14 +1,14 @@
 {
   "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
-  "output": "/work/results/global-lepi-ddp-b32-1",
+  "output": "/work/results/global-lepi-ddp-4gpu-b32-1",
   "environments": {
     "quant": {
       "python": "/work/venvs/mt-quant/bin/python",
       "commit": "4a1bd8dda55d668754a2bd628060039e5cc4bd10"
     }
   },
-  "gpus": 8,
-  "global_batch_size": 256,
+  "gpus": 4,
+  "global_batch_size": 128,
   "num_workers_per_rank": 4,
   "epochs": 3,
   "size": 384,
@@ -20,8 +20,8 @@
   ],
   "qualification": {
     "seed": 42,
-    "train": 65536,
-    "validation": 8192,
+    "train": 32768,
+    "validation": 4096,
     "test": 128
   },
   "timeout_seconds": 600,
