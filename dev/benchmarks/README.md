@@ -120,8 +120,9 @@ For real-data jobs, enable input `real_data` together with `gpu`, or set
 `BENCHMARK_REAL_DATA=true`. Set repository variables `BENCHMARK_DATA_ROOT` and
 `BLAIR_CLASS_SPEC` to stable dataset and specification paths on that runner, outside
 the checkout. The workflow does not assume these resources already exist and cannot
-validate GPU behavior on a CPU-only hosted runner. No GPU job has been dispatched
-from this development session; the equivalent local commands have been exercised.
+validate GPU behavior on a CPU-only hosted runner. Local command validation does
+not establish that the hosted GPU workflow has run successfully; retain the actual
+workflow run and target-machine evidence when qualifying it.
 
 References: [Actions job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary)
 and [artifact retention](https://github.com/actions/upload-artifact#retention-period).

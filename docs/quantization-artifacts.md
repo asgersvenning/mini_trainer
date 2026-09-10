@@ -5,13 +5,10 @@ that every temporary binary remains in the checkout. Cleanup consolidates local
 evidence under ignored `local-evidence/quantization-2026-09-09/`; no model, dataset
 or generated result is committed by this operation.
 
-The 2026-09-09 cleanup verified 5,629 archived evidence files and 60 retained model/
-bundle files, then removed 75 temporary directories and completed pytest outputs.
-The archive occupies about 0.64 GiB and retained bundles 2.67 GiB. Approximate net
-space reclaimed was 34.46 GiB; about 99.37 GiB was available immediately afterward.
-The reorganized suite retained all 737 cases: 574 passed, 162 skipped and one
-known EMA expected failure. Detailed collection/check logs are retained in
-`local-evidence/quantization-2026-09-09/validation/`.
+Historical cleanup counts, disk-space observations and the test snapshot are
+preserved in the [dated agent handoff](../.agents/notes/2026-09-09-quantization-cleanup.md).
+They do not establish current artifact availability or test status. This guide
+covers the retained layout and restore procedure.
 
 ## Retained locally
 
@@ -27,10 +24,9 @@ known EMA expected failure. Detailed collection/check logs are retained in
   retained models are verified before their temporary source directories are removed.
 - `README.md`: local cleanup totals and restore instructions.
 
-The working `.venv`, model download caches, original `examples/` datasets, and
-`publication/` research files are preserved. The separate temporary TensorRT and
-ONNX Runtime GPU installations are disposable; prepare the optional runtime
-explicitly on the target using the [inference guide](../dev/benchmarks/inference.md).
+Prepare optional GPU runtimes explicitly on the target using the
+[inference guide](../dev/benchmarks/inference.md); the archive does not include a
+portable working environment.
 
 ## Removed as disposable
 

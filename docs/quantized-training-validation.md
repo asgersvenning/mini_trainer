@@ -48,8 +48,9 @@ Benchmark quality uses `mini_metrics` Macro-F1, Macro-Recall, Macro-Precision,
 Coverage and Theil's U at every reported hierarchy level. Keep paired seeds,
 negative results, confidence/score semantics and undefined metrics visible.
 Only compare resource measurements collected under suitable isolated conditions.
-The user permits a few points of degradation when justified by a material
-speed/cost or memory benefit; integer execution alone is not acceptance.
+A few points of degradation may be acceptable when justified by a material
+speed/cost or memory benefit. Record the per-profile acceptance limits before
+qualification; integer execution alone is not acceptance.
 
 The intended execution targets remain HPC GPU training on A40/A100/B300-class
 systems with EPYC hosts, local training/fine-tuning and ONNX GPU inference on Spark
