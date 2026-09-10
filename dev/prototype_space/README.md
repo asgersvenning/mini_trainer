@@ -1,0 +1,154 @@
+# Prototype-space exploration
+
+This is an offline interactive feature prototype. The accompanying
+[log-domain diagnostic API](../../docs/prototype-diagnostics.md) also supports
+evaluation logging during training. The existing weight parametrization,
+similarity transform and class distance remain the empirical reference.
+Alternative evaluations and displays are labelled explicitly. Begin with real
+checkpoint evidence; synthetic cases probe calculations and rendering, not how
+the learned space ought to organize.
+
+Run from the feature worktree with the existing environment:
+
+```bash
+export PYTHONPATH="$PWD"
+CUDA_VISIBLE_DEVICES='' .venv/bin/python -m dev.prototype_space.explore \
+  --weights /absolute/path/to/best_global-lepi-production-w32-1_epoch4.pt \
+  --output tmp/prototype-report
+```
+
+Open `tmp/prototype-report/explorer.html` in a browser. The numerical views are self-contained. For optional GBIF image labels and a
+clickable local HTTP URL:
+
+```bash
+.venv/bin/python -m dev.prototype_space.serve \
+  --directory tmp/prototype-report --port 8765
+```
+
+Then open <http://localhost:8765/explorer.html>. This serves only the report
+directory on loopback. Keep each concurrent task's output path and port distinct.
+
+Generation uses CPU float32 repository APIs for the full class-by-class matrices
+and SciPy for the unchanged Ward linkage. Several GB of RAM are needed for the
+12,632-class example; this is an exploratory offline tool, not a bounded-memory
+replacement for training-time logging. No dependency installation is performed.
+The environment needs the existing visualization dependencies (including SciPy).
+
+## Try the views
+
+1. Search a checkpoint class ID or choose the strongest/weakest nearest pair.
+   Follow neighbours directly from the table. The selected class updates the
+   profile, highlighted tree path and global matrix position.
+2. Click a collapsed dendrogram tip to focus on that subtree. Use **Parent**,
+   **Whole tree** and **Locate selected class** to retain context. This is the
+   current Ward tree in a different, progressively expanded layout.
+3. Compare matrix block maxima with block minima using the same leaf order and
+   shared colour scale. The latter retains isolated close pairs that maxima can
+   conceal. Both exclude self-pairs and padding. Choose float32 log-domain tails
+   or the legacy rounded-CDF view. Choose the familiar `1e-8` to `1` display
+   window, an observed 0.1–99.9 percentile window, full range or manual log10
+   bounds. Clipping affects colours only; each panel reports clipped block counts
+   and hover retains raw values. These are not pixel-identical copies of the
+   original heatmap.
+4. In the local matrix, switch between **Baseline class distance**, **Pre-CDF
+   z-score** and **−log₁₀ tail (float32)**. Hover a cell for its stored values. Local
+   colour ranges adapt and are disclosed; use the table for exact comparisons.
+5. Switch cases to independent unit vectors, four planted groups or algebraic
+   edge cases. All use the real embedding width, but have much smaller class
+   counts. Their nearest-neighbour distributions are not matched packing controls.
+
+## Class image labels
+
+Enable **Interpret numeric class IDs as GBIF taxa and load photos** to see the
+selected class and its twelve nearest prototype directions as image cards. Click
+an image to navigate to that class; **Another example** cycles available images.
+The prototype is the learned target direction, and the photo provides a class
+label. Selecting images by their measured embedding proximity is a separate
+possible extension. Exact checkpoint IDs remain unchanged, including when GBIF
+reports a different accepted taxon ID.
+
+Only the visible neighbourhood is requested. Metadata and thumbnails are cached
+in a sibling `prototype-report-gbif-cache` directory; upstream requests are
+serialized. Synthetic cases never trigger lookups. Missing images or network
+access leave the numerical views usable. Media credits and licenses are shown
+when supplied; occurrence-data licenses are never substituted for image licenses.
+The service uses the [GBIF image API](https://techdocs.gbif.org/en/openapi/images).
+
+## Numerical contract
+
+- Supported inputs are float32 `Classifier` and `HierarchicalClassifier`
+  checkpoints with a single linear prototype matrix. Other head families and
+  weight encodings are rejected. This does not replace the general model loader.
+- Reconstruct the parametrized linear layer with `Classifier._normalize_layer`
+  and strict state loading. Keep effective magnitudes, biases and exact class
+  order. Do not treat weight-norm direction parameters as effective weights.
+- The diagnostic adapter exposes those effective weights to the unchanged
+  `class_similarity(cdf=False)`, `class_similarity(cdf=True)` and `class_distance`
+  APIs. It does not execute the backbone, hidden layers or hierarchical inference.
+  Like the existing diagnostics, these describe directions, not sample occupancy.
+- The global tree uses Ward linkage on the current distance. The global heatmap
+  quantity is the current `1 − CDF(z)`. No alternative metric replaces either.
+- Neighbours are explicitly ranked by pre-CDF z, with stable class-index ordering
+  for exact z ties. This refines saturated distance ties rather than arbitrarily
+  treating zero-distance pairs as identical prototypes.
+- The primary tail view uses `class_log_similarity(model, complement=True)` and
+  displays `−log_tail / log(10)` in float32. It neither materializes a near-one CDF
+  nor promotes the z-score or log-probability matrix to float64.
+- The separate float64 reference computes `−torch.special.log_ndtr(z.double())`
+  for comparison (hover baseline distances in the neighbour table). It retains
+  the existing z and does not apply the baseline probability floor. Reference
+  neighbour distances are stored as float64; baseline and log-tail values remain
+  float32. Numerical values are never recovered from colours.
+- Linear probabilities can still underflow at extreme z even in float64; log-tail
+  remains useful there. The algebraic fixture includes this case. A log-domain
+  view improves numerical range, not the statistical assumptions of the transform.
+
+The prototype checkpoint has 12,632 unit-length rows in 1,280 dimensions and zero
+biases. The initial full baseline evaluation found 249,324 unordered off-diagonal
+pairs with distance zero, involving every class. That is numerical evidence to
+investigate, not evidence that the vectors are identical or that training failed.
+All 249,324 become positive under direct float64 log-CDF evaluation; that reference
+confirms the saturation independently of the primary float32 log-tail display.
+Current run statistics and checkpoint SHA256 are in `summary.json`; the complete
+view payload is in `report-data.json`. Generated data and weights stay out of Git.
+
+## Validation and next directions
+
+```bash
+bash dev/check.sh static
+bash dev/check.sh test tests/utils/test_prototype_exploration.py \
+  tests/utils/test_dendrogram.py tests/utils/test_plot.py
+```
+
+Tests cover effective weights with non-unit magnitudes, class ordering, unchanged
+checkpoint bytes, unsupported heads, self-pair/padding exclusion, saturation ties,
+exact local baseline submatrices and log-domain values against an independent
+`math.erfc` reference. Browser interaction checks additionally exercise case
+switching, class search, neighbour navigation, tree navigation and matrix modes.
+
+Promising follow-ups after trying this prototype:
+
+- Evaluate log-domain clustering with explicit representation and compatibility
+  decisions. Compare any changed tree against this preserved baseline before
+  promoting it into training-time logging.
+- Add mutual-neighbour graph exploration to expose links across tree branches.
+- Add taxonomy composition at multiple neighbourhood sizes, retaining unknown
+  labels separately and avoiding any assumption of taxonomic agreement.
+- Compare neighbour and crowding trajectories across checkpoints using class IDs;
+  do not interpret unconstrained embedding rotations as motion between runs.
+- With held-out embeddings, add image inspection, sample alignment, margins and
+  observed confusion. With an explicitly chosen direction distribution, examine
+  decision-region occupancy. Neither is established by the prototype matrix alone.
+
+The code is on `feature/prototype-space`. See the [worktree guide](../worktrees.md)
+and [agent coordination rules](../../.agents/rules/worktrees.md) for parallel work.
+
+Optional browser interaction verification with an existing Chromium installation:
+
+```bash
+CHROMIUM_BIN=/absolute/path/to/chrome node dev/prototype_space/check_browser.mjs \
+  http://localhost:8765/explorer.html tmp/prototype-browser-check
+```
+
+No browser dependency is installed by this helper. Screenshots and the interaction
+check report stay in the ignored output directory.
