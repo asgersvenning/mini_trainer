@@ -733,3 +733,45 @@ time, later-epoch mean and peak allocated memory, retaining loss-audit status.
 The automatic paired report uses master; the CSV supports these direct quant
 comparisons even when master is excluded by its loss audit. One seed does not
 establish quality equivalence or a small performance improvement.
+
+## Figures-enabled qualification
+
+`figures.json` exercises the updated renderer and local artifact saving for two
+epochs on the existing 4,096/1,024/128-image subset. Use only
+`quant_compile_model_seed42`: floating-point training with model compilation,
+without optimizer compilation or prefetch. The eager variants remain in the
+configuration to satisfy harness validation; they are not selected below.
+The worker retains its 300-second timeout and the experiment its 1,800-second
+budget. Cold compilation and taxonomy lookups are included; completion within
+five minutes needs confirmation on the allocated job.
+
+This fix changes the installed package, so pull the harness and explicitly
+upgrade the quant venv to the code revision pinned in this config. Existing
+benchmark configs retain their older pins and will need a matching environment
+if reused. Run in tmux:
+
+```bash
+cd /work/mini_trainer
+git pull --ff-only
+FIGURES_SHA=$(python3 -c 'import json; print(json.load(open("dev/ucloud/figures.json"))["environments"]["quant"]["commit"])')
+uv pip install --python /work/venvs/mt-quant/bin/python --no-deps --link-mode=copy \
+    "mini_trainer @ git+https://github.com/asgersvenning/mini_trainer.git@$FIGURES_SHA"
+uv pip check --python /work/venvs/mt-quant/bin/python
+bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage plan
+bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage prepare && \
+    bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage train \
+    --only quant_compile_model_seed42
+# Summarize even if training reports a timeout or invalid metrics.
+bash dev/ucloud/launch.sh dev/ucloud/figures.json --stage summary
+cat /work/results/global-lepi-figures-1/comparison.csv
+```
+
+Inspect the console log's rendering/export timings and the saved figures under
+`/work/results/global-lepi-figures-1/runs/quant_compile_model_seed42/model/logs/figures/`.
+Both `epoch-0001` and `epoch-0002` should contain readable dendrogram SVGs and
+matrix PNGs. Compare first and second epoch reporting costs to check label-cache
+reuse. `paired.json` will be empty because no master run was selected; this is a
+figure qualification, not a new branch comparison. Preserve any failed output
+and choose a new output path for a retry.
+
+See [renderer measurements and limitations](../benchmarks/reporting/dendrogram.md).

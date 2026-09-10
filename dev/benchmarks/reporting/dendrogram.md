@@ -58,6 +58,13 @@ BioPython 1.87 and pyCirclize 1.10.1, from the same seeded workload:
 | SVG path elements | 20,529 | 27 |
 | Leaf labels | 3,422 | 3,422 |
 
+In the new SVG, path coordinates occupy 1,492,596 bytes (53%) and the 3,422
+text groups occupy 1,305,053 bytes (46%). Batching removes path-element overhead,
+but retains the branch geometry. Matplotlib repeats the font-family list, style
+and position/rotation attributes for each label. Shared text styles and lower
+coordinate precision are possible follow-ups; they are not applied here.
+Gzip compresses this example to 769,175 bytes without changing its contents.
+
 The 1,100-leaf comb tree previously raised `RecursionError` during branch
 coloring. The new renderer exported all leaves with seven SVG paths in about
 1.9 seconds without changing Python's recursion limit. These are host-specific
