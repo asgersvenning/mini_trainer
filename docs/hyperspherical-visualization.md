@@ -399,9 +399,11 @@ initialization and specialized metric handling. Async fitting is not by itself
 a worker-thread guarantee. Initially, fit in Python and serve coordinates; use
 a worker if browser-side fitting later becomes useful.
 
-For every renderer, a thumbnail is a class image label anchored to a numerical
+For every renderer, a thumbnail is a class image label associated with a numerical
 point. Culling, visual size and overlap may change label visibility but must not
-move prototypes or change their distances. A globe adds back-side occlusion to
+move prototypes or change their distances. Optional label displacement should
+retain an explicit connection to the fixed prototype point; the explorer's
+**Push thumbnails apart** mode uses anchor markers and leader lines. A globe adds back-side occlusion to
 the existing viewport and overlap tests. Preserve photo provenance and cache
 budgets, and expose point counts even where image labels are culled.
 

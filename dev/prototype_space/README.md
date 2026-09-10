@@ -113,9 +113,21 @@ Enable **GBIF thumbnails on map** independently of the image-card panel. Configu
 image size (32–160 CSS pixels), density (5–200 images per megapixel of map viewport)
 and allowable pairwise rectangle overlap (0–75%). The density gives a maximum
 budget, capped at 200 images; viewport and overlap culling can produce fewer.
-The overlap fraction uses the full thumbnail rectangle including its class label.
+The overlap fraction uses the full thumbnail rectangle including its class label
+when labels are enabled. Disable **Labels beneath images** for square image-only
+thumbnails with no caption, border or padding; images fill the square by cropping
+as needed. Names, IDs and credits remain available on hover or keyboard focus.
 
-Images stay centered on actual projected points. Culling prioritizes the selected
+Images initially stay centered on actual projected points. Enable **Push thumbnails
+apart** to admit candidates using the overlap setting, then separate their
+rectangles with bounded pairwise repulsion. Images may move up to twice their
+configured size in screen pixels. Anchor markers and leader lines identify the
+fixed prototype positions. Unresolved collisions are culled in priority order,
+so displayed rectangles do not overlap. The status reports the remaining slots
+and collision culls. Increase allowable overlap to try a denser candidate set;
+this does not guarantee that every candidate will fit after separation.
+
+Culling prioritizes the selected
 class and its original-space neighbours, then uses a stable mixed class order.
 Only fully visible, admitted rectangles trigger image requests. Pan/zoom cancels
 stale loads, hides stale placements immediately, and recomputes after a short
@@ -127,8 +139,8 @@ failed lookups. Synthetic cases make no photo requests.
 
 Click a thumbnail to inspect the class. Hover or keyboard focus exposes the
 scientific name, exact ID, creator, image license and source links below the map.
-Culling never changes scores, coordinates or neighbour ranks. The controls affect
-only which image labels are displayed.
+Culling and image repulsion never change scores, prototype coordinates or
+neighbour ranks. The controls affect image labels and their displayed positions.
 
 ## Class image labels
 
