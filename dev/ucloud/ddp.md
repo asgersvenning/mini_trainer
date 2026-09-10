@@ -146,7 +146,7 @@ The planned command interface is:
   --standalone --nnodes=1 --nproc-per-node=8 --max-restarts=0 --no-python \
   /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb
 
-/work/venvs/mt-quant/bin/mt_predict --config /work/evaluation.yaml
+/work/venvs/mt-quant/bin/mt_hpredict --config /work/evaluation.yaml
 uvx --from "mini_metrics @ git+https://github.com/asgersvenning/mini_metrics.git@$METRICS_SHA" \
   mm_metrics --files "$PREDICTIONS_CSV" --output-dir /work/production-metrics --output
 
@@ -158,12 +158,10 @@ uvx --from "mini_metrics @ git+https://github.com/asgersvenning/mini_metrics.git
 These production/evaluation files and shell variables are **handoff placeholders**,
 not runnable configs yet. `METRICS_SHA` must be a reviewed immutable commit.
 Evaluation must use only the original held-out test split, with matching class
-order and score semantics. Before finalizing `evaluation.yaml`, qualify the
-requested `mt_predict` entry point on a hierarchical checkpoint: currently
-`mt_hpredict` supplies the hierarchical builder/collector while `mt_predict`
-selects their generic counterparts. Resolve that small CLI compatibility gap
-before production; do not silently flatten hierarchy labels or substitute an
-API-only evaluator. Likewise verify the deployment preprocessing and real-image
+order and score semantics. Use the existing `mt_hpredict` CLI for this hierarchical
+model; it also provides an explicit flat-head route. Consolidating inference into
+one CLI is [deferred on the roadmap](../../docs/roadmap.md#5-mini_metrics-and-continuous-model-evaluation),
+not a production prerequisite. Verify the deployment preprocessing and real-image
 ONNX parity following [the export guide](../../docs/onnx.md).
 
 A later full `master` training comparison remains optional and separate. This

@@ -135,6 +135,17 @@ class order, score meaning, confidence thresholds, missing classes, and hierarch
 labels. Verify installed mini_metrics APIs before writing an adapter. Keep evaluation
 optional and preserve existing prediction formats and research scripts.
 
+Deferred: consolidate flat and hierarchical inference behind one public CLI.
+`mt_hpredict` already shares the generic prediction CLI and has an explicit flat
+head route; use that existing functionality while training qualification proceeds.
+Before refactoring, assess whether stored head/taxonomy metadata can reliably
+select the builder and result collector, or whether weights need additional
+versioned configuration. Preserve explicit CLI overrides, legacy checkpoints,
+existing entry points, class ordering and prediction/mini_metrics output contracts.
+Acceptance: installed CLI tests cover flat and hierarchical weights, including
+older artifacts with missing metadata and actionable handling of ambiguous cases.
+This is not a prerequisite for DDP qualification or the production training run.
+
 Build the model zoo around versioned manifests linking immutable weights, configuration,
 preprocessing, dataset/split identity, code/dependency versions, and evaluation results.
 Use fixed held-out data and seeds; distinguish threshold selection from test evaluation.
