@@ -20,7 +20,8 @@ development branch; reusable-package baseline `4763041`):
   pan/zoom retention, and quick navigation exit fades.
 - Optional asynchronous taxon names with visible-label priority and offline aliases;
   z/chance-alignment probability views with explicit reference semantics.
-- Display-density projection rendering and viewport-height focused panels.
+- Display-density projection rendering and viewport-height focused panels; map
+  details and settings overlays prevent hover/status text from resizing the canvas.
 
 Evidence: real checkpoint diagnostics match the preserved baseline; 84 browser
 checks, 12 affected Python tests, motion checks, static checks, and installed-wheel

@@ -32,7 +32,15 @@ body.focused #projection-panel.primary-view #projection-stage{flex:1;min-height:
 body.focused #projection-panel.primary-view #projection-map{aspect-ratio:auto!important;height:100%!important;border:0!important}
 body.focused #tree-panel.primary-view .tree-wrap{flex:1;min-height:300px;max-height:none}
 body.focused #projection-panel.primary-view .caption{margin:3px 0;font-size:12px}
-body.focused #thumbnail-options{margin:4px 0 8px}
+#projection-panel{position:relative}
+#projection-details{position:absolute;bottom:12px;right:12px;z-index:4;margin:0;max-width:calc(100% - 24px);font-size:12px}
+#projection-details>summary{width:max-content;margin-left:auto;padding:5px 10px;background:#fffffff2;border:1px solid var(--line);border-radius:6px}
+.projection-details-content{position:absolute;bottom:100%;right:0;width:620px;max-width:calc(100vw - 48px);max-height:min(350px,55dvh);overflow:auto;overflow-wrap:anywhere;background:#fffffff5;border:1px solid var(--line);border-radius:8px;padding:12px;box-shadow:0 3px 12px #0002}
+body.focused #projection-panel.primary-view{padding:10px;height:max(400px,calc(100dvh - var(--toolbar-height,100px) - 16px))}
+body[data-view=projection] main{padding:8px}
+body.focused #projection-panel.primary-view h2{font-size:18px;margin:0}
+body.focused #thumbnail-options{position:relative;margin:4px 0;flex-shrink:0;font-size:12px;z-index:5}
+body.focused #thumbnail-options>div{position:absolute;top:100%;left:0;right:0;margin:0!important;padding:12px;background:#fffffff5;border:1px solid var(--line);border-radius:6px;max-height:45dvh;overflow:auto;box-shadow:0 3px 12px #0002}
 body.focused #score-note{flex-basis:100%;order:-2}
 .controls input[type=checkbox]{width:auto}
 #name-status{max-width:260px}
@@ -67,8 +75,8 @@ body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));marg
 <p class="muted">Compare linear PCA with angular t-SNE when available. Scroll to zoom, drag to pan, click a point or thumbnail to inspect its class. Each case is fitted separately.</p>
 <details id="thumbnail-options" open><summary>Thumbnail settings</summary><div class="row" style="margin:12px 0"><label><input type="checkbox" id="map-photos"> GBIF thumbnails on map</label><label><input type="checkbox" id="map-photo-labels" checked> Labels beneath images</label><label><input type="checkbox" id="map-photo-aspect"> Original aspect ratio</label><label><input type="checkbox" id="map-photo-push"> Push thumbnails apart</label><label><input type="checkbox" id="map-photo-anchors"> Show thumbnail anchors</label><label>Image size <input id="map-photo-size" type="range" min="32" max="160" value="64" step="8"> <output id="map-size-value">64 px</output></label><label>Density <input id="map-photo-density" type="range" min="5" max="200" value="40" step="5"> <output id="map-density-value">40 / MP</output></label><label>Max overlap <input id="map-photo-overlap" type="range" min="0" max="75" value="0" step="5"> <output id="map-overlap-value">0%</output></label><button id="map-photo-retry">Retry images</button></div></details>
 <div id="projection-stage" style="position:relative"><canvas id="projection-map" width="1200" height="600" style="width:100%;aspect-ratio:2;display:block;touch-action:none;cursor:crosshair;background:#f8fafc;border:1px solid var(--line)" role="img" aria-label="Interactive projection of class prototype directions"></canvas><div id="map-thumbnail-layer" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div></div>
-<p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
-<p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></section>
+<details id="projection-details"><summary>Map details &amp; credits</summary><div class="projection-details-content"><p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
+<p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></div></details></section>
 <section class="panel" id="photo-panel"><div class="row"><h2>Browse by class image</h2><label><input type="checkbox" id="photo-enabled"> Interpret numeric class IDs as GBIF taxa and load photos</label></div><p class="muted">Photo labels for the selected class and its nearest prototype directions. The prototype marks the learned target direction for the class; a GBIF class example provides its visual label. Credits and exact class IDs stay attached.</p><p id="photo-status" class="caption" role="status"></p><div id="photo-grid" class="photo-grid"></div></section>
 <section class="panel" id="tree-panel">
  <div class="row"><h2>Explore the existing dendrogram</h2><div><button id="tree-root">Whole tree</button> <button id="tree-up">Parent</button> <button id="tree-locate">Locate selected class</button></div></div>

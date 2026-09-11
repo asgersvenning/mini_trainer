@@ -271,6 +271,20 @@ try{
   check($('selected-name').textContent===data.names[selected],'IDs restore without losing selected class');
   const rect=projectionCanvas.getBoundingClientRect();check(projectionCanvas.width===Math.round(rect.width*devicePixelRatio)&&projectionCanvas.height===Math.round(rect.height*devicePixelRatio),'canvas backing matches physical screen pixels');
   check(rect.height>=300,'focused map retains vertical workspace');
+  const geometry=()=>{const r=projectionCanvas.getBoundingClientRect();return JSON.stringify([r.x,r.y,r.width,r.height,projectionView.x,projectionView.y,projectionView.scale]);};
+  const stableGeometry=geometry(),savedCredit=$('map-photo-credit').innerHTML;
+  for(const expanded of [false,true]){
+   $('projection-details').open=expanded;
+   for(const text of ['', 'Long taxon name and attribution '.repeat(100),'Short credit']){
+    $('map-photo-credit').textContent=text;$('map-photo-status').textContent=text;
+    await new Promise(r=>setTimeout(r,60));
+    check(geometry()===stableGeometry,'hover and status preserve map geometry with details '+expanded);
+   }
+  }
+  $('thumbnail-options').open=true;await new Promise(r=>setTimeout(r,60));
+  check(geometry()===stableGeometry,'thumbnail settings overlay preserves map geometry');
+  $('thumbnail-options').open=false;$('projection-details').open=false;$('map-photo-credit').innerHTML=savedCredit;
+  check(rect.height>innerHeight*.75,'focused map uses over three quarters of landscape height');
   return checks;
  })()`,returnByValue:true,awaitPromise:true});
  if(enhanced.exceptionDetails)throw Error(JSON.stringify(enhanced.exceptionDetails));

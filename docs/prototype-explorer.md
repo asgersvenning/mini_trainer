@@ -62,7 +62,9 @@ projection includes the neighbourhood profile, local inspector, and class photos
 Choose **All views** to return to the overview.
 
 Focused projection and dendrogram panels use the available viewport height as
-well as width. Thumbnail settings collapse to leave more space for the map.
+well as width. Thumbnail settings and **Map details & credits** open as overlays, leaving the
+map size fixed while hover credits and loading status change. Focused projection
+padding is compact to leave more room for the map.
 The spatial map adapts its aspect ratio while preserving equal geometric scale
 on both axes; its raster follows display pixel density with readable screen-size labels.
 Dendrograms use the wider layout with readable labels and internal scrolling on
