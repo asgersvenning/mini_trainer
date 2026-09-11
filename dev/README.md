@@ -338,3 +338,23 @@ For a deliberately shared allocation, set worker counts explicitly when needed.
 The relevant interfaces are documented by the
 [Linux kernel](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files)
 and [Slurm](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_CPUS_PER_TASK).
+
+CI runs on pull requests targeting `master` and on pushes to `master`. Feature
+branches such as `quant` use PR checks, avoiding duplicate push/PR jobs. New
+commits cancel superseded runs for the same PR or branch. The x86 quantization
+job forces AVX2 to verify portability without relying on runner VNNI support.
+
+## PR change statistics
+
+`pr-change-summary.yml` maintains one bot comment per PR, with file and line counts
+for the core module, tests, benchmark tooling, CI, packaging, and other areas.
+Markdown is excluded from the headline except root `README.md`, whose onboarding
+instructions are part of the user interface. Other Markdown remains visible in a
+separate row. The workflow's `featureMarkdown` set is the explicit exception list;
+add a path there when its content is itself a delivered feature.
+
+The workflow reads GitHub PR metadata only. It uses `pull_request_target` with
+permission to comment, performs no checkout and never executes PR content. It
+starts working once installed on the PR base branch. Counts use GitHub's PR diff,
+classify renames by destination, and flag incomplete results above the API's
+3,000-file limit. They measure change volume, not quality or development effort.

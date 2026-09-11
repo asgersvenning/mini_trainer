@@ -1,6 +1,6 @@
 [project]
 name = "mini_trainer"
-version = "0.1.1"
+version = "0.2.0"
 default-optional-dependency-keys = ["recommended"]
 dependencies = [
   "torch>=2.11",

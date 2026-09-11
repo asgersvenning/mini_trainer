@@ -548,11 +548,46 @@ def test_fresh_job_setup_uses_pins_and_stops_on_install_failure(tmp_path, fail_s
     work = tmp_path / "work with spaces"
     log = tmp_path / "commands.jsonl"
     setup = Path(__file__).resolve().parents[2] / "dev/ucloud/setup.sh"
+    # A shallow CI checkout need not contain historical production pins.
+    # Exercise the shell against an isolated repository with its own pinned inputs.
+    repo = tmp_path / "fixture repository"
+    repo.mkdir()
+    (repo / "setup.sh").write_text(setup.read_text())
+    for filename in ("pyproject.toml", "uv.lock"):
+        (repo / filename).write_text("# fixture\n")
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    template = json.loads(setup.with_name("qualification.json").read_text())
+    for branch, entry in template["environments"].items():
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-m",
+                f"Fixture {branch}",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        entry["commit"] = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    template_path = repo / "qualification.json"
+    template_path.write_text(json.dumps(template))
+    (fake_bin / "python3").symlink_to(sys.executable)
     result = subprocess.run(
-        ["bash", str(setup), str(parquet)],
+        ["bash", str(repo / "setup.sh"), str(parquet)],
         env={
             **os.environ,
             "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "MT_TEMPLATE": str(template_path),
             "MT_WORK_ROOT": str(work),
             "MT_CONFIG": str(work / "qualification.json"),
             "MT_TORCH_BACKEND": "cu130",
@@ -564,6 +599,7 @@ def test_fresh_job_setup_uses_pins_and_stops_on_install_failure(tmp_path, fail_s
         text=True,
         timeout=30,
     )
+    assert log.exists(), f"Setup exited {result.returncode}: {result.stdout}\n{result.stderr}"
     commands = [json.loads(line) for line in log.read_text().splitlines()]
     if fail_sync:
         assert result.returncode == 7

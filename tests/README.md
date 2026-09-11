@@ -24,5 +24,15 @@ checkpoint modules that define their behavior. Imports and serialized test model
 identifiers use those modules' new paths. Keep those paths importable for spawned
 processes; avoid changing fixture semantics as part of directory cleanup.
 
-The move preserved all 737 collected cases, with only test-module paths changed.
-No tests were dropped, weakened or newly marked skipped to complete the grouping.
+These folders use ordinary pytest discovery, not custom collections. `dev/check.sh`
+only selects the existing environment, sets CPU/headless defaults and forwards
+arguments to `python -m pytest`. Direct pytest invocation is also supported, e.g.:
+
+```bash
+CUDA_VISIBLE_DEVICES='' MPLBACKEND=Agg .venv/bin/python -m pytest tests/data --durations=15
+```
+
+Prefer tests of observable contracts and real regressions over source-text assertions
+or one test per implementation detail. Use `--durations=15` to identify expensive
+cases before consolidating them; preserve CPU/GPU and serialization coverage.
+The `benchmarks/` tests validate benchmark tooling, not full performance runs.

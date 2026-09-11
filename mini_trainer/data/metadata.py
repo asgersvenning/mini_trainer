@@ -241,29 +241,93 @@ def partition_class_samples(
     return split_samples, violations
 
 
-def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], list[str]]:
-    """Find images in source and possibly create training metadata."""
-    metadata = labels = images = None
+def _inference_folder_labels(folders: list[str], cls2idx: dict, labels) -> OrderedDict:
+    """Resolve input folders independently of the model's prediction vocabulary."""
+    levels = len(cls2idx)
+    known = labels if isinstance(labels, dict) else {str(value[0]): value for value in (labels or [])}
+    resolved = OrderedDict()
+    missing = []
+    for name in folders:
+        value = known.get(name)
+        if isinstance(value, (list, tuple)) and len(value) == levels:
+            resolved[name] = tuple(map(str, value))
+        else:
+            missing.append(name)
+    if missing:
+        if not is_taxonomical_cls2idx(cls2idx):
+            raise ValueError(f"Missing hierarchical labels for input folders: {missing}")
+        # An integer is an inclusive deepest-rank index in create_taxonomy,
+        # not a level count: 3 would include order as a fourth level.
+        fetched = labels_from_taxonomy(create_taxonomy(missing, list(range(levels))))
+        for name in missing:
+            value = fetched.get(name)
+            if value is None or len(value) != levels:
+                raise ValueError(f"Could not resolve {levels} hierarchy levels for input folder {name!r}; received {value!r}")
+            # Folder IDs are supplied ground truth; do not silently canonicalize
+            # unseen/synonymous species into the model's vocabulary.
+            resolved[name] = (name if name.isdigit() else str(value[0]), *map(str, value[1:]))
+    return OrderedDict((name, resolved[name]) for name in folders)
+
+
+def auto_find_images(
+    src: str,
+    *,
+    cls2idx: dict | None = None,
+    labels: dict | list | None = None,
+    **kwargs,
+) -> tuple[list[str | tuple[str, ...] | list[str]], list[str]]:
+    """Return raw ground truth and image paths for prediction (never class indices).
+
+    Parquet inputs retain their supplied test split; ``cls2idx``, ``labels`` and
+    remaining metadata options are forwarded to the Parquet adapter. Other files
+    are returned as single unlabelled inputs, without validating image contents.
+
+    Directories are scanned recursively in sorted path order. If every image is
+    below an immediate child directory, that directory names its class. Root-level
+    images instead make the entire input unlabelled. Non-image files and empty
+    folders do not affect this decision. Recognized split/class/image layouts
+    select only the supplied test split. Discovery does not partition or shuffle
+    samples, create an index, or restrict coverage to the model vocabulary.
+
+    ``labels`` optionally maps folder names to ground truth (or lists labels keyed
+    by their first element for hierarchical labels). Hierarchical ``cls2idx``
+    declares the expected number of levels. Missing hierarchical mappings retain
+    the existing GBIF/cache lookup for taxonomical vocabularies, with explicit
+    failure if resolution fails. This can involve network access. Numeric folder
+    IDs are preserved for newly resolved species. Other kwargs do not affect
+    directory discovery. Unlabelled inputs return ``([], images)``.
+    """
     if os.path.isfile(src):
         if src.endswith(".parquet"):
-            metadata = get_metadata_from_parquet(src, **kwargs)
-        else:
-            images = [src]
-    elif os.path.isdir(src):
-        contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
-        if contains_only_dirs:
-            metadata = create_metadata(src, **{**kwargs, **{"train_proportion": 0, "val_proportion": 0}})
-        else:
-            images = find_images(src)
-    else:
+            metadata = get_metadata_from_parquet(src, cls2idx=cls2idx, labels=labels, **kwargs)
+            samples = [(c, p) for c, p, split in zip(metadata["label"], metadata["path"], metadata["split"]) if split == "test"]
+            return [c for c, _ in samples], [p for _, p in samples]
+        return [], [src]
+    if not os.path.isdir(src):
         raise ValueError(f"Image source must be a file (image or gbifxdl parquet) or directory with images, not {src}.")
-    if metadata is not None:
-        images = [p for p, s in zip(metadata["path"], metadata["split"]) if s == "test"]
-        labels = [c for c, s in zip(metadata["label"], metadata["split"]) if s == "test"]
-    assert images is not None
-    if labels is None:
-        labels = []
-    return labels, images
+
+    images = find_images(src)
+    folders = [Path(os.path.relpath(path, src)).parts for path in images]
+    if not images or any(len(parts) == 1 for parts in folders):
+        return [], images
+    # Preserve supplied directory splits without constructing training metadata.
+    if all(parts[0].lower() in SPLIT_DIR_MAP and len(parts) >= 3 for parts in folders):
+        selected = [(path, parts[1:]) for path, parts in zip(images, folders) if SPLIT_DIR_MAP[parts[0].lower()] == "test"]
+        images = [path for path, _ in selected]
+        folders = [parts for _, parts in selected]
+        if not images:
+            return [], []
+    names = [parts[0] for parts in folders]
+    if isinstance(cls2idx, dict) and isinstance(cls2idx.get("0"), dict):
+        mapping = _inference_folder_labels(sorted(set(names)), cls2idx, labels)
+    else:
+        mapping = (
+            labels
+            if isinstance(labels, dict)
+            else {str(value[0] if isinstance(value, (list, tuple)) else value): value for value in (labels or [])}
+        )
+    ground_truth = [mapping.get(name, name) for name in names]
+    return [tuple(value) if isinstance(value, list) else value for value in ground_truth], images
 
 
 def label_to_class_idx(

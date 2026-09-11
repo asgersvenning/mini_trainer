@@ -136,17 +136,22 @@ class PreparedInt8(nn.Module):
         return Int8Model(converted, copy.deepcopy(self.recipe))
 
 
-def prepare_int8(model: nn.Module, example_input: torch.Tensor, *, qat=False):
+def prepare_int8(model: nn.Module, example_input: torch.Tensor, *, qat=False, reduce_range=True):
     """Capture the actual model for static W8A8 PTQ or QAT, at a fixed input shape.
 
     Weights are symmetric per-channel int8; activations are affine per-tensor
-    uint8. Bias, normalization and unsupported non-linear operations stay float.
+    uint8. By default activations use 0..127 to avoid intermediate saturation on
+    x86 CPUs without VNNI. Set reduce_range=False only for a validated VNNI target
+    (also required to recreate older full-range QAT recipes). Bias, normalization
+    and unsupported non-linear operations stay float.
     Graph capture/backend errors propagate. All captured Conv1d/Conv2d/Linear
     operations must receive weight AND activation quantization annotations.
     """
     _input(example_input)
     if not isinstance(qat, bool):
         raise TypeError("qat must be a bool")
+    if not isinstance(reduce_range, bool):
+        raise TypeError("reduce_range must be a bool")
     if EmbeddingContext.active() or SupervisionContext.get() is not None:
         raise RuntimeError("Prepare outside embedding/supervision contexts.")
     backend, _, quantizer_cls, config_factory, _ = _backend()
@@ -167,7 +172,7 @@ def prepare_int8(model: nn.Module, example_input: torch.Tensor, *, qat=False):
         # Strict capture retains functional-op provenance needed by TorchAO's
         # x86 quantizer. Non-strict export silently misses functional linears.
         graph = torch.export.export(model, (example_input,), strict=True).module()
-        quantizer = quantizer_cls().set_global(config_factory(is_qat=qat))
+        quantizer = quantizer_cls().set_global(config_factory(is_qat=qat, reduce_range=reduce_range))
         graph = (backend.prepare_qat_pt2e if qat else backend.prepare_pt2e)(graph, quantizer)
     nodes = _weighted_nodes(graph.graph)
     missing = []
@@ -194,6 +199,10 @@ def prepare_int8(model: nn.Module, example_input: torch.Tensor, *, qat=False):
         "output_structure": _structure(outputs, iter(f"output_{i}" for i in range(len(_flatten(outputs))))),
         "weighted_operations": [{"name": n.name, "operator": str(n.target)} for n in nodes],
     }
+    if reduce_range:
+        # Omit for full-range mode to retain compatibility with existing recipes.
+        recipe["activation_quant_min"] = 0
+        recipe["activation_quant_max"] = 127
     return PreparedInt8(graph, recipe)
 
 

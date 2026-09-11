@@ -28,8 +28,14 @@ def get_cache():
     return _CACHE
 
 
-def retrive_request(req: str) -> Any:
-    """Retrieve a composed HTTPS request."""
+def retrive_request(req: str, *, timeout: float | None = None) -> Any:
+    """Retrieve and cache an HTTPS response.
+
+    ``timeout`` bounds blocking socket operations, not an entire taxonomy lookup.
+    Omit it to use urllib's process-wide socket default. Callers that need a total
+    batch deadline must enforce that at the orchestration boundary; this transport
+    helper cannot determine an appropriate workload budget.
+    """
     if not req.startswith("https://"):
         raise NotImplementedError("Only HTTPS APIs are currently supported.")
     cache = get_cache()
@@ -38,7 +44,7 @@ def retrive_request(req: str) -> Any:
     if cached_result is not None:
         return cached_result
 
-    with urlopen(req, timeout=10) as resp:
+    with urlopen(req, **({"timeout": timeout} if timeout is not None else {})) as resp:
         if resp.status != 200:
             raise RuntimeError(f"Unable to resolve request, received status {resp.status} from {req}.")
         data = json.load(resp)

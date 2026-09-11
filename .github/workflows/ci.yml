@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["master", "quant"]
+    branches: ["master"]
     # Only agent documents are exempt; source, public docs and workflow edits run checks.
     paths-ignore:
       - 'AGENTS.md'
@@ -13,6 +13,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   scope:
@@ -58,7 +62,7 @@ jobs:
         run: bash dev/check.sh static
 
       - name: Test with pytest
-        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term
+        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term --durations=15
 
       - name: Standalone ONNX Runtime parity
         run: bash dev/check-onnx.sh
@@ -98,4 +102,7 @@ jobs:
       - name: QAT continuation and native INT8 inference
         env:
           OMP_NUM_THREADS: "1"
+          # Exercise portable kernels even when the runner supports VNNI.
+          ONEDNN_MAX_CPU_ISA: AVX2
+          DNNL_MAX_CPU_ISA: AVX2
         run: bash dev/check.sh test tests/quantization/test_quantization.py

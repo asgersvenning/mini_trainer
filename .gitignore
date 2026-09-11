@@ -21,22 +21,14 @@
 **events.out.tfevents*
 **/__pycache__/**
 /tmp*
-/tmp/**
 /tensorrt-results/
 **.pyspy
 
-# Specific cases
+# Tracked configuration and local output directories
+!/dev/ucloud/*.json
 examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml
-!/dev/ucloud/comparison.json
-!/dev/ucloud/qualification.json
-!/dev/ucloud/experiment.json
-!/dev/ucloud/compilation.json
-!/dev/ucloud/optimizer-compilation.json
-!/dev/ucloud/combined-int8.json
-!/dev/ucloud/figures.json
 /local-evidence/
 /.worktrees/
 /.venv
-!/dev/ucloud/ddp.json

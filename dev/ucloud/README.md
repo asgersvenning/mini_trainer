@@ -1,5 +1,10 @@
 # UCloud global_lepi training comparison
 
+For findings from the completed production campaign and proposed next-run
+improvements, see the [workflow post-mortem](../../docs/training-workflow-postmortem.md).
+The commands below retain historical comparison profiles and pins; they are not
+a newly qualified production recipe for every node.
+
 Run inside **one allocated node**, with 1, 2, 4 or 8 visible GPUs. More than one
 GPU uses one `torchrun` process per GPU and the package's existing DDP trainer
 (including SyncBatchNorm). One GPU uses ordinary training. Do not invoke the
@@ -787,3 +792,65 @@ For four full GPUs with figures, W&B, a bounded batch sweep and checkpoint
 continuation, use [the DDP qualification and production handoff](ddp.md).
 Production training uses `mt_htrain` under `torchrun`; the Python API harness
 remains a qualification tool.
+
+For the post-training expert benchmark, start with the
+[bounded RAM-staging inference trial](expert-trial.md). It generates its minimal
+configuration and runs the standard prediction CLI without rebuilding an index.
+
+## Calibrate filesystem read concurrency
+
+`calibrate_io.py` is a standalone Python file; copying that one file is sufficient.
+It uses standard-library threads and subprocesses, with Pillow needed only for
+`--mode decode`. It does not import mini_trainer or alter its environment.
+
+```bash
+/work/venvs/mt-quant/bin/python dev/ucloud/calibrate_io.py \
+  /work/flemming_helsing/restructured/valid/referenced \
+  --mode stage --destination /dev/shm --output /work/expert-io-calibration.json
+```
+
+The default sweep tests 1–1,024 concurrent reads with 30-second I/O measurement limits,
+then retests the three strongest candidates twice in shuffled order. It recommends
+the smallest concurrency within 5% of the best median confirmation throughput.
+Every thread is initialized before measurement starts. Process/thread startup has
+a separate 30-second limit and is recorded independently; the overall budget is
+600 seconds. blocked filesystem metadata calls may
+outlast the budget. Each trial consumes only paths actually submitted to its reader pool; untouched
+paths remain available after a timeout. Submitted selections are disjoint and
+shuffled. Shared cache state remains unknown. Run away from other heavy read jobs
+when selecting a baseline. Existing reports are preserved and a numeric suffix is
+chosen automatically for subsequent runs.
+
+`--mode read` (the default) measures concurrent encoded-byte reads without retaining
+a second copy. `--mode stage --destination PATH` also measures writes to the intended
+staging filesystem; its own temporary copies are removed between trials.
+`--mode decode --resize 384` includes RGB decoding and optional CPU resize, for a
+loader-oriented measurement. The resulting thread count is for concurrent I/O or
+read/decode tasks, **not** a recommendation to create that many DataLoader processes.
+This file calibrates concurrency; it does not install read-ahead into training.
+
+`--workers`, `--files-per-trial`, `--trial-seconds`, `--startup-seconds`, `--budget-seconds`, and
+`--confirmation-rounds` are adjustable. Each trial selects at most 2,048 files and
+16 GiB of encoded data by default. Selection shrinks automatically to fit the byte
+cap and staging destination; actual and requested concurrency are both recorded
+when fewer files fit. Small trials (including ten-file trials) run normally, and
+completed reads are ranked without an arbitrary 32-image minimum. Linux child RSS
+is monitored against a 4 GiB stop threshold. Failed settings are excluded. The JSON report contains per-trial
+throughput, latency, errors, sampled paths and the recommendation. If samples or
+time are exhausted, inspect the confirmation coverage before treating the result
+as repeatable. Very fast RAM trials benefit from increasing `--files-per-trial`.
+
+Show an existing report without printing its sample manifest:
+
+```bash
+/work/venvs/mt-quant/bin/python dev/ucloud/calibrate_io.py \
+  --summary /work/io-calibration.json
+```
+
+Each run also writes a compact `.summary.txt` beside its JSON. Calibration failures
+are recorded in the report and a separate `.error.log`, including failures to
+terminate a blocked I/O subprocess. Completed partial trials remain usable; an
+unusable confirmation does not erase a valid sweep estimate (marked provisional).
+A setting that fails with an error or memory-limit violation during confirmation
+is excluded from that fallback. An uninterruptible kernel I/O wait can delay process
+termination; the calibrator stops instead of accumulating competing readers.
