@@ -169,3 +169,24 @@ def test_convolution_batchnorm_hidden_head_and_artifact_integrity(tmp_path, qat)
     (path / "model.pt2").write_bytes(b"corrupted")
     with pytest.raises(ValueError, match="checksum"):
         load_int8(path)
+
+
+def test_reduced_range_recipe_and_full_range_resume_compatibility():
+    torch.manual_seed(42)
+    original = model()
+    x = torch.randn(4, 8)
+    portable = prepare_int8(original, x, qat=True)
+    assert portable.recipe["activation_quant_max"] == 127
+    activation_observers = [m for m in portable.graph.modules() if getattr(m, "quant_min", None) == 0]
+    assert activation_observers
+    assert all(m.quant_max == 127 for m in activation_observers)
+    full = prepare_int8(original, x, qat=True, reduce_range=False)
+    # Older recipes have no activation range fields; explicit full range retains that format.
+    assert "activation_quant_max" not in full.recipe
+    full_observers = [m for m in full.graph.modules() if getattr(m, "quant_min", None) == 0]
+    assert full_observers and all(m.quant_max == 255 for m in full_observers)
+    restored = prepare_int8(original, x, qat=True, reduce_range=False)
+    restored.load_state_dict(full.state_dict())
+    assert_state_equal(restored.state_dict(), full.state_dict())
+    with pytest.raises(ValueError, match="recipe differs"):
+        portable.load_state_dict(full.state_dict())
