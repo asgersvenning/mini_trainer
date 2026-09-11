@@ -36,3 +36,6 @@ bash dev/ucloud/test-inference.sh /work/test-full-2 --reuse-stage /work/test-ful
 A completed manifest is required for reuse. An interrupted copy is not resumable.
 The selected test count should match the production index (expected 632,913
 from the original dataset; the saved index is authoritative).
+
+After inference, use [the mini_metrics evaluation helper](evaluate-results.md)
+for separate in-domain and expert reports.
