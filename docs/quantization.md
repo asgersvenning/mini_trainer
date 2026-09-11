@@ -1,6 +1,6 @@
 # INT8 quantization: initial x86 backend
 
-This is an opt-in Python API for **static 8-bit weights and 8-bit activations**,
+This is an opt-in Python API for **static INT8 weights and UINT8 activation storage**,
 using TorchAO PT2E. Actual quantized training with reduced memory and training
 time now has an initial [CUDA model integration](quantized-training.md); see the [QT/loader probes](../dev/benchmarks/training.md#capacity-and-bottleneck-probes). It supports post-training calibration (PTQ) and
 quantization-aware training (QAT). QAT uses fake quantization with float32 master
@@ -50,6 +50,17 @@ Convert it before evaluating held-out data. Conversion refuses unobserved or
 nonfinite ranges, and does not modify the prepared model.
 
 Weights use symmetric per-channel int8; activations use affine per-tensor uint8.
+The default `reduce_range=True` uses activation values 0..127 (seven effective
+bits in eight-bit storage). This avoids intermediate saturation in oneDNN's
+AVX2/non-VNNI kernels. Full range 0..255 is available with `reduce_range=False`
+for a validated VNNI deployment target. The strict reference-versus-native
+parity check remains enabled in both modes; tolerances are unchanged.
+
+This portability fix changes the default calibration/QAT range. Recreate older
+full-range QAT checkpoints with `reduce_range=False` to preserve their recipe.
+Existing exported full-range graphs are not silently recalibrated on load;
+they still require compatible hardware and successful lowering parity.
+New reduced-range recipes record the activation bounds explicitly.
 Bias, normalization, score transforms and other non-linear operations may remain
 floating point. The report includes the actual remaining operator inventory.
 All captured Conv1d/Conv2d/Linear operations must receive weight and activation
