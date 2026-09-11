@@ -52,3 +52,38 @@ def test_reuse_requires_complete_intact_staging(tmp_path):
     image.write_bytes(b"truncated")
     with pytest.raises(RuntimeError, match="manifest"):
         trial.reuse_stage(previous)
+
+
+def test_index_staging_preserves_only_test_rows_and_labels(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    for name in ("a.jpg", "b.jpg"):
+        (source / name).write_bytes(name.encode())
+    index = source / "data_index.json"
+    index.write_text(
+        json.dumps(
+            {
+                "path": ["missing-train.jpg", "b.jpg", "missing-val.jpg", "a.jpg"],
+                "split": ["train", "test", "validation", "test"],
+                "label": [[1, 2], [999, 3], [4, 5], [888, 6]],
+                "class": [[0, 0], [-1, 1], [2, 2], [-1, 3]],
+            }
+        )
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+    destination = tmp_path / "staged"
+    trial.stage(source, destination, output, 1, 1024, 2, index)
+    staged = json.loads((output / "staged-index.json").read_text())
+    assert staged["split"] == ["test", "test"]
+    assert staged["label"] == [[999, 3], [888, 6]]
+    assert staged["class"] == [[-1, 1], [-1, 3]]
+    assert [Path(p).read_bytes() for p in staged["path"]] == [b"b.jpg", b"a.jpg"]
+    assert json.loads((output / "staging.json").read_text())["scope"] == "supplied_test_split"
+
+
+def test_index_rejects_inconsistent_columns(tmp_path):
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"path": ["a.jpg"], "split": [], "label": [1]}))
+    with pytest.raises(ValueError, match="lengths"):
+        trial.test_rows(index)
