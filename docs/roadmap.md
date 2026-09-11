@@ -234,6 +234,13 @@ inputs; add formats incrementally without duplicating prediction-only readers.
 
 Follow-ups identified during the bounded `auto_find_images` review:
 
+- Clarify `create_taxonomy` / `select_levels`: an integer currently means an
+  inclusive deepest-rank index, whereas callers such as `create_metadata` pass
+  `len(cls2idx)` as a count. The inference caller now uses explicit rank indices.
+  Audit remaining callers before changing the shared signature; test actual rank
+  selection rather than mocking the whole taxonomy adapter. Separate API/cache
+  retrieval failures from local rank-selection and mapping errors in diagnostics.
+
 - Define an explicit input-layout/split policy for ambiguous folder layouts and
   reconcile prediction's separate `data_index` and source-selection paths.
 - Specify taxonomy provenance and missing-ancestor handling independently of

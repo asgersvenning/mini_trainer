@@ -35,3 +35,20 @@ def test_stage_rejects_byte_budget_before_copy(tmp_path):
     with pytest.raises(RuntimeError, match="limit"):
         trial.stage(source, tmp_path / "staged", tmp_path, 1, 1, 1)
     assert not (tmp_path / "staged").exists()
+
+
+def test_reuse_requires_complete_intact_staging(tmp_path):
+    staged = tmp_path / "ram"
+    staged.mkdir()
+    image = staged / "image.jpg"
+    image.write_bytes(b"image")
+    previous = tmp_path / "previous"
+    previous.mkdir()
+    (previous / "inference.yaml").write_text(json.dumps({"input": str(staged)}))
+    with pytest.raises(FileNotFoundError):
+        trial.reuse_stage(previous)
+    (previous / "staging.json").write_text(json.dumps({"files": [{"staged": str(image), "bytes": 5}]}))
+    assert trial.reuse_stage(previous)[0] == staged
+    image.write_bytes(b"truncated")
+    with pytest.raises(RuntimeError, match="manifest"):
+        trial.reuse_stage(previous)

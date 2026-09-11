@@ -70,6 +70,21 @@ def stage(source: Path, destination: Path, output: Path, limit: int, byte_limit:
     (output / "staging.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
+def reuse_stage(previous: Path) -> tuple[Path, dict]:
+    """Require a completed manifest and intact staged files, without source reads."""
+    config = json.loads((previous / "inference.yaml").read_text())
+    report = json.loads((previous / "staging.json").read_text())
+    destination = Path(config["input"]).resolve(strict=True)
+    rows = report["files"]
+    if not rows:
+        raise RuntimeError("Completed staging manifest contains no files")
+    for row in rows:
+        path = Path(row["staged"]).resolve(strict=True)
+        if not path.is_relative_to(destination) or path.stat().st_size != row["bytes"]:
+            raise RuntimeError(f"Staged file does not match manifest: {path}")
+    return destination, report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
@@ -81,6 +96,7 @@ def main() -> None:
     parser.add_argument("--stage-timeout", type=int, default=300)
     parser.add_argument("--inference-timeout", type=int, default=600)
     parser.add_argument("--gpu", default="1")
+    parser.add_argument("--reuse-stage", type=Path, help="Reuse a completed trial directory without copying source images")
     parser.add_argument("--stage-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if min(args.images, args.max_mib, args.copy_workers, args.stage_timeout, args.inference_timeout) <= 0:
@@ -97,9 +113,15 @@ def main() -> None:
 
     if "cls2idx" not in inspect.signature(auto_find_images).parameters:
         raise RuntimeError("Install the focused inference discovery fix before running this trial")
-    if destination.exists():
+    previous_report = None
+    if args.reuse_stage is not None:
+        destination, previous_report = reuse_stage(args.reuse_stage)
+    elif destination.exists():
         raise RuntimeError(f"Staging directory already exists: {destination}; choose a fresh output name")
     args.output.mkdir(parents=True, exist_ok=False)
+    if previous_report is not None:
+        (args.output / "staging.json").write_text(json.dumps(previous_report, indent=2) + "\n")
+        print(f"Reusing completed staging from {args.reuse_stage}: {destination}", flush=True)
     config = {"input": str(destination), "weights": str(args.weights)}
     config_path = args.output / "inference.yaml"
     # JSON is valid YAML; no extra dependency or hand-edited config required.
@@ -116,6 +138,8 @@ def main() -> None:
             "inference",
         ),
     ]
+    if args.reuse_stage is not None:
+        commands = commands[1:]
     for command, timeout, phase in commands:
         print(f"Starting {phase}; timeout {timeout}s. Log: {args.output / (phase + '.log')}", flush=True)
         started = time.monotonic()

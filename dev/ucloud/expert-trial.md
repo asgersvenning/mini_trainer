@@ -15,7 +15,7 @@ bash dev/ucloud/expert-trial.sh
 ```
 
 No manual YAML editing or dataset index construction is required. The launcher
-extracts the focused discovery fix at `cba4ecd` into a fresh `/work` source overlay
+extracts the focused discovery fix at `0c572ca` into a fresh `/work` source overlay
 and uses the existing `/work/venvs/mt-quant` interpreter and dependencies. It does
 not install packages or update the environment of another process. The underlying
 Python helper also accepts explicit source, weights and output paths (`--help`).
@@ -69,3 +69,16 @@ The full test split remains deferred until throughput is adequate.
 RAM staging disappears with the job. Predictions, logs, configuration and manifest
 are retained under `/work`. Staged files can be deleted once their corresponding
 inference has exited; the helper deliberately does not delete existing directories.
+
+To retry inference after a code fix, reuse completed staging without another read
+of the source images:
+
+```bash
+bash dev/ucloud/expert-trial.sh /work/expert-staging-trial-4 \
+  --reuse-stage /work/expert-staging-trial-3
+```
+
+This checks the previous completed manifest and staged file sizes. The source
+paths remain recorded, and the new output receives its own configuration and logs.
+Taxonomy still uses the node's existing GBIF response cache; cache/API failures
+remain distinct from the corrected count-versus-rank selection bug.

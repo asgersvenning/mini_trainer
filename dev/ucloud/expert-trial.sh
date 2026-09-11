@@ -2,7 +2,7 @@
 # Run the bounded expert trial without changing the installed training environment.
 set -euo pipefail
 repo=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
-revision=cba4ecd
+revision=0c572ca
 python=/work/venvs/mt-quant/bin/python
 source_dir=/work/flemming_helsing/restructured/valid/referenced
 weights=/work/results/global_lepi_production_w32_1/weights/best.pt
