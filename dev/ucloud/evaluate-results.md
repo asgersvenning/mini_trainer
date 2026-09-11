@@ -50,7 +50,10 @@ contain the selected prediction per level, so they cannot establish top-5
 accuracy. The expert dataset evaluates external performance; it should not be
 used for selecting this model's thresholds or checkpoints.
 
-For compact inspection:
+Aggregate metric tables and progress are printed live in the terminal and retained
+in the corresponding logs. `pipefail` preserves failures through `tee`.
+
+For compact inspection after completion:
 
 ```bash
 cat /work/evaluation-1/expert/all_labels.csv

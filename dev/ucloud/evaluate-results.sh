@@ -24,7 +24,7 @@ for dataset in "${datasets[@]}"; do
         exit 1
     fi
 done
-export CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg
+export PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg
 runner=(uvx --python 3.13 --from "$package" mm_metrics)
 # Resolve the isolated CPU tool once before starting reports.
 "${runner[@]}" --help > /dev/null
@@ -46,7 +46,7 @@ for dataset in "${datasets[@]}"; do
         printf '%q ' "${command[@]}" >> "$target/commands.sh"
         printf '\n' >> "$target/commands.sh"
         echo "$dataset / $scope: $target/$scope.log"
-        if ! "${command[@]}" > "$target/$scope.log" 2>&1; then
+        if ! "${command[@]}" 2>&1 | tee "$target/$scope.log"; then
             echo "Evaluation failed; inspect $target/$scope.log" >&2
             exit 1
         fi
