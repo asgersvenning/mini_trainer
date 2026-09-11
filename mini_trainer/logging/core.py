@@ -1,11 +1,14 @@
 import math
 import os
+import re
+import shutil
 import time
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator, Sequence
 from itertools import chain, repeat
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import RLock
 from typing import Any, TextIO, TypeVar
@@ -19,18 +22,20 @@ try:
 except ImportError:
     psutil = None
 import torch
+import torch.distributed as dist
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from torch import nn
 
 from mini_trainer import get_logger
-from mini_trainer.training import raw_confusion_matrix
 from mini_trainer.utils import float_signif_decimal, get_rank, main_process_first, reduce_across_processes, write_csv_from_dict
 from mini_trainer.visualization import (
     plot_class_distance_matrix,
-    plot_heatmap,
     plot_probabilistic_dendrogram,
+    save_dendrogram_svg,
 )
+
+from .confusion import confusion_report, hard_counts, reduce_matrix
 
 
 def format_duration(sec: int | float, suffix="dhms"):
@@ -1033,74 +1038,96 @@ class MultiLogger:
             self._soft_confusion_matrix[level] = cf
 
     def confusion_matrix(self):
-        lvl = None
-        figs: dict[str, np.ndarray] = dict()
-        while True:
-            # Check if there is one or multiple levels, and if so if the current level exists
-            counts: dict[str, list[int]]
-            if lvl is None:
-                counts = {"labels": [], "predictions": []}
-                lvl = 0
-                if any([key not in self.heterogeneous_storage for key in counts]):
-                    continue
-            else:
-                counts = {f"labels/lvl{lvl}": [], f"predictions/lvl{lvl}": []}
-                if any([key not in self.heterogeneous_storage for key in counts]):
-                    break
+        """Collect global whole-matrix diagnostics; only rank zero renders."""
+        started = time.monotonic()
+        specifications = {}
+        for level, matrix in self._soft_confusion_matrix.items():
+            prefix = "labels" if level == 0 and "labels" in self.heterogeneous_storage else f"labels/lvl{level}"
+            specifications[level] = (matrix.shape[0], prefix, True)
+        for key in list(self.heterogeneous_storage):
+            if key == "labels" or key.startswith("labels/lvl"):
+                level = 0 if key == "labels" else int(key.split("lvl")[-1])
+                if level not in specifications:
+                    values = []
+                    for field in (key, key.replace("labels", "predictions")):
+                        for indices, epoch, phase in self.heterogeneous_storage.get(field, []):
+                            if epoch == self._epoch and phase.lower().startswith(("eval", "val")):
+                                values.extend(indices)
+                    specifications[level] = (max(self._n_classes or 0, max(values, default=-1) + 1), key, False)
+        if dist.is_available() and dist.is_initialized():
+            # Small shape descriptors also cover ranks with no validation batches.
+            gathered = [None] * dist.get_world_size()
+            dist.all_gather_object(gathered, specifications)
+            for other in gathered:
+                for level, (size, prefix, has_soft) in other.items():
+                    existing = specifications.get(level, (0, prefix, False))
+                    specifications[level] = (max(size, existing[0]), prefix, has_soft or existing[2])
+        figures = {}
+        for level, (size, prefix, has_soft) in sorted(specifications.items()):
+            if not size:
+                continue
+            counts = []
+            for field in (prefix, prefix.replace("labels", "predictions")):
+                values = []
+                for indices, epoch, phase in self.heterogeneous_storage.get(field, []):
+                    if epoch == self._epoch and phase.lower().startswith(("eval", "val")):
+                        values.extend(indices)
+                counts.append(values)
+            matrix = reduce_matrix(hard_counts(*counts, size), copy=False)
+            if get_rank() == 0:
+                get_logger().info(f"Rendering whole-matrix confusion diagnostics: level {level}, {size:,} classes")
+                name = f"Confusion matrix/lvl{level}"
+                directory = self._confusion_directory(name)
+                figures[name + "/overview_mean"] = confusion_report(matrix, soft=False, directory=directory)
+            del matrix
+            if not has_soft:
+                continue
+            local_soft = self._soft_confusion_matrix.get(level)
+            if local_soft is None:
+                local_soft = torch.zeros((size, size), dtype=torch.float32)
+            matrix = reduce_matrix(local_soft.detach().numpy())
+            if get_rank() == 0:
+                name = f"Soft confusion matrix/lvl{level}"
+                directory = self._confusion_directory(name)
+                figures[name + "/overview_mean"] = confusion_report(matrix, soft=True, directory=directory)
+            del matrix
+        if figures:
+            get_logger().info(f"Confusion diagnostics generated in {time.monotonic() - started:.1f}s")
+        return figures
 
-            # Find label and prediction combinations (at the current level if applicable)
-            hits = 0
-            for what in counts:
-                for cls_idxs, epoch, tp in reversed(self.heterogeneous_storage[what]):
-                    if epoch != self._epoch:
-                        break
-                    ctp = tp.lower().strip()
-                    if not (ctp.startswith("val") or ctp.startswith("eval")):
-                        continue
-                    hits += 1
-                    counts[what].extend(cls_idxs)
-            if hits == 0:
-                get_logger().warning(f"No labels or predictions found for {self._epoch}!")
-
-            # Create confusion matrix from counts
-            cm = raw_confusion_matrix(*counts.values(), n_classes=None)
-            m = cm.sum(axis=1) > 0
-            cm = cm[m][:, m]
-            if not bool(np.any(np.isfinite(cm))):
-                get_logger().warning(f"Confusion matrix has no valid values, produced from counts: {counts}")
-
-            cm_lab = "Confusion matrix"
-            if lvl is not None:
-                cm_lab += f"/lvl{lvl}"
-            figs[cm_lab] = plot_heatmap(cm)
-
-            lvl += 1
-
-        if len(self._soft_confusion_matrix) == 0:
-            pass
-        elif len(self._soft_confusion_matrix) == 1:
-            cm = list(self._soft_confusion_matrix.values())[0]
-            zm = cm.max(dim=1).values < (1 / cm.sum())
-            cm = cm[~zm][:, ~zm]
-            cm_rs = cm.sum(dim=1, keepdim=True)
-            cm = cm / cm_rs
-            cm = cm.clamp(1 / cm_rs.sum().item(), 1)
-            figs["Soft confusion matrix"] = plot_heatmap(cm)
-        else:
-            for lvl, cm in self._soft_confusion_matrix.items():
-                zm = cm.max(dim=1).values < (1 / cm.sum())
-                cm = cm[~zm][:, ~zm]
-                cm_rs = cm.sum(dim=1, keepdim=True)
-                cm = cm / cm_rs
-                cm = cm.clamp(1 / cm_rs.sum().item(), 1)
-                figs[f"Soft confusion matrix/lvl{lvl}"] = plot_heatmap(cm)
-        return figs
+    def _confusion_directory(self, name):
+        if self.output_dir is None:
+            return None
+        epoch = "unknown" if self._epoch is None else f"{self._epoch + 1:04d}"
+        return Path(self.output_dir) / "figures" / f"epoch-{epoch}" / name.replace(" ", "_").replace("/", "_")
 
     def add_figure(self, name: str, figure: Figure | np.ndarray | torch.Tensor | str):
-        for logger in self.loggers:
-            logger.add_figure(name=name, figure=figure, epoch=self._epoch)
-        if isinstance(figure, Figure):
-            plt.close(figure)
+        try:
+            if self.output_dir is not None and get_rank() == 0:
+                epoch = "unknown" if self._epoch is None else f"{self._epoch + 1:04d}"
+                directory = Path(self.output_dir) / "figures" / f"epoch-{epoch}"
+                directory.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^\w.-]+", "_", name).strip(".") or "figure"
+                if isinstance(figure, Figure):
+                    figure.savefig(directory / f"{stem}.png", bbox_inches="tight")
+                elif isinstance(figure, str):
+                    if "<svg" in figure[:500].lower():
+                        (directory / f"{stem}.svg").write_text(figure)
+                    else:
+                        suffix = Path(figure).suffix or ".png"
+                        shutil.copyfile(figure, directory / f"{stem}{suffix}")
+                else:
+                    array = figure.detach().cpu().numpy() if isinstance(figure, torch.Tensor) else figure
+                    if isinstance(figure, torch.Tensor) and array.ndim == 3 and array.shape[0] in (1, 3, 4):
+                        array = array.transpose(1, 2, 0)
+                    if array.ndim == 3 and array.shape[-1] == 1:
+                        array = array[..., 0]
+                    plt.imsave(directory / f"{stem}.png", array)
+            for logger in self.loggers:
+                logger.add_figure(name=name, figure=figure, epoch=self._epoch)
+        finally:
+            if isinstance(figure, Figure):
+                plt.close(figure)
 
     def synchronize_between_processes(self):
         for logger in self.loggers:
@@ -1118,11 +1145,17 @@ class MultiLogger:
                 for lvl, fig in enumerate(cdm_figs):
                     self.add_figure(f"Class distance matrix/lvl{lvl}", fig)
                 try:
+                    started = time.monotonic()
+                    get_logger().info("Generating probabilistic dendrogram diagnostics...")
                     dendrograms = plot_probabilistic_dendrogram(model)
-                    for lvl, (pd_fig, _) in enumerate(dendrograms):
-                        with NamedTemporaryFile(suffix=".svg") as tmp_file:
-                            pd_fig.savefig(tmp_file.name, bbox_inches="tight")
-                            self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
-                        plt.close(pd_fig)
+                    try:
+                        for lvl, (pd_fig, _) in enumerate(dendrograms):
+                            with NamedTemporaryFile(suffix=".svg") as tmp_file:
+                                save_dendrogram_svg(pd_fig, tmp_file.name)
+                                self.add_figure(f"Probabilistic dendrogram/lvl{lvl}", tmp_file.name)
+                        get_logger().info(f"Dendrogram diagnostics saved in {time.monotonic() - started:.1f}s")
+                    finally:
+                        for pd_fig, _ in dendrograms:
+                            plt.close(pd_fig)
                 except Exception as e:
                     warnings.warn(f"Warning: Failed to plot probabilistic dendrogram: {e}", UserWarning)

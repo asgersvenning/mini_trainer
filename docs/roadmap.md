@@ -1,5 +1,9 @@
 # Repository strengthening roadmap
 
+The active quantization feature branch has a separate
+[execution roadmap](quantization-roadmap.md) covering measured bottlenecks,
+target-machine dependencies, integration gates and deferred work.
+
 This is the implementation order. Each increment should leave the existing default
 training and prediction interfaces working and include its own validation evidence.
 Items below are planned unless explicitly marked delivered.
@@ -88,48 +92,96 @@ explicit upload commands or a serving deployment.
 
 ## 4. Training efficiency and augmentation
 
-The primary implementation target is **deeper quantization in training and inference**.
-Loader hardening, float16/bfloat16 AMP and benchmark infrastructure do not complete
-that target. The implementation and comparison plan is in
-[training feature validation](training-feature-validation.md).
+Delivered: opt-in native CUDA INT8 Linear training, x86 PTQ/QAT inference,
+checkpoint/export integration, bounded preparation/normalization storage, and
+allocation-aware loader hardening. Defaults remain floating point. EMA is deferred;
+native QT DDP/FSDP is unsupported.
 
-Deliver quantization-aware training and post-training inference quantization as
-separate opt-in capabilities, recording actual weight/activation bit widths,
-calibration data, backend kernels, checkpoint/resume and export/runtime support.
-FP8 or other reduced-precision compute is a separate hardware-dependent profile.
-Keep unsupported model/backend combinations explicit; do not silently run an
-unquantized model while reporting a quantized result. EMA support is not a gate
-for this work while the feature is declared defunct.
+The [quantization roadmap](quantization-roadmap.md) owns remaining performance,
+quality and deployment work. [Measured findings](benchmarks.md) distinguish local
+memory savings from mixed speed/convergence results; HPC, desktop/Spark and ARM
+qualification remain open. AMP, fake quantization and CPU smoke tests do not
+complete the deeper quantization objective.
 
-Improve the default augmentation pipeline after paired task-aware experiments,
-retaining a reproducible legacy recipe. Respect label semantics: digit tasks,
-color-based synthetic tasks and biological imagery need different invariances.
-Document uint8 input and augmentation-before-preprocessing behavior accurately.
+After quantization, evaluate a task-aware augmentation recipe against the legacy
+pipeline. Preserve label semantics, input dtype, optimizer/accumulation/resume
+behavior and existing builder extension points. Add loading controls only when
+whole-training measurements demonstrate a benefit.
 
-Benchmark foundation delivered: the [continuous dataset benchmark suite](benchmarks.md)
-uses a synthetic oracle, MNIST and hierarchical Blair, with CPU and GPU/AMP/cache
-profiles, explicit split/provenance records, Actions summaries and retained artifacts.
-This is a verifiable milestone, not a CPU-only scope boundary. Add durable hosted
-history, repeated comparisons and coverage of the remaining training features next.
+Acceptance: opt-in supported recipes, reproducible paired quality/resource evidence,
+and unchanged default behavior. Use [training feature validation](training-feature-validation.md)
+for the deferred optimizer, loss and augmentation comparisons.
 
-Next establish repeatable measurements for loader wait time, images/second, host/GPU
-memory, and validation quality on fixed configurations. Existing code already uses
-autocast, optional compilation, persistent workers, cache modes, and DDP spawn handling.
+### Optional dataset preparation for scalable loading
 
-Add opt-in loader controls only where measurements justify them (for example,
-prefetching and transfer overlap), with coverage for zero workers, cache modes,
-deterministic seeding, and distributed sampling. Extend augmentation through the
-existing builder interface, documenting label and dtype requirements.
+Target: remove repeated small-file access bottlenecks on shared storage through an
+optional preprocessing command that prepares an indexed, sharded dataset for the
+existing training and prediction loaders. This is an efficiency representation of
+already-supported inputs, not a requirement to migrate source datasets or adopt a
+new training API. Keep the public design independent of a particular provider.
 
-Evaluate lower-precision training, quantization-aware training, and inference
-quantization as distinct paths. Keep current defaults and checkpoint compatibility;
-validate optimizer/resume behavior (EMA is deferred), numerical stability, hardware support, export
-compatibility, memory, throughput, and quality before recommending a configuration.
+- Reuse the current source/metadata adapters. Cover every currently supported
+  input, flat and hierarchical labels, multilabel targets, supplied splits,
+  class ordering and sample identity. Retain lazy loading, inference and supported
+  single-process/DDP behavior. Define a compatibility matrix before implementation;
+  do not silently drop cases that are inconvenient for a shard backend.
+- Preserve original encoded image bytes by default and apply the existing decoder,
+  resize, transforms and hooks at loading time. Do not bake stochastic augmentation
+  into prepared data. Any later materialized-preprocessing option must be explicit,
+  versioned and checked against the requested runtime preprocessing.
+- Store a versioned manifest with source provenance, sample-to-shard index, labels,
+  splits, class mappings and integrity information. Support bounded, resumable
+  preparation with atomic publication of completed artifacts and explicit errors
+  for missing, changed or corrupt samples; never silently skip them.
+- Evaluate indexed uncompressed TAR shards before inventing a container format.
+  Preserve current sampler order and epoch coverage in the first implementation.
+  Treat locality-aware or streaming shuffles as separate opt-in behavior changes,
+  with explicit DDP partitioning, equal-step and checkpoint/resume contracts.
+- Allow direct reads of prepared shards and optional staging to verified node-local
+  storage. Share a byte-bounded cache across ranks/workers on each node, coordinate
+  downloads, protect in-use shards and publish verified cache entries atomically.
+  Measure cache churn under the actual sampler; packing files alone does not
+  guarantee efficient random access or eliminate cold-read latency.
+- Keep implementation within the existing metadata/reader boundaries, using a
+  focused preparation/storage module where needed. Expose it through the normal
+  CLI and Python configuration paths, keep new dependencies optional, and preserve
+  the original uncached path and defaults.
 
-Acceptance: reproducible baseline and comparison results, explicit supported hardware
-and backends, opt-in configuration, and no regression in default training behavior.
+Deliver in bounded increments: compatibility fixtures and a preparation/loader
+round trip; indexed shards; optional shared local staging/cache. A separate small
+loader improvement may add bounded concurrent encoded-byte reads within each
+batch, preserving sample order and hook execution without multiplying process-local
+metadata. Benchmark that independently of changing storage representation.
+
+Acceptance: byte-identical decoded inputs for the default representation, identical
+labels/splits/class ordering and sampler coverage, supported training/prediction and
+DDP restoration checks, corruption/interrupted-preparation recovery, and bounded
+memory/disk use. Compare first-pass and repeated-pass end-to-end throughput on a
+representative working set, including conversion/staging time, validation and
+figures. Report the number of epochs needed to amortize preparation; a warmed tiny
+subset is insufficient evidence. Implementation and GPU qualification remain open.
 
 ## 5. mini_metrics and continuous model evaluation
+
+Planned target: economical continuous benchmarks with a GitHub audit dashboard.
+Connect hosted CPU checks and small, on-demand GPU runs to durable report history
+through an independent publisher. Use fixed representative subsets of existing
+datasets, preserve supplied splits, and compare baseline/candidate under matching
+hardware and workload conditions. Large distributed qualification and production
+training remain separately triggered activities, outside the continuous schedule.
+
+Keep allocation credentials in a trusted controller isolated from candidate code,
+pull requests and report publishing. Restrict profiles, revisions, dataset access,
+concurrency and allocation duration; enforce a persistent spending budget, reconcile
+ambiguous submissions before retrying, and disable automatic time extension.
+Provider/account configuration and infrastructure review details remain local.
+
+Acceptance: dry-run and mocked lifecycle tests cover interruption, duplicate
+submission, budget exhaustion and credential isolation before a capped live trial.
+Then demonstrate cancellation/cleanup and auditable success, failure and publishing
+retry records before enabling a schedule. Missing runs must remain visible; partial
+GPU allocations must not imply full-device or distributed performance qualification.
+Build on the existing [reporting integration](../dev/benchmarks/reporting.md).
 
 Document measured effects of MuonAuxAdamW versus AdamW/SGD, `normalized`,
 EMLACrossEntropy, class-weight distribution regularization, automatic label smoothing,
@@ -152,6 +204,17 @@ class order, score meaning, confidence thresholds, missing classes, and hierarch
 labels. Verify installed mini_metrics APIs before writing an adapter. Keep evaluation
 optional and preserve existing prediction formats and research scripts.
 
+Deferred: consolidate flat and hierarchical inference behind one public CLI.
+`mt_hpredict` already shares the generic prediction CLI and has an explicit flat
+head route; use that existing functionality while training qualification proceeds.
+Before refactoring, assess whether stored head/taxonomy metadata can reliably
+select the builder and result collector, or whether weights need additional
+versioned configuration. Preserve explicit CLI overrides, legacy checkpoints,
+existing entry points, class ordering and prediction/mini_metrics output contracts.
+Acceptance: installed CLI tests cover flat and hierarchical weights, including
+older artifacts with missing metadata and actionable handling of ambiguous cases.
+This is not a prerequisite for DDP qualification or the production training run.
+
 Build the model zoo around versioned manifests linking immutable weights, configuration,
 preprocessing, dataset/split identity, code/dependency versions, and evaluation results.
 Use fixed held-out data and seeds; distinguish threshold selection from test evaluation.
@@ -163,9 +226,41 @@ results trace back to exact inputs, and metric changes cannot silently rewrite b
 
 ## 6. Additional dataset formats (low priority)
 
+Future ingestion support must cover both training and inference through shared
+source adapters. Keep discovery (sample identity, paths, supplied labels and
+splits) separate from training partitioning and model-vocabulary indexing. Start
+with a compatibility matrix of existing formats and flat/hierarchical/unlabelled
+inputs; add formats incrementally without duplicating prediction-only readers.
+
+Follow-ups identified during the bounded `auto_find_images` review:
+
+- Clarify `create_taxonomy` / `select_levels`: an integer currently means an
+  inclusive deepest-rank index, whereas callers such as `create_metadata` pass
+  `len(cls2idx)` as a count. The inference caller now uses explicit rank indices.
+  Audit remaining callers before changing the shared signature; test actual rank
+  selection rather than mocking the whole taxonomy adapter. Separate API/cache
+  retrieval failures from local rank-selection and mapping errors in diagnostics.
+
+- Define an explicit input-layout/split policy for ambiguous folder layouts and
+  reconcile prediction's separate `data_index` and source-selection paths.
+- Specify taxonomy provenance and missing-ancestor handling independently of
+  model vocabulary. Preserve valid species ground truth without treating unknown
+  ancestors as real unseen classes; cover the collector/mini_metrics contract
+  before changing the existing GBIF fallback.
+- Audit image probing on read-only datasets: `is_image` currently opens files in
+  `r+b` mode and can silently exclude readable images without write permission.
+
+The focused discovery fix removes training metadata construction and vocabulary
+filtering from folder enumeration; these broader policies remain deferred.
+
 Add formats through existing metadata and reader boundaries after the higher-priority
 interfaces stabilize. Require format-independent class ordering, split handling,
 multilabel behavior, lazy loading, and useful errors. Keep format dependencies optional.
 
 Acceptance: tiny fixtures exercise each new format through training and prediction
 without changing existing format detection or defaults.
+
+Follow-up from candidate-filter inference validation: `classification_module`
+caches an empty attribute name when passed a bare classifier head, causing a
+subsequent lookup to fail. Normal built backbone models are unaffected. Cover
+bare-head lookup separately rather than expanding the class-list CLI change.

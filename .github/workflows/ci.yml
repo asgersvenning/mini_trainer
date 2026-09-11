@@ -3,14 +3,42 @@ name: CI
 on:
   push:
     branches: ["master"]
+    # Only agent documents are exempt; source, public docs and workflow edits run checks.
+    paths-ignore:
+      - 'AGENTS.md'
+      - '.agents/**/*.md'
+      - '.agents/.gitignore'
   pull_request:
     branches: ["master"]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  scope:
+    name: Classify changed files
+    runs-on: ubuntu-latest
+    outputs:
+      run_checks: ${{ steps.scope.outputs.run_checks }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Keep code checks for mixed or uncertain changes
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 dev/ci_scope.py >> "$GITHUB_OUTPUT"
+
   build:
+    needs: scope
+    if: always() && !cancelled() && needs.scope.outputs.run_checks != 'false'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -34,7 +62,7 @@ jobs:
         run: bash dev/check.sh static
 
       - name: Test with pytest
-        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term
+        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term --durations=15
 
       - name: Standalone ONNX Runtime parity
         run: bash dev/check-onnx.sh
@@ -46,6 +74,8 @@ jobs:
           slug: asgersvenning/mini_trainer
 
   wheel:
+    needs: scope
+    if: always() && !cancelled() && needs.scope.outputs.run_checks != 'false'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -58,3 +88,21 @@ jobs:
       - run: uv python install ${{ matrix.python-version }}
       - name: Minimal installed-wheel checks
         run: bash dev/check-wheel.sh ${{ matrix.python-version }}
+
+  quantization:
+    needs: scope
+    if: always() && !cancelled() && needs.scope.outputs.run_checks != 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra cpu --extra quantization --python 3.13
+      - name: QAT continuation and native INT8 inference
+        env:
+          OMP_NUM_THREADS: "1"
+          # Exercise portable kernels even when the runner supports VNNI.
+          ONEDNN_MAX_CPU_ISA: AVX2
+          DNNL_MAX_CPU_ISA: AVX2
+        run: bash dev/check.sh test tests/quantization/test_quantization.py

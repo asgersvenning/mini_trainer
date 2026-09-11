@@ -21,10 +21,14 @@
 **events.out.tfevents*
 **/__pycache__/**
 /tmp*
-/tmp/**
+/tensorrt-results/
 **.pyspy
 
-# Specific cases
+# Tracked configuration and local output directories
+!/dev/ucloud/*.json
 examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml
+/local-evidence/
+/.worktrees/
+/.venv

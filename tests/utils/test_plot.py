@@ -66,7 +66,11 @@ def test_get_scaled_matrix_for_display():
 
 
 @pytest.mark.skipif(not has_dendrogram_deps, reason="Dendrogram dependencies (scipy, biopython, pycirclize) not installed")
-def test_plot_probabilistic_dendrogram():
+def test_plot_probabilistic_dendrogram(monkeypatch):
+    import mini_trainer.visualization.dendrogram as dendrogram
+
+    dendrogram._resolve_labels.cache_clear()
+    monkeypatch.setattr(dendrogram, "resolve_name_or_id", MagicMock(side_effect=ValueError("offline test labels")))
     mock_model = MagicMock()
     mock_model_module = MagicMock()
 
@@ -117,3 +121,29 @@ def test_plot_probabilistic_dendrogram():
             fig, clustering = plot_probabilistic_dendrogram(mock_model)[0]
             assert fig is not None
             assert isinstance(clustering, dict) and all(len(v) == 4 for v in clustering.values())
+
+
+@pytest.mark.parametrize("cmap_name", ["magma", "viridis"])
+@pytest.mark.parametrize("percent", [True, False])
+def test_chunked_heatmap_matches_previous_rgb_pixels(cmap_name, percent):
+    import math
+
+    import matplotlib as mpl
+    from matplotlib.colors import LogNorm
+
+    from mini_trainer.visualization.plot import _generate_heatmap_rgb_array
+
+    values = np.geomspace(1e-4, 5, 512 * 513).reshape(512, 513)
+    values.flat[:4] = [0, np.nan, np.inf, -1]
+    original = values.copy()
+    masked = np.ma.masked_less_equal(np.ma.masked_invalid(values), 1e-3)
+    positive = masked.compressed()
+    vmin = 10 ** math.floor(math.log10(min(0.1, positive.min())))
+    vmax = 1 if percent else positive.max()
+    cmap = mpl.colormaps[cmap_name].copy()
+    cmap.set_bad((0, 0, 0) if cmap_name == "magma" else (1, 1, 1), alpha=1)
+    expected = (cmap(LogNorm(vmin, vmax)(masked))[:, :, :3] * 255).astype(np.uint8)
+    actual, _, actual_min, actual_max = _generate_heatmap_rgb_array(values, 1e-3, cmap_name, percent)
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(values, original)
+    assert (actual_min, actual_max) == (vmin, vmax)

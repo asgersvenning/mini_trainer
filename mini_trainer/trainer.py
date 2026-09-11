@@ -19,6 +19,7 @@ from mini_trainer import get_logger
 from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
+from mini_trainer.training.compilation import model_compile_options
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
     TQDM,
@@ -121,6 +122,11 @@ def train_one_epoch(
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
+        if getattr(optimizer, "_mini_trainer_optimizer_cudagraphs", False):
+            # Model, backward, and optimizer graphs belong to one iteration.
+            # Automatic inference can otherwise retire backward's gradient buffers
+            # before the separately compiled optimizer consumes them.
+            torch.compiler.cudagraph_mark_step_begin()
         step = n_batches * epoch + i
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
@@ -131,7 +137,7 @@ def train_one_epoch(
             # TODO: Add optional contrastive path
             # ctr_loss = contrastive_criterion()
             # If EMA is disabled ``distill_loss`` is ``0.0``
-            distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits)
+            distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
@@ -277,6 +283,7 @@ def train(
     output_dir: str | None = None,
     weight_store_rate: int | None = None,
     compile: bool = False,
+    compile_mode: str | None = None,
     **kwargs,
 ):
     """Full training loop across epochs with periodic evaluation and checkpointing.
@@ -300,10 +307,13 @@ def train(
         dtype: AMP/autocast data type for forward/eval passes.
         output_dir: If provided, checkpoints are written here.
         weight_store_rate: Store a snapshot every ``weight_store_rate`` epochs if set.
+        compile: Compile the model with PyTorch.
+        compile_mode: Optional PyTorch model compilation mode; requires compile=True.
         **kwargs: Forwarded to lower-level helpers.
     """
     log = get_logger()
 
+    compile_options = model_compile_options(compile, compile_mode)
     log.info("Start training")
     start_time = time.time()
 
@@ -326,7 +336,7 @@ def train(
             # Disable DDPOptimizer graph splitting — it deadlocks on models with
             # find_unused_parameters or custom scatter ops, causing NCCL timeouts.
             torch._dynamo.config.optimize_ddp = False
-        model = torch.compile(model)
+        model = torch.compile(model, **compile_options)
 
     best_eval_metric = -float("inf")
     best_epoch = -1
@@ -353,7 +363,15 @@ def train(
         if is_best_eval:
             best_epoch = epoch
         if output_dir is not None:
-            raw_model = model.module if hasattr(model, "module") else model
+            raw_model = model
+            # Serialize architecture state, not compile/distribution wrappers.
+            # This also leaves the QT recipe at its original module path.
+            seen_wrappers = set()
+            while isinstance(raw_model, (nn.DataParallel, DDP)) or hasattr(raw_model, "_orig_mod"):
+                if id(raw_model) in seen_wrappers:
+                    raise ValueError("Cyclic model wrapper chain while saving checkpoint")
+                seen_wrappers.add(id(raw_model))
+                raw_model = raw_model._orig_mod if hasattr(raw_model, "_orig_mod") else raw_model.module
             assert isinstance(raw_model, nn.Module)
             checkpoint = {
                 "model": raw_model.state_dict(),

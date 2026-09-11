@@ -21,8 +21,11 @@ from mini_trainer.config import (
 from mini_trainer.data import debug_augmentation
 from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
+from mini_trainer.modeling.quantized_training import prepare_quantized_training
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
+from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
@@ -49,6 +52,7 @@ def main(  # noqa: D417
     dtype: str | torch.dtype = "float16",
     ema: bool = False,
     compile: bool = False,
+    quantized_training: bool = False,
     seed: int | None = None,
     builder: type[BaseBuilder] = BaseBuilder,
     spec_model_dataloader_kwargs: dict[str, Any] = {},
@@ -74,6 +78,9 @@ def main(  # noqa: D417
     lr_schedule_builder_kwargs: dict[str, Any] = {"warmup_epochs": 2.0},
     logger_builder_kwargs: dict[str, Any] = {"verbose": False},
     ddp_info: dict | None = None,
+    compile_optimizer: bool = False,
+    compile_mode: str | None = None,
+    optimizer_cudagraphs: bool = False,
 ):
     """Train a classifier.
 
@@ -109,6 +116,8 @@ def main(  # noqa: D417
             See ``mini_trainer.builders.BaseBuilder`` for details.
     """
     orig_args = locals()
+    model_compile_options(compile, compile_mode)
+    validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
     # Prepare state
     if seed is not None:
         random.seed(seed)
@@ -195,6 +204,15 @@ def main(  # noqa: D417
             **{**class_spec_data, **model_builder_kwargs},
         )
         validate_type(nn_model, torch.nn.Module)
+        if quantized_training or getattr(nn_model, "_quantized_training_recipe", None):
+            if device.type != "cuda":
+                raise ValueError("Quantized training requires a CUDA device.")
+            if ddp_info and ddp_info.get("world_size", 1) > 1:
+                raise NotImplementedError("Distributed INT8 training is not validated yet.")
+            if ema:
+                raise ValueError("EMA is not supported for quantized training.")
+            coverage = getattr(nn_model, "_quantized_training_recipe", None) or prepare_quantized_training(nn_model)
+            log.info(f"INT8 training coverage: {coverage}")
         log.info(f"Using model `{nn_model.__class__.__name__}` with head `{classification_module(nn_model).__class__.__name__}`")
 
     # Resolve input size if not explicitly set
@@ -256,6 +274,8 @@ def main(  # noqa: D417
         else:
             checkpoint_data = average_checkpoints(checkpoint_files, map_location=device, weights_only=False)
         assert checkpoint_data is not None
+        if "_quantized_training" in checkpoint_data["model"] and not getattr(nn_model, "_quantized_training_recipe", None):
+            raise ValueError("Resume an INT8 training checkpoint with --quantized-training enabled.")
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])
@@ -275,6 +295,10 @@ def main(  # noqa: D417
                 raise TypeError(f"Invalid 'start_epoch' value in {checkpoint}, found `{start_epoch}` but expected an `int`.")
         start_epoch = start_epoch + 1
         log.info(f"Training restarted from checkpoint(s): {checkpoint}")
+
+    if compile_optimizer:
+        prepare_compiled_optimizer(optimizer, cudagraphs=optimizer_cudagraphs)
+        log.info("Optimizer updates compiled; scheduler and AMP step gating remain active.")
 
     # Instantiate logger
     logger_output = None if get_rank() > 0 else output
@@ -303,6 +327,7 @@ def main(  # noqa: D417
         output_dir=weight_output_dir,
         weight_store_rate=5,
         compile=compile,
+        compile_mode=compile_mode,
     )
 
     del train_loader
@@ -518,6 +543,23 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
+        "--optimizer-cudagraphs",
+        action="store_true",
+        help="Opt into CUDA graph replay for optimizer updates; requires --compile-optimizer and CUDA.",
+    )
+    cfg_args.add_argument(
+        "--compile-optimizer",
+        action="store_true",
+        dest="compile_optimizer",
+        help="Compile optimizer updates with tensor learning rates; model compilation is controlled separately.",
+    )
+    cfg_args.add_argument(
+        "--cuda-prefetch",
+        action="store_true",
+        dest="dataloader_builder_kwargs.cuda_prefetch",
+        help="Stage one CPU batch ahead on a CUDA transfer stream (opt-in; uses extra device memory).",
+    )
+    cfg_args.add_argument(
         "--subsample",
         type=int,
         dest="dataloader_builder_kwargs.subsample",
@@ -535,13 +577,31 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         'Valid options are `None`, "disk", "cpu", "cuda" or "guess" (CUDA not supported yet).\n'
         "Mainly relevant for inefficiently stored training data or slow filesystems.",
     )
+    cfg_args.add_argument(
+        "--cache-workers",
+        type=int,
+        default=None,
+        dest="dataloader_builder_kwargs.cache_workers",
+        help="Cache construction reader threads; 0 is synchronous, automatic selection is capped at 16.",
+    )
     cfg_args.add_argument("--device", type=str, default=None, required=False, help='Device used for training (default="cuda").')
+    cfg_args.add_argument(
+        "--quantized-training",
+        action="store_true",
+        dest="quantized_training",
+        help="Opt into CUDA INT8 linear training; reports remaining floating-point operations.",
+    )
     cfg_args.add_argument(
         "--compile",
         action="store_true",
         dest="compile",
         required=False,
         help="Compile the model using torch.compile for faster execution (default=False).",
+    )
+    cfg_args.add_argument(
+        "--compile-mode",
+        choices=MODEL_COMPILE_MODES,
+        help="Model compilation mode; requires --compile. Optimizer compilation is configured separately.",
     )
     cfg_args.add_argument(
         "--dtype",

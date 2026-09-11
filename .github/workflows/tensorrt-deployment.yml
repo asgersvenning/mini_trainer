@@ -1,0 +1,128 @@
+name: TensorRT deployment evaluation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 5 * * 5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tensorrt-deployment-${{ vars.TRT_RUNNER_LABEL || 'gpu' }}
+  cancel-in-progress: false
+
+jobs:
+  deployment:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_TENSORRT_BENCHMARKS == 'true'
+    runs-on: [self-hosted, linux, "${{ vars.TRT_RUNNER_LABEL || 'gpu' }}"]
+    timeout-minutes: 60
+    outputs:
+      history_artifact_id: ${{ steps.history.outputs.artifact-id }}
+    env:
+      BENCHMARK_PYTHON: ${{ vars.TRT_BENCHMARK_PYTHON }}
+      BENCHMARK_METRICS_PYTHON: ${{ vars.BENCHMARK_METRICS_PYTHON }}
+      TRT_BASELINE_MODEL: ${{ vars.TRT_BASELINE_MODEL }}
+      TRT_CANDIDATE_MODEL: ${{ vars.TRT_CANDIDATE_MODEL }}
+      TRT_INFERENCE_MANIFEST: ${{ vars.TRT_INFERENCE_MANIFEST }}
+      TRT_INPUTS: ${{ vars.TRT_INPUTS }}
+      TRT_PROFILES: ${{ vars.TRT_PROFILES }}
+      TRT_OPTIMIZATION: ${{ vars.TRT_OPTIMIZATION || '1' }}
+      TRT_WORKSPACE_MIB: ${{ vars.TRT_WORKSPACE_MIB || '1024' }}
+      BENCHMARK_THREADS: ${{ vars.TRT_THREADS || '1' }}
+      CUDA_VISIBLE_DEVICES: ${{ vars.TRT_CUDA_VISIBLE_DEVICES || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build and evaluate on the target
+        run: bash dev/check-tensorrt-deployment.sh tensorrt-results
+      - name: Visible quality and resource summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f tensorrt-results/evaluation/summary.md ]]; then
+            cat tensorrt-results/evaluation/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'TensorRT evaluation did not complete. Inspect the retained status and stage logs.' >> "$GITHUB_STEP_SUMMARY"
+            if [[ -f tensorrt-results/status.json ]]; then
+              echo '```json' >> "$GITHUB_STEP_SUMMARY"
+              cat tensorrt-results/status.json >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+      - name: Retain engines, inspection, quality and resource evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tensorrt-deployment-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: tensorrt-results/
+      - name: Prepare compact history record
+        if: always()
+        env:
+          BENCHMARK_RUN_ID: trt-${{ github.run_id }}-${{ github.run_attempt }}
+          BENCHMARK_REVISION: ${{ github.sha }}
+          BENCHMARK_PROFILE: ${{ vars.TRT_REPORT_PROFILE || 'TensorRT target deployment' }}
+          BENCHMARK_NOTE: ${{ vars.TRT_REPORT_NOTE }}
+          BENCHMARK_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BENCHMARK_PERFORMANCE_VALID: ${{ vars.TRT_PERFORMANCE_VALID || 'false' }}
+        run: bash dev/check-report-history.sh tensorrt-results tensorrt-results/history
+      - name: Retain compact history and standalone page
+        id: history
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tensorrt-history-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: tensorrt-results/history/
+
+  publish-history:
+    needs: deployment
+    if: >-
+      always() && !cancelled() &&
+      vars.ENABLE_BENCHMARK_HISTORY == 'true' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      needs.deployment.outputs.history_artifact_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: benchmark-history-publication
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Download the producing job's exact compact artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.deployment.outputs.history_artifact_id }}
+          path: incoming-history
+          merge-multiple: true
+      - name: Restore history and store new records
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HISTORY_REPOSITORY: ${{ github.repository }}
+        run: |
+          command -v gh
+          python -m dev.benchmarks.reporting.release_history \
+            --repository "$HISTORY_REPOSITORY" --records incoming-history/records \
+            --output published-history --upload
+      - name: Prepare the public history page
+        uses: actions/upload-pages-artifact@v4
+        with:
+          name: benchmark-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: published-history/
+      - name: Deploy the public history page
+        id: pages
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: benchmark-pages-${{ github.run_id }}-${{ github.run_attempt }}

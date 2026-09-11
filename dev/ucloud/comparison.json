@@ -1,0 +1,16 @@
+{
+  "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
+  "output": "/work/results/global-lepi-ddp",
+  "environments": {
+    "master": {"python": "/work/venvs/mt-master/bin/python", "commit": "2ebbe39f2365bfea482d7ebc3d000cf4d2044918"},
+    "quant": {"python": "/work/venvs/mt-quant/bin/python", "commit": "4ea6b9613fc29a8e33ef72f28885f4e2a0e5906b"}
+  },
+  "gpus": 4,
+  "global_batch_size": 64,
+  "num_workers_per_rank": 8,
+  "epochs": 10,
+  "size": 384,
+  "seeds": [42, 43, 44],
+  "variants": ["master_eager", "quant_eager", "quant_prefetch", "quant_compile_model", "quant_compile_optimizer", "quant_combined"],
+  "timeout_seconds": 115200
+}

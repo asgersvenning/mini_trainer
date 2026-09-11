@@ -1,0 +1,88 @@
+name: PR change summary
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [master]
+
+# Metadata only: never check out, import or execute the PR's code here.
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: pr-change-summary-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const marker = '<!-- mini-trainer-change-summary -->';
+            const pull_number = context.payload.pull_request.number;
+            const params = {...context.repo, pull_number};
+            const {data: pr} = await github.rest.pulls.get(params);
+            const files = await github.paginate(github.rest.pulls.listFiles, {...params, per_page: 100});
+
+            // Explicit exceptions: onboarding is part of the product interface.
+            // Add other feature documentation here when that role is established.
+            const featureMarkdown = new Set(['README.md']);
+            function category(path) {
+              if (/\.md$/i.test(path) && !featureMarkdown.has(path)) return 'Other Markdown (excluded)';
+              if (featureMarkdown.has(path)) return 'User-facing documentation';
+              if (path.startsWith('mini_trainer/')) return 'Core module';
+              if (path.startsWith('tests/benchmarks/')) return 'Benchmark tooling tests';
+              if (path.startsWith('tests/')) return 'Tests';
+              if (path.startsWith('dev/benchmarks/')) return 'Benchmarks';
+              if (path.startsWith('publication/')) return 'Research';
+              if (path.startsWith('.github/')) return 'CI and repository automation';
+              if (path.startsWith('dev/')) return 'Developer tools and execution configs';
+              if (['pyproject.toml', 'uv.lock'].includes(path)) return 'Packaging and dependencies';
+              if (path.startsWith('.agents/') || path === 'AGENTS.md') return 'Agent tooling';
+              return 'Other';
+            }
+            const rows = new Map();
+            const included = {files: 0, additions: 0, deletions: 0};
+            for (const file of files) {
+              // Renames appear once, classified by their destination path.
+              const name = category(file.filename);
+              const row = rows.get(name) || {files: 0, additions: 0, deletions: 0};
+              row.files += 1;
+              row.additions += file.additions;
+              row.deletions += file.deletions;
+              rows.set(name, row);
+              if (name !== 'Other Markdown (excluded)') {
+                included.files += 1;
+                included.additions += file.additions;
+                included.deletions += file.deletions;
+              }
+            }
+            const partial = files.length !== pr.changed_files;
+            const lines = [marker, '### Change statistics', '',
+              `Head: \`${pr.head.sha.slice(0, 12)}\` · Base: \`${pr.base.sha.slice(0, 12)}\``, '',
+              `**${included.files} included files · +${included.additions} / −${included.deletions} lines**${partial ? ' (partial)' : ''}`, '',
+              '| Area | Files | Added | Deleted |', '| --- | ---: | ---: | ---: |'];
+            for (const [name, row] of [...rows].sort(([a], [b]) => a.localeCompare(b))) {
+              lines.push(`| ${name} | ${row.files} | ${row.additions} | ${row.deletions} |`);
+            }
+            lines.push('', 'Headline excludes Markdown except root `README.md`; excluded documents remain visible above.',
+              'Counts describe the PR diff, not commit totals or a measure of effort. Renames count once; binary files have no meaningful line counts.');
+            if (partial) lines.push('', `**Incomplete:** GitHub returned ${files.length}/${pr.changed_files} files (the API caps results at 3,000).`);
+            // Avoid attaching an old snapshot to a newer push.
+            const {data: latest} = await github.rest.pulls.get(params);
+            if (latest.head.sha !== pr.head.sha || latest.base.sha !== pr.base.sha) return;
+            const body = lines.join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo, issue_number: pull_number, per_page: 100,
+            });
+            const previous = comments.find(c => c.user.login === 'github-actions[bot]' && c.body?.startsWith(marker));
+            if (previous) {
+              if (previous.body !== body) await github.rest.issues.updateComment({
+                ...context.repo, comment_id: previous.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({...context.repo, issue_number: pull_number, body});
+            }

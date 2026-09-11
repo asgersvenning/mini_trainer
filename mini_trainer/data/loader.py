@@ -2,16 +2,19 @@ from collections.abc import Callable
 
 import numpy as np
 import torch
-from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import BatchSampler, DataLoader, RandomSampler, SequentialSampler, default_collate
 from torch.utils.data.distributed import DistributedSampler
 
 from mini_trainer import get_logger
 from mini_trainer.utils import is_dist_avail_and_initialized
 
+from ._prefetch import CUDAPrefetchLoader
 from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
     LazyDataset,
+    _DirectBatchIndices,
+    _FetchedBatch,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
@@ -67,8 +70,32 @@ class HookedReader:
         return self.hook(self.reader(x))
 
 
+class _DirectBatchSampler(BatchSampler):
+    """Retain normal sampling while requesting stacked batches from LazyDataset."""
+
+    def __iter__(self):
+        for indices in super().__iter__():
+            yield _DirectBatchIndices(indices)
+
+
+def _collate_batch(samples):
+    if isinstance(samples, _FetchedBatch):
+        # Match default_collate's tuple-to-list convention for (image, label).
+        return list(samples.data) if isinstance(samples.data, tuple) else samples.data
+    return default_collate(samples)
+
+
 def get_dataloader(  # noqa: D103
-    dataset: torch.utils.data.Dataset, mode: str, batch_size: int, num_workers: int, pin_memory: bool, device: torch.device
+    dataset: torch.utils.data.Dataset,
+    mode: str,
+    batch_size: int,
+    num_workers: int,
+    pin_memory: bool,
+    device: torch.device,
+    *,
+    cuda_prefetch: bool = False,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
 ):
     assert isinstance(mode, str)
     if mode.strip().lower() == "train":
@@ -84,15 +111,24 @@ def get_dataloader(  # noqa: D103
         base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)  # type: ignore
         mp_context = None
 
-    sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=drop_last)
+    if num_workers > 0 and multiprocessing_context is not None:
+        mp_context = multiprocessing_context
 
-    return DataLoader(
+    sampler_cls = _DirectBatchSampler if getattr(dataset, "_supports_direct_batches", False) else BatchSampler
+    sampler = sampler_cls(base_sampler, batch_size=batch_size, drop_last=drop_last)
+
+    loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
+    transfer_kwargs = {"device": device} if cuda_prefetch else {}
+    return loader_cls(
         dataset,
+        **transfer_kwargs,
         batch_sampler=sampler,
+        collate_fn=_collate_batch,
         num_workers=num_workers,
         pin_memory=pin_memory,
         persistent_workers=num_workers > 0,
         multiprocessing_context=mp_context,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
     )
 
 
@@ -107,12 +143,18 @@ def get_dataset_dataloader(  # noqa: D103
     device: torch.device | str = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     cache: CACHE_MODE | str | int | None = None,
+    cache_workers: int | None = None,
     multilabel: bool = False,
+    cuda_prefetch: bool = False,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ):
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     if isinstance(device, str):
         device = torch.device(device)
+    if cuda_prefetch and device.type != "cuda":
+        raise ValueError("CUDA batch prefetch requires a CUDA target device.")
 
     if len(metadata) != len(modes):
         raise ValueError(f"Number of supplied datasets: {len(metadata)} and modes: {len(modes)} do not match!")
@@ -131,21 +173,42 @@ def get_dataset_dataloader(  # noqa: D103
 
     proc_path_label = PathLabelProcessor(reader, hook, multilabel)
 
-    datasets = []
-    for mode, data in zip(modes, metadata):
-        if mode.strip().lower() == "train" and resample:
-            raise NotImplementedError("Resampling is currently not supported.")
-        dset = LazyDataset(func=proc_path_label, items=(data["path"], data["class"]), cache=cache)
-        datasets.append(dset)
-
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
         num_workers = 0
     elif num_workers is None:
         num_workers = _default_worker_count(16)
 
-    pin_memory = cache not in [CACHE_MODE.CUDA, CACHE_MODE.CPU]
-    loaders = [get_dataloader(dataset, mode, batch_size, num_workers, pin_memory, device) for mode, dataset in zip(modes, datasets)]
+    datasets = []
+    for mode, data in zip(modes, metadata):
+        if mode.strip().lower() == "train" and resample:
+            raise NotImplementedError("Resampling is currently not supported.")
+        dset = LazyDataset(
+            func=proc_path_label,
+            items=(data["path"], data["class"]),
+            cache=cache,
+            cache_workers=cache_workers,
+            pin_batches=device.type == "cuda" and cache is CACHE_MODE.CPU and num_workers == 0,
+        )
+        datasets.append(dset)
+
+    # Main-process CPU cache gathers are already pinned. Decoded and worker
+    # batches are pinned by DataLoader before asynchronous H2D.
+    pin_memory = device.type == "cuda" and cache is not CACHE_MODE.CUDA
+    loaders = [
+        get_dataloader(
+            dataset,
+            mode,
+            batch_size,
+            num_workers,
+            pin_memory,
+            device,
+            cuda_prefetch=cuda_prefetch and cache is not CACHE_MODE.CUDA,
+            prefetch_factor=prefetch_factor,
+            multiprocessing_context=multiprocessing_context,
+        )
+        for mode, dataset in zip(modes, datasets)
+    ]
 
     return datasets, loaders
 
@@ -159,11 +222,16 @@ def get_inference_dataloader(  # noqa: D103
     device: torch.device | str = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
+    cuda_prefetch: bool = False,
     **kwargs,
 ):
     resize_size = _normalize_resize_size(resize_size)
     if isinstance(device, str):
         device = torch.device(device)
+    if cuda_prefetch and device.type != "cuda":
+        raise ValueError("CUDA batch prefetch requires a CUDA target device.")
 
     if subsample is not None and subsample > 1:
         images = images[::subsample]
@@ -177,6 +245,16 @@ def get_inference_dataloader(  # noqa: D103
     if num_workers is None:
         num_workers = _default_worker_count(32)
 
-    loader = get_dataloader(dataset, "test", batch_size, num_workers, False, device)
+    loader = get_dataloader(
+        dataset,
+        "test",
+        batch_size,
+        num_workers,
+        device.type == "cuda",
+        device,
+        cuda_prefetch=cuda_prefetch,
+        prefetch_factor=prefetch_factor,
+        multiprocessing_context=multiprocessing_context,
+    )
 
     return dataset, loader

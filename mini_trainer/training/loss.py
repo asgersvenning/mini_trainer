@@ -135,6 +135,8 @@ def class_weight_distribution_regularization(W: torch.Tensor, sparse: bool = Tru
     Returns:
         A scalar tensor representing the regularization loss.
     """
+    if getattr(W, "_is_quantized_training", False):
+        W = W.dequantize()
     # Select a subset of classes to regularize
     _n = min(len(W), max(32, 2 * round(len(W) ** 0.5)))
     if sparse and _n < len(W):

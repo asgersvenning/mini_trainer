@@ -18,7 +18,7 @@ bash dev/check-benchmarks.sh gpu /tmp/benchmarks-gpu
 BENCHMARK_DATA_ROOT="$PWD/examples" \
 BLAIR_CLASS_SPEC="$PWD/examples/blair/blair_model/class_spec.json" \
     bash dev/check-benchmarks.sh real /tmp/benchmarks-real
-bash dev/check.sh test tests/test_benchmark_synthetic.py tests/test_benchmark_datasets.py
+bash dev/check.sh test tests/benchmarks/test_benchmark_synthetic.py tests/benchmarks/test_benchmark_datasets.py
 ```
 
 Each results directory must be new. Set `BENCHMARK_PYTHON` to use a different prepared
@@ -32,9 +32,9 @@ specification; it performs no downloads or online taxonomy queries.
 Individual runs are configurable:
 
 ```bash
-.venv/bin/python -m dev.benchmarks.run --output /tmp/oracle \
+.venv/bin/python -m dev.benchmarks.training.run --output /tmp/oracle \
     --seed 42 --threads 1 --device cpu
-.venv/bin/python -m dev.benchmarks.run --dataset mnist \
+.venv/bin/python -m dev.benchmarks.training.run --dataset mnist \
     --data-root examples/mnist --output /tmp/mnist-amp --epochs 5 \
     --device cuda:0 --dtype float16 --cache CUDA --allow-nondeterministic
 ```
@@ -106,8 +106,9 @@ module coverage from a passing profile.
 and weekly. It uses a locked CPU environment and uploads results even on failure.
 The Actions run page contains a readable summary and artifacts with 90-day retention.
 The README links to that history. The source checkout is not modified to publish results.
-These are initial reporting facilities; durable archival and a historical dashboard
-remain follow-up work.
+These dataset artifacts still expire. A separate opt-in TensorRT publisher connects
+compact records to draft storage and Pages; its [activation and live-verification
+steps](reporting.md#opt-in-public-history-publisher) remain pending.
 
 GPU execution uses a configured self-hosted runner labeled `self-hosted`, `linux`,
 `gpu`. It creates a disposable uv environment with an explicitly selected CUDA extra,
@@ -119,8 +120,42 @@ For real-data jobs, enable input `real_data` together with `gpu`, or set
 `BENCHMARK_REAL_DATA=true`. Set repository variables `BENCHMARK_DATA_ROOT` and
 `BLAIR_CLASS_SPEC` to stable dataset and specification paths on that runner, outside
 the checkout. The workflow does not assume these resources already exist and cannot
-validate GPU behavior on a CPU-only hosted runner. No GPU job has been dispatched
-from this development session; the equivalent local commands have been exercised.
+validate GPU behavior on a CPU-only hosted runner. Local command validation does
+not establish that the hosted GPU workflow has run successfully; retain the actual
+workflow run and target-machine evidence when qualifying it.
 
 References: [Actions job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary)
 and [artifact retention](https://github.com/actions/upload-artifact#retention-period).
+
+## Focused guides
+
+| Task | Guide |
+| --- | --- |
+| Native QT, representative training, capacity, loading, convergence and training predictions | [Training](training.md) |
+| Input preparation, calibration, ONNX CPU/TensorRT builds, placement, quality and isolated resources | [Inference](inference.md) |
+| Target workflow, compact CPU/GPU history, draft storage and Pages activation | [Reporting](reporting.md) |
+| Current findings and their limits | [Benchmark findings](../../docs/benchmarks.md) |
+| Ordered branch work, bottlenecks and hardware dependencies | [Quantization roadmap](../../docs/quantization-roadmap.md) |
+
+Use the shared commands in these guides; they do not implicitly synchronize the
+working environment. Historical experiments and rejected approaches are retained
+in the [experiment archive](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
+
+## Source layout and command migration
+
+| Package | Ownership |
+| --- | --- |
+| `training/` | Dataset training, native QT/PTQ probes, large heads, prediction adapter |
+| `data/` | Dataset generation/indexing, loading, caching, reading and transfer probes |
+| `inference/` | Input preparation, calibration, ONNX/TensorRT, paired quality/resources |
+| `reporting/` | Summaries, immutable history, release storage |
+
+Development CLI modules now include their package: for example,
+`dev.benchmarks.run` becomes `dev.benchmarks.training.run` and
+`dev.benchmarks.cpu_deployment` becomes `dev.benchmarks.inference.cpu_deployment`.
+The shared `dev/check-*.sh` entry points are unchanged. `models.py` stays at its
+original import path because saved benchmark checkpoints name those classes.
+`prepare_inputs.py` retains the old preprocessing-factory import for saved recipes;
+`_int8_weight.py` retains the earlier probe compatibility import.
+Source hashes change with this reorganization; historical reports keep their
+original hashes and should not be relabeled as runs of the new revision.

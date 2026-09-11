@@ -1,0 +1,38 @@
+# Test suite map
+
+Run from the repository root with `bash dev/check.sh test tests/GROUP`.
+Use `bash dev/check.sh all` for the complete static and runtime suite.
+The shared harness hides CUDA by default; see [GPU validation](../dev/README.md)
+before enabling hardware-specific cases. Test placement does not change markers,
+optional dependencies, expected failures or slow-backbone requirements.
+
+| Folder | Contract |
+| --- | --- |
+| `core/` | Configuration and public defaults |
+| `data/` | Loading, workers, IO, dataset formats and augmentation |
+| `modeling/` | Architectures, initialization, classifier shapes and embedding context |
+| `training/` | Optimizers, losses, update counts and checkpoint state |
+| `quantization/` | Native integer kernels, preparation, training models, materialization and PTQ/QAT |
+| `export/` | ONNX export and native-quantized export contracts |
+| `integration/` | Full training, lazy data and distributed integration |
+| `benchmarks/` | Dataset/evaluation orchestration, inference probes, provenance and report storage |
+| `logging/` | Console, TensorBoard and W&B logging |
+| `utils/` | General device/plot helpers and the opt-in compatibility utility |
+
+Shared test builders and state assertions currently live in the integration and
+checkpoint modules that define their behavior. Imports and serialized test model
+identifiers use those modules' new paths. Keep those paths importable for spawned
+processes; avoid changing fixture semantics as part of directory cleanup.
+
+These folders use ordinary pytest discovery, not custom collections. `dev/check.sh`
+only selects the existing environment, sets CPU/headless defaults and forwards
+arguments to `python -m pytest`. Direct pytest invocation is also supported, e.g.:
+
+```bash
+CUDA_VISIBLE_DEVICES='' MPLBACKEND=Agg .venv/bin/python -m pytest tests/data --durations=15
+```
+
+Prefer tests of observable contracts and real regressions over source-text assertions
+or one test per implementation detail. Use `--durations=15` to identify expensive
+cases before consolidating them; preserve CPU/GPU and serialization coverage.
+The `benchmarks/` tests validate benchmark tooling, not full performance runs.

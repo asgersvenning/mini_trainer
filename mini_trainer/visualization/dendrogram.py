@@ -1,8 +1,9 @@
-import io
-import math
 import sys
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from functools import lru_cache
+from sqlite3 import Error as SQLiteError
 from typing import cast, get_args
 
 import matplotlib.colors as mcolors
@@ -16,10 +17,10 @@ from mini_trainer.config import Formatter
 from mini_trainer.integrations import TK, resolve_name_or_id
 from mini_trainer.modeling import class_distance, classification_module
 
+from ._dendrogram_layout import render_linkage
+
 try:
-    from Bio import Phylo
     from Bio.Phylo.BaseTree import BranchColor
-    from pycirclize import Circos
     from scipy.cluster.hierarchy import ClusterNode, fcluster, linkage, to_tree
     from scipy.spatial.distance import squareform
 
@@ -42,7 +43,7 @@ def temporary_recursion_limit(new_limit: int):
 def _check_deps():
     if not _HAS_DENDROGRAM_DEPS:
         raise ImportError(
-            "Dendrogram visualization requires optional dependencies: biopython, pycirclize, scipy. "
+            "Dendrogram visualization requires optional dependencies: biopython and scipy. "
             "Install them with: `uv pip install mini_trainer[recommended]` or `uv sync --extra recommended`."
         )
 
@@ -105,6 +106,28 @@ def sanitize(x):
     return x
 
 
+@lru_cache(maxsize=16)
+def _resolve_labels(labels: tuple[str, ...], level: int = 0, full: bool = False):
+    """Batch cold lookups and reuse immutable class metadata across epochs."""
+    get_logger().info(f"Resolving {len(labels):,} dendrogram labels at level {level}")
+    try:
+
+        def resolve(label):
+            return resolve_name_or_id(label, rank_contains=None, skip=level, full=full)
+
+        # Initialize the resolver's disk cache before concurrent requests.
+        resolved = [resolve(labels[0])] if labels else []
+        # Small bounded batches avoid queuing thousands of requests during an
+        # outage; at most eight lookups need to finish before falling back.
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for start in range(1, len(labels), 8):
+                resolved.extend(executor.map(resolve, labels[start : start + 8]))
+        return dict(zip(labels, resolved, strict=True))
+    except (RuntimeError, KeyError, ValueError, OSError, SQLiteError) as error:
+        get_logger().info(f"Using original dendrogram labels: {error}")
+        return None
+
+
 def plot_probabilistic_dendrogram(
     model: nn.Module,
     min_merge_prob: float = 0.05,
@@ -120,10 +143,10 @@ def plot_probabilistic_dendrogram(
     idx2cls: dict = meta.get("idx2cls", {})
     cls2idx: dict = meta.get("cls2idx", {})
     if not idx2cls:
-        if not isinstance(cls2idx.get("0", None), dict):
+        if not isinstance(cls2idx.get("0", cls2idx.get(0)), dict):
             cls2idx = {0: cls2idx}
         idx2cls = {int(level): {v: k for k, v in c2i.items()} for level, c2i in cls2idx.items()}
-    elif not isinstance(idx2cls.get("0", None), dict):
+    elif not (isinstance(idx2cls.get("0", idx2cls.get(0)), dict) and all(str(key).isdigit() for key in idx2cls.get("0", idx2cls.get(0)))):
         idx2cls = {0: idx2cls}
     idx2cls = {int(k): v for k, v in idx2cls.items()}
 
@@ -133,7 +156,9 @@ def plot_probabilistic_dendrogram(
 
     try:
         # Attempt to coerce to scientific names
-        taxonomy = {cls: resolve_name_or_id(cls) for cls in class_names[0]}
+        taxonomy = _resolve_labels(tuple(class_names[0]), 0)
+        if taxonomy is None:
+            raise ValueError("Taxonomy unavailable")
         TKC = get_args(TK)
         get_logger().info("Class names successfully detected as species!")
         if apriori_groups is True:
@@ -149,15 +174,21 @@ def plot_probabilistic_dendrogram(
                 ag = None
             c2p = {v[level][1]: v for v in (list(_v.values()) for _v in taxonomy.values())}
             # | Resolve untracked synonym conflicts |
-            c2n = {cls: resolve_name_or_id(cls, rank_contains=None, skip=level)[TKC[level]][1] for cls in class_names[level]}
+            resolved = _resolve_labels(tuple(class_names[level]), level)
+            if resolved is None:
+                raise ValueError("Taxonomy unavailable")
+            c2n = {cls: resolved[cls][TKC[level]][1] for cls in class_names[level]}
             n2c = {}
             for c, n in c2n.items():
                 n2c.setdefault(n, []).append(c)
             c2c = {}
             for n, c in n2c.items():
                 if len(c) > 1:
+                    full_names = _resolve_labels(tuple(c), level, full=True)
+                    if full_names is None:
+                        continue
                     for ci in c:
-                        c2c[ci] = resolve_name_or_id(ci, rank_contains=None, skip=level, full=True)[TKC[level]][1]
+                        c2c[ci] = full_names[ci][TKC[level]][1]
             # | End synonym resolution |
             if isinstance(ag, str):
                 alevel = TKC.index(ag)
@@ -168,12 +199,25 @@ def plot_probabilistic_dendrogram(
     except (RuntimeError, KeyError, ValueError):
         pass
 
-    return [
-        _plot_probabilistic_dendrogram(
-            W=W, names=class_names[i], orig_names=orig_class_names[i], apriori=apriori[i], min_merge_prob=min_merge_prob, plot=plot
-        )
-        for i, W in enumerate(class_distance(model))
-    ]
+    results = []
+    try:
+        for i, W in enumerate(class_distance(model)):
+            get_logger().info(f"Rendering dendrogram level {i}: {len(class_names[i]):,} classes")
+            results.append(
+                _plot_probabilistic_dendrogram(
+                    W=W,
+                    names=class_names[i],
+                    orig_names=orig_class_names[i],
+                    apriori=apriori[i],
+                    min_merge_prob=min_merge_prob,
+                    plot=plot,
+                )
+            )
+        return results
+    except BaseException:
+        for fig, _ in results:
+            plt.close(fig)
+        raise
 
 
 def _plot_probabilistic_dendrogram(
@@ -188,8 +232,12 @@ def _plot_probabilistic_dendrogram(
         W = W.numpy(force=True)
     if orig_names is None:
         orig_names = names.copy()
+    if W.shape != (len(names), len(names)) or not names:
+        raise ValueError("Dendrogram requires one label per row of a nonempty square distance matrix")
     condensed_dist = squareform(W, checks=False)
-    Z = linkage(condensed_dist, method="ward")
+    if not np.isfinite(condensed_dist).all():
+        raise ValueError("Dendrogram distances contain non-finite values")
+    Z = linkage(condensed_dist, method="ward") if len(names) > 1 else np.empty((0, 4))
 
     # Check if we actually have ground-truth colors to plot
     if not apriori or isinstance(apriori, str):
@@ -200,57 +248,14 @@ def _plot_probabilistic_dendrogram(
 
     # --- 1. PROBABILISTIC CLUSTERING (EDGE COLORS) ---
     distance_threshold = -np.log(min_merge_prob) if min_merge_prob > 0 else 100
-    clusters = fcluster(Z, t=distance_threshold, criterion="distance")
+    clusters = fcluster(Z, t=distance_threshold, criterion="distance") if len(names) > 1 else np.ones(1, dtype=int)
 
     cmap = plt.get_cmap("tab20")
     cluster_color_map = {cluster_id: mcolors.to_hex(cmap(i % 20)) for i, cluster_id in enumerate(sorted(set(clusters)))}
-    apriori_color_map = {grp: mcolors.to_hex(cmap(i % 20)) for i, grp in enumerate(set(apriori.values()))}
+    apriori_color_map = {grp: mcolors.to_hex(cmap(i % 20)) for i, grp in enumerate(dict.fromkeys(apriori.values()))}
 
     if plot:
-        # --- 2. BUILD THE TREE ---
-        newick_str = linkage_to_newick(Z, names)
-        phylo_tree = Phylo.read(io.StringIO(newick_str), format="newick")  # pyright: ignore[reportPrivateImportUsage]
-
-        # --- 3. DYNAMIC SCALING HEURISTICS ---
-        num_classes = len(names)
-        fig_size = min(40.0, max(10.0, num_classes / 50.0))
-        radius_inches = fig_size * 0.4
-        pts_per_label = (2 * math.pi * radius_inches * 72) / num_classes
-
-        dynamic_font_size = min(12.0, max(0.5, pts_per_label * 0.8))
-        dynamic_line_width = dynamic_font_size * 0.15
-
-        # --- 4. INITIALIZE CIRCULAR DENDROGRAM ---
-        rmargin = 5.0 if apriori else 0.5
-        with temporary_recursion_limit(100000):
-            circos, tv = Circos.initialize_from_tree(
-                phylo_tree,
-                r_lim=(30, 85),
-                leaf_label_size=dynamic_font_size,
-                leaf_label_rmargin=rmargin,
-                line_kws=dict(lw=dynamic_line_width),
-            )
-
-        # --- 5. Apply colors ---
-        for cluster, color in cluster_color_map.items():
-            leaf_list = [names[i] for i, clst in enumerate(clusters) if clst == cluster]
-            tv.set_node_line_props(leaf_list, color=color, apply_label_color=True)
-
-        # --- 6. A PRIORI METADATA TRACK ---
-        if apriori:
-            sector = circos.sectors[0]
-            color_track = sector.add_track((86, 89))
-
-            for i, leaf in enumerate(phylo_tree.get_terminals()):
-                grp = apriori.get(sanitize(leaf.name), None)
-                if grp is not None:
-                    x_start, x_end = i, i + 1
-                    color = apriori_color_map[grp]
-                    color_track.rect(x_start, x_end, r_lim=(86, 89), color=color, lw=0)
-
-        # --- 7. EXPORT ---
-        fig = circos.plotfig()
-        fig.set_size_inches(fig_size, fig_size)
+        fig = render_linkage(Z, names, clusters, cluster_color_map, apriori, apriori_color_map)
     else:
         fig = plt.figure()
     return fig, {

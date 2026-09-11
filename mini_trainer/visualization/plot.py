@@ -9,7 +9,6 @@ from matplotlib.colors import LogNorm
 from torch import nn
 from torchvision.transforms.functional import resize
 
-from mini_trainer import get_logger
 from mini_trainer.modeling import class_similarity
 
 # --- Constants ---
@@ -21,7 +20,7 @@ COLORBAR_TARGET_WIDTH_PIXELS = 200  # Approximate width for the colorbar image
 
 # --- Helper: Matrix Aggregation ---
 def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> np.ndarray:
-    """Aggregates matrix by summing values in blocks.
+    """Aggregates matrix by taking the maximum in blocks.
 
     Handles non-divisible shapes by padding.
     """
@@ -53,8 +52,6 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     block_c = math.ceil(orig_cols / MAX_DISPLAY_DIM_HEATMAP) if orig_cols > MAX_DISPLAY_DIM_HEATMAP else 1
 
     if block_r > 1 or block_c > 1:
-        if processed_mat is mat:
-            processed_mat = mat.copy()  # Copy if modifying
         processed_mat = _aggregate_matrix_max(processed_mat, (block_r, block_c))
 
     curr_rows, curr_cols = processed_mat.shape
@@ -71,8 +68,6 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     final_k = int(max(1, min(k_ideal, k_cap)))
 
     if final_k > 1:
-        if processed_mat is mat:
-            processed_mat = mat.copy()  # Copy if modifying
         return np.kron(processed_mat, np.ones((final_k, final_k), dtype=processed_mat.dtype))
 
     return processed_mat.copy() if processed_mat is mat else processed_mat
@@ -81,54 +76,36 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
 # --- Helper: Heatmap Array Generation ---
 def _generate_heatmap_rgb_array(display_mat: np.ndarray, min_val_display: float | None, cmap_name: str, percent: bool):
     """Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info."""
-    masked_data = np.ma.masked_invalid(display_mat.astype(float))  # Handle NaNs
-    if min_val_display is not None:
-        masked_data = np.ma.masked_less_equal(masked_data, min_val_display)
 
-    positive_values = masked_data.compressed()
-    positive_values = positive_values[positive_values > 0]
+    # Scan and map bounded row chunks: avoid full float64 RGBA/masked copies.
+    def chunks():
+        rows = max(1, 262144 // max(1, display_mat.shape[1]))
+        for start in range(0, display_mat.shape[0], rows):
+            values = np.ma.masked_invalid(np.asarray(display_mat[start : start + rows], dtype=float))
+            if min_val_display is not None:
+                values = np.ma.masked_less_equal(values, min_val_display)
+            yield start, values
 
-    if positive_values.size == 0:
-        # Create a dummy black image if no valid data
-        h, w = display_mat.shape
-        dummy_rgb = np.zeros((h, w, 3), dtype=np.uint8)
-        return dummy_rgb, None, 0.0, 1.0
-
-    min_positive_val = min(0.1, positive_values.min())
-    norm_vmin = 10 ** math.floor(math.log10(min_positive_val))
-    norm_vmax = float(masked_data.max())  # Max of the *original* masked_data, not just positive
-
-    if percent:  # Adjust norm for percentages
-        norm_vmax = 1.0  # max(1.0, norm_vmax)
-
-    # Handle edge case where vmin might equal or exceed vmax after adjustments
+    minimum, maximum = float("inf"), -float("inf")
+    for _, values in chunks():
+        positive = values.compressed()
+        positive = positive[positive > 0]
+        if positive.size:
+            minimum = min(minimum, float(positive.min()))
+            maximum = max(maximum, float(positive.max()))
+    rgb = np.zeros((*display_mat.shape, 3), dtype=np.uint8)
+    if not np.isfinite(minimum):
+        return rgb, None, 0.0, 1.0
+    norm_vmin = 10 ** math.floor(math.log10(min(0.1, minimum)))
+    norm_vmax = 1.0 if percent else maximum
     if norm_vmin >= norm_vmax:
-        if norm_vmin > 0:
-            norm_vmax = norm_vmin * (1.1 if norm_vmin > 1 else 2.0)  # Create small range
-        else:  # Cannot make a valid LogNorm
-            h, w = display_mat.shape
-            dummy_rgb = np.zeros((h, w, 3), dtype=np.uint8)
-            return dummy_rgb, None, 0.0, 1.0
-
+        norm_vmax = norm_vmin * (1.1 if norm_vmin > 1 else 2.0)
     norm = LogNorm(vmin=norm_vmin, vmax=norm_vmax)
-    cmap = mpl.colormaps[cmap_name].copy()  # Get a mutable copy
+    cmap = mpl.colormaps[cmap_name].copy()
     cmap.set_bad(color=(0, 0, 0) if cmap_name == "magma" else (1, 1, 1), alpha=1.0)
-
-    try:
-        normalized_values = norm(masked_data)
-    except ValueError as e:  # Can happen if norm range is invalid
-        get_logger().warning(f"LogNorm failed ({e}). Returning empty image.")
-        # Fallback or re-raise, for now, dummy image
-        h, w = display_mat.shape
-        dummy_rgb = np.zeros((h, w, 3), dtype=np.uint8)
-        return dummy_rgb, None, 0.0, 1.0
-
-    rgba_image_float = cmap(normalized_values)  # (H, W, 4) float RGBA
-
-    # Convert to RGB uint8, dropping alpha
-    rgb_image_uint8 = (rgba_image_float[:, :, :3] * 255).astype(np.uint8)
-
-    return rgb_image_uint8, norm, norm_vmin, norm_vmax
+    for start, values in chunks():
+        rgb[start : start + len(values)] = cmap(norm(values), bytes=True)[:, :, :3]
+    return rgb, norm, norm_vmin, norm_vmax
 
 
 # --- Helper: Colorbar Ticks ---
@@ -211,7 +188,7 @@ def _generate_colorbar_rgb_array(
 
     ax_cbar_rect = [0.15, 0.05, 0.3, 0.9]  # [left, bottom, width_of_strip, height_of_strip]
     ax_cbar = fig_cbar.add_axes(ax_cbar_rect)
-    cmap_obj_for_cbar = mpl.colormaps[cmap_name_str]  # Fresh colormap for cbar
+    cmap_obj_for_cbar = mpl.colormaps[cmap_name_str] if isinstance(cmap_name_str, str) else cmap_name_str
 
     cb = mpl.colorbar.ColorbarBase(ax_cbar, cmap=cmap_obj_for_cbar, norm=norm_obj, orientation="vertical", ticks=tick_list)
 

@@ -3,11 +3,13 @@ import math
 import operator
 import os
 import warnings
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from enum import Enum
-from queue import Queue
-from threading import Thread
+from functools import lru_cache
+from itertools import batched
 from typing import Any, TypeVar, cast
 
 import numpy as np
@@ -110,6 +112,28 @@ def _pil_to_torch_interp(interp: int) -> InterpolationMode:
     return m.get(interp, InterpolationMode.BILINEAR)  # type: ignore
 
 
+@lru_cache(maxsize=32)
+def _nearest_indices(source_size, target_size):
+    # Match ATen's legacy nearest mapping: float32 scale, floor, then clamp.
+    # Cache only one-dimensional coordinates, never full image-sized maps.
+    scale = np.float32(source_size) / np.float32(target_size)
+    indices = (np.arange(target_size, dtype=np.float32) * scale).astype(np.int64)
+    np.minimum(indices, source_size - 1, out=indices)
+    return torch.from_numpy(indices)
+
+
+def _resize_nearest_uint8(image, height, width):
+    if image.shape[-2:] == (height, width):
+        return image
+    rows = _nearest_indices(image.shape[1], height)
+    columns = _nearest_indices(image.shape[2], width)
+    # Decoders return interleaved RGB storage. Gather whole rows/pixels before
+    # restoring the contiguous CHW layout produced by torchvision resizing.
+    return (
+        image.permute(1, 2, 0).index_select(0, rows).index_select(1, columns).permute(2, 0, 1).clone(memory_format=torch.contiguous_format)
+    )
+
+
 class ReadAndResize:
     """Callable class to read and resize images from paths."""
 
@@ -136,7 +160,17 @@ class ReadAndResize:
         except Exception as e:
             e.add_note(f"Image path: {path}")
             raise
-        img = TF.resize(img, size=[self.h, self.w], interpolation=self.interp, antialias=self.antialias)
+        if (
+            self.interp == InterpolationMode.NEAREST
+            and img.device.type == "cpu"
+            and img.dtype == torch.uint8
+            and img.ndim == 3
+            and 0 < min(self.h, self.w)
+            and max(self.h, self.w) <= 4096
+        ):
+            img = _resize_nearest_uint8(img, self.h, self.w)
+        else:
+            img = TF.resize(img, size=[self.h, self.w], interpolation=self.interp, antialias=self.antialias)
         if img.dtype != self.dtype:
             img = self.converter(img)
         return img.to(self.device)
@@ -339,6 +373,49 @@ def _infer_numeric_dtype(seq) -> Any:
     return object
 
 
+class _DirectBatchIndices(list):
+    """Index list for the repository collator, which accepts stacked tensors."""
+
+
+def _shared_batch_buffer(template, shape):
+    # Match PyTorch's worker collator: allocate the final IPC storage directly,
+    # rather than stack/gather locally and copy it when the queue shares it.
+    storage = template._typed_storage()._new_shared(math.prod(shape), device=template.device)
+    return template.new(storage).resize_(shape)
+
+
+class _FetchedBatch(list):
+    """Sample views for standard collators, with the already-stacked batch attached."""
+
+    def __init__(self, data, *, sample_views=True):
+        self.data = data
+        self._sample_views = False
+        super().__init__()
+        if sample_views:
+            self._materialize()
+
+    def _materialize(self):
+        if not self._sample_views:
+            data = self.data
+            super().extend(data.unbind(0) if isinstance(data, torch.Tensor) else zip(*(value.unbind(0) for value in data)))
+            self._sample_views = True
+
+    def __getitem__(self, index):
+        # An external default collator starts with batch[0]. Materialize here
+        # if it reuses our tagged batch sampler with a different collator.
+        self._materialize()
+        return super().__getitem__(index)
+
+    def __iter__(self):
+        self._materialize()
+        return super().__iter__()
+
+    def __len__(self):
+        if self._sample_views:
+            return super().__len__()
+        return len(self.data) if isinstance(self.data, torch.Tensor) else len(self.data[0])
+
+
 class LazyDataset(torch.utils.data.Dataset):
     """A general lazy dataset which calls func on items to
     obtain the image (and label) when needed.
@@ -350,14 +427,25 @@ class LazyDataset(torch.utils.data.Dataset):
         * "guess" : Select a caching strategy via heuristic.
     """
 
+    _supports_direct_batches = True
+
     def __init__(  # noqa: D107
         self,
         func: Callable[[Any], torch.Tensor | tuple[torch.Tensor, ...] | list[torch.Tensor]],
         items: Sequence[Sequence],
         cache: str | int | CACHE_MODE | None = None,
+        *,
+        cache_workers: int | None = None,
+        pin_batches: bool = False,
     ):
+        if cache_workers is not None and (isinstance(cache_workers, bool) or not isinstance(cache_workers, int) or cache_workers < 0):
+            raise ValueError("cache_workers must be a nonnegative integer or None.")
+        self._cache_workers = cache_workers
+        self._pin_batches = pin_batches
         self.func = func
         self.items = tuple(np.asarray(seq, dtype=_infer_numeric_dtype(seq)) if len(seq) > 0 else np.empty((0,)) for seq in items)
+        if self.items and any(len(seq) != len(self.items[0]) for seq in self.items):
+            raise ValueError("Dataset input sequences must have equal lengths.")
         self._init_cache(CACHE_MODE(cache))
 
     @staticmethod
@@ -410,7 +498,7 @@ class LazyDataset(torch.utils.data.Dataset):
             self._ram_was_single_tensor = False
             templates = [e.new_empty(e.shape) for e in first_item_processed]
         else:
-            raise TypeError(f"The provided function must return a tensor ora tuple/list of tensors, but got {type(first_item_processed)}")
+            raise TypeError(f"The provided function must return a tensor or a tuple/list of tensors, but got {type(first_item_processed)}")
 
         stacked_tensors = [
             torch.empty(
@@ -422,84 +510,105 @@ class LazyDataset(torch.utils.data.Dataset):
             for template in templates
         ]
 
-        max_workers = _default_worker_count(128, reserve=2, minimum=1)
-        batch_size = min(256, 4 * max_workers)
-        fetch_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fetcher")
-        fetched_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor] | Exception]] = Queue(max(32, batch_size * 4))
-        insert_buffer: dict[int, torch.Tensor | Sequence[torch.Tensor]] = dict()
-        insert_queue: Queue[tuple[int, torch.Tensor | Sequence[torch.Tensor]]] = Queue()
+        max_workers = _default_worker_count(16) if self._cache_workers is None else self._cache_workers
+        max_workers = min(max_workers, len(self) - 1)
+        batch_size = min(64, max(1, 4 * max_workers))
 
-        def _fetch_one(idx_item):
-            idx, item = idx_item
-            try:
-                data = self.func(item)
-                fetched_queue.put((idx, data))
-            except Exception as e:
-                fetched_queue.put((idx, e))
-
-        def _contiguous_write(idx: list[int], data: list[torch.Tensor] | list[list[torch.Tensor]]) -> None:
-            """Write data to indexes.
-
-            Args:
-                idx: A list of contigous increasing indices for each corresponding torch.Tensor (element) in `data`.
-                data: A list of torch.Tensor with the same length as `idx`.
-            """
-            if len(idx) == 0:
+        def processed_items():
+            # Reuse the shape probe: every reader/hook runs exactly once.
+            yield first_item_processed
+            items = iter(zip(*self.items))
+            next(items)
+            if max_workers == 0:
+                yield from map(self.func, items)
                 return
-            slc = slice(idx[0], idx[-1] + 1)
-            # Insert data into slice along first dimension in dst (in-place)
-            if self._ram_was_single_tensor:
-                assert not data or isinstance(data[0], torch.Tensor)
-                data = cast(list[torch.Tensor], data)
-                torch.stack(data, out=stacked_tensors[0][slc])
-            else:
-                for i, elements in enumerate(zip(*data)):
-                    torch.stack(elements, out=stacked_tensors[i][slc])
-
-        def _write():
-            end_idx = len(self) - 1
-            with TQDM(range(len(self)), desc=desc, leave=False) as pbar:
-                batch = ([], [])
-                while True:
-                    idx, data = insert_queue.get()
-                    batch[0].append(idx)
-                    batch[1].append(data)
-                    if len(batch[0]) >= batch_size:
-                        _contiguous_write(*batch)
-                        batch = ([], [])
-                    pbar.update()
-                    if idx == end_idx:
+            pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="mini-trainer-cache")
+            pending = deque()
+            try:
+                # Bound both submitted work and decoded samples even when an
+                # early reader or the cache writer is slower than later reads.
+                for _ in range(2 * max_workers):
+                    item = next(items, None)
+                    if item is None:
                         break
-                _contiguous_write(*batch)
+                    pending.append(pool.submit(self.func, item))
+                while pending:
+                    yield pending.popleft().result()
+                    item = next(items, None)
+                    if item is not None:
+                        pending.append(pool.submit(self.func, item))
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
 
-        write_thread = Thread(target=_write, daemon=True)
-        write_thread.start()
-
-        try:
-            fetch_pool.map(_fetch_one, enumerate(zip(*self.items)))
-
-            nxt_idx = 0
-            for _ in range(len(self)):
-                idx, data = fetched_queue.get()
-                if isinstance(data, Exception):
-                    raise data
-                if idx == nxt_idx:
-                    insert_queue.put((idx, data))
-                    nxt_idx += 1
-                    while nxt_idx in insert_buffer:
-                        insert_queue.put((nxt_idx, insert_buffer.pop(nxt_idx)))
-                        nxt_idx += 1
+        # Writes happen here so shape/type errors reach the caller. Closing the
+        # generator also shuts down readers when stacking a batch fails.
+        with closing(processed_items()) as records, TQDM(total=len(self), desc=desc, leave=False) as pbar:
+            offset = 0
+            for batch in batched(records, batch_size):
+                for index, record in enumerate(batch, offset):
+                    values = (record,) if self._ram_was_single_tensor else record
+                    if not isinstance(values, (tuple, list)) or len(values) != len(templates):
+                        raise ValueError(f"Cached sample {index} has an inconsistent tensor structure.")
+                    for value, template in zip(values, templates, strict=True):
+                        if not isinstance(value, torch.Tensor) or value.shape != template.shape:
+                            raise ValueError(f"Cached sample {index} has an inconsistent tensor shape.")
+                destination = slice(offset, offset + len(batch))
+                if self._ram_was_single_tensor:
+                    torch.stack(batch, out=stacked_tensors[0][destination])
                 else:
-                    insert_buffer[idx] = data
-
-            write_thread.join()
-        finally:
-            fetch_pool.shutdown(wait=False)
+                    for target, values in zip(stacked_tensors, zip(*batch, strict=True), strict=True):
+                        torch.stack(values, out=target[destination])
+                offset += len(batch)
+                pbar.update(len(batch))
 
         self._ram_cache = torch.utils.data.TensorDataset(*[t for t in stacked_tensors])
 
     def __len__(self):
         return len(self.items[0])
+
+    def __getitems__(self, indices):
+        # PyTorch's batched fetch protocol: one gather for cached tensors, or
+        # one stacking pass for decoded samples. Keep scalar indexing unchanged.
+        if self._cache_mode in (CACHE_MODE.CPU, CACHE_MODE.CUDA):
+            tensors = self._ram_cache.tensors
+            index = torch.as_tensor(indices, dtype=torch.long, device=tensors[0].device)
+            index = torch.where(index < 0, index + len(self), index)
+            # index_select copies whole rows; generic advanced indexing is much
+            # slower for uint8 image batches on CPU. Results own their storage.
+            pin = self._pin_batches and tensors[0].device.type == "cpu" and torch.utils.data.get_worker_info() is None
+            if pin:
+                # Gather directly into the final pinned batch. DataLoader's
+                # pinning pass then returns the same allocation, without a
+                # second full image copy. Never initialize CUDA in workers.
+                data = tuple(
+                    torch.index_select(
+                        tensor,
+                        0,
+                        index,
+                        out=torch.empty((len(index), *tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device, pin_memory=True),
+                    )
+                    for tensor in tensors
+                )
+            else:
+                worker = isinstance(indices, _DirectBatchIndices) and torch.utils.data.get_worker_info() is not None
+                data = tuple(
+                    torch.index_select(
+                        tensor,
+                        0,
+                        index,
+                        out=_shared_batch_buffer(tensor, (len(index), *tensor.shape[1:]))
+                        if worker and tensor.device.type == "cpu" and not tensor.requires_grad
+                        else None,
+                    )
+                    for tensor in tensors
+                )
+            data = data[0] if self._ram_was_single_tensor else data
+        else:
+            data = self[indices]
+        # Ordinary external batched fetches still return actual sample lists,
+        # including direct torch.stack compatibility. Our sampler marks only
+        # batches whose collator can consume the stacked storage directly.
+        return _FetchedBatch(data, sample_views=not isinstance(indices, _DirectBatchIndices))
 
     def __getitem__(self, index):
         match self._cache_mode:

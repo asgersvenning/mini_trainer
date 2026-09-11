@@ -112,6 +112,7 @@ Feel free to contribute, but here are a few tips:
 
 Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
 their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).
+The quantization branch has a focused [bottleneck and handoff roadmap](docs/quantization-roadmap.md).
 
 ## ONNX export
 
@@ -127,9 +128,24 @@ Follow the [benchmark results and coverage](docs/benchmarks.md) and
 The suite progresses from an exact synthetic oracle to MNIST and hierarchical Blair,
 with separate CPU and GPU profiles, visible summaries, and retained reproduction artifacts.
 
+For configured GPU runners, the opt-in [TensorRT deployment workflow](dev/benchmarks/reporting.md#opt-in-target-gpu-workflow)
+rebuilds engines on the target and reports paired quality, latency and memory.
+
 ## Temporarily unsupported feature
 
 EMA (`--ema` / `ema=True`) is currently nonfunctional: classifier caches populated
 by evaluation can break later EMA updates. Leave it disabled. Enabling it emits a
 runtime warning; its API and checkpoint compatibility are retained, and repair is
 deferred. See [known limitations](docs/roadmap.md).
+
+## INT8 quantization
+
+An opt-in [PTQ and QAT Python API](docs/quantization.md) targets native x86 INT8
+inference. This is an initial backend increment; CPU float32 QAT, integer inference
+and ordinary AMP are distinct capabilities.
+
+Opt-in [CUDA INT8 training](docs/quantized-training.md) supports Linear weights,
+integer forward/backward products, checkpoint restoration and CUDA inference.
+See the [validation audit](docs/quantized-training-validation.md) for measured
+memory, speed and loading benefits, supported configurations and limitations.
+[x86 PTQ/QAT inference](docs/quantization.md) is a separate backend.

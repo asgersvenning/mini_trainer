@@ -4,7 +4,18 @@ This is planned work. Existing CPU/GPU benchmark results establish a baseline;
 they do not measure the benefit of the features below. EMA is temporarily
 nonfunctional and excluded from these experiments; repair is deferred.
 
-## Quantization is the primary implementation target
+## Actual quantized training is the primary implementation target
+
+The priority is now QT that lowers training memory and increases speed, together
+with faster data loading for floating-point and quantized workloads. PTQ/QAT do
+not satisfy that objective. See the [QT and loader probes](../dev/benchmarks/training.md#capacity-and-bottleneck-probes);
+an initial [model/trainer integration](quantized-training.md) is available, while
+broader optimizer/resume coverage, convergence and end-to-end measurement remain
+requirements, not optional follow-ups.
+
+The initial [INT8 PTQ/QAT Python backend](quantization.md) is implemented on the
+`quant` branch. Its CPU tests establish a training-to-integer-inference path;
+user-facing checkpoint integration, other backends and quality studies remain open.
 
 Deliver two distinct paths through the existing builders, checkpoint and export
 interfaces, with optional dependencies:

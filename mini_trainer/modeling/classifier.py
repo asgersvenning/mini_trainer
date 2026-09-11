@@ -16,6 +16,7 @@ from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, im
 
 from .architectures import get_model
 from .prior import prior_from_labels
+from .quantized_training import load_training_weights, restore_quantized_training
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
@@ -40,9 +41,15 @@ class Classifier(nn.Module):  # noqa: D101 TODO
 
         for _ in range(iterations):
             w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
-            grad = w @ w.t() @ w
+            # Associate through the smaller Gram matrix. A class-by-class matrix
+            # is prohibitive for heads with tens of thousands of output classes.
+            grad = w @ (w.t() @ w) if num_classes > w.size(1) else w @ w.t() @ w
             proj = (grad * w).sum(dim=1, keepdim=True) * w
-            w.sub_((lr / num_classes) * (grad - proj))
+            # Reuse the gradient buffer without changing arithmetic order.
+            # Release both full-size temporaries before the next iteration.
+            grad.sub_(proj).mul_(lr / num_classes)
+            w.sub_(grad)
+            del grad, proj
 
         w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
         return layer
@@ -156,6 +163,9 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         self._dirty_cache.clear()
         return retval
 
+    def _on_quantized_training_prepared(self):
+        self._dirty_cache.clear()
+
     def set_active_features(self, indices: list[int] | torch.Tensor | np.ndarray | None = None):
         """Mask a selection of output features (classes).
 
@@ -228,10 +238,11 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             return self.batch_norm(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weight, bias = self._weight_bias()
         embeddings = self.preclassification(x)
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
+        # Resolve parametrized weights beside their Linear consumer.
+        weight, bias = self._weight_bias()
         if self.normalized:
             return cosine_to_zscore(F.linear(embeddings, weight=weight), self.preclassification_size) + bias
         else:
@@ -314,6 +325,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         for k, v in cfg.items():
             setattr(architecture, f"_{k}", v)
         if state is not None:
+            restore_quantized_training(architecture, state)
             try:
                 load_result = architecture.load_state_dict(state, strict=strict)
             except RuntimeError as e:
@@ -349,7 +361,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         # Parse metadata stored in .pt file if available
         if weights is not None:
             if isinstance(weights, str):
-                state = torch.load(f=weights, map_location=device, weights_only=True)
+                state = load_training_weights(weights, map_location=device)
                 state = state.get("model", state)  # type: ignore
             else:
                 state = weights

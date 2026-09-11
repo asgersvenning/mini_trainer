@@ -1,74 +1,68 @@
-# Continuous dataset benchmarks
+# Benchmark findings
 
-[Browse benchmark runs and their summaries](https://github.com/asgersvenning/mini_trainer/actions/workflows/benchmarks.yml).
-The workflow is defined in this repository; results start appearing there once the
-change is merged and runs execute. Initial local evidence is recorded below.
+These are the current conclusions of the quantization branch, based on local
+measurements. They do not certify HPC, Spark/desktop, or ARM performance.
+The [branch roadmap](quantization-roadmap.md) defines the remaining work and
+completion criteria. Exact configurations, trials and superseded findings remain
+in the [historical experiment record](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
 
-The benchmark foundation exercises the actual training, checkpoint reload and
-inference paths. CPU is a fast verification milestone, not the scope boundary.
-The progression is synthetic oracle → MNIST → hierarchical Blair, with Birds and
-iNaturalist 2021 reserved for larger, more expensive follow-ups.
+## Representative workload
 
-Each run produces a visible Actions summary and a downloadable artifact containing
-JSON reports, predictions, dataset/split manifests, configurations, checkpoints and
-logs. Failures are retained alongside successful results. The artifact excludes
-synthetic image files, which can be regenerated from the recorded seed; source
-images for real datasets are never uploaded by the workflow.
+EfficientNetV2-S, symmetric hidden layer and normalized flat or hierarchical
+classifier; reviewed Blair splits and paired seeds. Full training and
+parameter-frozen fine-tuning are different workloads. Synthetic 10k/100k-class
+heads measure capacity, not classification quality. Full million-class runs are
+reserved for larger machines.
 
-Reports identify the source revision and source-content hash, lockfile hash,
-installed versions, dataset/checkpoint hashes, seeds, class mappings, device,
-precision, cache settings and explicitly exercised capabilities. Results marked
-`completed` only establish that the real-data pipeline ran: they do not claim a
-quality improvement. Synthetic profiles have an exact 100% oracle quality gate.
+## Evidence that drives the next decisions
 
-Artifacts are configured for 90-day retention. This is an initial reporting surface,
-not a permanent model zoo. A durable results index/dashboard should archive these
-versioned records before expiry, retain failures, and compare matching configurations
-across revisions. It must separate quality from speed and avoid combining CPU/GPU,
-precision, dataset, or dependency changes into a misleading trend.
-
-## Initial local evidence
-
-These are baseline observations, not proposed model-quality or speed improvements.
-They use seed 42, one CPU thread, zero loader workers, no augmentation/EMA, and small
-offline models. The synthetic runs use 12 epochs; real-data runs use 5 epochs.
-
-| Profile | Held-out accuracy | Scope |
+| Regime | Measured finding | Consequence |
 | --- | --- | --- |
-| Synthetic CPU float32 | 100% | Exact repeatability verified within the local environment |
-| Synthetic CUDA float32 | 100% | Strict deterministic algorithms; CUDA cache |
-| Synthetic CUDA float16 | 100% | AMP and CUDA cache |
-| Synthetic CUDA bfloat16 | 100% | AMP and CUDA cache |
-| MNIST CUDA float16 | 97.12% | AMP, CUDA cache, explicit nondeterministic profile |
-| MNIST CPU float32 | 97.3% | 4,000 train / 1,000 validation / 5,000 test |
-| Blair CUDA float16 | 64.3% species / 80.4% parent | 3,704 train / 912 validation / 1,161 test |
+| Native INT8, full pretrained Blair training | About 3.4% lower allocated peak memory; timing tied or worse in short three-seed studies. Five-epoch hierarchical parent F1 fell in all three seeds, up to 5.10 points; precision up to 5.38 points. | The short full-training recipe is not a demonstrated useful trade-off. Profile backbone costs and qualify time to comparable quality. |
+| Native INT8, parameter-frozen Blair fine-tuning | About 17.8% lower allocated peak; mixed timings. Five-epoch absolute quality was below full training. | Qualify fine-tuning separately; memory savings do not establish equal-quality training efficiency. |
+| Longer hierarchical training | One 20-epoch pair: leaf/parent F1 differences +0.331/−0.082 points, but INT8 training took 9.2% longer locally. | Longer budgets can change the quality result. Repeat seeds and measure time to useful quality on target hardware. |
+| BatchNorm refresh | Training-only refresh improved some early checkpoints; twelve-checkpoint qualification had mixed held-out effects and remaining parent-level regressions. | No automatic refresh is recommended. Running-statistic sensitivity is a diagnostic finding, not a demonstrated universal fix. |
+| 100k-class native training capacity | Bounded normalization backward reduced full-training peak allocation by 17.4%; corrected frozen comparison saved 6.6%. Compiler/graph variants had mixed speed and reserved-memory results. | Large heads can benefit, but distinguish allocated, reserved, setup and steady-state memory. These are synthetic capacity results. |
+| ONNX CPU inference on x86 | Unsigned activation/per-channel INT8 recipe executed 170 integer convolutions and two head GEMMs; three trials per head showed 44–54% lower warm batch-one latency and 45–48% lower RSS. Largest observed metric loss was 2.956 points in hierarchical leaf precision. | Promising edge candidate; verify kernels, quality and sustained resources on ARM before recommending it there. |
+| TensorRT inference with 100k random classes | INT8 engine about 49% smaller. Batch 1/8 was slower; batch 64 was effectively tied. Batch-64 device snapshots were 140 MiB lower: 37% of the post-initialization increment, 9% of total warm usage. | A local memory-saving candidate, not a demonstrated speedup or trained large-vocabulary quality result. |
+| Native QT export | Integer-forward ONNX is supported in a limited tested runtime path, but CUDA MatMulInteger falls back to CPU and TensorRT rejects the native representation. Explicit floating materialization followed by static calibration provides a separate deployable route. | Do not claim the calibrated export preserves the native dynamic quantizer. Validate its quality and placement independently. |
+| Large-head float export parity | Some near-zero scores required an explicit 1e-4 absolute tolerance; FP64 diagnostics were consistent with accumulated rounding. | Keep the public default parity gate. Qualify any profile-specific tolerance with numerical evidence. |
 
-GPU observations use an NVIDIA GeForce RTX 3080 Ti Laptop GPU. The environment
-uses Python 3.13.7 and PyTorch 2.12.0. Single-run timing is diagnostic; it is not a
-portable performance gate. CPU synthetic training-call wall time was about 2.2 s,
-MNIST CPU about 11 s, and Blair GPU about 13.4 s. These scopes include setup,
-training, validation, logging and checkpoints, but exclude dataset inventory and
-final held-out inference. Runs were not a controlled throughput comparison.
+## Measurement rules
 
-Strict deterministic mode rejected CUDA adaptive-pooling backward in the real-data
-backbone. The explicit `--allow-nondeterministic` profile permits those operations
-and records that choice. Seeds and preserved inputs make the experiment repeatable;
-they do not promise bitwise-identical GPU results. Neither AMP nor CUDA caching is
-inference quantization or quantization-aware training.
+- Compare practical floating baselines: BF16/FP16 training where supported,
+  FP16 TensorRT and floating ONNX CPU. Use matched data, preprocessing and budgets.
+- Evaluate Macro-F1, Macro-Recall, Macro-Precision, Coverage and Theil's U with
+  `mini_metrics`, at leaf and parent levels. Retain undefined values and negative
+  results. Differences multiplied by 100 include Theil's U; label that convention.
+- Accept a few points of quality loss only alongside a substantial measured
+  speed/cost or memory benefit in the intended workload.
+- Separate cold setup, first execution, warm latency, end-to-end throughput,
+  loading/transfers, allocated/reserved GPU memory and process/device snapshots.
+  Device-wide snapshots are not transient peaks or per-process allocation.
+- Runs overlapping CPU checks do not support timing/resource claims. Random
+  large-class heads and synthetic ARM metadata do not establish real quality or
+  ARM execution.
+- Historical epoch CSVs generated while all statistic loggers were disabled are
+  invalid convergence evidence; their independently evaluated `last.pt` results
+  remain usable. `best.pt` selection from those runs is not trustworthy.
 
-## Coverage still needed
+## Reproduction and visibility
 
-The reports currently mark EMA, distributed training, augmentation, quantization
-and ONNX integration as unexercised by this benchmark suite. Existing focused tests
-provide other evidence, but do not make those boxes true for these dataset runs.
-Add explicit profiles and comparison criteria before claiming coverage or improvement.
-The known EMA continuation failure remains recorded in the roadmap.
+Use the [benchmark command index](../dev/benchmarks/README.md):
+[training](../dev/benchmarks/training.md),
+[inference](../dev/benchmarks/inference.md), and
+[reporting](../dev/benchmarks/reporting.md).
+CPU and TensorRT composed reports bind quality to retained runtime evidence;
+compact history distinguishes CPU medians/RSS from GPU paired timing/snapshots.
+New CPU reports also retain and verify the requested trial budget.
 
-The plain AdamW/SGD step-tracking blocker discovered by this baseline is now fixed.
-The trainer gates scheduler/EMA advancement on completed optimizer steps and the
-native fused-optimizer AMP overflow signal. Real CPU and CUDA overflow regressions
-cover MuonAuxAdamW, AdamW, SGD and fused AdamW/SGD. This establishes compatibility;
-it does not yet measure their relative model quality. See the [step contract](../dev/README.md#optimizer-step-contract).
+An opt-in default-branch publisher connects compact TensorRT artifacts to monthly
+draft-release storage and GitHub Pages. Live activation, authenticated storage,
+public rendering and target-runner execution remain unverified. CPU producer and
+training-history handoffs are follow-up integration work, not established services.
 
-See the [benchmark guide](../dev/benchmarks/README.md) for local commands, GPU runner
-configuration, real-data inputs and reproduction details.
+Raw temporary paths cited by older notes are now governed by the
+[artifact-retention record](quantization-artifacts.md). Downloaded datasets,
+original research files and the working environment are separate from disposable
+benchmark outputs.

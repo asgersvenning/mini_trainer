@@ -1,0 +1,37 @@
+{
+  "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
+  "output": "/work/results/global-lepi-figures-3",
+  "environments": {
+    "master": {
+      "python": "/work/venvs/mt-master/bin/python",
+      "commit": "2ebbe39f2365bfea482d7ebc3d000cf4d2044918"
+    },
+    "quant": {
+      "python": "/work/venvs/mt-quant/bin/python",
+      "commit": "42c0f065e899ef6866bcf1c9e1304251824a9d8a"
+    }
+  },
+  "gpus": 1,
+  "global_batch_size": 32,
+  "num_workers_per_rank": 2,
+  "epochs": 2,
+  "size": 384,
+  "seeds": [
+    42
+  ],
+  "variants": [
+    "master_eager",
+    "quant_eager",
+    "quant_compile_model"
+  ],
+  "qualification": {
+    "seed": 42,
+    "train": 4096,
+    "validation": 1024,
+    "test": 128
+  },
+  "timeout_seconds": 300,
+  "budget_seconds": 1800,
+  "require_finite_losses": true,
+  "figures": true
+}

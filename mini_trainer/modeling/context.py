@@ -31,20 +31,22 @@ class SupervisionContext:
 class EmbeddingContext:
     """Used for passing embeddings from the classification module to the criterion (or elsewhere)."""
 
-    _embeddings: torch.Tensor | None = None
+    # Dynamo can carry dictionary mutations out of a compiled graph. Assigning
+    # a Tensor to a class attribute instead forces a graph break at publication.
+    _state: dict[str, torch.Tensor | None] = {"embeddings": None}
     _active: bool = False
 
     @classmethod
     def set(cls, embeddings):
-        cls._embeddings = embeddings
+        cls._state["embeddings"] = embeddings
 
     @classmethod
     def get(cls):
-        return cls._embeddings
+        return cls._state["embeddings"]
 
     @classmethod
     def clear(cls):
-        cls._embeddings = None
+        cls._state["embeddings"] = None
         cls._active = False
 
     @classmethod
