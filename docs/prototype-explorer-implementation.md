@@ -1,7 +1,7 @@
 # Prototype explorer: next implementation increments
 
-Status: proposed execution plan, ready for bounded goal setting. No goal is active
-and no implementation below is claimed complete. The [roadmap](prototype-explorer-roadmap.md)
+Status: increment 1 implemented and qualified, including responsiveness and
+thumbnail-loading improvements added to its goal. Increments 2–4 remain proposed. The [roadmap](prototype-explorer-roadmap.md)
 owns priorities; the [standalone plan](prototype-browser-implementation.md) owns
 the complete browser inference and distribution contract.
 
@@ -18,7 +18,7 @@ longitudinal comparison. Existing effective-weight extraction, class ordering,
 distance and log-tail functions remain the numerical baseline. Synthetic cases
 exercise edge conditions without specifying how the real prototypes should pack.
 
-## 1. Reliable repeated exploration — next implementation goal
+## 1. Reliable repeated exploration — delivered
 
 > Make the current explorer resumable and reusable: restore compatible viewer
 > state, reuse completed analysis, expose preparation progress, and cancel or
@@ -110,5 +110,6 @@ a research task; it must not change the baseline numerical semantics implicitly.
 
 Each increment ends with a runnable preview, focused commit, tests and compact
 real-data evidence, plus roadmap status and remaining limitations. Do not start
-all increments as one implementation task. The first quoted goal above is the
-recommended next goal; no token/time budget is implied.
+all increments as one implementation task. Increment 2 is the
+recommended next goal; no token/time budget is implied. Increment 1 evidence is
+recorded in the [qualification note](../dev/prototype_space/reuse-performance.md).

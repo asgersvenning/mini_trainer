@@ -106,3 +106,16 @@ for(let z=-56;z<56;z+=.1)assert.ok(referenceLogTail(z+.1)<=referenceLogTail(z),'
 assert.notEqual(probabilityText(referenceLogTail(56)/Math.LN10),'0','extreme probability remains readable without underflow');
 assert.ok(probabilityText(Math.log10(.999999)).startsWith('1 −'),'near-one values show their complement');
 console.log(JSON.stringify({logTailReferenceChecks:probabilityReference.length}));
+
+const photoSource=readFileSync(new URL('./photos.js',import.meta.url),'utf8').split('function photoText')[0];
+const completed=[];let metadataCalls=0;
+const albumLoader=Function('fetch',photoSource+'return {referenceAlbum};')(async url=>{
+ metadataCalls++;await new Promise(resolve=>completed.push(resolve));
+ return {ok:true,json:async()=>({class_id:url.split('/').pop(),photos:[]})};
+});
+const activeSignal=new AbortController(),obsoleteSignal=new AbortController();
+const inFlight=Array.from({length:4},(_,i)=>albumLoader.referenceAlbum(String(i),activeSignal.signal));
+const queuedMetadata=albumLoader.referenceAlbum('obsolete',obsoleteSignal.signal).catch(error=>error.name);
+obsoleteSignal.abort();completed.splice(0).forEach(resolve=>resolve());await Promise.all(inFlight);
+assert.equal(await queuedMetadata,'AbortError');assert.equal(metadataCalls,4,'obsolete queued metadata is never requested');
+console.log(JSON.stringify({queuedMetadataCancellationChecks:2}));

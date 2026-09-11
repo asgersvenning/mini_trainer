@@ -200,6 +200,7 @@ def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None, inc
         row = z[i].copy()
         row[i] = -np.inf
         profiles[i] = -np.partition(-row, np.asarray(ranks) - 1)[np.asarray(ranks) - 1]
+    print("Computing PCA projections and neighbourhood retention", flush=True)
     projections = prototype_projections(weight, near.tolist())
     if include_tsne:
         print("Fitting angular t-SNE", flush=True)
@@ -249,6 +250,7 @@ def synthetic_cases(dim, seed=42):
 def create_report(weights: Path, output: Path, *, include_tsne=True, synthetic=False):
     """Create a portable report from a supported mini_trainer weight file."""
     weights, output = Path(weights), Path(output)
+    print("Reading effective prototype weights", flush=True)
     weight, names, groups, provenance = load_prototypes(weights)
     cases = {"Production checkpoint": analyze(weight, names, groups, metadata=provenance, include_tsne=include_tsne)}
     for name, sample in (synthetic_cases(weight.shape[1]) if synthetic else {}).items():
@@ -256,21 +258,28 @@ def create_report(weights: Path, output: Path, *, include_tsne=True, synthetic=F
         cases[name] = analyze(
             sample, labels, [[label] for label in labels], metadata={"seed": 42, "synthetic": True}, include_tsne=include_tsne
         )
+    print("Writing report artifacts", flush=True)
     output.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(cases, separators=(",", ":"), allow_nan=False).replace("<", "\\u003c")
     (output / "report-data.json").write_text(payload)
+    render_report(output, payload)
+    summary = {name: {"metadata": case["metadata"], "stats": case["stats"]} for name, case in cases.items()}
+    (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    print(f"Report: {output / 'explorer.html'}", flush=True)
+
+    return output / "explorer.html"
+
+
+def render_report(output, payload):
+    """Render current viewer assets over preserved numerical data."""
     template = Path(__file__).with_name("report.html").read_text()
     (output / "explorer.html").write_text(
         template.replace("__REPORT_DATA__", payload)
         .replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
         .replace("__PROJECTION_SCRIPT__", Path(__file__).with_name("projection.js").read_text())
         .replace("__THUMBNAIL_SCRIPT__", Path(__file__).with_name("thumbnails.js").read_text())
+        .replace("__STATE_SCRIPT__", Path(__file__).with_name("state.js").read_text())
     )
-    summary = {name: {"metadata": case["metadata"], "stats": case["stats"]} for name, case in cases.items()}
-    (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"Report: {output / 'explorer.html'}", flush=True)
-
-    return output / "explorer.html"
 
 
 def main():

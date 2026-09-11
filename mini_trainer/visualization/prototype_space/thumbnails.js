@@ -280,8 +280,7 @@ async function renderMapThumbnails(){
   const id=data.names[box.id];
   if(retained.has(box.id)){loaded++;const old=retained.get(box.id);old.button.style.zIndex=String(boxes.length-ranks.get(box.id));old.button.style.borderColor=box.id===selected?'#c2344b':data.neighbours[selected].includes(box.id)?'#087e8b':'#7c90a3';return;}
   try{
-   let album=photoAlbums.get(id);
-   if(!album){const response=await fetch('/api/gbif/'+id,{signal});album=await response.json();if(!response.ok)throw Error(album.error||'Photo lookup failed');photoAlbums.set(id,album);}
+   const album=await referenceAlbum(id,signal);
    if(signal.aborted||generation!==mapThumbGeneration)return;
    if(!album.photos.length){mapThumbFailures.add(id);unavailable++;status();return;}
    const choice=(photoChoices.get(id)||0)%album.photos.length,photo=album.photos[choice];

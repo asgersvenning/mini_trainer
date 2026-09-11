@@ -291,6 +291,29 @@ try{
   check(geometry()===stableGeometry,'thumbnail settings overlay preserves map geometry');
   $('thumbnail-options').open=false;$('projection-details').open=false;$('map-photo-credit').innerHTML=savedCredit;
   check(rect.height>innerHeight*.75,'focused map uses over three quarters of landscape height');
+  const saved=captureViewerState();
+  selectClass((selected+1)%data.names.length);applyViewerState(saved);
+  await new Promise(r=>setTimeout(r,120));
+  check(data.names[selected]===saved.selected&&projectionView.scale===saved.view.scale,'saved state restores selection and projection');
+  let rejected=false;try{applyViewerState({...saved,identity:'other-model'});}catch{rejected=true;}
+  check(rejected,'state from another model is rejected');
+  rejected=false;try{applyViewerState({...saved,view:{x:0,y:0,scale:-1}});}catch{rejected=true;}
+  check(rejected,'malformed saved geometry is rejected');
+  saveViewerState();check(JSON.parse(localStorage.getItem('prototype-view:'+viewerIdentity())).version===1,'state persists in browser storage');
+  const storageWrite=Storage.prototype.setItem;Storage.prototype.setItem=()=>{throw Error('quota');};saveViewerState();Storage.prototype.setItem=storageWrite;
+  check($('viewer-state-status').textContent.includes('unavailable'),'storage failure leaves viewer usable');
+  const metadataFetch=window.fetch;let requests=0,active=0,peakMetadata=0;
+  window.fetch=async url=>{requests++;active++;peakMetadata=Math.max(peakMetadata,active);await new Promise(r=>setTimeout(r,40));active--;return {ok:true,json:async()=>({class_id:String(url).split('/').pop(),photos:[]})};};
+  const obsolete=new AbortController(),current=new AbortController();
+  const first=referenceAlbum('fixture-shared',obsolete.signal);obsolete.abort();
+  const second=referenceAlbum('fixture-shared',current.signal);await Promise.all([first,second]);
+  check(requests===1,'navigation reuses in-flight class metadata');
+  await Promise.all(Array.from({length:8},(_,i)=>referenceAlbum('fixture-bound-'+i,current.signal)));
+  check(peakMetadata<=4,'metadata requests are globally bounded');
+  const cachedRequests=requests;await referenceAlbum('fixture-shared',current.signal);
+  check(requests===cachedRequests,'resolved metadata is reused without fetching');window.fetch=metadataFetch;
+
+
   return checks;
  })()`,returnByValue:true,awaitPromise:true});
  if(enhanced.exceptionDetails)throw Error(JSON.stringify(enhanced.exceptionDetails));

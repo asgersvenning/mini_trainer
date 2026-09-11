@@ -53,7 +53,7 @@ def main():
             subprocess.run([str(Path(sys.executable).parent / entry.name), "--help"], check=True, timeout=60, capture_output=True)
 
     assets = importlib.resources.files("mini_trainer.visualization.prototype_space")
-    for name in ("report.html", "launcher.html", "photos.js", "projection.js", "thumbnails.js"):
+    for name in ("report.html", "launcher.html", "photos.js", "projection.js", "thumbnails.js", "state.js"):
         assert assets.joinpath(name).read_text(), f"Missing packaged explorer asset: {name}"
     missing_explorer = subprocess.run(
         [str(Path(sys.executable).parent / "mt_explore"), "--no-browser"], capture_output=True, text=True, timeout=30

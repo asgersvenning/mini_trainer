@@ -54,20 +54,27 @@ function drawProjection(refreshThumbnails=true) {
 }
 function projectionMouse(event){const r=projectionCanvas.getBoundingClientRect();return [(event.clientX-r.left)*1200/r.width,(event.clientY-r.top)*projectionHeight/r.height];}
 function projectionHit(point){if(typeof mapThumbnailHit==='function'){const hit=mapThumbnailHit(point);if(hit>=0)return hit;}let best=-1,distance=(10*1200/(projectionCanvas.getBoundingClientRect().width||1200))**2;projectionHits.forEach(([x,y],i)=>{const d=(x-point[0])**2+(y-point[1])**2;if(d<distance){best=i;distance=d;}});return best;}
+// Pointer devices can emit several events per display frame. Update the view
+// immediately, but paint/reanchor only once for the latest transform.
+let projectionPaintFrame=null;
+function queueProjectionDraw(){
+ if(projectionPaintFrame===null)projectionPaintFrame=requestAnimationFrame(()=>{projectionPaintFrame=null;drawProjection();});
+}
+function flushProjectionDraw(){if(projectionPaintFrame!==null){cancelAnimationFrame(projectionPaintFrame);projectionPaintFrame=null;drawProjection();}}
 projectionCanvas.onpointerdown=e=>{if(e.button!==0)return;projectionDrag={point:projectionMouse(e),view:{...projectionView},moved:false};projectionCanvas.setPointerCapture(e.pointerId);};
 projectionCanvas.onpointermove=e=>{
  const point=projectionMouse(e);
- if(projectionDrag){const dx=point[0]-projectionDrag.point[0],dy=point[1]-projectionDrag.point[1];if(Math.hypot(dx,dy)>3)projectionDrag.moved=true;projectionView.x=projectionDrag.view.x-dx/projectionView.scale;projectionView.y=projectionDrag.view.y+dy/projectionView.scale;drawProjection();return;}
+ if(projectionDrag){const dx=point[0]-projectionDrag.point[0],dy=point[1]-projectionDrag.point[1];if(Math.hypot(dx,dy)>3)projectionDrag.moved=true;projectionView.x=projectionDrag.view.x-dx/projectionView.scale;projectionView.y=projectionDrag.view.y+dy/projectionView.scale;queueProjectionDraw();return;}
  const id=projectionHit(point);
  if(typeof showMapPhotoCredit==='function')showMapPhotoCredit(id);
  $('projection-hover').textContent=id<0?'Hover a point for its class ID.':`Class ${data.names[id]} · checkpoint row ${id}${id===selected?' · selected':data.neighbours[selected].includes(id)?' · original-space neighbour':currentProjection().neighbours[selected].includes(id)?' · nearby in this plane only':''}`;
 };
-projectionCanvas.onpointerup=e=>{if(!projectionDrag)return;const click=!projectionDrag.moved;projectionDrag=null;if(projectionCanvas.hasPointerCapture(e.pointerId))projectionCanvas.releasePointerCapture(e.pointerId);if(click){const id=projectionHit(projectionMouse(e));if(id>=0)selectClass(id);}};
+projectionCanvas.onpointerup=e=>{if(!projectionDrag)return;flushProjectionDraw();const click=!projectionDrag.moved;projectionDrag=null;if(projectionCanvas.hasPointerCapture(e.pointerId))projectionCanvas.releasePointerCapture(e.pointerId);if(click){const id=projectionHit(projectionMouse(e));if(id>=0)selectClass(id);}};
 projectionCanvas.onpointercancel=()=>{projectionDrag=null;};
 projectionCanvas.addEventListener('wheel',e=>{
  e.preventDefault();const [x,y]=projectionMouse(e),old=projectionView.scale;
  const scale=Math.max(1,Math.min(1e7,old*Math.exp(-Math.max(-300,Math.min(300,e.deltaY))*.002)));
- projectionView.x+=(x-600)*(1/old-1/scale);projectionView.y-=(y-projectionHeight/2)*(1/old-1/scale);projectionView.scale=scale;drawProjection();
+ projectionView.x+=(x-600)*(1/old-1/scale);projectionView.y-=(y-projectionHeight/2)*(1/old-1/scale);projectionView.scale=scale;queueProjectionDraw();
 },{passive:false});
 $('projection-plane').onchange=()=>{fitProjection(data.names.map((_,i)=>i));drawProjection();};
 $('projection-reset').onclick=()=>{fitProjection(data.names.map((_,i)=>i));drawProjection();};

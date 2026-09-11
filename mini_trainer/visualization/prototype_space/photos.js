@@ -5,6 +5,29 @@ const photoAlbums = new Map();
 const photoChoices = new Map();
 const photoNumber = id => /^\d+$/.test(id);
 
+// Share metadata between map generations and the neighbourhood cards. Navigation
+// discards queued work; up to four started lookups finish into the session cache.
+const albumRequests=new Map(),albumQueue=[];
+let activeAlbumRequests=0;
+function referenceAlbum(id,signal){
+ if(photoAlbums.has(id))return Promise.resolve(photoAlbums.get(id));
+ const existing=albumRequests.get(id);if(existing){existing.signals.push(signal);return existing.promise;}
+ const job={id,signals:[signal]};job.promise=new Promise((resolve,reject)=>{job.resolve=resolve;job.reject=reject;});
+ albumRequests.set(id,job);albumQueue.push(job);pumpAlbumRequests();return job.promise;
+}
+function pumpAlbumRequests(){
+ while(activeAlbumRequests<4&&albumQueue.length){
+  const job=albumQueue.shift();
+  if(job.signals.every(signal=>signal.aborted)){albumRequests.delete(job.id);job.reject(new DOMException('Navigation cancelled','AbortError'));continue;}
+  activeAlbumRequests++;
+  (async()=>{try{
+   const response=await fetch('/api/gbif/'+job.id,{signal:AbortSignal.timeout(12000)}),album=await response.json();
+   if(!response.ok)throw Error(album.error||'Photo lookup failed');
+   photoAlbums.set(job.id,album);job.resolve(album);
+  }catch(error){job.reject(error);}finally{albumRequests.delete(job.id);activeAlbumRequests--;pumpAlbumRequests();}})();
+ }
+}
+
 function photoText(tag, text, className = '') {
   const node = document.createElement(tag);
   node.textContent = text;
@@ -121,13 +144,7 @@ async function renderPhotos() {
     const classIndex = ids[rank], id = data.names[classIndex], card = cards[rank];
     if (!photoNumber(id)) {card.status.textContent = 'Not a GBIF ID.'; continue;}
     try {
-      let album = photoAlbums.get(id);
-      if (!album) {
-        const response = await fetch('/api/gbif/' + id, {signal});
-        album = await response.json();
-        if (!response.ok) throw Error(album.error || 'GBIF lookup failed');
-        photoAlbums.set(id, album);
-      }
+      const album = await referenceAlbum(id, signal);
       if (signal.aborted || generation !== photoGeneration) return;
       await showReference(card, album, classIndex, generation, signal);
     } catch (error) {

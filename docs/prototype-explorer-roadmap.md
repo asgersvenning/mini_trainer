@@ -23,6 +23,10 @@ development branch; reusable-package baseline `4763041`):
 - Display-density projection rendering and viewport-height focused panels; map
   details and settings overlays prevent hover/status text from resizing the canvas.
   Projection focus fills the viewport with collapsible floating navigation and controls.
+- Saved views (browser storage, local-server persistence, JSON import/export),
+  completed-analysis caching, stage/elapsed progress and cancellable replacement jobs.
+- Coalesced pan/zoom drawing and shared bounded thumbnail metadata lookups;
+  see the [reuse and responsiveness qualification](../dev/prototype_space/reuse-performance.md).
 
 Evidence: real checkpoint diagnostics match the preserved baseline; 84 browser
 checks, 12 affected Python tests, motion checks, static checks, and installed-wheel
@@ -78,8 +82,8 @@ This is planned work; no browser model inference is implemented or validated yet
 
 | Order / status | Increment | Done when |
 | --- | --- | --- |
-| 1 · Next | Reliable repeated exploration: saved viewer state, versioned analysis cache, preparation progress/cancellation. | Compatible reopening restores state and skips analysis; cancelled/stale jobs cannot replace valid results; real-case load and memory costs are recorded. |
-| 2 · Qualification | Real-model browser inference: standalone milestones 1–3. | Exact preprocessing/embedding/output contracts are identified; epoch-26 predictions and embeddings pass real-image WASM browser parity with latency/memory evidence. |
+| 1 · Delivered | Reliable repeated exploration: saved viewer state, versioned analysis cache, preparation progress/cancellation. | Compatible reopening restores state and skips analysis; cancelled/stale jobs cannot replace valid results; real-case load and memory costs are recorded. |
+| 2 · Next qualification | Real-model browser inference: standalone milestones 1–3. | Exact preprocessing/embedding/output contracts are identified; epoch-26 predictions and embeddings pass real-image WASM browser parity with latency/memory evidence. |
 | 3 · Planned | Local packing: angular cap counts, neighbour-radius curves, mutual neighbours and taxonomy composition. | Radius/rank selection links the same original-space class set across views; calculations match exact references. |
 | 4 · Planned | Single-anchor view, then bearings and two-anchor comparison. | Angular radii match direct calculation; degeneracies and non-anchor distortion are disclosed; existing image controls work. |
 | 5 · Depends on 2 | Query inference UI and embedding placement: standalone milestones 4–5. | Actual predictions, query geometry and fixed-transform PCA/anchor placement are linked; nonlinear insertion is separately qualified. |
@@ -87,7 +91,8 @@ This is planned work; no browser model inference is implemented or validated yet
 | Later · Research | Great-sphere slices, alternative layouts, checkpoint trajectories and empirical calibration. | Each proposal earns implementation through a bounded experiment and original-space validation. |
 
 The [next-increment implementation plan](prototype-explorer-implementation.md)
-specifies code boundaries, deliverables, tests and the recommended next goal.
+specifies code boundaries, deliverables and tests. Increment 1 is delivered;
+the next bounded goal is real-model browser qualification (standalone milestones 1–3).
 This table is the unified execution order; the standalone plan provides detailed
 acceptance gates, not a second competing priority list. Geometry increments 3–4
 can proceed if browser qualification needs an external input, with the blocker

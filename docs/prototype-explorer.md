@@ -43,6 +43,32 @@ loopback on an available port. Stop it with Ctrl+C when finished. Session files
 are temporary; use **Save HTML report** to retain the portable numerical viewer.
 Photos require the local server and network access to GBIF.
 
+Preparation reports the current stage and elapsed time. **Cancel preparation**
+stops the owned analysis process; selecting replacement weights starts a new job.
+Cancelled or superseded jobs cannot publish over the latest result, and the last
+completed explorer remains available after cancellation or failure.
+
+Completed analysis is cached by checkpoint content, analysis version and numerical
+options. The default cache is `$XDG_CACHE_HOME/mini-trainer/prototype-analysis`
+(or `~/.cache/mini-trainer/prototype-analysis`). It retains at most 2 GiB of completed
+entries. A cache hit renders current viewer assets over the saved numerical data;
+the launcher reports whether analysis was reused. Corrupt/incomplete entries rebuild.
+
+```bash
+mt_explore weights.pt --cache-dir /path/to/analysis-cache
+mt_explore weights.pt --no-cache
+mt_explore --clear-cache --cache-dir /path/to/analysis-cache
+```
+
+**Saved view** provides JSON export/import and reset. Selection, case, projection,
+pan/zoom, subtree, focused view, colour settings and thumbnail/name preferences
+are saved automatically. Browser storage supports offline HTML; the local launcher
+also saves state in the cache's `.view-state` directory so it survives a change of
+localhost port. Clearing analysis entries does not clear saved views. Imported
+state must match the model/case and supported version. Storage failures leave the
+viewer usable with explicit state export. Transient thumbnail forces and image
+files are not part of saved state.
+
 For SSH or an environment without a browser, use `--no-browser` and open the
 printed URL through your usual local port forwarding. `--port` optionally fixes
 the listening port. File selection reads from the browser's computer.
