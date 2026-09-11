@@ -192,7 +192,7 @@ function thumbnailTether(box,always=false){
  svg.append(line,dot);return svg;
 }
 function mapThumbnailHit(point){
- const rect=projectionCanvas.getBoundingClientRect(),x=point[0]*rect.width/1200,y=point[1]*rect.height/600;
+ const rect=projectionCanvas.getBoundingClientRect(),x=point[0]*rect.width/1200,y=point[1]*rect.height/projectionHeight;
  const box=mapThumbLayout.find(b=>x>=b.left&&x<=b.left+b.width&&y>=b.top&&y<=b.top+b.height);
  return box?.id??-1;
 }
@@ -234,11 +234,12 @@ function setThumbnailAnchors(){
 }
 function scheduleMapThumbnails(){
  clearTimeout(mapThumbTimer);stopThumbnailMotion();mapThumbController?.abort();++mapThumbGeneration;
+ if(!projectionCanvas.getBoundingClientRect().width)return;
  const size=Number($('map-photo-size').value),density=Number($('map-photo-density').value),overlap=Number($('map-photo-overlap').value);
  const key=[size,$('map-photo-labels').checked,$('map-photo-push').checked,$('map-photo-aspect').checked,$('projection-plane').value].join(':');
  if($('map-photos').checked&&mapThumbCase===data&&mapThumbKey===key){
   const rect=projectionCanvas.getBoundingClientRect();
-  reanchorThumbnails(projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/600]),rect.width,rect.height);
+  reanchorThumbnails(projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/projectionHeight]),rect.width,rect.height);
   mapThumbOffsets=new Map(mapThumbLayout.map(b=>[b.id,[b.x-b.anchorX,b.y-b.anchorY]]));
  }else{mapThumbOffsets.clear();mapThumbLayout=[];$('map-thumbnail-layer').replaceChildren();}
  mapThumbCase=data;mapThumbKey=key;
@@ -254,7 +255,7 @@ async function renderMapThumbnails(){
  const rect=projectionCanvas.getBoundingClientRect(),size=Number($('map-photo-size').value);
  const config={width:rect.width,height:rect.height,size,density:Number($('map-photo-density').value),overlap:Number($('map-photo-overlap').value)/100,labels:$('map-photo-labels').checked,push:$('map-photo-push').checked,aspect:$('map-photo-aspect').checked};
  if(config.aspect)config.aspects=data.names.map(id=>{const album=photoAlbums.get(id),photo=album?.photos[(photoChoices.get(id)||0)%(album?.photos.length||1)],image=photo&&mapThumbImages.get(photo.image_path);return image?.naturalWidth/image?.naturalHeight;});
- const points=projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/600]);
+ const points=projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/projectionHeight]);
  // Selected class first, then its true neighbours; other classes have stable
  // mixed row order so dense regions do not win simply by checkpoint ordering.
  const remaining=data.names.map((_,i)=>i).sort((a,b)=>(Math.imul(a,2654435761)>>>0)-(Math.imul(b,2654435761)>>>0));

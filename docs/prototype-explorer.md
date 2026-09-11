@@ -53,6 +53,20 @@ The equivalent module command works without an installed console entry point:
 python -m mini_trainer.visualization.prototype_space path/to/weights.pt
 ```
 
+## Focus a view
+
+Use **Focus view** on a feature panel, or the global **View** selector, to open
+spatial projection, dendrogram, distance matrices, class images, or local
+neighbourhood inspection. Each focus keeps related panels together: for example,
+projection includes the neighbourhood profile, local inspector, and class photos.
+Choose **All views** to return to the overview.
+
+Focused layouts use the available screen width. The spatial map adapts its aspect
+ratio to viewport height while preserving equal geometric scale on both axes.
+Dendrograms use the wider layout with readable labels and internal scrolling on
+narrow displays. Class selection, projection centre/plane, and the current tree
+subtree survive view changes. Related panels wrap below the main feature.
+
 ## Export without serving
 
 ```bash

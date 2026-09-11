@@ -19,11 +19,24 @@ table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;b
 @keyframes thumb-appear{from{opacity:0}to{opacity:1}}
 .map-thumb{animation:thumb-appear .18s ease-out;position:absolute;transform:translate(-50%,-50%);padding:2px;border:2px solid #087e8b;border-radius:4px;background:white;pointer-events:none;overflow:hidden;box-shadow:0 1px 4px #0003}.map-thumb img{display:block;width:100%;object-fit:contain;background:#f5f7fa}.map-thumb span{display:block;font-size:10px;height:16px;line-height:16px;white-space:nowrap;overflow:hidden}.map-thumb.image-only{padding:0;border:0;border-radius:0;box-shadow:none}.map-thumb.image-only img{object-fit:cover;background:transparent}.map-thumb.original-aspect img{object-fit:contain}.map-thumb.image-only:focus-visible{outline-offset:-3px}.hide-thumb-anchors .map-thumb-tether{display:none}.map-thumb-tether{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}.map-thumb:focus-visible{outline:3px solid #ffae3d}
 @media(prefers-reduced-motion:reduce){.map-thumb{animation:none}}
+
+[hidden]{display:none!important}
+body.focused header,body.focused #stats,body.focused #case-note,body.focused footer{display:none}
+body.focused main{max-width:none;padding:16px;display:flex;flex-wrap:wrap;gap:16px}
+body.focused #overview-charts{display:contents}
+body.focused main .panel{min-width:0;margin:0;flex:1 1 480px;max-width:100%}
+body.focused main .primary-view{order:-1;flex-basis:100%}
+body.focused #projection-map{aspect-ratio:auto!important;height:max(300px,calc(100dvh - 340px));border:0!important}
+body.focused .tree-wrap{max-height:calc(100dvh - 210px);min-height:300px;overflow:auto}
+body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));margin:auto}
+.panel-focus{font-size:12px;float:right;margin:0 0 8px 12px}
+@media(max-width:850px){body.focused main{padding:8px}.controls{gap:8px;padding:8px}.grid>div{min-width:0;overflow:auto}body.focused .panel{padding:14px}}
 </style>
 <header><div class="eyebrow">mini_trainer · empirical exploration</div><h1>Prototype observatory</h1><p>Move between the global tree, pairwise structure and a class’s local neighbourhood. The existing mini_trainer distance is the reference; the pre-CDF z-score exposes detail that can be hidden by probability rounding.</p></header>
 <div class="controls">
 <a id="open-model" href="/" hidden>Open another model</a>
 <a href="explorer.html" download>Save HTML report</a>
+<label>View <select id="workspace-view"><option value="all">All views</option><option value="projection">Spatial projection</option><option value="tree">Dendrogram</option><option value="matrix">Distance matrices</option><option value="photos">Class images</option><option value="local">Local neighbourhood</option></select></label>
 <label>Case <select id="case"></select></label>
 <label>Class ID <input id="search" placeholder="Search checkpoint ID" list="classes"></label><datalist id="classes"></datalist>
 <button id="find">Inspect</button><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
@@ -31,9 +44,9 @@ table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;b
 <main>
 <p id="case-note" class="case-note muted"></p>
 <div class="stats" id="stats"></div>
-<div class="grid">
- <section class="panel"><h2>Distribution of pairwise z-scores</h2><p class="muted">The actual transform used by mini_trainer, before the Normal CDF. Self-pairs excluded. No fitted distribution or assumed organization.</p><svg id="hist" viewBox="0 0 560 240" aria-label="Pairwise z-score histogram"></svg><p id="hist-note" class="caption"></p></section>
- <section class="panel"><h2>Neighbourhood signature</h2><p class="muted">Similarity to the 1st, 5th, 12th and 32nd neighbour in the full space. High values across ranks indicate several strongly aligned directions.</p><svg id="profile" viewBox="0 0 560 240" aria-label="Selected class neighbour similarity profile"></svg><p class="caption">Teal: selected class. Grey: per-rank median across classes. Rank points are not an embedding projection.</p></section>
+<div class="grid" id="overview-charts">
+ <section class="panel" id="hist-panel"><h2>Distribution of pairwise z-scores</h2><p class="muted">The actual transform used by mini_trainer, before the Normal CDF. Self-pairs excluded. No fitted distribution or assumed organization.</p><svg id="hist" viewBox="0 0 560 240" aria-label="Pairwise z-score histogram"></svg><p id="hist-note" class="caption"></p></section>
+ <section class="panel" id="profile-panel"><h2>Neighbourhood signature</h2><p class="muted">Similarity to the 1st, 5th, 12th and 32nd neighbour in the full space. High values across ranks indicate several strongly aligned directions.</p><svg id="profile" viewBox="0 0 560 240" aria-label="Selected class neighbour similarity profile"></svg><p class="caption">Teal: selected class. Grey: per-rank median across classes. Rank points are not an embedding projection.</p></section>
 </div>
 <section class="panel" id="projection-panel"><div class="row"><h2>Prototype space · spatial projection</h2><label>Plane <select id="projection-plane"></select></label><button id="projection-reset">Fit all</button><button id="projection-focus">Fit selected neighbourhood</button><label><input type="checkbox" id="projection-edges" checked> Original-space neighbour links</label></div>
 <p class="muted">Compare linear PCA with angular t-SNE when available. Scroll to zoom, drag to pan, click a point or thumbnail to inspect its class. Each case is fitted separately.</p>
@@ -42,12 +55,12 @@ table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;b
 <p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
 <p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></section>
 <section class="panel" id="photo-panel"><div class="row"><h2>Browse by class image</h2><label><input type="checkbox" id="photo-enabled"> Interpret numeric class IDs as GBIF taxa and load photos</label></div><p class="muted">Photo labels for the selected class and its nearest prototype directions. The prototype marks the learned target direction for the class; a GBIF class example provides its visual label. Credits and exact class IDs stay attached.</p><p id="photo-status" class="caption" role="status"></p><div id="photo-grid" class="photo-grid"></div></section>
-<section class="panel">
+<section class="panel" id="tree-panel">
  <div class="row"><h2>Explore the existing dendrogram</h2><div><button id="tree-root">Whole tree</button> <button id="tree-up">Parent</button> <button id="tree-locate">Locate selected class</button></div></div>
  <p class="muted">Same Ward linkage on <span class="mono">class_distance</span>, shown as a rectangular tree with at most 32 visible tips. Click a collapsed tip to expand its subtree; click a class to inspect it. Heights retain the existing linkage units.</p>
  <p id="tree-note" class="caption"></p><div class="tree-wrap"><svg id="tree" viewBox="0 0 1200 660" aria-label="Collapsible baseline dendrogram"></svg></div>
 </section>
-<section class="panel">
+<section class="panel" id="matrix-panel">
  <div class="row"><h2>What survives matrix aggregation?</h2><label>Values <select id="global-metric"><option value="logtail">Log-domain tail (float32)</option><option value="baseline">Legacy tail (float32 CDF)</option></select></label></div><p class="muted">Both panels represent the current heatmap quantity, <span class="mono">1 − CDF(z)</span>, in the same dendrogram leaf order. The log-domain option evaluates <span class="mono">log Φ(−z)</span> directly in float32. Legacy mode exposes CDF saturation; the two panels compare block summaries. Self-pairs and padding are excluded from both.</p>
  <div class="row" style="margin:14px 0"><label>Display range <select id="range-preset"><option value="focus">Focused: 10⁻⁸ to 1</option><option value="robust">Observed 0.1–99.9 percentiles</option><option value="full">Full computed range</option><option value="manual">Manual bounds</option></select></label><label>Lower log₁₀ <input id="range-low" type="number" value="-8" step="0.5" style="width:95px"></label><label>Upper log₁₀ <input id="range-high" type="number" value="0" step="0.5" style="width:95px"></label><button id="apply-range">Apply</button></div><p class="muted" id="range-status">Clipping affects colours only, not numerical values or neighbour rankings.</p><div class="legend"></div><div class="ticks" id="global-ticks"></div>
  <div class="grid"><div><h3>Maximum dissimilarity per block</h3><div class="matrix"><canvas id="matrix-max" role="img" aria-label="Maximum off-diagonal tail score in each matrix block"></canvas><div class="marker"></div><div class="marker horizontal"></div></div><p class="caption">Uses the current renderer’s maximum-summary idea. A distant pair can dominate a block.</p><p id="max-clipped" class="caption"></p></div><div><h3>Closest pair per block</h3><div class="matrix"><canvas id="matrix-min" role="img" aria-label="Minimum off-diagonal tail score in each matrix block"></canvas><div class="marker"></div><div class="marker horizontal"></div></div><p class="caption">An explicit alternative. Reveals isolated close pairs; does not imply the entire block is close.</p><p id="min-clipped" class="caption"></p></div></div>
@@ -98,9 +111,12 @@ function drawTree(){
  const svg=$('tree'),n=data.names.length;svg.replaceChildren();let frontier=[treeFocus];
  while(frontier.length<32){let at=-1;frontier.forEach((node,i)=>{if(node>=n&&(at<0||height(node)>height(frontier[at])))at=i;});if(at<0)break;frontier.splice(at,1,...children(frontier[at]));}
  frontier.sort((a,b)=>starts[a]-starts[b]);const tips=new Set(frontier),ys=new Map(frontier.map((node,i)=>[node,30+i*19]));
- const totalHeight=Math.max(100,frontier.length*19+50);svg.setAttribute('viewBox',`0 0 1200 ${totalHeight}`);
- const max=height(treeFocus),x=node=>max>0?24+790*(1-height(node)/max):24+790*(1-size(node)/Math.max(1,size(treeFocus)));
- function draw(node){if(!tips.has(node)){const [a,b]=children(node);draw(a);draw(b);ys.set(node,(ys.get(a)+ys.get(b))/2);for(const child of [a,b])add(svg,'path',{d:`M ${x(node)} ${ys.get(node)} V ${ys.get(child)} H ${x(child)}`,fill:'none',stroke:contains(child,selected)?'#008e9b':'#b3c1cd','stroke-width':contains(child,selected)?2:1});}else{const y=ys.get(node),label=node<n?`class ${data.names[node]}`:`${size(node).toLocaleString()} classes · expand`;add(svg,'line',{x1:x(node),x2:830,y1:y,y2:y,stroke:'#d1dce4','stroke-dasharray':'3 4'});const text=add(svg,'text',{x:840,y:y+4,'font-size':12,fill:contains(node,selected)?'#087e8b':'#172e46',class:'tree-label',tabindex:0,role:'button'},label);const action=()=>{if(node<n)selectClass(node);else{treeFocus=node;drawTree();}};text.onclick=action;text.onkeydown=e=>{if(e.key==='Enter')action();};if(contains(node,selected))add(svg,'circle',{cx:x(node),cy:y,r:4,fill:'#087e8b'});}}
+ const focused=document.body.dataset.view==='tree',treeWidth=focused?Math.max(760,svg.parentElement.clientWidth):1200;
+ const totalHeight=Math.max(100,frontier.length*19+50,focused?innerHeight-260:0);
+ if(focused)frontier.forEach((node,i)=>ys.set(node,30+i*(totalHeight-60)/Math.max(1,frontier.length-1)));
+ const branchWidth=treeWidth-410;svg.setAttribute('viewBox',`0 0 ${treeWidth} ${totalHeight}`);
+ const max=height(treeFocus),x=node=>max>0?24+branchWidth*(1-height(node)/max):24+branchWidth*(1-size(node)/Math.max(1,size(treeFocus)));
+ function draw(node){if(!tips.has(node)){const [a,b]=children(node);draw(a);draw(b);ys.set(node,(ys.get(a)+ys.get(b))/2);for(const child of [a,b])add(svg,'path',{d:`M ${x(node)} ${ys.get(node)} V ${ys.get(child)} H ${x(child)}`,fill:'none',stroke:contains(child,selected)?'#008e9b':'#b3c1cd','stroke-width':contains(child,selected)?2:1});}else{const y=ys.get(node),label=node<n?`class ${data.names[node]}`:`${size(node).toLocaleString()} classes · expand`;add(svg,'line',{x1:x(node),x2:branchWidth+40,y1:y,y2:y,stroke:'#d1dce4','stroke-dasharray':'3 4'});const text=add(svg,'text',{x:branchWidth+50,y:y+4,'font-size':12,fill:contains(node,selected)?'#087e8b':'#172e46',class:'tree-label',tabindex:0,role:'button'},label);const action=()=>{if(node<n)selectClass(node);else{treeFocus=node;drawTree();}};text.onclick=action;text.onkeydown=e=>{if(e.key==='Enter')action();};if(contains(node,selected))add(svg,'circle',{cx:x(node),cy:y,r:4,fill:'#087e8b'});}}
  draw(treeFocus);$('tree-note').textContent=`Showing ${size(treeFocus).toLocaleString()} classes · root height ${fmt(max)} · ${frontier.length} visible tips${max===0?' · all heights zero: horizontal positions use class counts for display':''}`;
 }
 function setRangePreset(){const mode=$('range-preset').value;let bounds;if(mode==='focus')bounds=[-8,0];else if(mode==='robust')bounds=data.robust_log10_range;else if(mode==='full')bounds=[data.matrix_log10_floor,0];if(bounds){$('range-low').value=bounds[0].toFixed(3);$('range-high').value=bounds[1].toFixed(3);}drawGlobal();}
@@ -140,4 +156,26 @@ Object.keys(cases).forEach(name=>{const o=document.createElement('option');o.val
 
 <script>
 if(location.protocol.startsWith('http'))fetch('/api/health').then(r=>r.json()).then(info=>{document.getElementById('open-model').hidden=!info.model_picker;}).catch(()=>{});
+</script>
+
+<script>
+const viewGroups={projection:['projection-panel','profile-panel','inspector','photo-panel'],tree:['tree-panel','profile-panel','inspector'],matrix:['matrix-panel','inspector'],photos:['photo-panel','projection-panel','inspector'],local:['inspector','profile-panel','photo-panel']};
+function setWorkspaceView(view){
+ if(view!=='all'&&!viewGroups[view])view='all';
+ document.body.dataset.view=view;document.body.classList.toggle('focused',view!=='all');
+ $('workspace-view').value=view;
+ for(const panel of document.querySelectorAll('main .panel')){
+  panel.hidden=view!=='all'&&!viewGroups[view].includes(panel.id);
+  panel.classList.toggle('primary-view',view!=='all'&&panel.id===viewGroups[view][0]);
+ }
+ document.querySelectorAll('.panel-focus').forEach(button=>button.hidden=view!=='all');
+ drawTree();window.scrollTo(0,0);
+}
+for(const [view,ids] of Object.entries(viewGroups)){
+ const button=document.createElement('button');button.className='panel-focus';button.textContent='Focus view';
+ button.setAttribute('aria-label','Focus '+$('workspace-view').querySelector('option[value="'+view+'"]').textContent);
+ button.onclick=()=>{setWorkspaceView(view);$('workspace-view').focus({preventScroll:true});};$(ids[0]).prepend(button);
+}
+$('workspace-view').onchange=()=>setWorkspaceView($('workspace-view').value);
+new ResizeObserver(()=>{if(document.body.dataset.view==='tree')drawTree();}).observe($('tree').parentElement);
 </script>

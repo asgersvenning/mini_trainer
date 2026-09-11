@@ -208,5 +208,37 @@ try{
  if(photos.exceptionDetails)throw Error(JSON.stringify(photos.exceptionDetails));
  report.checks.push(...photos.result.value);report.javascript_errors=errors.length;
  writeFileSync(join(output,'browser-check.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({photo_checks:photos.result.value,javascript_errors:errors.length}));
+ const focusChecks=[];
+ for(const [width,height] of [[1800,900],[900,1500],[390,844]]){
+  await call('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
+  const focused=await call('Runtime.evaluate',{expression:`(async()=>{
+   const checks=[],check=(v,label)=>{if(!v)throw Error(label);checks.push(label)};
+   const before={selected,treeFocus,plane:$('projection-plane').value,x:projectionView.x,y:projectionView.y};
+   setWorkspaceView('projection');await new Promise(r=>setTimeout(r,250));
+   const rect=projectionCanvas.getBoundingClientRect();
+   check(! $('inspector').hidden&&!$('photo-panel').hidden&&$('tree-panel').hidden,'projection groups related panels');
+   check(rect.width>innerWidth*.8&&rect.height>=300,'projection uses viewport width and height');
+   check(Math.abs(rect.width/1200-rect.height/projectionHeight)<1e-8,'projection preserves equal screen scale');
+   check(selected===before.selected&&treeFocus===before.treeFocus&&$('projection-plane').value===before.plane,'focus preserves selection tree and plane');
+   check(projectionView.x===before.x&&projectionView.y===before.y,'focus preserves projection center');
+   const origin=projectionPoint([projectionView.x,projectionView.y]);
+   const hit=projectionMouse({clientX:rect.left+origin[0]*rect.width/1200,clientY:rect.top+origin[1]*rect.height/projectionHeight});
+   check(Math.hypot(hit[0]-origin[0],hit[1]-origin[1])<1e-8,'pointer conversion follows focused aspect ratio');
+   setWorkspaceView('tree');await new Promise(r=>setTimeout(r,100));
+   check(!$('tree-panel').hidden&&!$('inspector').hidden&&$('projection-panel').hidden,'tree groups selected-class context');
+   check($('tree').viewBox.baseVal.width>=760,'tree preserves readable labels');
+   check(document.documentElement.scrollWidth<=innerWidth+1,'focused layout avoids page-wide horizontal scrolling');
+   setWorkspaceView('matrix');check(!$('matrix-panel').hidden&&!$('inspector').hidden&&$('tree-panel').hidden,'matrix groups local inspection');
+   setWorkspaceView('all');await new Promise(r=>setTimeout(r,100));
+   check([...document.querySelectorAll('main .panel')].every(p=>!p.hidden),'all views restored');
+   return checks;
+  })()`,returnByValue:true,awaitPromise:true});
+  if(focused.exceptionDetails)throw Error(JSON.stringify(focused.exceptionDetails));
+  focusChecks.push({width,height,checks:focused.result.value});
+ }
+ if(errors.length)throw Error(JSON.stringify(errors));
+ report.focus_checks=focusChecks;report.javascript_errors=errors.length;
+ writeFileSync(join(output,'browser-check.json'),JSON.stringify(report,null,2)+'\n');
+ console.log(JSON.stringify({focusChecks,javascript_errors:errors.length}));
  await send('Browser.close');
 }catch(e){console.error(e);process.exitCode=1;chrome.kill('SIGTERM');}finally{clearTimeout(deadline);setTimeout(()=>rmSync(profile,{recursive:true,force:true}),1000);}

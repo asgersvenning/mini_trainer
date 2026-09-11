@@ -7,13 +7,15 @@ proposals, not active implementation commitments.
 
 ## Delivered
 
-On `feature/prototype-space`, through `4763041` (not yet integrated into the
-main development branch):
+Implemented on `feature/prototype-space` (not yet integrated into the main
+development branch; reusable-package baseline `4763041`):
 
 - Reusable package, `mt_explore`, browser weight selection, and portable export.
 - Baseline distance matrices and Ward tree; direct log-tail diagnostics and
   configurable display clipping; linked class and neighbourhood inspection.
 - PCA and angular t-SNE, with measured neighbourhood retention.
+- Focused feature layouts with related panels, responsive projection aspect ratio,
+  and retained class/plane/subtree state; verified at landscape, portrait and mobile sizes.
 - GBIF photo labels, configurable footprints/culling, continuous arrival motion,
   pan/zoom retention, and quick navigation exit fades.
 
