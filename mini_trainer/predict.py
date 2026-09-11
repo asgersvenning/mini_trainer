@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 
+from mini_trainer import get_logger
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.config import (
     Formatter,
@@ -127,10 +128,9 @@ def main(  # noqa: D417
         report.update(source=os.path.abspath(class_list), sha256=hashlib.sha256(contents).hexdigest())
         with open(os.path.join(output_dir, "class_filter.json"), "w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2)
-        print(
+        get_logger().info(
             f"Class list: retained {report['retained_count']}/{report['original_candidate_count']} candidates; "
             f"{len(report['missing_labels'])} requested labels absent from active vocabulary",
-            flush=True,
         )
         # Keep original metadata for resolving ground truth, including excluded labels.
 

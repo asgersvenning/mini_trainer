@@ -366,7 +366,11 @@ def train(
             raw_model = model
             # Serialize architecture state, not compile/distribution wrappers.
             # This also leaves the QT recipe at its original module path.
+            seen_wrappers = set()
             while isinstance(raw_model, (nn.DataParallel, DDP)) or hasattr(raw_model, "_orig_mod"):
+                if id(raw_model) in seen_wrappers:
+                    raise ValueError("Cyclic model wrapper chain while saving checkpoint")
+                seen_wrappers.add(id(raw_model))
                 raw_model = raw_model._orig_mod if hasattr(raw_model, "_orig_mod") else raw_model.module
             assert isinstance(raw_model, nn.Module)
             checkpoint = {
