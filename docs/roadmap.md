@@ -226,6 +226,26 @@ results trace back to exact inputs, and metric changes cannot silently rewrite b
 
 ## 6. Additional dataset formats (low priority)
 
+Future ingestion support must cover both training and inference through shared
+source adapters. Keep discovery (sample identity, paths, supplied labels and
+splits) separate from training partitioning and model-vocabulary indexing. Start
+with a compatibility matrix of existing formats and flat/hierarchical/unlabelled
+inputs; add formats incrementally without duplicating prediction-only readers.
+
+Follow-ups identified during the bounded `auto_find_images` review:
+
+- Define an explicit input-layout/split policy for ambiguous folder layouts and
+  reconcile prediction's separate `data_index` and source-selection paths.
+- Specify taxonomy provenance and missing-ancestor handling independently of
+  model vocabulary. Preserve valid species ground truth without treating unknown
+  ancestors as real unseen classes; cover the collector/mini_metrics contract
+  before changing the existing GBIF fallback.
+- Audit image probing on read-only datasets: `is_image` currently opens files in
+  `r+b` mode and can silently exclude readable images without write permission.
+
+The focused discovery fix removes training metadata construction and vocabulary
+filtering from folder enumeration; these broader policies remain deferred.
+
 Add formats through existing metadata and reader boundaries after the higher-priority
 interfaces stabilize. Require format-independent class ordering, split handling,
 multilabel behavior, lazy loading, and useful errors. Keep format dependencies optional.
