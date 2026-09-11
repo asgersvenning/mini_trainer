@@ -791,3 +791,40 @@ remains a qualification tool.
 For the post-training expert benchmark, start with the
 [bounded RAM-staging inference trial](expert-trial.md). It generates its minimal
 configuration and runs the standard prediction CLI without rebuilding an index.
+
+## Calibrate filesystem read concurrency
+
+`calibrate_io.py` is a standalone Python file; copying that one file is sufficient.
+It uses standard-library threads and subprocesses, with Pillow needed only for
+`--mode decode`. It does not import mini_trainer or alter its environment.
+
+```bash
+/work/venvs/mt-quant/bin/python dev/ucloud/calibrate_io.py \
+  /work/flemming_helsing/restructured/valid/referenced \
+  --mode stage --destination /dev/shm --output /work/expert-io-calibration.json
+```
+
+The default sweep tests 1–1,024 concurrent reads with eight-second trial limits,
+then retests the three strongest candidates twice in shuffled order. It recommends
+the smallest concurrency within 5% of the best median confirmation throughput.
+The default overall budget is 180 seconds; blocked filesystem metadata calls may
+outlast the budget. Each trial uses a disjoint, shuffled image selection, including
+when a previous trial timed out. Shared cache state remains unknown. Run away from
+other heavy read jobs when selecting a baseline; use a fresh report filename for
+subsequent runs.
+
+`--mode read` (the default) measures concurrent encoded-byte reads without retaining
+a second copy. `--mode stage --destination PATH` also measures writes to the intended
+staging filesystem; its own temporary copies are removed between trials.
+`--mode decode --resize 384` includes RGB decoding and optional CPU resize, for a
+loader-oriented measurement. The resulting thread count is for concurrent I/O or
+read/decode tasks, **not** a recommendation to create that many DataLoader processes.
+This file calibrates concurrency; it does not install read-ahead into training.
+
+`--workers`, `--files-per-trial`, `--trial-seconds`, `--budget-seconds`, and
+`--confirmation-rounds` are adjustable. Each trial defaults to 2,048 files and
+at most 4 GiB of encoded data; Linux child RSS is monitored against a 4 GiB stop
+threshold. Failed settings are excluded. The JSON report contains per-trial
+throughput, latency, errors, sampled paths and the recommendation. If samples or
+time are exhausted, inspect the confirmation coverage before treating the result
+as repeatable. Very fast RAM trials benefit from increasing `--files-per-trial`.

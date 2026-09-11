@@ -1,0 +1,89 @@
+"""Exercise the standalone calibrator without mini_trainer or remote storage."""
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+SCRIPT = Path(__file__).parents[2] / "dev/ucloud/calibrate_io.py"
+spec = importlib.util.spec_from_file_location("calibrate_io", SCRIPT)
+calibrator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(calibrator)
+
+
+@pytest.mark.parametrize("mode", ["read", "stage", "decode"])
+def test_standalone_trials_are_disjoint_and_leave_sources_intact(tmp_path, mode):
+    source = tmp_path / "images"
+    source.mkdir()
+    image = Image.new("RGB", (4, 4), "red")
+    for index in range(128):
+        image.save(source / f"{index}.png")
+    before = {path.name: path.read_bytes() for path in source.iterdir()}
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    output = tmp_path / "report.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(source),
+            "--mode",
+            mode,
+            "--destination",
+            str(destination),
+            "--output",
+            str(output),
+            "--workers",
+            "1,4",
+            "--files-per-trial",
+            "32",
+            "--confirmation-rounds",
+            "1",
+            "--budget-seconds",
+            "30",
+            "--trial-seconds",
+            "5",
+            "--resize",
+            "2",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=40,
+    )
+    report = json.loads(output.read_text())
+    paths = [path for selection in report["selection_paths"] for path in selection]
+    assert len(paths) == len(set(paths)) == 128
+    assert len(report["trials"]) == 4
+    assert all(row["completed"] == 32 and row["eligible"] for row in report["trials"])
+    assert report["recommendation"]["workers"] in (1, 4)
+    assert {path.name: path.read_bytes() for path in source.iterdir()} == before
+    assert list(destination.iterdir()) == []
+
+
+def test_recommendation_prefers_near_best_and_rejects_failed_setting():
+    rows = [
+        {"workers": workers, "phase": "confirm", "images_per_second": rate, "eligible": eligible}
+        for workers, rate, eligible in [(32, 98, True), (128, 100, True), (512, 200, False)]
+    ]
+    assert calibrator.recommend(rows, 0.05)["workers"] == 32
+    assert calibrator.recommend(rows, 0)["workers"] == 128
+    assert calibrator.recommend([], 0.05)["workers"] is None
+
+
+def test_blocked_read_is_terminated_without_hanging_calibration(tmp_path):
+    import os
+    import time
+    from types import SimpleNamespace
+
+    source = tmp_path / "blocked.jpg"
+    os.mkfifo(source)
+    args = SimpleNamespace(mode="read", resize=0, max_mib=1, trial_seconds=0.3, max_rss_mib=4096)
+    row = calibrator.run_trial(args, [str(source)], 1, "sweep", tmp_path, time.monotonic() + 5)
+    assert row["termination"] == "time_limit"
+    assert row["completed"] == 0
+    assert not row["eligible"]
