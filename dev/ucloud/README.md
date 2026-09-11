@@ -804,10 +804,12 @@ It uses standard-library threads and subprocesses, with Pillow needed only for
   --mode stage --destination /dev/shm --output /work/expert-io-calibration.json
 ```
 
-The default sweep tests 1–1,024 concurrent reads with eight-second trial limits,
+The default sweep tests 1–1,024 concurrent reads with 30-second I/O measurement limits,
 then retests the three strongest candidates twice in shuffled order. It recommends
 the smallest concurrency within 5% of the best median confirmation throughput.
-The default overall budget is 180 seconds; blocked filesystem metadata calls may
+Every thread is initialized before measurement starts. Process/thread startup has
+a separate 30-second limit and is recorded independently; the overall budget is
+600 seconds. blocked filesystem metadata calls may
 outlast the budget. Each trial consumes only paths actually submitted to its reader pool; untouched
 paths remain available after a timeout. Submitted selections are disjoint and
 shuffled. Shared cache state remains unknown. Run away from other heavy read jobs
@@ -822,7 +824,7 @@ loader-oriented measurement. The resulting thread count is for concurrent I/O or
 read/decode tasks, **not** a recommendation to create that many DataLoader processes.
 This file calibrates concurrency; it does not install read-ahead into training.
 
-`--workers`, `--files-per-trial`, `--trial-seconds`, `--budget-seconds`, and
+`--workers`, `--files-per-trial`, `--trial-seconds`, `--startup-seconds`, `--budget-seconds`, and
 `--confirmation-rounds` are adjustable. Each trial selects at most 2,048 files and
 16 GiB of encoded data by default. Selection shrinks automatically to fit the byte
 cap and staging destination; actual and requested concurrency are both recorded
@@ -832,3 +834,18 @@ is monitored against a 4 GiB stop threshold. Failed settings are excluded. The J
 throughput, latency, errors, sampled paths and the recommendation. If samples or
 time are exhausted, inspect the confirmation coverage before treating the result
 as repeatable. Very fast RAM trials benefit from increasing `--files-per-trial`.
+
+Show an existing report without printing its sample manifest:
+
+```bash
+/work/venvs/mt-quant/bin/python dev/ucloud/calibrate_io.py \
+  --summary /work/io-calibration.json
+```
+
+Each run also writes a compact `.summary.txt` beside its JSON. Calibration failures
+are recorded in the report and a separate `.error.log`, including failures to
+terminate a blocked I/O subprocess. Completed partial trials remain usable; an
+unusable confirmation does not erase a valid sweep estimate (marked provisional).
+A setting that fails with an error or memory-limit violation during confirmation
+is excluded from that fallback. An uninterruptible kernel I/O wait can delay process
+termination; the calibrator stops instead of accumulating competing readers.

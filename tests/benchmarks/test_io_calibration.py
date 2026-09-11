@@ -157,3 +157,82 @@ def test_ten_file_trials_and_existing_output_work(tmp_path):
     assert all(row["completed"] == 10 for row in report["trials"])
     assert report["recommendation"]["workers"] is not None
     assert "report-2.json" in result.stdout
+
+
+def test_startup_time_is_separate_from_io_time(tmp_path, monkeypatch):
+    import time
+
+    source = tmp_path / "image.jpg"
+    source.write_bytes(b"image bytes")
+    job = {
+        "mode": "read",
+        "paths": [str(source)],
+        "workers": 4,
+        "resize": 0,
+        "result": str(tmp_path / "result.json"),
+        "ready": str(tmp_path / "ready.json"),
+        "attempted": str(tmp_path / "attempted.bin"),
+    }
+    job_path = tmp_path / "job.json"
+    job_path.write_text(json.dumps(job))
+    original_clock = time.monotonic
+    offset = [0]
+    monkeypatch.setattr(calibrator.time, "monotonic", lambda: original_clock() + offset[0])
+    original_warm = calibrator.warm_pool
+
+    def delayed_warm(pool, workers):
+        original_warm(pool, workers)
+        offset[0] += 100  # Simulate slow initialization without a wall-clock sleep.
+
+    monkeypatch.setattr(calibrator, "warm_pool", delayed_warm)
+    calibrator.child(job_path)
+    ready = json.loads((tmp_path / "ready.json").read_text())
+    result = json.loads((tmp_path / "result.json").read_text())
+    assert ready["initialization_seconds"] >= 100
+    assert result["seconds"] < 10
+    assert result["completed"] == 1
+
+
+def test_failed_confirmation_keeps_provisional_sweep():
+    rows = [
+        {"workers": 64, "phase": "sweep", "images_per_second": 100, "eligible": True},
+        {"workers": 64, "phase": "confirm", "images_per_second": 0, "eligible": False},
+    ]
+    result = calibrator.recommend(rows, 0.05)
+    assert result["workers"] == 64
+    assert result["basis"] == "provisional_sweep"
+    assert "No usable confirmation" in result["confirmation_note"]
+
+
+def test_summary_omits_large_manifest_and_keeps_error():
+    text = calibrator.summary({"selection_paths": [["secretly-long-path"] * 10000], "error": "Unable to terminate process 42"})
+    assert "secretly-long-path" not in text
+    assert "Unable to terminate process 42" in text
+    assert len(text.splitlines()) < 5
+
+
+def test_memory_failure_is_not_recommended_from_sweep():
+    rows = [
+        {"workers": 64, "phase": "sweep", "images_per_second": 100, "eligible": True},
+        {"workers": 64, "phase": "confirm", "images_per_second": 0, "eligible": False, "termination": "memory_limit"},
+    ]
+    assert calibrator.recommend(rows, 0.05)["workers"] is None
+
+
+def test_termination_failure_is_saved_without_terminal_traceback(tmp_path, monkeypatch):
+    source = tmp_path / "images"
+    source.mkdir()
+    (source / "image.jpg").write_bytes(b"image")
+    output = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), str(source), "--output", str(output), "--workers", "1"])
+
+    def failure(*args, **kwargs):
+        raise RuntimeError("I/O process 123 remains blocked after termination")
+
+    monkeypatch.setattr(calibrator, "run_trial", failure)
+    with pytest.raises(SystemExit, match="report.error.log"):
+        calibrator.main()
+    report = json.loads(output.read_text())
+    assert "process 123" in report["error"]
+    assert "process 123" in output.with_suffix(".summary.txt").read_text()
+    assert "RuntimeError" in output.with_suffix(".error.log").read_text()

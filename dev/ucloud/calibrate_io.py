@@ -5,6 +5,9 @@ Examples:
   python calibrate_io.py /images --mode stage --destination /dev/shm --output /work/io.json
   python calibrate_io.py /images --mode decode --resize 384 --output /work/decode.json
 
+Read an existing report without its path manifest:
+  python calibrate_io.py --summary /work/io.json
+
 Only decode mode requires Pillow. No mini_trainer, PyTorch, root access or cache
 flushing. All trials use disjoint selections; externally warmed caches are unknown.
 """
@@ -20,7 +23,9 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
@@ -51,7 +56,21 @@ def discover(source, limit, deadline, rng):
     return paths, False
 
 
+def warm_pool(pool, workers):
+    """Create every thread before starting any filesystem work."""
+    barrier = threading.Barrier(workers + 1)
+    try:
+        futures = [pool.submit(barrier.wait) for _ in range(workers)]
+    except BaseException:
+        barrier.abort()
+        raise
+    barrier.wait()
+    for future in futures:
+        future.result()
+
+
 def child(job_path):
+    initialized = time.monotonic()
     job = json.loads(Path(job_path).read_text())
     image_module = None
     if job["mode"] == "decode":
@@ -107,10 +126,13 @@ def child(job_path):
             },
         )
 
-    next_snapshot = started + 0.25
     items = iter(enumerate(job["paths"]))
     # Bound outstanding tasks and buffers instead of queuing the whole dataset.
     with open(job["attempted"], "wb", buffering=0) as journal, ThreadPoolExecutor(max_workers=job["workers"]) as pool:
+        warm_pool(pool, job["workers"])
+        started = time.monotonic()
+        write_json(job["ready"], {"started": started, "initialization_seconds": started - initialized})
+        next_snapshot = started + 0.25
 
         def submit(item):
             # Record BEFORE submission. After a timeout only this prefix may
@@ -181,6 +203,8 @@ def run_trial(args, paths, workers, phase, work, deadline):
     workers = min(workers, len(paths))
     result_path, job_path = work / "result.json", work / "job.json"
     attempted_path = work / "attempted.bin"
+    ready_path = work / "ready.json"
+    ready_path.unlink(missing_ok=True)
     result_path.unlink(missing_ok=True)
     attempted_path.unlink(missing_ok=True)
     destination = None
@@ -196,6 +220,7 @@ def run_trial(args, paths, workers, phase, work, deadline):
         "destination": destination,
         "result": str(result_path),
         "attempted": str(attempted_path),
+        "ready": str(ready_path),
     }
     write_json(job_path, job)
     proc = None
@@ -205,10 +230,14 @@ def run_trial(args, paths, workers, phase, work, deadline):
             proc = subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve()), "--child", str(job_path)], stdout=log, stderr=log, start_new_session=True
             )
-            until = min(deadline, time.monotonic() + args.trial_seconds)
+            until = min(deadline, time.monotonic() + getattr(args, "startup_seconds", 30))
+            ready = None
             while proc.poll() is None:
+                if ready is None and ready_path.exists():
+                    ready = json.loads(ready_path.read_text())
+                    until = min(deadline, ready["started"] + args.trial_seconds)
                 if time.monotonic() >= until:
-                    reason = "time_limit"
+                    reason = "time_limit" if ready is not None else "startup_time_limit"
                     stop(proc)
                     break
                 # Linux exposes current RSS; final peak RSS is recorded by the child.
@@ -223,13 +252,15 @@ def run_trial(args, paths, workers, phase, work, deadline):
                         stop(proc)
                         break
                 time.sleep(0.1)
+            if ready is None and ready_path.exists():
+                ready = json.loads(ready_path.read_text())
             row = (
                 json.loads(result_path.read_text())
                 if result_path.exists()
                 else {
                     "completed": 0,
                     "images_per_second": 0,
-                    "seconds": time.monotonic() - started,
+                    "seconds": time.monotonic() - ready["started"] if ready is not None else 0,
                     "errors": [],
                     "finished": False,
                 }
@@ -237,6 +268,7 @@ def run_trial(args, paths, workers, phase, work, deadline):
             row.update(
                 workers=workers,
                 requested_workers=requested_workers,
+                initialization_seconds=ready["initialization_seconds"] if ready is not None else None,
                 attempted=attempted_path.stat().st_size if attempted_path.exists() else 0,
                 phase=phase,
                 selected=len(paths),
@@ -264,6 +296,11 @@ def recommend(rows, tolerance):
         if group and all(row["eligible"] for row in group):
             scores[workers] = statistics.median(row["images_per_second"] for row in group)
     if not scores:
+        if confirmations:
+            failed = {row["workers"] for row in confirmations if row.get("errors") or row.get("termination") == "memory_limit"}
+            provisional = recommend([row for row in rows if row["phase"] == "sweep" and row["workers"] not in failed], tolerance)
+            provisional["confirmation_note"] = "No usable confirmation; showing sweep estimate only"
+            return provisional
         return {"workers": None, "reason": "No eligible trials"}
     best = max(scores.values())
     selected = min(workers for workers, rate in scores.items() if rate >= best * (1 - tolerance))
@@ -276,7 +313,25 @@ def recommend(rows, tolerance):
     }
 
 
+def summary(report):
+    lines = [f"Mode: {report.get('mode', 'unknown')} | Source: {report.get('source', 'unknown')}"]
+    for row in report.get("trials", []):
+        lines.append(
+            f"{row['phase']:7} {row['workers']:4} threads | {row['images_per_second']:.1f} images/s | "
+            f"{row['completed']} complete | {row.get('termination') or 'finished'}"
+        )
+        if row.get("errors"):
+            lines.append("  error: " + str(row["errors"][-1]).strip().split("\n")[-1][:200])
+    lines.append("Recommendation: " + json.dumps(report.get("recommendation")))
+    if report.get("error"):
+        lines.append("Failure: " + report["error"])
+    return "\n".join(lines) + "\n"
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--summary":
+        print(summary(json.loads(Path(sys.argv[2]).read_text())), end="")
+        return
     if len(sys.argv) == 3 and sys.argv[1] == "--child":
         child(sys.argv[2])
         return
@@ -287,8 +342,9 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("io-calibration.json"))
     parser.add_argument("--workers", default="1,4,16,64,128,256,512,1024")
     parser.add_argument("--files-per-trial", type=int, default=2048, help="Maximum per trial; only submitted paths are consumed")
-    parser.add_argument("--trial-seconds", type=float, default=8)
-    parser.add_argument("--budget-seconds", type=float, default=180)
+    parser.add_argument("--trial-seconds", type=float, default=30, help="I/O measurement time, excluding initialization")
+    parser.add_argument("--startup-seconds", type=float, default=30, help="Separate process/thread initialization limit")
+    parser.add_argument("--budget-seconds", type=float, default=600)
     parser.add_argument("--confirmation-rounds", type=int, default=2)
     parser.add_argument("--max-mib", type=int, default=16384, help="Encoded byte cap per trial; sample size shrinks automatically")
     parser.add_argument("--max-rss-mib", type=int, default=4096, help="Child RSS stop threshold on Linux")
@@ -300,7 +356,7 @@ def main():
     if (
         not workers
         or min(workers) < 1
-        or min(args.files_per_trial, args.trial_seconds, args.budget_seconds, args.max_mib, args.max_rss_mib) <= 0
+        or min(args.files_per_trial, args.trial_seconds, args.startup_seconds, args.budget_seconds, args.max_mib, args.max_rss_mib) <= 0
     ):
         parser.error("Concurrency and limits must be positive")
     if args.confirmation_rounds < 0 or args.resize < 0 or not 0 <= args.tolerance < 1:
@@ -348,7 +404,15 @@ def main():
         if count == 0 or time.monotonic() >= deadline:
             return False
         selected = paths[cursor : cursor + count]
-        row = run_trial(args, selected, concurrency, phase, work, deadline)
+        try:
+            row = run_trial(args, selected, concurrency, phase, work, deadline)
+        except BaseException:
+            journal = work / "attempted.bin"
+            attempted = journal.stat().st_size if journal.exists() else 0
+            report["failed_trial"] = {"workers": concurrency, "phase": phase, "attempted": attempted}
+            report["selection_paths"].append(selected[:attempted])
+            cursor += attempted
+            raise
         cursor += row["attempted"]
         report["trials"].append(row)
         report["selection_paths"].append(selected[: row["attempted"]])
@@ -374,6 +438,11 @@ def main():
                 for concurrency in finalists:
                     if not measure(concurrency, "confirm", work):
                         break
+    except (Exception, KeyboardInterrupt) as error:
+        report["error"] = f"{type(error).__name__}: {error}"
+        error_path = args.output.with_suffix(".error.log")
+        error_path.write_text(traceback.format_exc())
+        raise SystemExit(f"Calibration stopped: {error}. Details saved to {error_path}") from None
     finally:
         report["recommendation"] = recommend(report["trials"], args.tolerance)
         report["used_paths"] = cursor
@@ -381,10 +450,13 @@ def main():
             "Best tested thread concurrency, not a global optimum or a DataLoader process-worker setting.",
             "Decode measures CPU image open/RGB conversion and optional resize; no transforms, batching, GPU or DDP.",
             "Stage measures buffered writes and close, not fsync durability; read mode discards bytes.",
-            "Trials include pool startup. Very short trials need more files for steady-state estimates.",
+            "Process/thread initialization is excluded from I/O timing and recorded separately. Partial completed reads are eligible.",
             "Disjoint paths do not guarantee cold data, balanced file sizes, or independence from shared-service load.",
         ]
         write_json(args.output, report)
+        summary_path = args.output.with_suffix(".summary.txt")
+        summary_path.write_text(summary(report))
+        print(f"Compact summary: {summary_path}", flush=True)
     if report["recommendation"]["workers"] is None:
         print("No completed reads to rank. Increase --trial-seconds or inspect the recorded errors.", flush=True)
     print(json.dumps(report["recommendation"], indent=2), flush=True)
