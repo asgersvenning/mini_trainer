@@ -69,6 +69,32 @@ class _TensorOutputs(nn.Module):
         return tuple(_flatten(self.model(images)))
 
 
+class _PredictionEmbeddings(nn.Module):
+    """Keep the actual prediction forward and expose its head input geometry.
+
+    The backbone runs once. The small eval-only preclassification transform is
+    replayed from its captured input, without activating training contexts.
+    """
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        heads = [(name, module) for name, module in model.named_modules() if isinstance(module, Classifier)]
+        if len(heads) != 1 or type(heads[0][1]).__name__ not in {"Classifier", "HierarchicalClassifier"}:
+            raise ValueError("Embedding export requires one Classifier or HierarchicalClassifier linear head.")
+        self.head_path = heads[0][0]
+        self.register_buffer("head_input", None, persistent=False)
+        heads[0][1].register_forward_pre_hook(self._capture)
+
+    def _capture(self, module, inputs):
+        self.head_input = inputs[0]
+
+    def forward(self, images):
+        predictions = self.model(images)
+        embeddings = self.model.get_submodule(self.head_path).preclassification(self.head_input)
+        return {"predictions": predictions, "embedding": embeddings}
+
+
 def _dependencies():
     try:
         import onnx
@@ -111,6 +137,7 @@ def export_onnx(
     *,
     preprocessing: dict[str, Any] | None = None,
     dynamic_batch: bool = True,
+    include_embeddings: bool = False,
     verification_inputs: Sequence[torch.Tensor] = (),
     output_names: Sequence[str] | None = None,
     opset_version: int = 18,
@@ -158,6 +185,8 @@ def export_onnx(
         translations[torch.ops.mini_trainer.scaled_int8_mm.default] = scaled_int8_mm
     sample = example_input.detach().cpu().clone()
     reference = _copy_for_export(model, sample.dtype, reference_device)
+    if include_embeddings:
+        reference = _PredictionEmbeddings(reference)
     if native_int8:
         # Tensor-subclass decomposition must not assign requires_grad to codes.
         reference.requires_grad_(False)
@@ -180,6 +209,8 @@ def export_onnx(
         or any(not isinstance(name, str) or not name or name == "images" for name in names)
     ):
         raise ValueError("output_names must contain one unique nonempty name per output tensor.")
+    if include_embeddings and output_names is None:
+        names[-1] = "embedding"
     structure = _structure(observed, iter(names))
     classifiers = [
         {"module": name, "type": class_path(module), "metadata": _json_value(module.metadata)}
@@ -262,7 +293,7 @@ def export_onnx(
                 for name, value in zip(names, tensors)
             ],
             "output_structure": structure,
-            "output_semantics": "model_eval_forward",
+            "output_semantics": "predictions_and_preclassification_embedding" if include_embeddings else "model_eval_forward",
             "quantized_training_forward": native_int8,
             "classifiers": classifiers,
             "preprocessing": {"in_graph": False, "recipe": preprocessing, "requires_configuration": preprocessing is None},
