@@ -1,8 +1,10 @@
 /* Predictions use the exported forward; PCA queries use the fitted prototype transform. */
-let inferenceWorker=null,inferenceManifest=null,inferenceQuery=null,inferenceSequence=0;
+let inferenceWorker=null,inferenceManifest=null,inferenceQuery=null,inferenceSequence=0,predictionPhotos=null,lastPrediction=null,inferencePreviewURL=null;
 const inferenceStatus=message=>$('inference-status').textContent=message;
+function resetInferenceModel(){++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;inferenceQuery=null;lastPrediction=null;predictionPhotos?.abort();$('inference-results').replaceChildren();$('inference-image').disabled=true;$('inference-preview').hidden=true;if(inferencePreviewURL){URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=null;}inferenceStatus('Load the matching browser bundle to begin.');}
+
 $('inference-load').onclick=async()=>{
- inferenceWorker?.terminate();inferenceWorker=null;inferenceQuery=null;inferenceManifest=null;
+ inferenceWorker?.terminate();inferenceWorker=null;inferenceQuery=null;inferenceManifest=null;lastPrediction=null;predictionPhotos?.abort();$('inference-results').replaceChildren();
  $('inference-image').disabled=true;++inferenceSequence;
  try{
   const url=new URL($('inference-url').value,location.href);
@@ -26,6 +28,7 @@ $('inference-load').onclick=async()=>{
 $('inference-cancel').onclick=()=>{++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;$('inference-image').disabled=true;inferenceStatus('Stopped. Load the model to continue.');};
 $('inference-image').onchange=async event=>{
  const file=event.target.files[0];if(!file||!inferenceManifest)return;
+ if(inferencePreviewURL)URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=URL.createObjectURL(file);$('inference-preview').src=inferencePreviewURL;$('inference-preview').hidden=false;
  const id=++inferenceSequence;$('inference-image').disabled=true;inferenceStatus('Preparing image…');
  try{
   rejectRotatedExif(await file.arrayBuffer());
@@ -62,17 +65,27 @@ function browserPreprocess(image,m){
  }
  return output;
 }
-function showInference(result,m){
+function renderInferenceResults(){
+ if(!lastPrediction)return;const {result,m}=lastPrediction;
+ predictionPhotos?.abort();predictionPhotos=new AbortController();const signal=predictionPhotos.signal;
  const container=$('inference-results');container.replaceChildren();
  result.outputs.forEach((scores,level)=>{
   const max=Math.max(...scores),exp=scores.map(x=>Math.exp(x-max)),sum=exp.reduce((a,b)=>a+b,0);
   const heading=document.createElement('h3');heading.textContent=`Level ${level}`;container.append(heading);
-  const list=document.createElement('ol');
+  const list=document.createElement('ol');list.setAttribute('aria-label',`Level ${level} predictions`);list.setAttribute('data-level',level);
   scores.map((score,i)=>({score,i})).sort((a,b)=>b.score-a.score||a.i-b.i).slice(0,5).forEach(({i})=>{
-   const row=document.createElement('li'),button=document.createElement('button');button.textContent=`${m.classes[level][i]} · ${(100*exp[i]/sum).toFixed(2)}%`;
-   button.onclick=()=>{const index=level===0?i:data.groups.findIndex(group=>group[level]===m.classes[level][i]);if(index>=0)selectClass(index);};row.append(button);list.append(row);
+   const row=document.createElement('li'),button=document.createElement('button'),id=m.classes[level][i];const label=level===0?classLabel(i):id;button.textContent=`${label}${label===id?'':' · '+id} · ${(100*exp[i]/sum).toFixed(2)}%`;
+   button.onclick=()=>{if(level===0)selectClass(i);};if(level!==0){button.disabled=true;button.title='Higher-rank prediction; no individual species selected.';}row.append(button);list.append(row);
+   if(gbifEnabled()){
+    const id=m.classes[level][i];
+    gbifClient.name(id).then(value=>{if(!signal.aborted&&gbifEnabled()&&!(level===0&&(importedNames.get(data)?.has(i)||data.display_names?.[i])))button.textContent=`${value.display_name} · ${id} · ${(100*exp[i]/sum).toFixed(2)}%`;}).catch(()=>{});
+    if(level===0)showPredictionPhoto(row,id,signal);
+   }
   });container.append(list);
  });
+}
+function showInference(result,m){
+ lastPrediction={result,m};renderInferenceResults();
  inferenceQuery={embedding:result.embedding,checkpoint:m.checkpoint_sha256,insertion:result.insertion};
  const plane=result.insertion?'Angular t-SNE':Object.keys(data.projections).find(name=>data.projections[name].transform);
  if(plane){$('projection-plane').value=plane;drawProjection();}
@@ -108,4 +121,17 @@ function rejectRotatedExif(buffer){
    }
   }p+=size;
  }
+}
+
+async function showPredictionPhoto(row,id,signal){
+ const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption');
+ image.width=88;image.height=88;image.style.objectFit='contain';image.loading='lazy';image.alt='Reference example for class '+id;
+ caption.textContent='Loading reference example…';figure.append(image,caption);row.append(figure);
+ try{
+  const album=await referenceAlbum(id,signal);if(signal.aborted||!gbifEnabled())return;
+  const photo=album.photos[0];if(!photo){image.remove();caption.textContent='No reference image available.';return;}
+  caption.replaceChildren(photoText('span',`Reference example · ${photo.creator} · ${photo.license} · `),photoLink('Source',photo.source),photoText('span',' · '),photoLink('GBIF record','https://www.gbif.org/occurrence/'+photo.occurrence_id));
+  const loaded=await loadReferenceImage(image,photo.image_path,signal);
+  if(!loaded&&!signal.aborted){image.remove();caption.prepend(photoText('span','Image unavailable. '));}
+ }catch(error){if(!signal.aborted){image.remove();caption.textContent='Reference image unavailable.';}}
 }

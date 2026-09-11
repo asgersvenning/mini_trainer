@@ -273,8 +273,14 @@ def create_report(weights: Path, output: Path, *, include_tsne=True, synthetic=F
 def render_report(output, payload):
     """Render current viewer assets over preserved numerical data."""
     template = Path(__file__).with_name("report.html").read_text()
+    snapshot_path = output / "gbif-snapshot.json"
+    snapshot = snapshot_path.read_text() if snapshot_path.exists() else "null"
+    # Embed optional metadata as data, never executable HTML.
+    snapshot = json.dumps(json.loads(snapshot)).replace("<", "\\u003c")
     (output / "explorer.html").write_text(
         template.replace("__REPORT_DATA__", payload)
+        .replace("__GBIF_DATA__", snapshot)
+        .replace("__GBIF_SCRIPT__", Path(__file__).with_name("gbif.js").read_text())
         .replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
         .replace("__INFERENCE_SCRIPT__", Path(__file__).with_name("inference.js").read_text())
         .replace("__PROJECTION_SCRIPT__", Path(__file__).with_name("projection.js").read_text())

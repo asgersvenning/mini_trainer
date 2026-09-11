@@ -57,6 +57,7 @@ def main():
         "report.html",
         "launcher.html",
         "photos.js",
+        "gbif.js",
         "projection.js",
         "thumbnails.js",
         "state.js",

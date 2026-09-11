@@ -90,3 +90,19 @@ def test_log_domain_scores_preserve_tails_against_independent_erfc_reference():
     # Beyond the float64 linear-probability range, log-tail still has meaning.
     extreme_d, extreme_logtail = stable_scores(torch.tensor([56.0]))
     assert extreme_d.item() == 0 and torch.isfinite(extreme_logtail).all()
+
+
+def test_optional_gbif_snapshot_is_embedded_as_data(tmp_path):
+    import json
+
+    from mini_trainer.visualization.prototype_space.explore import render_report
+
+    render_report(tmp_path, "{}")
+    assert '<script id="gbif-snapshot" type="application/json">null</script>' in (tmp_path / "explorer.html").read_text()
+    snapshot = {"schema": "mini-trainer-gbif-v1", "taxa": {"1": {"key": 1, "canonicalName": "</script><script>unsafe</script>"}}}
+    (tmp_path / "gbif-snapshot.json").write_text(json.dumps(snapshot))
+    render_report(tmp_path, "{}")
+    html = (tmp_path / "explorer.html").read_text()
+    assert "</script><script>unsafe" not in html
+    assert "\\u003c/script>" in html
+    assert "__GBIF_SCRIPT__" not in html

@@ -67,25 +67,48 @@ body[data-view=projection] #thumbnail-options>div{position:static;max-height:non
 body[data-view=projection] .projection-controls-content>p.muted{display:none}
 body[data-view=projection] .label-settings>div{position:static;width:auto;max-width:100%;box-shadow:none}
 body[data-view=projection] #score-note{order:0;padding:12px;margin:0}
+
+#activity-nav{display:flex;align-items:center;gap:10px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);position:relative;z-index:60}
+body[data-view=projection] #workspace-controls{top:var(--activity-height,56px)}
+body[data-view=projection] #projection-controls{top:8px}
+body[data-view=projection] #projection-panel.primary-view{height:calc(100dvh - var(--activity-height,56px))}
+#activity-nav button{font-weight:600}#activity-nav button[aria-pressed=true]{background:#e2f2f1;border-color:var(--accent)}
+body[data-view=predict] #workspace-controls{display:none}
+.inference-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.inference-actions label{display:flex;align-items:center;gap:8px;min-width:0}.inference-actions input{max-width:100%;width:260px}
+#inference-preview{object-fit:contain;border-radius:6px;margin:10px 0}
+#inference-model-settings{font-size:13px;margin:12px 0}#inference-model-settings input{max-width:100%}
+#shared-settings{margin-left:auto}
+#shared-settings-content{position:absolute;right:12px;top:100%;width:350px;max-width:calc(100vw - 24px);max-height:75vh;overflow:auto;background:white;padding:16px;border:1px solid var(--line);box-shadow:0 5px 20px #0002}
+#shared-settings-content .label-settings>div{position:static;box-shadow:none;width:auto;max-width:100%;border:0;padding:10px 0}
+#shared-settings-content .label-settings{margin-bottom:12px}
+#inference-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+#inference-results>h3{display:none}#inference-results ol:before{content:"Level " attr(data-level);display:block;font-weight:650;margin-bottom:8px}#inference-results ol{padding:0;list-style:none;min-width:0}
+#inference-results li{padding:12px 0;border-bottom:1px solid var(--line)}
+#inference-results figure{margin:8px 0;display:flex;gap:10px;align-items:center}
+#inference-results figcaption{font-size:11px;overflow-wrap:anywhere}#inference-results img{flex-shrink:0;border-radius:6px}
+body[data-view=predict] #inference-panel{width:100%}body[data-view=predict] #projection-panel{width:100%;height:65vh}
+@media(max-width:650px){#inference-results{grid-template-columns:1fr}#activity-nav{padding:8px}#shared-settings-content{right:8px}}
 </style>
+<nav id="activity-nav" aria-label="Viewer activities"><button id="activity-explore">Explore</button><button id="activity-predict">Predict</button><details id="shared-settings"><summary>Settings</summary><div id="shared-settings-content"></div></details></nav>
 <header><div class="eyebrow">mini_trainer · empirical exploration</div><h1>Prototype observatory</h1><p>Move between the global tree, pairwise structure and a class’s local neighbourhood. The existing mini_trainer distance is the reference; the pre-CDF z-score exposes detail that can be hidden by probability rounding.</p></header>
 <details id="workspace-controls" open><summary>Explorer · view &amp; class</summary><div class="controls">
 <a id="open-model" href="/" hidden>Open another model</a>
-<a href="explorer.html" download>Save HTML report</a>
-<label>View <select id="workspace-view"><option value="all">All views</option><option value="projection">Spatial projection</option><option value="tree">Dendrogram</option><option value="matrix">Distance matrices</option><option value="photos">Class images</option><option value="local">Local neighbourhood</option></select></label>
+<a id="download-report" href="explorer.html" download>Save HTML report</a>
+<label>View <select id="workspace-view"><option value="projection">Spatial projection</option><option value="predict">Predictions and map</option><option value="all">All diagnostics</option><option value="tree">Dendrogram</option><option value="matrix">Distance matrices</option><option value="photos">Class images</option><option value="local">Local neighbourhood</option></select></label>
 <label>Case <select id="case"></select></label>
 <label>Class ID / name <input id="search" placeholder="Search checkpoint ID" list="classes"></label><datalist id="classes"></datalist>
 <button id="find">Inspect</button>
-<details class="label-settings"><summary>Class names</summary><div><label><input id="class-names" type="checkbox"> Class names</label><label><input id="gbif-names" type="checkbox"> Resolve GBIF IDs online</label>
+<details class="label-settings" id="identity-settings"><summary>Names and class identity</summary><div><label><input id="class-names" type="checkbox"> Class names</label><label>Class IDs <select id="class-id-namespace"><option value="generic">Generic IDs</option><option value="gbif">GBIF taxon IDs</option></select></label>
 <label>Import names <input id="name-file" type="file" accept=".json" style="width:110px"></label><span id="name-status" class="caption" role="status"></span>
 </div></details><label>Scores <select id="score-display"><option value="z">z-scores</option><option value="tail">Chance-alignment p-value (approx.)</option></select></label><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
 </div></details>
 <main>
 <section class="panel" id="inference-panel"><h2>Try your own image</h2>
 <p class="muted">Run this model locally in your browser. Images are not uploaded. Model download and inference may take time on this device.</p>
-<label>Browser model manifest <input id="inference-url" type="url" value="browser-model/manifest.json" style="width:min(600px,100%)"></label>
-<button id="inference-load">Load model</button><button id="inference-cancel">Stop</button>
-<label>Image <input id="inference-image" type="file" accept="image/png,image/jpeg" disabled></label>
+<details id="inference-model-settings"><summary>Model source</summary><label>Browser model manifest <input id="inference-url" type="url" value="browser-model/manifest.json" style="width:min(600px,100%)"></label></details>
+<div class="inference-actions"><button id="inference-load">Load model</button><button id="inference-cancel">Stop</button>
+<label>Image <input id="inference-image" type="file" accept="image/png,image/jpeg" disabled></label></div><img id="inference-preview" alt="Your input image" hidden width="120" height="120">
 <p id="inference-status" role="status">Load the matching browser bundle to begin.</p><div id="inference-results"></div></section>
 <p id="score-note" class="caption" hidden>Chance-alignment p-value (approx.): q = Φ(−z) is the one-sided upper-tail probability under independent uniform directions on the unit hypersphere. Small q means random directions would rarely be this closely aligned. It is not a calibrated class posterior or a formal probability that two prototypes are different; that interpretation remains to be formalized. Ward linkage heights retain their original units.</p>
 <p id="case-note" class="case-note muted"></p>
@@ -100,7 +123,7 @@ body[data-view=projection] #score-note{order:0;padding:12px;margin:0}
 </div></details><div id="projection-stage" style="position:relative"><canvas id="projection-map" width="1200" height="600" style="width:100%;aspect-ratio:2;display:block;touch-action:none;cursor:crosshair;background:#f8fafc;border:1px solid var(--line)" role="img" aria-label="Interactive projection of class prototype directions"></canvas><div id="map-thumbnail-layer" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div></div>
 <details id="projection-details"><summary>Map details &amp; credits</summary><div class="projection-details-content"><p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
 <p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></div></details></section>
-<section class="panel" id="photo-panel"><div class="row"><h2>Browse by class image</h2><label><input type="checkbox" id="photo-enabled"> Interpret numeric class IDs as GBIF taxa and load photos</label></div><p class="muted">Photo labels for the selected class and its nearest prototype directions. The prototype marks the learned target direction for the class; a GBIF class example provides its visual label. Credits and exact class IDs stay attached.</p><p id="photo-status" class="caption" role="status"></p><div id="photo-grid" class="photo-grid"></div></section>
+<section class="panel" id="photo-panel"><div class="row"><h2>Browse by class image</h2><label><input type="checkbox" id="photo-enabled"> Show reference photos</label></div><p class="muted">Photo labels for the selected class and its nearest prototype directions. The prototype marks the learned target direction for the class; a GBIF class example provides its visual label. Credits and exact class IDs stay attached.</p><p id="photo-status" class="caption" role="status"></p><div id="photo-grid" class="photo-grid"></div></section>
 <section class="panel" id="tree-panel">
  <div class="row"><h2>Explore the existing dendrogram</h2><div><button id="tree-root">Whole tree</button> <button id="tree-up">Parent</button> <button id="tree-locate">Locate selected class</button></div></div>
  <p class="muted">Same Ward linkage on <span class="mono">class_distance</span>, shown as a rectangular tree with at most 32 visible tips. Click a collapsed tip to expand its subtree; click a class to inspect it. Heights retain the existing linkage units.</p>
@@ -123,6 +146,8 @@ body[data-view=projection] #score-note{order:0;padding:12px;margin:0}
 <script id="report-data" type="application/json">__REPORT_DATA__</script>
 <script>
 "use strict";
+let gbifReady=false;const namespacePreferences=new Map();
+function namespaceKey(){return data.metadata.checkpoint_sha256||$('case').value;}
 const cases = JSON.parse(document.getElementById('report-data').textContent);
 const $ = id => document.getElementById(id), ns = 'http://www.w3.org/2000/svg';
 function el(tag, attrs={}, text='') {const n=document.createElementNS(ns,tag); for(const [k,v] of Object.entries(attrs)) n.setAttribute(k,v); if(text!=='') n.textContent=text; return n;}
@@ -133,7 +158,7 @@ const resolvedNames=new Map(),importedNames=new WeakMap(),nameFailures=new Set()
 let nameBusy=false,nameTimer=null,labelRefreshTimer=null;
 function classLabel(index){
  const id=data.names[index];if(!$('class-names').checked)return id;
- return importedNames.get(data)?.get(index)||data.display_names?.[index]||($('gbif-names').checked?resolvedNames.get(id):undefined)||id;
+ return importedNames.get(data)?.get(index)||data.display_names?.[index]||(gbifEnabled()?resolvedNames.get(id):undefined)||id;
 }
 function classIdentity(index){const label=classLabel(index),id=data.names[index];return label===id?id:`${label} [${id}]`;}
 function markClass(node,index){node.dataset.classIndex=index;node.append(el('title',{},classIdentity(index)));return node;}
@@ -147,11 +172,12 @@ function refreshClassLabels(){
  if(document.activeElement!==$('search'))$('search').value=classIdentity(selected);
  rebuildClassOptions();if(typeof drawProjection==='function'&&projectionCanvas.getBoundingClientRect().width)drawProjection(false);
 }
+function gbifEnabled(){return $('class-id-namespace').value==='gbif'&&!data.metadata.synthetic;}
 function requestClassNames(){
  clearTimeout(nameTimer);nameTimer=setTimeout(resolveVisibleNames,100);
 }
 async function resolveVisibleNames(){
- if(nameBusy||!$('class-names').checked||!$('gbif-names').checked||data.metadata.synthetic)return;
+ if(nameBusy||!$('class-names').checked||!gbifEnabled()||data.metadata.synthetic)return;
  const priority=[];
  for(const node of document.querySelectorAll('[data-class-index]')){
   const r=node.getBoundingClientRect();if(r.width&&r.height&&r.bottom>=0&&r.top<innerHeight)priority.push(Number(node.dataset.classIndex));
@@ -159,14 +185,14 @@ async function resolveVisibleNames(){
  priority.push(selected,...data.neighbours[selected]);
  const candidate=priority.find(i=>/^\d+$/.test(data.names[i])&&!resolvedNames.has(data.names[i])&&!nameFailures.has(data.names[i])&&!importedNames.get(data)?.has(i));
  if(candidate===undefined){$('name-status').textContent='Visible names resolved where available. Search IDs or resolved names; scroll to resolve more.';return;}
- const id=data.names[candidate];nameBusy=true;$('name-status').textContent='Resolving visible GBIF names…';
+ const id=data.names[candidate],nameCase=data;nameBusy=true;$('name-status').textContent='Resolving visible GBIF names…';
  try{
-  const response=await fetch('/api/taxon/'+encodeURIComponent(id),{signal:AbortSignal.timeout(12000)});
-  if(!response.ok)throw Error('Name lookup unavailable');const value=await response.json();
+  const value=await gbifClient.name(id);
   if(value.class_id!==id||typeof value.display_name!=='string')throw Error('Invalid name response');
+  if(nameCase!==data||!gbifEnabled())return;
   resolvedNames.set(id,value.display_name);
   if($('class-names').checked){clearTimeout(labelRefreshTimer);labelRefreshTimer=setTimeout(refreshClassLabels,80);}
- }catch(error){nameFailures.add(id);$('name-status').textContent='Some names are unavailable. IDs remain visible; use the local server or import a name map.';}
+ }catch(error){if(nameCase!==data||!gbifEnabled()||error.name==='AbortError')return;nameFailures.add(id);$('name-status').textContent='Some names are unavailable. IDs remain visible; retry online lookup or import a name map.';}
  finally{nameBusy=false;requestClassNames();}
 }
 // Approximation to log Phi(-z), evaluated without forming 1-CDF(z).
@@ -192,7 +218,9 @@ function height(node){return node<data.names.length?0:data.tree[node-data.names.
 function children(node){return data.tree[node-data.names.length].slice(0,2);}
 function contains(node,id){return positions[id]>=starts[node]&&positions[id]<=ends[node];}
 function setCase(){
- data=cases[$('case').value];distances=decode(data.local_distance);zs=decode(data.local_z);logtails=decode(data.local_log10_tail);stableNear=decode(data.stable_neighbour_distance,64);globalValues={min:decode(data.matrix_min_values),max:decode(data.matrix_max_values),logmin:decode(data.matrix_log_min_values),logmax:decode(data.matrix_log_max_values)};
+ data=cases[$('case').value];
+ if(gbifReady){$('class-id-namespace').value=namespacePreferences.get(namespaceKey())||(data.metadata.classIdNamespace==='gbif'?'gbif':'generic');resetGBIFPresentation();resetInferenceModel();}
+ distances=decode(data.local_distance);zs=decode(data.local_z);logtails=decode(data.local_log10_tail);stableNear=decode(data.stable_neighbour_distance,64);globalValues={min:decode(data.matrix_min_values),max:decode(data.matrix_max_values),logmin:decode(data.matrix_log_min_values),logmax:decode(data.matrix_log_max_values)};
  const n=data.names.length;positions=Array(n);data.order.forEach((id,i)=>positions[id]=i);
  parents=Array(2*n-1).fill(-1);starts=Array(2*n-1);ends=Array(2*n-1);
  for(let i=0;i<n;i++)starts[i]=ends[i]=positions[i];
@@ -268,6 +296,13 @@ $('sparse').onclick=()=>selectClass(data.profiles.reduce((best,p,i)=>p[0]<data.p
 $('tree-root').onclick=()=>{treeFocus=2*data.names.length-2;drawTree();};$('tree-up').onclick=()=>{if(parents[treeFocus]>=0)treeFocus=parents[treeFocus];drawTree();};$('tree-locate').onclick=()=>{treeFocus=selected;while(parents[treeFocus]>=0&&size(parents[treeFocus])<=64)treeFocus=parents[treeFocus];drawTree();};$('metric').onchange=drawLocal;$('global-metric').onchange=drawGlobal;$('range-preset').onchange=setRangePreset;$('apply-range').onclick=()=>{$('range-preset').value='manual';drawGlobal();};
 Object.keys(cases).forEach(name=>{const o=document.createElement('option');o.value=o.textContent=name;$('case').append(o);});$('case').onchange=setCase;setCase();
 </script>
+<script id="gbif-snapshot" type="application/json">__GBIF_DATA__</script>
+<script>__GBIF_SCRIPT__
+const gbifClient=new BrowserGBIF();
+$('class-id-namespace').value=data.metadata.classIdNamespace==='gbif'?'gbif':'generic';
+const gbifSnapshot=JSON.parse($('gbif-snapshot').textContent);
+if(gbifSnapshot){try{gbifClient.seed(gbifSnapshot);$('class-id-namespace').value='gbif';namespacePreferences.set(namespaceKey(),'gbif');}catch(error){$('name-status').textContent='Packaged names unavailable: '+error.message;}}
+gbifReady=true;</script>
 <script>__PHOTO_SCRIPT__</script>
 <script>__INFERENCE_SCRIPT__</script>
 <script>__PROJECTION_SCRIPT__</script>
@@ -279,11 +314,12 @@ if(location.protocol.startsWith('http'))fetch('/api/health').then(r=>r.json()).t
 </script>
 
 <script>
-const viewGroups={projection:['projection-panel','profile-panel','inspector','photo-panel'],tree:['tree-panel','profile-panel','inspector'],matrix:['matrix-panel','inspector'],photos:['photo-panel','projection-panel','inspector'],local:['inspector','profile-panel','photo-panel']};
+const viewGroups={predict:['inference-panel','projection-panel','inspector'],projection:['projection-panel','profile-panel','inspector','photo-panel'],tree:['tree-panel','profile-panel','inspector'],matrix:['matrix-panel','inspector'],photos:['photo-panel','projection-panel','inspector'],local:['inspector','profile-panel','photo-panel']};
 function setWorkspaceView(view){
  if(view!=='all'&&!viewGroups[view])view='all';
  document.body.dataset.view=view;document.body.classList.toggle('focused',view!=='all');
  $('workspace-view').value=view;
+ $('activity-explore').setAttribute('aria-pressed',String(view!=='predict'));$('activity-predict').setAttribute('aria-pressed',String(view==='predict'));
  $('thumbnail-options').open=view==='all';
  $('workspace-controls').open=view!=='projection';$('projection-controls').open=view!=='projection';
  for(const panel of document.querySelectorAll('main .panel')){
@@ -299,12 +335,20 @@ for(const [view,ids] of Object.entries(viewGroups)){
  button.onclick=()=>{setWorkspaceView(view);$('workspace-view').focus({preventScroll:true});};$(ids[0]).prepend(button);
 }
 $('workspace-view').onchange=()=>setWorkspaceView($('workspace-view').value);
+$('activity-explore').onclick=()=>setWorkspaceView('projection');
+$('activity-predict').onclick=()=>setWorkspaceView('predict');
+$('shared-settings-content').append($('identity-settings'));
+$('identity-settings').open=true;
+const diagnosticSettings=document.createElement('details');diagnosticSettings.className='label-settings';diagnosticSettings.innerHTML='<summary>Diagnostic controls</summary><div></div>';
+diagnosticSettings.lastElementChild.append($('score-display').closest('label'),$('crowded'),$('sparse'),$('download-report'));$('shared-settings-content').append(diagnosticSettings);
+setWorkspaceView('projection');
 new ResizeObserver(()=>{if(document.body.dataset.view==='tree')drawTree();}).observe($('tree').parentElement);
 </script>
 
 <script>
-$('class-names').onchange=()=>{refreshClassLabels();requestClassNames();};
-$('gbif-names').onchange=()=>{nameFailures.clear();refreshClassLabels();requestClassNames();};
+$('class-names').onchange=()=>{refreshClassLabels();requestClassNames();renderInferenceResults();};
+function resetGBIFPresentation(){gbifClient.reset();if(gbifSnapshot){try{gbifClient.seed(gbifSnapshot);}catch{}}photoAlbums.clear();resolvedNames.clear();nameFailures.clear();photoController?.abort();predictionPhotos?.abort();mapThumbFailures.clear();}
+$('class-id-namespace').onchange=()=>{namespacePreferences.set(namespaceKey(),$('class-id-namespace').value);resetGBIFPresentation();refreshClassLabels();requestClassNames();renderPhotos();scheduleMapThumbnails();renderInferenceResults();};
 $('name-file').onchange=async()=>{try{
  const mapping=JSON.parse(await $('name-file').files[0].text()),labels=new Map();
  const byIndex=mapping.by_index||{},byId=mapping.by_id||(mapping.by_index?{}:mapping);
@@ -320,6 +364,7 @@ window.addEventListener('scroll',requestClassNames,{passive:true});
 new ResizeObserver(entries=>{
  document.documentElement.style.setProperty('--toolbar-height',entries[0].target.getBoundingClientRect().height+'px');
 }).observe(document.querySelector('.controls'));
+new ResizeObserver(entries=>document.documentElement.style.setProperty('--activity-height',entries[0].target.getBoundingClientRect().height+'px')).observe($('activity-nav'));
 </script>
 
 <script>__STATE_SCRIPT__</script>

@@ -237,15 +237,15 @@ function scheduleMapThumbnails(){
  if(!projectionCanvas.getBoundingClientRect().width)return;
  const size=Number($('map-photo-size').value),density=Number($('map-photo-density').value),overlap=Number($('map-photo-overlap').value);
  const key=[size,$('map-photo-labels').checked,$('map-photo-push').checked,$('map-photo-aspect').checked,$('projection-plane').value].join(':');
- if($('map-photos').checked&&mapThumbCase===data&&mapThumbKey===key){
+ if(gbifEnabled()&&$('map-photos').checked&&mapThumbCase===data&&mapThumbKey===key){
   const rect=projectionCanvas.getBoundingClientRect();
   reanchorThumbnails(projectionHits.map(([x,y])=>[x*rect.width/1200,y*rect.height/projectionHeight]),rect.width,rect.height);
   mapThumbOffsets=new Map(mapThumbLayout.map(b=>[b.id,[b.x-b.anchorX,b.y-b.anchorY]]));
  }else{mapThumbOffsets.clear();mapThumbLayout=[];$('map-thumbnail-layer').replaceChildren();}
  mapThumbCase=data;mapThumbKey=key;
  $('map-size-value').value=size+' px';$('map-density-value').value=density+' / MP';$('map-overlap-value').value=overlap+'%';
- if(!$('map-photos').checked){$('map-photo-status').textContent='Enable map thumbnails to interpret numeric class IDs as GBIF taxa. Push apart connects displaced images to their fixed prototype points.';return;}
  if(data.metadata.synthetic){$('map-photo-status').textContent='Synthetic case: no GBIF photo requests.';return;}
+ if(!gbifEnabled()||!$('map-photos').checked){$('map-photo-status').textContent='Select GBIF class IDs in settings and enable map thumbnails. Push apart connects displaced images to their fixed prototype points.';return;}
  $('map-photo-status').textContent='Updating visible thumbnails…';
  mapThumbTimer=setTimeout(renderMapThumbnails,180);
 }
@@ -273,8 +273,6 @@ async function renderMapThumbnails(){
  let loaded=0,unavailable=0;
  const status=()=>{$('map-photo-status').textContent=`${loaded} images loaded · ${motionFinished?mapThumbLayout.length:boxes.length} visible slots · budget ${budget} for this viewport. ${config.push?`Push apart: ${motionFinished?`${mapThumbRest?.reason||'resting'} · ${mapThumbRest?.pairs||0} overlapping pairs retained`:'adjusting rectangle contacts'}. Images move at most ${2*size} px.`:`Maximum pairwise rectangle overlap ${Math.round(config.overlap*100)}%.`} ${unavailable} unavailable. Hover for names and credits; click to inspect. Prototype coordinates and neighbour ranks stay fixed.`;};
  if(!boxes.length){status();return;}
- try{if(boxes.some(b=>!retained.has(b.id))){const health=await fetch('/api/health',{signal});if(!health.ok||!(await health.json()).photo_api)throw Error('Photo server unavailable');}}
- catch(error){if(!signal.aborted)$('map-photo-status').textContent='Map photos require the local GBIF photo server. Numerical views remain available.';return;}
  const loadBox=async box=>{
   if(signal.aborted||generation!==mapThumbGeneration||data!==caseData)return;
   const id=data.names[box.id];

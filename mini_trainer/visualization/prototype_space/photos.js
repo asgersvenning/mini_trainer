@@ -1,4 +1,4 @@
-/* Optional GBIF reference-photo layer. Numerical report works without this server. */
+/* Optional reference photos using the shared browser GBIF client. */
 let photoController = null;
 let photoGeneration = 0;
 const photoAlbums = new Map();
@@ -11,20 +11,20 @@ const albumRequests=new Map(),albumQueue=[];
 let activeAlbumRequests=0;
 function referenceAlbum(id,signal){
  if(photoAlbums.has(id))return Promise.resolve(photoAlbums.get(id));
- const existing=albumRequests.get(id);if(existing){existing.signals.push(signal);return existing.promise;}
- const job={id,signals:[signal]};job.promise=new Promise((resolve,reject)=>{job.resolve=resolve;job.reject=reject;});
+ const existing=albumRequests.get(id);if(existing&&existing.generation===gbifClient.controller.signal){existing.signals.push(signal);return existing.promise;}
+ const job={id,signals:[signal],generation:gbifClient.controller.signal};job.promise=new Promise((resolve,reject)=>{job.resolve=resolve;job.reject=reject;});
  albumRequests.set(id,job);albumQueue.push(job);pumpAlbumRequests();return job.promise;
 }
 function pumpAlbumRequests(){
  while(activeAlbumRequests<4&&albumQueue.length){
   const job=albumQueue.shift();
-  if(job.signals.every(signal=>signal.aborted)){albumRequests.delete(job.id);job.reject(new DOMException('Navigation cancelled','AbortError'));continue;}
+  if(job.generation.aborted||job.signals.every(signal=>signal.aborted)){if(albumRequests.get(job.id)===job)albumRequests.delete(job.id);job.reject(new DOMException('Navigation cancelled','AbortError'));continue;}
   activeAlbumRequests++;
   (async()=>{try{
-   const response=await fetch('/api/gbif/'+job.id,{signal:AbortSignal.timeout(12000)}),album=await response.json();
-   if(!response.ok)throw Error(album.error||'Photo lookup failed');
+   if(!gbifEnabled())throw new DOMException('GBIF disabled','AbortError');
+   const album=await gbifClient.album(job.id);
    photoAlbums.set(job.id,album);job.resolve(album);
-  }catch(error){job.reject(error);}finally{albumRequests.delete(job.id);activeAlbumRequests--;pumpAlbumRequests();}})();
+  }catch(error){job.reject(error);}finally{if(albumRequests.get(job.id)===job)albumRequests.delete(job.id);activeAlbumRequests--;pumpAlbumRequests();}})();
  }
 }
 
@@ -100,24 +100,16 @@ async function renderPhotos() {
   const signal = photoController.signal;
   const grid = $('photo-grid');
   grid.replaceChildren();
-  if (!$('photo-enabled').checked) {
-    $('photo-status').textContent = 'Enable to browse the selected class and its nearest directions using GBIF class examples.';
-    return;
-  }
   const ids = [selected, ...data.neighbours[selected]];
   if (data.metadata.synthetic || !ids.some(i => photoNumber(data.names[i]))) {
     $('photo-status').textContent = 'This case has no GBIF-ID candidates. No online lookup was made.';
     return;
   }
-  $('photo-status').textContent = 'Loading class examples sequentially; class IDs and numerical neighbourhoods stay unchanged.';
-  try {
-    const health = await fetch('/api/health', {signal});
-    if (!health.ok || !(await health.json()).photo_api) throw Error('Photo service unavailable');
-  } catch (error) {
-    if (signal.aborted) return;
-    $('photo-status').textContent = 'Photo view needs the local photo server: .venv/bin/python -m dev.prototype_space.serve --directory tmp/prototype-report. Open its localhost URL.';
+  if (!gbifEnabled() || !$('photo-enabled').checked) {
+    $('photo-status').textContent = 'Select GBIF taxon IDs in Settings and enable reference photos to browse examples.';
     return;
   }
+  $('photo-status').textContent = 'Loading class examples sequentially; class IDs and numerical neighbourhoods stay unchanged.';
   const cards = ids.map((classIndex, rank) => {
     const card = photoText('article', '', 'photo-card' + (rank === 0 ? ' photo-selected' : ''));
     const open = photoText('button', '', 'photo-open');

@@ -17,8 +17,9 @@ try{
  const {targetId}=await send('Target.createTarget',{url:'about:blank'});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});
  const call=(m,p)=>send(m,p,sessionId);await call('Page.enable');await call('Runtime.enable');await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
  await call('Page.navigate',{url:process.argv[2].startsWith('http')?process.argv[2]:pathToFileURL(process.argv[2]).href});
- let ready=false;for(let i=0;i<100;i++){const r=await call('Runtime.evaluate',{expression:'document.querySelectorAll("#neighbours tr").length',returnByValue:true});if(r.result.value>0){ready=true;break;}await new Promise(r=>setTimeout(r,100));}
+ let ready=false;for(let i=0;i<100;i++){const r=await call('Runtime.evaluate',{expression:'typeof captureViewerState === "function" ? document.querySelectorAll("#neighbours tr").length : 0',returnByValue:true});if(r.result.value>0){ready=true;break;}await new Promise(r=>setTimeout(r,100));}
  if(!ready)throw Error('Inspector did not render: '+JSON.stringify(errors));
+ await call('Runtime.evaluate',{expression:"new Promise(resolve=>{setWorkspaceView('all');requestAnimationFrame(()=>requestAnimationFrame(resolve));})",awaitPromise:true});
  const result=await call('Runtime.evaluate',{expression:`(()=>{const checks=[];function check(v,s){if(!v)throw Error(s);checks.push(s)}
  check(document.querySelectorAll('#stats .stat').length===4,'production summary');
  check(projectionHits.length===data.names.length,'projection contains every class');
@@ -33,8 +34,8 @@ try{
  const oldScale=projectionView.scale;canvas.dispatchEvent(new WheelEvent('wheel',{clientX:bounds.left+bounds.width/2,clientY:bounds.top+bounds.height/2,deltaY:-150,cancelable:true}));check(projectionView.scale>oldScale,'projection zoom');
  const oldX=projectionView.x;projectionDrag={point:projectionMouse({clientX:bounds.left+100,clientY:bounds.top+100}),view:{...projectionView},moved:false};canvas.onpointermove({clientX:bounds.left+150,clientY:bounds.top+100});canvas.onpointerup({pointerId:1});check(projectionView.x!==oldX,'projection pan');
  document.getElementById('projection-reset').click();
- const target=projectionHits.findIndex(([x,y],i)=>i!==selected&&x>20&&x<1180&&y>20&&y<580&&projectionHit([x,y])===i);check(target>=0,'projected class is selectable');
- const [px,py]=projectionHits[target];const event={button:0,pointerId:1,clientX:bounds.left+px*bounds.width/1200,clientY:bounds.top+py*bounds.height/600};projectionDrag={point:projectionMouse(event),view:{...projectionView},moved:false};canvas.onpointerup(event);
+ const target=projectionHits.findIndex(([x,y],i)=>i!==selected&&x>20&&x<1180&&y>20&&y<projectionHeight-20&&projectionHit([x,y])===i);check(target>=0,'projected class is selectable');
+ const [px,py]=projectionHits[target];const event={button:0,pointerId:1,clientX:bounds.left+px*bounds.width/1200,clientY:bounds.top+py*bounds.height/projectionHeight};projectionDrag={point:projectionMouse(event),view:{...projectionView},moved:false};canvas.onpointerup(event);
  check(selected===target&&document.getElementById('selected-name').textContent===data.names[target],'projection selection updates inspector');
 
  check(document.querySelectorAll('#neighbours tr').length===data.stats.k,'production neighbours');
@@ -63,9 +64,9 @@ try{
  await call('Runtime.evaluate',{expression:'document.getElementById("global-metric").closest(".panel").scrollIntoView()'});const globalShot=await call('Page.captureScreenshot',{format:'png'});writeFileSync(join(output,'matrix.png'),Buffer.from(globalShot.data,'base64'));const report={checks:result.result.value,javascript_errors:errors.length};writeFileSync(join(output,'browser-check.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
  const photos=await call('Runtime.evaluate',{expression:`(async()=>{
  const checks=[];const check=(value,label)=>{if(!value)throw Error(label);checks.push(label)};
- const originalFetch=window.fetch;
+ const originalFetch=window.fetch,originalAlbum=gbifClient.album;
  const pixel='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
- window.fetch=async url=>({ok:true,json:async()=>url==='/api/health'?{photo_api:true}:{class_id:url.split('/').pop(),accepted_id:url.split('/').pop(),display_name:'Fixture class',photos:[0,1].map(i=>({image_path:pixel,creator:'Fixture photographer',license:'Fixture media license',source:'https://www.gbif.org',occurrence_id:'1'}))}});
+ gbifClient.album=async id=>({class_id:id,accepted_id:id,display_name:'Fixture class',photos:[0,1].map(i=>({image_path:pixel,creator:'Fixture photographer',license:'Fixture media license',source:'https://www.gbif.org',occurrence_id:'1'}))});$('class-id-namespace').value='gbif';$('class-id-namespace').onchange();
  document.getElementById('photo-enabled').checked=true;await renderPhotos();
  check(document.querySelectorAll('.photo-card').length===data.stats.k+1,'photo neighbourhood cards');
  check(document.querySelector('.photo-card img').naturalWidth===1,'photo image loaded');
@@ -186,22 +187,22 @@ try{
 
 
 
- const currentBox=mapThumbLayout[0];check(mapThumbnailHit([currentBox.x*1200/projectionCanvas.getBoundingClientRect().width,currentBox.y*600/projectionCanvas.getBoundingClientRect().height])===currentBox.id,'displaced thumbnail hit testing');
+ const currentBox=mapThumbLayout[0];check(mapThumbnailHit([currentBox.x*1200/projectionCanvas.getBoundingClientRect().width,currentBox.y*projectionHeight/projectionCanvas.getBoundingClientRect().height])===currentBox.id,'displaced thumbnail hit testing');
  document.getElementById('map-photo-labels').checked=true;document.getElementById('map-photo-push').checked=false;document.getElementById('map-photo-overlap').value='0';document.getElementById('map-photo-density').value='40';
  scheduleMapThumbnails();clearTimeout(mapThumbTimer);await renderMapThumbnails();
  check([...document.querySelectorAll('.map-thumb')].every(b=>b.querySelector('span'))&&document.querySelectorAll('.map-thumb-tether').length===0,'label and fixed-position modes restore');
  document.getElementById('map-photos').checked=false;scheduleMapThumbnails();check(document.querySelectorAll('.map-thumb').length===0,'map thumbnail toggle clears images');
 
- const fixtureFetch=window.fetch;let release;
- window.fetch=()=>new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({photo_api:true})})});
+ const fixtureAlbum=gbifClient.album;photoAlbums.clear();
+ gbifClient.album=async id=>{await new Promise(r=>setTimeout(r,40));return fixtureAlbum(id);};
  document.getElementById('map-photos').checked=true;scheduleMapThumbnails();clearTimeout(mapThumbTimer);const pendingMap=renderMapThumbnails();
- document.getElementById('map-photos').checked=false;scheduleMapThumbnails();release();await pendingMap;
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();await pendingMap;
  check(document.querySelectorAll('.map-thumb').length===0,'cancelled thumbnail load stays hidden');
- let syntheticRequests=0;window.fetch=async()=>{syntheticRequests++;throw Error('Unexpected synthetic lookup')};
+ let syntheticRequests=0;gbifClient.album=async()=>{syntheticRequests++;throw Error('Unexpected synthetic lookup')};
  document.getElementById('case').value='Algebraic edge cases';document.getElementById('case').dispatchEvent(new Event('change'));document.getElementById('map-photos').checked=true;scheduleMapThumbnails();
  check(syntheticRequests===0&&document.getElementById('map-photo-status').textContent.includes('Synthetic'),'synthetic map skips photo requests');
- document.getElementById('map-photos').checked=false;scheduleMapThumbnails();window.fetch=fixtureFetch;
- window.fetch=originalFetch;
+ document.getElementById('map-photos').checked=false;scheduleMapThumbnails();gbifClient.album=fixtureAlbum;
+ window.fetch=originalFetch;gbifClient.album=originalAlbum;
  document.getElementById('case').value='Production checkpoint';document.getElementById('case').dispatchEvent(new Event('change'));
  return checks;
  })()`,awaitPromise:true,returnByValue:true});
@@ -218,7 +219,7 @@ try{
    const rect=projectionCanvas.getBoundingClientRect();
    check(! $('inspector').hidden&&!$('photo-panel').hidden&&$('tree-panel').hidden,'projection groups related panels');
    check(rect.width>innerWidth*.8&&rect.height>=300,'projection uses viewport width and height');
-   check(rect.top===0&&rect.left===0&&Math.abs(rect.height-innerHeight)<1&&Math.abs(rect.width-document.documentElement.clientWidth)<1,'projection fills the viewport');
+   const nav=$('activity-nav').getBoundingClientRect();check(Math.abs(rect.top-nav.bottom)<1&&rect.left===0&&Math.abs(rect.bottom-innerHeight)<1&&Math.abs(rect.width-document.documentElement.clientWidth)<1,'projection fills available viewport below navigation');
    $('workspace-controls').open=true;$('projection-controls').open=true;await new Promise(r=>setTimeout(r,60));
    const expanded=projectionCanvas.getBoundingClientRect();
    check(expanded.width===rect.width&&expanded.height===rect.height&&expanded.top===rect.top,'floating controls do not resize map');
@@ -265,15 +266,15 @@ try{
   check(!$('score-note').hidden&&$('local-scale').textContent.includes('Upper-tail'),'probability reference and logarithmic colours disclosed');
   check($('profile').textContent.includes('Upper-tail'),'profile probability axis');
   $('score-display').value='z';$('score-display').onchange();check($('score-column').textContent==='z','z display restores');
-  const original=window.fetch,ids=[selected,...data.neighbours[selected]],pending=[];let inFlight=0,peak=0;
+  const original=gbifClient.name,ids=[selected,...data.neighbours[selected]],pending=[];let inFlight=0,peak=0;
   importedNames.delete(data);resolvedNames.clear();nameFailures.clear();
-  window.fetch=async url=>{if(String(url).startsWith('/api/taxon/')){inFlight++;peak=Math.max(peak,inFlight);pending.push(url);await new Promise(r=>setTimeout(r,30));inFlight--;return {ok:true,json:async()=>({class_id:String(url).split('/').pop(),display_name:'Async taxon '+String(url).split('/').pop()})};}return original(url);};
-  $('gbif-names').checked=true;requestClassNames();
+  gbifClient.name=async id=>{inFlight++;peak=Math.max(peak,inFlight);pending.push(id);await new Promise(r=>setTimeout(r,30));inFlight--;return {class_id:id,display_name:'Async taxon '+id};};
+  $('class-id-namespace').value='gbif';requestClassNames();
   for(let i=0;i<60&&!resolvedNames.size;i++)await new Promise(r=>setTimeout(r,30));
   await new Promise(r=>setTimeout(r,200));
-  check(resolvedNames.size>0&&pending.every(url=>url.startsWith('/api/taxon/')),'asynchronous names need no photo lookup');
+  check(resolvedNames.size>0&&pending.every(id=>String(Number(id))===id),'asynchronous names need no photo lookup');
   check(peak===1&&pending.length<30,'name lookup is bounded and prioritizes a small visible set');
-  $('class-names').checked=false;$('gbif-names').checked=false;await new Promise(r=>setTimeout(r,100));window.fetch=original;refreshClassLabels();
+  $('class-names').checked=false;$('class-id-namespace').value='generic';await new Promise(r=>setTimeout(r,100));gbifClient.name=original;refreshClassLabels();
   check($('selected-name').textContent===data.names[selected],'IDs restore without losing selected class');
   const rect=projectionCanvas.getBoundingClientRect();check(projectionCanvas.width===Math.round(rect.width*devicePixelRatio)&&projectionCanvas.height===Math.round(rect.height*devicePixelRatio),'canvas backing matches physical screen pixels');
   check(rect.height>=300,'focused map retains vertical workspace');
@@ -299,11 +300,11 @@ try{
   check(rejected,'state from another model is rejected');
   rejected=false;try{applyViewerState({...saved,view:{x:0,y:0,scale:-1}});}catch{rejected=true;}
   check(rejected,'malformed saved geometry is rejected');
-  saveViewerState();check(JSON.parse(localStorage.getItem('prototype-view:'+viewerIdentity())).version===1,'state persists in browser storage');
+  saveViewerState();check(JSON.parse(localStorage.getItem('prototype-view:'+viewerIdentity())).version===2,'state persists in browser storage');
   const storageWrite=Storage.prototype.setItem;Storage.prototype.setItem=()=>{throw Error('quota');};saveViewerState();Storage.prototype.setItem=storageWrite;
   check($('viewer-state-status').textContent.includes('unavailable'),'storage failure leaves viewer usable');
-  const metadataFetch=window.fetch;let requests=0,active=0,peakMetadata=0;
-  window.fetch=async url=>{requests++;active++;peakMetadata=Math.max(peakMetadata,active);await new Promise(r=>setTimeout(r,40));active--;return {ok:true,json:async()=>({class_id:String(url).split('/').pop(),photos:[]})};};
+  const metadataFetch=gbifClient.album;$('class-id-namespace').value='gbif';let requests=0,active=0,peakMetadata=0;
+  gbifClient.album=async id=>{requests++;active++;peakMetadata=Math.max(peakMetadata,active);await new Promise(r=>setTimeout(r,40));active--;return {class_id:id,photos:[]};};
   const obsolete=new AbortController(),current=new AbortController();
   const first=referenceAlbum('fixture-shared',obsolete.signal);obsolete.abort();
   const second=referenceAlbum('fixture-shared',current.signal);await Promise.all([first,second]);
@@ -311,7 +312,7 @@ try{
   await Promise.all(Array.from({length:8},(_,i)=>referenceAlbum('fixture-bound-'+i,current.signal)));
   check(peakMetadata<=4,'metadata requests are globally bounded');
   const cachedRequests=requests;await referenceAlbum('fixture-shared',current.signal);
-  check(requests===cachedRequests,'resolved metadata is reused without fetching');window.fetch=metadataFetch;
+  check(requests===cachedRequests,'resolved metadata is reused without fetching');gbifClient.album=metadataFetch;
 
 
   return checks;

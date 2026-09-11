@@ -1,5 +1,5 @@
 /* Versioned presentation state. Numerical data and transient image motion are excluded. */
-const viewerStateControls=['workspace-view','projection-plane','metric','global-metric','range-preset','range-low','range-high','score-display','class-names','gbif-names','photo-enabled','map-photos','map-photo-size','map-photo-density','map-photo-overlap','map-photo-labels','map-photo-push','map-photo-aspect','map-photo-anchors','projection-edges'];
+const viewerStateControls=['workspace-view','projection-plane','metric','global-metric','range-preset','range-low','range-high','score-display','class-names','class-id-namespace','photo-enabled','map-photos','map-photo-size','map-photo-density','map-photo-overlap','map-photo-labels','map-photo-push','map-photo-aspect','map-photo-anchors','projection-edges'];
 let restoringViewerState=false,viewerStateTimer,viewerServerToken=null,viewerStateChanged=false,viewerStateWrites=Promise.resolve();
 const viewerDocumentKey='prototype-case:'+(Object.values(cases).find(c=>!c.metadata.synthetic)?.metadata.checkpoint_sha256||Object.keys(cases).join(':'));
 function viewerIdentity(){
@@ -7,7 +7,7 @@ function viewerIdentity(){
  return [data.metadata.checkpoint_sha256||'synthetic',data.metadata.seed||0,$('case').value,data.names.length,hash>>>0].join(':');
 }
 function captureViewerState(){
- return {version:1,identity:viewerIdentity(),selected:data.names[selected],tree:treeFocus,view:{...projectionView},controls:Object.fromEntries(viewerStateControls.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value]))};
+ return {version:2,identity:viewerIdentity(),selected:data.names[selected],tree:treeFocus,view:{...projectionView},controls:Object.fromEntries(viewerStateControls.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value]))};
 }
 function stateMessage(message){$('viewer-state-status').textContent=message;}
 function saveViewerState(){
@@ -17,10 +17,11 @@ function saveViewerState(){
  if(viewerServerToken){const body=JSON.stringify({key:viewerDocumentKey,state:{case:$('case').value,view:captureViewerState()}});viewerStateWrites=viewerStateWrites.then(()=>fetch('/api/view-state',{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Token':viewerServerToken},body,keepalive:true})).catch(()=>stateMessage('Local server state unavailable; browser save/export remains available.'));}
 }
 function applyViewerState(state){
- if(state?.version!==1||state.identity!==viewerIdentity())throw Error('State belongs to a different model/case or unsupported version.');
+ if(![1,2].includes(state?.version)||state.identity!==viewerIdentity())throw Error('State belongs to a different model/case or unsupported version.');
+ if(!state.controls||typeof state.controls!=='object'||Array.isArray(state.controls))throw Error('Missing saved controls');
+ if(state.version===1){const controls={...state.controls};controls['class-id-namespace']=['gbif-names','photo-enabled','map-photos'].some(id=>controls[id]===true)?'gbif':'generic';delete controls['gbif-names'];state={...state,version:2,controls};}
  const index=data.names.indexOf(state.selected),v=state.view;
  if(index<0||!v||![v.x,v.y,v.scale].every(Number.isFinite)||v.scale<=0||!Number.isInteger(state.tree)||state.tree<0||state.tree>=data.names.length*2-1)throw Error('Invalid saved selection or geometry.');
- if(!state.controls||typeof state.controls!=='object')throw Error('Missing saved controls.');
  for(const [id,value] of Object.entries(state.controls)){
   if(!viewerStateControls.includes(id))continue;const node=$(id);
   if(node.type==='checkbox'){if(typeof value!=='boolean')throw Error('Invalid checkbox state.');}
@@ -30,6 +31,7 @@ function applyViewerState(state){
  restoringViewerState=true;
  try{
   for(const [id,value] of Object.entries(state.controls)){if(!viewerStateControls.includes(id))continue;const node=$(id);if(node.type==='checkbox')node.checked=value;else node.value=value;}
+  $('class-id-namespace').onchange();
   setWorkspaceView($('workspace-view').value);treeFocus=state.tree;selectClass(index);
   $('score-note').hidden=$('score-display').value!=='tail';drawHistogram();drawGlobal();setThumbnailAnchors();
   // Wait for the new focused layout's ResizeObserver before restoring its transform.
@@ -42,7 +44,7 @@ function restoreViewerState(){
 }
 function queueViewerState(){if(restoringViewerState)return;viewerStateChanged=true;clearTimeout(viewerStateTimer);viewerStateTimer=setTimeout(saveViewerState,400);}
 const stateMenu=document.createElement('details');stateMenu.className='label-settings';stateMenu.innerHTML='<summary>Saved view</summary><div><button type="button" id="viewer-state-export">Export state</button><label>Import state <input id="viewer-state-import" type="file" accept=".json"></label><button type="button" id="viewer-state-reset">Reset saved view</button><span id="viewer-state-status" class="caption" role="status"></span></div>';
-document.querySelector('.controls').append(stateMenu);
+$('shared-settings-content').append(stateMenu);
 $('viewer-state-export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(captureViewerState(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='prototype-view.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('viewer-state-import').onchange=async()=>{try{const file=$('viewer-state-import').files[0];if(file)applyViewerState(JSON.parse(await file.text()));}catch(error){stateMessage(error.message);}};
 $('viewer-state-reset').onclick=async()=>{restoringViewerState=true;clearTimeout(viewerStateTimer);try{localStorage.removeItem('prototype-view:'+viewerIdentity());await viewerStateWrites;if(viewerServerToken)await fetch('/api/view-state',{method:'POST',headers:{'Content-Type':'application/json','X-Explorer-Token':viewerServerToken},body:JSON.stringify({key:viewerDocumentKey,state:null})});}catch{}location.reload();};

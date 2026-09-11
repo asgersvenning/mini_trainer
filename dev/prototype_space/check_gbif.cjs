@@ -26,5 +26,12 @@ const {BrowserGBIF}=require('../../mini_trainer/visualization/prototype_space/gb
  await assert.rejects(pending,{name:'AbortError'});assert.equal(slow.cache.size,0);
  const limited=new BrowserGBIF({fetcher:async()=>({ok:false,status:429})});
  await assert.rejects(limited.name('1'),/request limit/);assert.equal(limited.pending.size,0);
+ const offline=new BrowserGBIF({fetcher:async()=>{throw Error('Offline');}});await assert.rejects(offline.name('1'),/Offline/);
+ const malformed=new BrowserGBIF({fetcher:async()=>({ok:true,json:async()=>null})});await assert.rejects(malformed.name('1'),/Invalid GBIF response/);
+ const wrong=new BrowserGBIF({fetcher:async()=>({ok:true,json:async()=>({key:2})})});await assert.rejects(wrong.name('1'),/different taxon/);
+ assert.deepEqual(BrowserGBIF.albumFromRecords('1',{key:1},[]).photos,[]);
+ assert.throws(()=>client.seed({schema:'unsupported',taxa:{}}),/snapshot/);
+ const timed=new BrowserGBIF({timeout:5,fetcher:async(url,{signal})=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason)))});
+ const keepAlive=setTimeout(()=>{},100);await assert.rejects(timed.name('1'),{name:'TimeoutError'});clearTimeout(keepAlive);
  console.log('GBIF checks passed: deduplication, cache, concurrency, IDs, taxonomy, URLs, attribution, cancellation, rate limit.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
