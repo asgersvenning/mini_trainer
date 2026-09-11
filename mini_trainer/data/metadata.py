@@ -268,8 +268,34 @@ def _inference_folder_labels(src: str, cls2idx: dict, labels) -> OrderedDict:
     return OrderedDict((name, resolved[name]) for name in folders)
 
 
-def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], list[str]]:
-    """Find images in source and possibly create training metadata."""
+def auto_find_images(src: str, **kwargs) -> tuple[list[str | tuple[str, ...] | list[str]], list[str]]:
+    """Discover inference images and their ground-truth labels using source heuristics.
+
+    This is the prediction input adapter, not just a recursive file finder.
+    Its behavior depends on the source layout:
+
+    * A ``.parquet`` file is parsed with the supplied metadata options, and only
+      its existing ``test`` split is returned.
+    * A directory containing only directories is treated as labelled input.
+      All discovered samples are assigned to evaluation (no training/validation
+      holdout). Hierarchical labels use ``cls2idx`` and ``labels`` from kwargs;
+      missing taxonomical folder labels may require GBIF/cache lookups. Unseen
+      species folders are retained, with numeric folder IDs as ground truth.
+    * Any other directory is searched recursively for images, without labels.
+      Consequently, even a non-image file at a class-folder root changes which
+      branch is selected.
+    * Any other existing file is returned as one unlabelled input. Its image
+      contents are not validated here.
+
+    Returns:
+        ``(labels, images)`` in corresponding order. Labels are raw class names
+        or hierarchical label sequences, not model class indices. Unlabelled
+        inputs return an empty labels list rather than one placeholder per image.
+
+    Additional keyword arguments are forwarded to metadata parsing/construction;
+    they are not used for unlabelled discovery. Use ``find_images`` for file-only
+    discovery without label resolution or test-split selection.
+    """
     metadata = labels = images = None
     if os.path.isfile(src):
         if src.endswith(".parquet"):
