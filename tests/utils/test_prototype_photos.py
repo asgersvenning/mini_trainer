@@ -1,0 +1,91 @@
+"""Photo labels preserve class identity and media provenance."""
+
+import hashlib
+import threading
+
+import pytest
+
+from dev.prototype_space import serve
+
+
+def test_reference_membership_and_media_provenance():
+    image = {"type": "StillImage", "identifier": "https://example.org/moth.jpg", "creator": "Photographer"}
+    records = [
+        {"key": 1, "taxonKey": 999, "media": [image]},
+        {"key": 2, "speciesKey": 42, "license": "Occurrence data license", "media": [image, image]},
+        {"key": 3, "speciesKey": 42, "media": [{**image, "type": "Sound"}]},
+        {"key": 4, "speciesKey": 42, "media": [{**image, "identifier": "file:///tmp/moth.jpg"}]},
+    ]
+    album = serve.reference_photos("17", {"acceptedKey": 42, "canonicalName": "Example moth"}, records)
+    assert album["class_id"] == "17"
+    assert album["accepted_id"] == "42"
+    assert album["display_name"] == "Example moth"
+    assert len(album["photos"]) == 1
+    photo = album["photos"][0]
+    digest = hashlib.md5(image["identifier"].encode(), usedforsecurity=False).hexdigest()
+    assert photo["image_path"] == f"/gbif-image/2/{digest}"
+    assert photo["license"] == "Image license not supplied"
+    assert photo["creator"] == "Photographer"
+    assert photo["source"] == "https://www.gbif.org/occurrence/2"
+
+
+def test_photo_service_restricts_requests_and_registers_images(monkeypatch):
+    calls = []
+
+    def retrieve(url):
+        calls.append(url)
+        if "/species/" in url:
+            return {"canonicalName": "Example"}
+        return {"results": [{"key": 9, "taxonKey": 42, "media": [{"type": "StillImage", "identifier": "https://example.org/a.jpg"}]}]}
+
+    monkeypatch.setattr(serve.gbif, "retrive_request", retrieve)
+    service = serve.PhotoService({"42"}, {})
+    with pytest.raises(ValueError):
+        service.metadata("43")
+    with pytest.raises(ValueError):
+        service.image("/gbif-image/9/unresolved")
+    assert calls == []
+    album = service.metadata("42")
+    path = album["photos"][0]["image_path"]
+    service.cache["prototype-image:" + path] = (b"cached image", "image/jpeg")
+    assert service.image(path) == (b"cached image", "image/jpeg")
+    assert len(calls) == 2
+
+
+def test_cached_photos_bypass_busy_upstream_connection(monkeypatch):
+    monkeypatch.setattr(serve.gbif, "retrive_request", lambda url: {"results": []})
+    service = serve.PhotoService({"42"}, {})
+    album = service.metadata("42")
+    path = "/gbif-image/9/" + "a" * 32
+    service.image_paths.add(path)
+    service.cache["prototype-image:" + path] = (b"cached", "image/jpeg")
+    results = []
+    done = threading.Event()
+
+    def cached_requests():
+        results.extend([service.metadata("42"), service.image(path)])
+        done.set()
+
+    with service.lock:
+        thread = threading.Thread(target=cached_requests)
+        thread.start()
+        bypassed = done.wait(timeout=1)
+    thread.join(timeout=2)
+    assert bypassed, "Cached responses must not wait behind an upstream download"
+    assert results == [album, (b"cached", "image/jpeg")]
+
+
+def test_name_lookup_does_not_request_occurrences_or_images(monkeypatch):
+    calls = []
+
+    def retrieve(url):
+        calls.append(url)
+        return {"canonicalName": "Example taxon", "acceptedKey": 99}
+
+    monkeypatch.setattr(serve.gbif, "retrive_request", retrieve)
+    service = serve.PhotoService({"42"}, {})
+    assert service.taxon_name("42") == {"class_id": "42", "display_name": "Example taxon"}
+    assert calls == [serve.gbif.GBIF_SPECIES_API_ENDPOINT + "42"]
+    assert not service.image_paths
+    with pytest.raises(ValueError):
+        service.taxon_name("43")

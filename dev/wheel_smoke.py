@@ -52,6 +52,25 @@ def main():
         if entry.group == "console_scripts":
             subprocess.run([str(Path(sys.executable).parent / entry.name), "--help"], check=True, timeout=60, capture_output=True)
 
+    assets = importlib.resources.files("mini_trainer.visualization.prototype_space")
+    for name in (
+        "report.html",
+        "launcher.html",
+        "photos.js",
+        "gbif.js",
+        "projection.js",
+        "thumbnails.js",
+        "state.js",
+        "inference.js",
+        "inference_worker.js",
+        "insertion.js",
+    ):
+        assert assets.joinpath(name).read_text(), f"Missing packaged explorer asset: {name}"
+    missing_explorer = subprocess.run(
+        [str(Path(sys.executable).parent / "mt_explore"), "--no-browser"], capture_output=True, text=True, timeout=30
+    )
+    assert missing_explorer.returncode != 0 and "mini_trainer[explorer]" in missing_explorer.stderr
+
     root = Path.cwd()
     data = root / "images"
     for label, color in (("dark", (20, 30, 40)), ("light", (200, 210, 220))):

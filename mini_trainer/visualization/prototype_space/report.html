@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype observatory</title>
+<style>
+:root{color-scheme:light;--ink:#172e46;--muted:#52687b;--accent:#087e8b;--paper:#f3f5f7;--line:#dce3e9}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 system-ui,sans-serif}
+header{background:#142c43;color:white;padding:32px max(24px,calc((100vw - 1320px)/2)) 28px}header p{max-width:850px;color:#c5d5e1;margin-bottom:0}
+h1{font-size:36px;letter-spacing:-1.2px;margin:4px 0}h2{font-size:21px;margin:0 0 8px;letter-spacing:-.3px}h3{font-size:16px;margin:0 0 10px}
+.eyebrow{text-transform:uppercase;letter-spacing:2px;font-size:11px;color:#85d5d7;font-weight:700}
+main{max-width:1368px;margin:auto;padding:22px 24px 50px}.controls{position:sticky;top:0;background:#edf2f5f5;border-bottom:1px solid var(--line);z-index:10;padding:14px 24px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.controls label{font-size:12px;font-weight:650}.controls input{width:210px}select,input,button{font:inherit;border:1px solid #b8c8d4;border-radius:6px;background:white;color:var(--ink);padding:7px 10px}button{cursor:pointer}button:hover{border-color:var(--accent);background:#e8f5f5}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #56acb4}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}.stat{background:white;padding:18px 20px;border:1px solid var(--line);border-radius:10px}.stat strong{display:block;font-size:28px;line-height:1.3}.stat span{font-size:12px;color:var(--muted)}
+.panel{scroll-margin-top:85px;background:white;border:1px solid var(--line);border-radius:12px;padding:23px;margin-bottom:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.muted,.caption{color:var(--muted);font-size:13px}.caption{margin:8px 0 0}.tag{display:inline-block;background:#e2f2f1;color:#07606a;padding:2px 8px;border-radius:4px;font-size:12px;margin-left:8px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.legend{height:10px;background:linear-gradient(to right,#000004,#51127c,#b73779,#fc8961,#fcfdbf);border-radius:3px}.ticks{display:flex;justify-content:space-between;font:11px ui-monospace,monospace;margin:3px 0 12px}.matrix{position:relative}.matrix img,.matrix canvas{display:block;width:100%;image-rendering:pixelated}.marker{position:absolute;top:0;bottom:0;width:1px;background:#10d6ff;pointer-events:none}.marker.horizontal{left:0;right:0;height:1px;width:auto}.tree-wrap{overflow:auto}svg{display:block;width:100%}#tree{min-width:760px}.tree-label{cursor:pointer}.tree-label:hover{fill:#087e8b;text-decoration:underline}#local{max-width:440px;cursor:crosshair}#local rect:hover{stroke:#04d0d5;stroke-width:2}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:7px 5px}th{color:var(--muted)}td button{border:0;background:transparent;color:#087781;padding:0;font-size:12px;text-decoration:underline}.mono{font-family:ui-monospace,monospace}.notice{border-left:3px solid #c28936;padding:10px 14px;background:#fff8ec;font-size:13px}details{margin-top:14px}summary{cursor:pointer;font-weight:600}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}.panel p{margin-top:0}#search-status{font-size:12px;color:var(--muted)}#cell-info{min-height:44px}.selected-title{font-size:24px}.case-note{margin-bottom:18px}.tree-hit{cursor:pointer}footer{font-size:13px;color:var(--muted);padding-top:10px}
+@media(max-width:850px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.controls{position:static}main{padding:16px 12px}.panel{padding:17px}header{padding:24px}.controls input{width:160px}}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}.photo-card{border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}.photo-selected{border:2px solid var(--accent)}.photo-open{width:100%;padding:0;border:0;background:#edf2f5;height:150px;overflow:hidden}.photo-open img{display:block;width:100%;height:100%;object-fit:contain}.photo-title{display:block;margin-top:8px}.photo-credit{font-size:10px;color:var(--muted);overflow-wrap:anywhere;margin:8px 0 0!important}.photo-credit a{color:var(--accent)}.photo-card button:not(.photo-open){font-size:11px;padding:4px 6px}
+@keyframes thumb-appear{from{opacity:0}to{opacity:1}}
+.map-thumb{animation:thumb-appear .18s ease-out;position:absolute;transform:translate(-50%,-50%);padding:2px;border:2px solid #087e8b;border-radius:4px;background:white;pointer-events:none;overflow:hidden;box-shadow:0 1px 4px #0003}.map-thumb img{display:block;width:100%;object-fit:contain;background:#f5f7fa}.map-thumb span{display:block;font-size:10px;height:16px;line-height:16px;white-space:nowrap;overflow:hidden}.map-thumb.image-only{padding:0;border:0;border-radius:0;box-shadow:none}.map-thumb.image-only img{object-fit:cover;background:transparent}.map-thumb.original-aspect img{object-fit:contain}.map-thumb.image-only:focus-visible{outline-offset:-3px}.hide-thumb-anchors .map-thumb-tether{display:none}.map-thumb-tether{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}.map-thumb:focus-visible{outline:3px solid #ffae3d}
+@media(prefers-reduced-motion:reduce){.map-thumb{animation:none}}
+
+[hidden]{display:none!important}
+body.focused header,body.focused #stats,body.focused #case-note,body.focused footer{display:none}
+body.focused main{max-width:none;padding:16px;display:flex;flex-wrap:wrap;gap:16px}
+body.focused #overview-charts{display:contents}
+body.focused main .panel{min-width:0;margin:0;flex:1 1 480px;max-width:100%}
+body.focused main .primary-view{order:-1;flex-basis:100%}
+body.focused #projection-panel.primary-view,body.focused #tree-panel.primary-view{height:max(560px,calc(100dvh - var(--toolbar-height,100px) - 32px));display:flex;flex-direction:column}
+body.focused .primary-view>p.muted{display:none}
+body.focused #projection-panel.primary-view #projection-stage{flex:1;min-height:300px}
+body.focused #projection-panel.primary-view #projection-map{aspect-ratio:auto!important;height:100%!important;border:0!important}
+body.focused #tree-panel.primary-view .tree-wrap{flex:1;min-height:300px;max-height:none}
+body.focused #projection-panel.primary-view .caption{margin:3px 0;font-size:12px}
+#projection-panel{position:relative}
+#projection-details{position:absolute;bottom:12px;right:12px;z-index:4;margin:0;max-width:calc(100% - 24px);font-size:12px}
+#projection-details>summary{width:max-content;margin-left:auto;padding:5px 10px;background:#fffffff2;border:1px solid var(--line);border-radius:6px}
+.projection-details-content{position:absolute;bottom:100%;right:0;width:620px;max-width:calc(100vw - 48px);max-height:min(350px,55dvh);overflow:auto;overflow-wrap:anywhere;background:#fffffff5;border:1px solid var(--line);border-radius:8px;padding:12px;box-shadow:0 3px 12px #0002}
+body.focused #projection-panel.primary-view{padding:10px;height:max(400px,calc(100dvh - var(--toolbar-height,100px) - 16px))}
+body[data-view=projection] main{padding:8px}
+body.focused #projection-panel.primary-view h2{font-size:18px;margin:0}
+body.focused #thumbnail-options{position:relative;margin:4px 0;flex-shrink:0;font-size:12px;z-index:5}
+body.focused #thumbnail-options>div{position:absolute;top:100%;left:0;right:0;margin:0!important;padding:12px;background:#fffffff5;border:1px solid var(--line);border-radius:6px;max-height:45dvh;overflow:auto;box-shadow:0 3px 12px #0002}
+body.focused #score-note{flex-basis:100%;order:-2}
+.controls input[type=checkbox]{width:auto}
+#name-status{max-width:260px}
+.label-settings{position:relative;margin:0}.label-settings>div{position:absolute;top:100%;left:0;width:330px;max-width:90vw;padding:16px;display:grid;gap:10px;background:white;border:1px solid var(--line);box-shadow:0 3px 12px #0002;z-index:30}
+@media(max-width:600px){.label-settings>div{position:fixed;top:auto;left:8px;right:8px;width:auto}}
+body.focused .tree-wrap{max-height:calc(100dvh - 210px);min-height:300px;overflow:auto}
+body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));margin:auto}
+.panel-focus{font-size:12px;float:right;margin:0 0 8px 12px}
+@media(max-width:850px){body.focused main{padding:8px}.controls{gap:8px;padding:8px}.grid>div{min-width:0;overflow:auto}body.focused .panel{padding:14px}}
+
+#workspace-controls,#projection-controls{margin:0}
+#workspace-controls>summary,#projection-controls>summary{display:none}
+body[data-view=projection] main{padding:0;gap:16px}
+body[data-view=projection] #projection-panel.primary-view{height:100dvh;padding:0;border:0;border-radius:0;flex:0 0 100%}
+body[data-view=projection] #projection-stage{min-height:0!important}
+body[data-view=projection] #workspace-controls{position:fixed;top:8px;left:8px;z-index:20}
+body[data-view=projection] #projection-controls{position:absolute;top:8px;right:8px;z-index:10}
+body[data-view=projection] #workspace-controls>summary,body[data-view=projection] #projection-controls>summary{display:block;list-style:revert;padding:6px 10px;background:#fffffff2;border:1px solid var(--line);border-radius:6px;width:max-content;font-size:13px;box-shadow:0 2px 8px #0001}
+body[data-view=projection] #projection-controls>summary{margin-left:auto}
+body[data-view=projection] .controls,body[data-view=projection] .projection-controls-content{position:absolute;top:calc(100% + 6px);width:min(560px,calc(100vw - 16px));max-height:calc(100dvh - 65px);overflow:auto;background:#fffffff5;border:1px solid var(--line);border-radius:8px;padding:12px;box-shadow:0 3px 12px #0002}
+body[data-view=projection] .controls{left:0}
+body[data-view=projection] .projection-controls-content{right:0}
+body[data-view=projection] #thumbnail-options>div{position:static;max-height:none;box-shadow:none}
+body[data-view=projection] .projection-controls-content>p.muted{display:none}
+body[data-view=projection] .label-settings>div{position:static;width:auto;max-width:100%;box-shadow:none}
+body[data-view=projection] #score-note{order:0;padding:12px;margin:0}
+
+#activity-nav{display:flex;align-items:center;gap:10px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);position:relative;z-index:60}
+body[data-view=projection] #workspace-controls{top:var(--activity-height,56px)}
+body[data-view=projection] #projection-controls{top:8px}
+body[data-view=projection] #projection-panel.primary-view{height:calc(100dvh - var(--activity-height,56px))}
+#activity-nav button{font-weight:600}#activity-nav button[aria-pressed=true]{background:#e2f2f1;border-color:var(--accent)}
+body[data-view=predict] #workspace-controls{display:none}
+.inference-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.inference-actions label{display:flex;align-items:center;gap:8px;min-width:0}.inference-actions input{max-width:100%;width:260px}
+#inference-preview{object-fit:contain;border-radius:6px;margin:10px 0}
+#inference-model-settings{font-size:13px;margin:12px 0}#inference-model-settings input{max-width:100%}
+#shared-settings{margin-left:auto}
+#shared-settings-content{position:absolute;right:12px;top:100%;width:350px;max-width:calc(100vw - 24px);max-height:75vh;overflow:auto;background:white;padding:16px;border:1px solid var(--line);box-shadow:0 5px 20px #0002}
+#shared-settings-content .label-settings>div{position:static;box-shadow:none;width:auto;max-width:100%;border:0;padding:10px 0}
+#shared-settings-content .label-settings{margin-bottom:12px}
+#inference-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+#inference-results>h3{display:none}#inference-results ol:before{content:"Level " attr(data-level);display:block;font-weight:650;margin-bottom:8px}#inference-results ol{padding:0;list-style:none;min-width:0}
+#inference-results li{padding:12px 0;border-bottom:1px solid var(--line)}
+#inference-results figure{margin:8px 0;display:flex;gap:10px;align-items:center}
+#inference-results figcaption{font-size:11px;overflow-wrap:anywhere}#inference-results img{flex-shrink:0;border-radius:6px}
+body[data-view=predict] #inference-panel{width:100%}body[data-view=predict] #projection-panel{width:100%;height:65vh}
+@media(max-width:650px){#inference-results{grid-template-columns:1fr}#activity-nav{padding:8px}#shared-settings-content{right:8px}}
+</style>
+<nav id="activity-nav" aria-label="Viewer activities"><button id="activity-explore">Explore</button><button id="activity-predict">Predict</button><details id="shared-settings"><summary>Settings</summary><div id="shared-settings-content"></div></details></nav>
+<header><div class="eyebrow">mini_trainer · empirical exploration</div><h1>Prototype observatory</h1><p>Move between the global tree, pairwise structure and a class’s local neighbourhood. The existing mini_trainer distance is the reference; the pre-CDF z-score exposes detail that can be hidden by probability rounding.</p></header>
+<details id="workspace-controls" open><summary>Explorer · view &amp; class</summary><div class="controls">
+<a id="open-model" href="/" hidden>Open another model</a>
+<a id="download-report" href="explorer.html" download>Save HTML report</a>
+<label>View <select id="workspace-view"><option value="projection">Spatial projection</option><option value="predict">Predictions and map</option><option value="all">All diagnostics</option><option value="tree">Dendrogram</option><option value="matrix">Distance matrices</option><option value="photos">Class images</option><option value="local">Local neighbourhood</option></select></label>
+<label>Case <select id="case"></select></label>
+<label>Class ID / name <input id="search" placeholder="Search checkpoint ID" list="classes"></label><datalist id="classes"></datalist>
+<button id="find">Inspect</button>
+<details class="label-settings" id="identity-settings"><summary>Names and class identity</summary><div><label><input id="class-names" type="checkbox"> Class names</label><label>Class IDs <select id="class-id-namespace"><option value="generic">Generic IDs</option><option value="gbif">GBIF taxon IDs</option></select></label>
+<label>Import names <input id="name-file" type="file" accept=".json" style="width:110px"></label><span id="name-status" class="caption" role="status"></span>
+</div></details><label>Scores <select id="score-display"><option value="z">z-scores</option><option value="tail">Chance-alignment p-value (approx.)</option></select></label><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
+</div></details>
+<main>
+<section class="panel" id="inference-panel"><h2>Try your own image</h2>
+<p class="muted">Run this model locally in your browser. Images are not uploaded. Model download and inference may take time on this device.</p>
+<details id="inference-model-settings"><summary>Model source</summary><label>Browser model manifest <input id="inference-url" type="url" value="browser-model/manifest.json" style="width:min(600px,100%)"></label></details>
+<div class="inference-actions"><button id="inference-load">Load model</button><button id="inference-cancel">Stop</button>
+<label>Image <input id="inference-image" type="file" accept="image/png,image/jpeg" disabled></label></div><img id="inference-preview" alt="Your input image" hidden width="120" height="120">
+<p id="inference-status" role="status">Load the matching browser bundle to begin.</p><div id="inference-results"></div></section>
+<p id="score-note" class="caption" hidden>Chance-alignment p-value (approx.): q = Φ(−z) is the one-sided upper-tail probability under independent uniform directions on the unit hypersphere. Small q means random directions would rarely be this closely aligned. It is not a calibrated class posterior or a formal probability that two prototypes are different; that interpretation remains to be formalized. Ward linkage heights retain their original units.</p>
+<p id="case-note" class="case-note muted"></p>
+<div class="stats" id="stats"></div>
+<div class="grid" id="overview-charts">
+ <section class="panel" id="hist-panel"><h2>Distribution of pairwise z-scores</h2><p class="muted">The actual transform used by mini_trainer, before the Normal CDF. Self-pairs excluded. No fitted distribution or assumed organization.</p><svg id="hist" viewBox="0 0 560 240" aria-label="Pairwise z-score histogram"></svg><p id="hist-note" class="caption"></p></section>
+ <section class="panel" id="profile-panel"><h2>Neighbourhood signature</h2><p class="muted">Similarity to the 1st, 5th, 12th and 32nd neighbour in the full space. High values across ranks indicate several strongly aligned directions.</p><svg id="profile" viewBox="0 0 560 240" aria-label="Selected class neighbour similarity profile"></svg><p class="caption">Teal: selected class. Grey: per-rank median across classes. Rank points are not an embedding projection.</p></section>
+</div>
+<section class="panel" id="projection-panel"><details id="projection-controls" open><summary>Map controls</summary><div class="projection-controls-content"><div class="row"><h2>Prototype space · spatial projection</h2><label>Plane <select id="projection-plane"></select></label><button id="projection-reset">Fit all</button><button id="projection-focus">Fit selected neighbourhood</button><label><input type="checkbox" id="projection-edges" checked> Original-space neighbour links</label></div>
+<p class="muted">Compare linear PCA with angular t-SNE when available. Scroll to zoom, drag to pan, click a point or thumbnail to inspect its class. Each case is fitted separately.</p>
+<details id="thumbnail-options" open><summary>Thumbnail settings</summary><div class="row" style="margin:12px 0"><label><input type="checkbox" id="map-photos"> GBIF thumbnails on map</label><label><input type="checkbox" id="map-photo-labels" checked> Labels beneath images</label><label><input type="checkbox" id="map-photo-aspect"> Original aspect ratio</label><label><input type="checkbox" id="map-photo-push"> Push thumbnails apart</label><label><input type="checkbox" id="map-photo-anchors"> Show thumbnail anchors</label><label>Image size <input id="map-photo-size" type="range" min="32" max="160" value="64" step="8"> <output id="map-size-value">64 px</output></label><label>Density <input id="map-photo-density" type="range" min="5" max="200" value="40" step="5"> <output id="map-density-value">40 / MP</output></label><label>Max overlap <input id="map-photo-overlap" type="range" min="0" max="75" value="0" step="5"> <output id="map-overlap-value">0%</output></label><button id="map-photo-retry">Retry images</button></div></details>
+</div></details><div id="projection-stage" style="position:relative"><canvas id="projection-map" width="1200" height="600" style="width:100%;aspect-ratio:2;display:block;touch-action:none;cursor:crosshair;background:#f8fafc;border:1px solid var(--line)" role="img" aria-label="Interactive projection of class prototype directions"></canvas><div id="map-thumbnail-layer" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div></div>
+<details id="projection-details"><summary>Map details &amp; credits</summary><div class="projection-details-content"><p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
+<p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></div></details></section>
+<section class="panel" id="photo-panel"><div class="row"><h2>Browse by class image</h2><label><input type="checkbox" id="photo-enabled"> Show reference photos</label></div><p class="muted">Photo labels for the selected class and its nearest prototype directions. The prototype marks the learned target direction for the class; a GBIF class example provides its visual label. Credits and exact class IDs stay attached.</p><p id="photo-status" class="caption" role="status"></p><div id="photo-grid" class="photo-grid"></div></section>
+<section class="panel" id="tree-panel">
+ <div class="row"><h2>Explore the existing dendrogram</h2><div><button id="tree-root">Whole tree</button> <button id="tree-up">Parent</button> <button id="tree-locate">Locate selected class</button></div></div>
+ <p class="muted">Same Ward linkage on <span class="mono">class_distance</span>, shown as a rectangular tree with at most 32 visible tips. Click a collapsed tip to expand its subtree; click a class to inspect it. Heights retain the existing linkage units.</p>
+ <p id="tree-note" class="caption"></p><div class="tree-wrap"><svg id="tree" viewBox="0 0 1200 660" aria-label="Collapsible baseline dendrogram"></svg></div>
+</section>
+<section class="panel" id="matrix-panel">
+ <div class="row"><h2>What survives matrix aggregation?</h2><label>Values <select id="global-metric"><option value="logtail">Log-domain tail (float32)</option><option value="baseline">Legacy tail (float32 CDF)</option></select></label></div><p class="muted">Both panels represent the current heatmap quantity, <span class="mono">1 − CDF(z)</span>, in the same dendrogram leaf order. The log-domain option evaluates <span class="mono">log Φ(−z)</span> directly in float32. Legacy mode exposes CDF saturation; the two panels compare block summaries. Self-pairs and padding are excluded from both.</p>
+ <div class="row" style="margin:14px 0"><label>Display range <select id="range-preset"><option value="focus">Focused: 10⁻⁸ to 1</option><option value="robust">Observed 0.1–99.9 percentiles</option><option value="full">Full computed range</option><option value="manual">Manual bounds</option></select></label><label>Lower log₁₀ <input id="range-low" type="number" value="-8" step="0.5" style="width:95px"></label><label>Upper log₁₀ <input id="range-high" type="number" value="0" step="0.5" style="width:95px"></label><button id="apply-range">Apply</button></div><p class="muted" id="range-status">Clipping affects colours only, not numerical values or neighbour rankings.</p><div class="legend"></div><div class="ticks" id="global-ticks"></div>
+ <div class="grid"><div><h3>Maximum dissimilarity per block</h3><div class="matrix"><canvas id="matrix-max" role="img" aria-label="Maximum off-diagonal tail score in each matrix block"></canvas><div class="marker"></div><div class="marker horizontal"></div></div><p class="caption">Uses the current renderer’s maximum-summary idea. A distant pair can dominate a block.</p><p id="max-clipped" class="caption"></p></div><div><h3>Closest pair per block</h3><div class="matrix"><canvas id="matrix-min" role="img" aria-label="Minimum off-diagonal tail score in each matrix block"></canvas><div class="marker"></div><div class="marker horizontal"></div></div><p class="caption">An explicit alternative. Reveals isolated close pairs; does not imply the entire block is close.</p><p id="min-clipped" class="caption"></p></div></div>
+ <p id="matrix-note" class="caption"></p>
+</section>
+<section class="panel" id="inspector" style="scroll-margin-top:85px">
+ <div class="row"><h2>Local observatory · <span id="selected-name" class="selected-title"></span></h2><label>Matrix values <select id="metric"><option value="logtail">−log₁₀ tail (float32)</option><option value="tail">Chance-alignment p-value (approx.)</option><option value="distance">Baseline class distance</option><option value="z">Pre-CDF z-score</option></select></label></div>
+ <p id="selected-meta" class="muted"></p><div class="notice" id="ties"></div>
+ <div class="grid" style="margin-top:20px"><div><svg id="local" viewBox="0 0 480 480" aria-label="Local neighbourhood matrix"></svg><p id="cell-info" class="caption" role="status">Hover a cell for its exact stored values; click to select its column class.</p><p id="local-scale" class="caption"></p></div><div><h3>Nearest directions</h3><p class="muted">Ranked by repository z-score, descending. This explicitly refines ties in baseline distance; exactly tied z-scores retain checkpoint class order.</p><table><thead><tr><th>Rank</th><th>Class ID</th><th>Baseline d</th><th>log₁₀ tail</th><th id="score-column">z</th><th>Same parent</th></tr></thead><tbody id="neighbours"></tbody></table></div></div>
+</section>
+<section class="panel"><h2>Questions this opens up</h2><div class="grid"><div><h3>With prototype weights alone</h3><p class="muted">Compare local crowding across taxonomy; follow cross-branch nearest neighbours; measure how many baseline distances tie; examine neighbour stability across checkpoints. Keep alternate metrics alongside the reference rather than silently replacing it.</p></div><div><h3>With held-out image embeddings</h3><p class="muted">Add sample-to-prototype alignment, decision margins, observed occupancy and actual confusion. Those quantities are not inferred from this weight-only report. A sampled decision-territory experiment would be a separate geometric reference.</p></div></div><details><summary>Provenance and limits</summary><pre id="provenance"></pre><p class="muted">Class and parent IDs come from checkpoint metadata; no online taxonomic remapping. A single checkpoint does not establish a training trajectory. Synthetic cases are deliberately constructed display/calculation probes, not targets. Their smaller class counts do not provide a matched packing comparison. Zero distance may result from CDF rounding and does not prove identical vectors. Grey matrix cells contain no off-diagonal pairs; display flooring never alters stored numerical values.</p></details></section>
+<footer>Self-contained numerical report · optional GBIF photo lookup when enabled · computations use mini_trainer’s class_similarity and class_distance APIs.</footer>
+</main>
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>
+"use strict";
+let gbifReady=false;const namespacePreferences=new Map();
+function namespaceKey(){return data.metadata.checkpoint_sha256||$('case').value;}
+const cases = JSON.parse(document.getElementById('report-data').textContent);
+const $ = id => document.getElementById(id), ns = 'http://www.w3.org/2000/svg';
+function el(tag, attrs={}, text='') {const n=document.createElementNS(ns,tag); for(const [k,v] of Object.entries(attrs)) n.setAttribute(k,v); if(text!=='') n.textContent=text; return n;}
+function add(svg,tag,attrs,text) {const n=el(tag,attrs,text);svg.append(n);return n;}
+function decode(s,bits=32){const raw=atob(s), bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));const view=new DataView(bytes.buffer),width=bits/8;return (bits===32?Float32Array:Float64Array).from({length:bytes.length/width},(_,i)=>bits===32?view.getFloat32(i*width,true):view.getFloat64(i*width,true));}
+// Labels are presentation metadata: row IDs and numerical arrays never change.
+const resolvedNames=new Map(),importedNames=new WeakMap(),nameFailures=new Set();
+let nameBusy=false,nameTimer=null,labelRefreshTimer=null;
+function classLabel(index){
+ const id=data.names[index];if(!$('class-names').checked)return id;
+ return importedNames.get(data)?.get(index)||data.display_names?.[index]||(gbifEnabled()?resolvedNames.get(id):undefined)||id;
+}
+function classIdentity(index){const label=classLabel(index),id=data.names[index];return label===id?id:`${label} [${id}]`;}
+function markClass(node,index){node.dataset.classIndex=index;node.append(el('title',{},classIdentity(index)));return node;}
+function rebuildClassOptions(){
+ const options=document.createDocumentFragment();
+ data.names.forEach((id,i)=>{const o=document.createElement('option');o.value=classIdentity(i);o.label=`row ${i} · ${id}`;options.append(o);});
+ $('classes').replaceChildren(options);
+}
+function refreshClassLabels(){
+ drawProfile();drawTree();drawLocal();$('selected-name').textContent=classIdentity(selected);
+ if(document.activeElement!==$('search'))$('search').value=classIdentity(selected);
+ rebuildClassOptions();if(typeof drawProjection==='function'&&projectionCanvas.getBoundingClientRect().width)drawProjection(false);
+}
+function gbifEnabled(){return $('class-id-namespace').value==='gbif'&&!data.metadata.synthetic;}
+function requestClassNames(){
+ clearTimeout(nameTimer);nameTimer=setTimeout(resolveVisibleNames,100);
+}
+async function resolveVisibleNames(){
+ if(nameBusy||!$('class-names').checked||!gbifEnabled()||data.metadata.synthetic)return;
+ const priority=[];
+ for(const node of document.querySelectorAll('[data-class-index]')){
+  const r=node.getBoundingClientRect();if(r.width&&r.height&&r.bottom>=0&&r.top<innerHeight)priority.push(Number(node.dataset.classIndex));
+ }
+ priority.push(selected,...data.neighbours[selected]);
+ const candidate=priority.find(i=>/^\d+$/.test(data.names[i])&&!resolvedNames.has(data.names[i])&&!nameFailures.has(data.names[i])&&!importedNames.get(data)?.has(i));
+ if(candidate===undefined){$('name-status').textContent='Visible names resolved where available. Search IDs or resolved names; scroll to resolve more.';return;}
+ const id=data.names[candidate],nameCase=data;nameBusy=true;$('name-status').textContent='Resolving visible GBIF names…';
+ try{
+  const value=await gbifClient.name(id);
+  if(value.class_id!==id||typeof value.display_name!=='string')throw Error('Invalid name response');
+  if(nameCase!==data||!gbifEnabled())return;
+  resolvedNames.set(id,value.display_name);
+  if($('class-names').checked){clearTimeout(labelRefreshTimer);labelRefreshTimer=setTimeout(refreshClassLabels,80);}
+ }catch(error){if(nameCase!==data||!gbifEnabled()||error.name==='AbortError')return;nameFailures.add(id);$('name-status').textContent='Some names are unavailable. IDs remain visible; retry online lookup or import a name map.';}
+ finally{nameBusy=false;requestClassNames();}
+}
+// Approximation to log Phi(-z), evaluated without forming 1-CDF(z).
+// The erfc approximation is independently checked against torch log_ndtr.
+function referenceLogTail(z){
+ const x=Math.abs(z)/Math.SQRT2,t=1/(1+.5*x);
+ const logSmall=Math.log(t)-x*x-1.26551223+t*(1.00002368+t*(.37409196+t*(.09678418+t*(-.18628806+t*(.27886807+t*(-1.13520398+t*(1.48851587+t*(-.82215223+t*.17087277))))))))-Math.LN2;
+ return z>=0?logSmall:Math.log1p(-Math.exp(logSmall));
+}
+function probabilityText(log10){
+ if(log10===-Infinity)return '0';
+ if(log10< -4){const exponent=Math.floor(log10);return `${Math.pow(10,log10-exponent).toFixed(3)}e${exponent}`;}
+ if(log10>Math.log10(.9999)){const complement=-Math.expm1(log10*Math.LN10);return complement?`1 − ${complement.toExponential(3)}`:'1';}
+ return Math.pow(10,log10).toPrecision(5);
+}
+function scoreText(z){return $('score-display').value==='tail'?probabilityText(referenceLogTail(z)/Math.LN10):fmt(z);}
+
+function fmt(x){return x===0?'0':Math.abs(x)<.001?x.toExponential(3):x.toFixed(4);}
+function median(xs){const x=xs.slice().sort((a,b)=>a-b),m=Math.floor(x.length/2);return x.length%2?x[m]:(x[m-1]+x[m])/2;}
+let data, selected=0, distances, zs, logtails, stableNear, globalValues, parents, starts, ends, positions, treeFocus, profileMedian;
+function size(node){return node<data.names.length?1:data.tree[node-data.names.length][3];}
+function height(node){return node<data.names.length?0:data.tree[node-data.names.length][2];}
+function children(node){return data.tree[node-data.names.length].slice(0,2);}
+function contains(node,id){return positions[id]>=starts[node]&&positions[id]<=ends[node];}
+function setCase(){
+ data=cases[$('case').value];
+ if(gbifReady){$('class-id-namespace').value=namespacePreferences.get(namespaceKey())||(data.metadata.classIdNamespace==='gbif'?'gbif':'generic');resetGBIFPresentation();resetInferenceModel();}
+ distances=decode(data.local_distance);zs=decode(data.local_z);logtails=decode(data.local_log10_tail);stableNear=decode(data.stable_neighbour_distance,64);globalValues={min:decode(data.matrix_min_values),max:decode(data.matrix_max_values),logmin:decode(data.matrix_log_min_values),logmax:decode(data.matrix_log_max_values)};
+ const n=data.names.length;positions=Array(n);data.order.forEach((id,i)=>positions[id]=i);
+ parents=Array(2*n-1).fill(-1);starts=Array(2*n-1);ends=Array(2*n-1);
+ for(let i=0;i<n;i++)starts[i]=ends[i]=positions[i];
+ data.tree.forEach(([a,b],i)=>{const node=n+i;parents[a]=parents[b]=node;starts[node]=Math.min(starts[a],starts[b]);ends[node]=Math.max(ends[a],ends[b]);});
+ treeFocus=2*n-2;selected=0;profileMedian=data.profile_ranks.map((_,i)=>median(data.profiles.map(p=>p[i])));
+ $('classes').replaceChildren();data.names.forEach(name=>{const o=document.createElement('option');o.value=name;$('classes').append(o);});
+ $('case-note').textContent=data.metadata.synthetic?'Synthetic probe • seeded construction • smaller class count than production • no prescribed target for learned weights':`${data.metadata.checkpoint} • checkpoint IDs preserved • ${data.stats.pair_sample_count.toLocaleString()} sampled off-diagonal pairs for the histogram`;
+ $('stats').replaceChildren();
+ for(const [value,label] of [[n.toLocaleString(),'class prototypes'],[data.stats.dimensions.toLocaleString(),'embedding dimensions'],[data.stats.off_diagonal_zero_distance_pairs.toLocaleString(),'unordered pairs with baseline distance 0'],[data.stats.nearest_z_median.toFixed(2),'median nearest-neighbour z']]){const d=document.createElement('div');d.className='stat';const b=document.createElement('strong'),s=document.createElement('span');b.textContent=value;s.textContent=label;d.append(b,s);$('stats').append(d);}
+ setRangePreset();
+ $('provenance').textContent=JSON.stringify({metadata:data.metadata,statistics:data.stats},null,2);
+ drawHistogram();rebuildClassOptions();selectClass(0);$('search-status').textContent='';
+}
+function axes(svg,xlabel,ylabel){svg.replaceChildren();add(svg,'path',{d:'M 52 15 V 195 H 540',fill:'none',stroke:'#a5b7c5'});add(svg,'text',{x:295,y:233,'text-anchor':'middle',fill:'#52687b','font-size':12},xlabel);add(svg,'text',{x:54,y:12,fill:'#52687b','font-size':11},ylabel);}
+function drawHistogram(){const svg=$('hist'),h=data.histogram;axes(svg,$('score-display').value==='tail'?'Upper-tail q (positions retain z bins)':'Pairwise z-score','log₁₀(pair count + 1)');const max=Math.max(...h.counts),width=488/h.counts.length;h.counts.forEach((count,i)=>{const y=180*Math.log10(count+1)/Math.log10(max+1);add(svg,'rect',{x:52+i*width,y:195-y,width:Math.max(.5,width-.3),height:y,fill:'#168b92'});});for(let i=0;i<=4;i++){const x=52+488*i/4;add(svg,'text',{x,y:215,'text-anchor':'middle','font-size':11,fill:'#52687b'},scoreText(h.edges[0]+(h.edges.at(-1)-h.edges[0])*i/4));}for(let i=0;i<=3;i++)add(svg,'text',{x:47,y:198-i*60,'text-anchor':'end','font-size':11,fill:'#52687b'},(Math.log10(max+1)*i/3).toFixed(1));$('hist-note').textContent=`${data.stats.pair_sampling}; ${data.stats.pair_sample_count.toLocaleString()} pairs. Mean ${fmt(data.stats.pair_z_mean)}, SD ${fmt(data.stats.pair_z_std)}. ${data.stats.histogram_excluded} pairs outside the displayed range.`;}
+function drawProfile(){
+ const svg=$('profile'),tail=$('score-display').value==='tail',convert=z=>tail?-referenceLogTail(z)/Math.LN10:z;
+ const p=data.profiles[selected].map(convert),med=profileMedian.map(convert),lo=Math.min(0,...p,...med),hi=Math.max(1,...p,...med);
+ axes(svg,'Neighbour rank',''+(tail?'Upper-tail q (log scale)':'z-score'));svg.setAttribute('viewBox','0 0 560 310');
+ const y=v=>195-170*(v-lo)/(hi-lo);
+ for(let i=0;i<4;i++){
+  const rank=data.profile_ranks[i],id=data.profile_neighbours?.[selected]?.[i]??data.neighbours[selected][rank-1];
+  add(svg,'text',{x:60+i*155,y:215,'text-anchor':'middle','font-size':11},rank);
+  if(id!==undefined){const label=classLabel(id);markClass(add(svg,'text',{x:60+i*150,y:257,'text-anchor':'middle','font-size':10},label.length>18?label.slice(0,17)+'…':label),id);}
+ }
+ for(const [vals,col] of [[med,'#aab8c5'],[p,'#087e8b']]){
+  add(svg,'polyline',{points:vals.map((v,i)=>`${60+i*155},${y(v)}`).join(' '),fill:'none',stroke:col,'stroke-width':2.5});
+  vals.forEach((v,i)=>add(svg,'circle',{cx:60+i*155,cy:y(v),r:4,fill:col}).append(el('title',{},tail?probabilityText(-v):fmt(v))));
+ }
+ for(let i=0;i<4;i++){const v=lo+(hi-lo)*i/3;add(svg,'text',{x:47,y:y(v)+4,'text-anchor':'end','font-size':10},tail?probabilityText(-v):v.toFixed(1));}
+}
+function drawTree(){
+ const svg=$('tree'),n=data.names.length;svg.replaceChildren();let frontier=[treeFocus];
+ while(frontier.length<32){let at=-1;frontier.forEach((node,i)=>{if(node>=n&&(at<0||height(node)>height(frontier[at])))at=i;});if(at<0)break;frontier.splice(at,1,...children(frontier[at]));}
+ frontier.sort((a,b)=>starts[a]-starts[b]);const tips=new Set(frontier),ys=new Map(frontier.map((node,i)=>[node,30+i*19]));
+ const focused=document.body.dataset.view==='tree',treeWidth=focused?Math.max(760,svg.parentElement.clientWidth):1200;
+ const totalHeight=Math.max(100,frontier.length*19+50,focused?svg.parentElement.clientHeight:0);
+ if(focused)frontier.forEach((node,i)=>ys.set(node,30+i*(totalHeight-60)/Math.max(1,frontier.length-1)));
+ const branchWidth=treeWidth-410;svg.setAttribute('viewBox',`0 0 ${treeWidth} ${totalHeight}`);
+ const max=height(treeFocus),x=node=>max>0?24+branchWidth*(1-height(node)/max):24+branchWidth*(1-size(node)/Math.max(1,size(treeFocus)));
+ function draw(node){if(!tips.has(node)){const [a,b]=children(node);draw(a);draw(b);ys.set(node,(ys.get(a)+ys.get(b))/2);for(const child of [a,b])add(svg,'path',{d:`M ${x(node)} ${ys.get(node)} V ${ys.get(child)} H ${x(child)}`,fill:'none',stroke:contains(child,selected)?'#008e9b':'#b3c1cd','stroke-width':contains(child,selected)?2:1});}else{const y=ys.get(node),label=node<n?classIdentity(node):`${size(node).toLocaleString()} classes · expand`;add(svg,'line',{x1:x(node),x2:branchWidth+40,y1:y,y2:y,stroke:'#d1dce4','stroke-dasharray':'3 4'});const text=add(svg,'text',{x:branchWidth+50,y:y+4,'font-size':12,fill:contains(node,selected)?'#087e8b':'#172e46',class:'tree-label',tabindex:0,role:'button'},label);if(node<n)markClass(text,node);const action=()=>{if(node<n)selectClass(node);else{treeFocus=node;drawTree();}};text.onclick=action;text.onkeydown=e=>{if(e.key==='Enter')action();};if(contains(node,selected))add(svg,'circle',{cx:x(node),cy:y,r:4,fill:'#087e8b'});}}
+ draw(treeFocus);requestClassNames();$('tree-note').textContent=`Showing ${size(treeFocus).toLocaleString()} classes · root height ${fmt(max)} · ${frontier.length} visible tips${max===0?' · all heights zero: horizontal positions use class counts for display':''}`;
+}
+function setRangePreset(){const mode=$('range-preset').value;let bounds;if(mode==='focus')bounds=[-8,0];else if(mode==='robust')bounds=data.robust_log10_range;else if(mode==='full')bounds=[data.matrix_log10_floor,0];if(bounds){$('range-low').value=bounds[0].toFixed(3);$('range-high').value=bounds[1].toFixed(3);}drawGlobal();}
+function drawGlobal(){
+ const useLog=$('global-metric').value==='logtail',lo=Number($('range-low').value),hi=Number($('range-high').value);
+ if(!$('range-low').value||!$('range-high').value||!Number.isFinite(lo)||!Number.isFinite(hi)||lo>=hi){$('range-status').textContent='Enter finite lower and upper log₁₀ bounds, with lower < upper.';return;}
+ $('range-status').textContent='Clipping affects colours only. Hover a matrix pixel for its unmodified block value. The percentile preset uses observed off-diagonal pair scores, not a fitted distribution.';
+ for(const which of ['min','max']){const values=globalValues[(useLog?'log':'')+which],canvas=$('matrix-'+which),[rows,cols]=data.matrix_shape;canvas.width=cols;canvas.height=rows;const ctx=canvas.getContext('2d'),image=ctx.createImageData(cols,rows);let below=0,above=0,valid=0;
+  for(let i=0;i<values.length;i++){const raw=values[i];let rgb=[210,216,224];if(!Number.isNaN(raw)){valid++;const v=useLog?raw/Math.LN10:Math.log10(raw);below+=v<lo;above+=v>hi;const t=Math.max(0,Math.min(1,(v-lo)/(hi-lo)));rgb=data.colour_lut[Math.min(255,Math.floor(t*256))];}image.data.set([...rgb,255],4*i);}ctx.putImageData(image,0,0);
+  $(''+which+'-clipped').textContent=`${below.toLocaleString()} / ${valid.toLocaleString()} blocks below range (${(100*below/Math.max(1,valid)).toFixed(2)}%); ${above.toLocaleString()} above. These are display-block counts, not pair counts.`;
+  canvas.onmousemove=e=>{const rect=canvas.getBoundingClientRect(),r=Math.min(rows-1,Math.floor((e.clientY-rect.top)/rect.height*rows)),c=Math.min(cols-1,Math.floor((e.clientX-rect.left)/rect.width*cols)),raw=values[r*cols+c],v=useLog?raw/Math.LN10:Math.log10(raw);canvas.title=Number.isNaN(raw)?'No off-diagonal pairs in this block':`Block ${r}, ${c}: ${useLog?'log₁₀ tail '+fmt(v):'legacy tail '+fmt(raw)}${v<lo?' (below display range)':v>hi?' (above display range)':''}`;};
+ }
+ $('global-ticks').replaceChildren();for(let i=0;i<=4;i++){const span=document.createElement('span');span.textContent=(i===0?'≤ ':i===4?'≥ ':'')+`10^${(lo+(hi-lo)*i/4).toFixed(1)}`;$('global-ticks').append(span);}
+ $('matrix-note').textContent=`Each pixel summarizes up to ${data.matrix_block} × ${data.matrix_block} classes. Cyan lines locate the selected class’s block. Both panels share the selected colour window; full numerical values remain available. ${useLog?'Float32 log-domain values.':'Legacy CDF rounding is retained for comparison.'}`;
+}
+function selectClass(id){selected=id;$('search').value=classIdentity(id);$('selected-name').textContent=classIdentity(id);$('selected-meta').textContent=`Checkpoint row ${id} · taxonomy IDs: ${data.groups[id].join(' → ')}`;$('ties').textContent=`${data.zero_count[id]} other classes have baseline distance 0 to this class. Neighbour ranks below use the pre-CDF z-score; the baseline distances are unchanged. The log-tail view evaluates log Φ(−z) directly in float32, retaining the repository z-score. Hover a baseline distance in the table for a separate float64 reference.`;drawProfile();drawTree();drawLocal();requestClassNames();if(typeof renderPhotos==='function')renderPhotos();if(typeof drawProjection==='function')drawProjection();const pos=(positions[id]+.5)/(Math.ceil(data.names.length/data.matrix_block)*data.matrix_block)*100;document.querySelectorAll('.marker:not(.horizontal)').forEach(m=>m.style.left=pos+'%');document.querySelectorAll('.marker.horizontal').forEach(m=>m.style.top=pos+'%');}
+function drawLocal(){
+ const svg=$('local');svg.replaceChildren();const ids=[selected,...data.neighbours[selected]],n=ids.length,stride=n*n,offset=selected*stride,mode=$('metric').value,useZ=mode!=='distance',arr=mode==='z'?zs:(mode==='logtail'||mode==='tail')?logtails:distances,vals=Array.from(arr.slice(offset,offset+stride),v=>(mode==='logtail'||mode==='tail')?-v:v);const finite=vals.filter((_,i)=>Math.floor(i/n)!==i%n),lo=useZ?Math.min(...finite):0,hi=Math.max(...finite,lo+1e-9),cell=400/n,labelled=$('class-names').checked,margin=labelled?175:62;svg.setAttribute('viewBox',`0 0 ${margin+418} ${margin+418}`);
+ const palette=t=>`hsl(${220-190*t} 65% ${94-55*t}%)`;
+ ids.forEach((id,i)=>{const text=labelled?classLabel(id):String(i);const top=markClass(add(svg,'text',{x:margin+(i+.5)*cell,y:margin-12,'text-anchor':labelled?'start':'middle','font-size':11},text.length>25?text.slice(0,24)+'…':text),id);if(labelled)top.setAttribute('transform',`rotate(-55 ${margin+(i+.5)*cell} ${margin-12})`);markClass(add(svg,'text',{x:margin-10,y:margin+(i+.5)*cell+4,'text-anchor':'end','font-size':11},text.length>25?text.slice(0,24)+'…':text),id);});
+ for(let r=0;r<n;r++)for(let c=0;c<n;c++){const index=offset+r*n+c,v=vals[r*n+c];const t=useZ?(v-lo)/(hi-lo):1-Math.log1p(v)/Math.log1p(hi);const rect=add(svg,'rect',{x:margin+c*cell,y:margin+r*cell,width:cell-.5,height:cell-.5,fill:r===c?'#dce3e9':palette(Math.max(0,Math.min(1,t)))});const label=`${classIdentity(ids[r])} ↔ ${classIdentity(ids[c])} · distance ${fmt(distances[index])} · z ${fmt(zs[index])} · log₁₀ tail ${fmt(logtails[index])} · q ${probabilityText(logtails[index])}`;rect.append(el('title',{},label));rect.onmouseenter=()=>{$('cell-info').textContent=label;};rect.onclick=()=>selectClass(ids[c]);}
+ $('cell-info').textContent='First row/column is the selected class; remaining entries follow neighbour rank. Hover for stored values.';
+ $('local-scale').textContent=useZ?`Local colour range: ${mode==='z'?'z':'−log₁₀ tail'} ${fmt(lo)} (pale) → ${fmt(hi)} (dark). Diagonal masked. Scale adapts to this neighbourhood.`:`Local colour range: distance 0 (dark) → ${fmt(hi)} (pale), log1p display. Diagonal masked. Scale adapts to this neighbourhood.`;
+ if(mode==='tail')$('local-scale').textContent=`Upper-tail q: ${probabilityText(-lo)} → ${probabilityText(-hi)}; colours use −log₁₀ q. Diagonal masked.`;
+ $('score-column').textContent=$('score-display').value==='tail'?'q = Φ(−z)':'z';
+ $('neighbours').replaceChildren();ids.slice(1).forEach((id,i)=>{const tr=document.createElement('tr');const parent=data.groups[selected][1],same=parent===undefined?'—':data.groups[id][1]===parent?'yes':'no';[i+1,classIdentity(id),fmt(distances[offset+i+1]),fmt(logtails[offset+i+1]),scoreText(zs[offset+i+1]),same].forEach((value,j)=>{const td=document.createElement('td');if(j===1){const b=document.createElement('button');b.textContent=value;b.dataset.classIndex=id;b.title=`Class ${data.names[id]} · row ${id}`;b.onclick=()=>selectClass(id);td.append(b);}else td.textContent=value;if(j===2)td.title=`Float64 reference d: ${fmt(stableNear[selected*(n-1)+i])}`;tr.append(td);});$('neighbours').append(tr);});
+}
+$('find').onclick=()=>{const query=$('search').value.trim();const exact=data.names.indexOf(query),row=/^row \d+$/i.test(query)?Number(query.slice(4)):-1;const id=exact>=0?exact:row>=0&&row<data.names.length?row:data.names.findIndex((n,i)=>classIdentity(i).toLowerCase().includes(query.toLowerCase()));if(!query||id<0){$('search-status').textContent='No matching class ID.';return;}$('search-status').textContent=exact>=0?'Exact match.':'First partial match.';selectClass(id);};
+$('search').onkeydown=e=>{if(e.key==='Enter')$('find').click();};
+$('crowded').onclick=()=>selectClass(data.profiles.reduce((best,p,i)=>p[0]>data.profiles[best][0]?i:best,0));
+$('sparse').onclick=()=>selectClass(data.profiles.reduce((best,p,i)=>p[0]<data.profiles[best][0]?i:best,0));
+$('tree-root').onclick=()=>{treeFocus=2*data.names.length-2;drawTree();};$('tree-up').onclick=()=>{if(parents[treeFocus]>=0)treeFocus=parents[treeFocus];drawTree();};$('tree-locate').onclick=()=>{treeFocus=selected;while(parents[treeFocus]>=0&&size(parents[treeFocus])<=64)treeFocus=parents[treeFocus];drawTree();};$('metric').onchange=drawLocal;$('global-metric').onchange=drawGlobal;$('range-preset').onchange=setRangePreset;$('apply-range').onclick=()=>{$('range-preset').value='manual';drawGlobal();};
+Object.keys(cases).forEach(name=>{const o=document.createElement('option');o.value=o.textContent=name;$('case').append(o);});$('case').onchange=setCase;setCase();
+</script>
+<script id="gbif-snapshot" type="application/json">__GBIF_DATA__</script>
+<script>__GBIF_SCRIPT__
+const gbifClient=new BrowserGBIF();
+$('class-id-namespace').value=data.metadata.classIdNamespace==='gbif'?'gbif':'generic';
+const gbifSnapshot=JSON.parse($('gbif-snapshot').textContent);
+if(gbifSnapshot){try{gbifClient.seed(gbifSnapshot);$('class-id-namespace').value='gbif';namespacePreferences.set(namespaceKey(),'gbif');}catch(error){$('name-status').textContent='Packaged names unavailable: '+error.message;}}
+gbifReady=true;</script>
+<script>__PHOTO_SCRIPT__</script>
+<script>__INFERENCE_SCRIPT__</script>
+<script>__PROJECTION_SCRIPT__</script>
+<script>__THUMBNAIL_SCRIPT__</script>
+</html>
+
+<script>
+if(location.protocol.startsWith('http'))fetch('/api/health').then(r=>r.json()).then(info=>{document.getElementById('open-model').hidden=!info.model_picker;}).catch(()=>{});
+</script>
+
+<script>
+const viewGroups={predict:['inference-panel','projection-panel','inspector'],projection:['projection-panel','profile-panel','inspector','photo-panel'],tree:['tree-panel','profile-panel','inspector'],matrix:['matrix-panel','inspector'],photos:['photo-panel','projection-panel','inspector'],local:['inspector','profile-panel','photo-panel']};
+function setWorkspaceView(view){
+ if(view!=='all'&&!viewGroups[view])view='all';
+ document.body.dataset.view=view;document.body.classList.toggle('focused',view!=='all');
+ $('workspace-view').value=view;
+ $('activity-explore').setAttribute('aria-pressed',String(view!=='predict'));$('activity-predict').setAttribute('aria-pressed',String(view==='predict'));
+ $('thumbnail-options').open=view==='all';
+ $('workspace-controls').open=view!=='projection';$('projection-controls').open=view!=='projection';
+ for(const panel of document.querySelectorAll('main .panel')){
+  panel.hidden=view!=='all'&&!viewGroups[view].includes(panel.id);
+  panel.classList.toggle('primary-view',view!=='all'&&panel.id===viewGroups[view][0]);
+ }
+ document.querySelectorAll('.panel-focus').forEach(button=>button.hidden=view!=='all');
+ drawTree();window.scrollTo(0,0);requestClassNames();
+}
+for(const [view,ids] of Object.entries(viewGroups)){
+ const button=document.createElement('button');button.className='panel-focus';button.textContent='Focus view';
+ button.setAttribute('aria-label','Focus '+$('workspace-view').querySelector('option[value="'+view+'"]').textContent);
+ button.onclick=()=>{setWorkspaceView(view);$('workspace-view').focus({preventScroll:true});};$(ids[0]).prepend(button);
+}
+$('workspace-view').onchange=()=>setWorkspaceView($('workspace-view').value);
+$('activity-explore').onclick=()=>setWorkspaceView('projection');
+$('activity-predict').onclick=()=>setWorkspaceView('predict');
+$('shared-settings-content').append($('identity-settings'));
+$('identity-settings').open=true;
+const diagnosticSettings=document.createElement('details');diagnosticSettings.className='label-settings';diagnosticSettings.innerHTML='<summary>Diagnostic controls</summary><div></div>';
+diagnosticSettings.lastElementChild.append($('score-display').closest('label'),$('crowded'),$('sparse'),$('download-report'));$('shared-settings-content').append(diagnosticSettings);
+setWorkspaceView('projection');
+new ResizeObserver(()=>{if(document.body.dataset.view==='tree')drawTree();}).observe($('tree').parentElement);
+</script>
+
+<script>
+$('class-names').onchange=()=>{refreshClassLabels();requestClassNames();renderInferenceResults();};
+function resetGBIFPresentation(){gbifClient.reset();if(gbifSnapshot){try{gbifClient.seed(gbifSnapshot);}catch{}}photoAlbums.clear();resolvedNames.clear();nameFailures.clear();photoController?.abort();predictionPhotos?.abort();mapThumbFailures.clear();}
+$('class-id-namespace').onchange=()=>{namespacePreferences.set(namespaceKey(),$('class-id-namespace').value);resetGBIFPresentation();refreshClassLabels();requestClassNames();renderPhotos();scheduleMapThumbnails();renderInferenceResults();};
+$('name-file').onchange=async()=>{try{
+ const mapping=JSON.parse(await $('name-file').files[0].text()),labels=new Map();
+ const byIndex=mapping.by_index||{},byId=mapping.by_id||(mapping.by_index?{}:mapping);
+ data.names.forEach((id,i)=>{const name=byId[id]??byIndex[i];if(typeof name==='string'&&name.trim())labels.set(i,name.trim());});
+ if(!labels.size)throw Error('No matching IDs or indices in name map');
+ importedNames.set(data,labels);$('class-names').checked=true;refreshClassLabels();$('name-status').textContent=`${labels.size} names imported; class ordering unchanged.`;
+}catch(error){$('name-status').textContent=error.message;}};
+$('score-display').onchange=()=>{$('score-note').hidden=$('score-display').value!=='tail';drawHistogram();drawProfile();$('metric').value=$('score-display').value==='tail'?'tail':'z';drawLocal();};
+window.addEventListener('scroll',requestClassNames,{passive:true});
+</script>
+
+<script>
+new ResizeObserver(entries=>{
+ document.documentElement.style.setProperty('--toolbar-height',entries[0].target.getBoundingClientRect().height+'px');
+}).observe(document.querySelector('.controls'));
+new ResizeObserver(entries=>document.documentElement.style.setProperty('--activity-height',entries[0].target.getBoundingClientRect().height+'px')).observe($('activity-nav'));
+</script>
+
+<script>__STATE_SCRIPT__</script>

@@ -23,7 +23,13 @@ def test_dendrogram_export_retains_text_and_closes_all_figures_on_failure(monkey
     monkeypatch.setattr(logger, "confusion_matrix", lambda: {})
     monkeypatch.setattr(core, "main_process_first", nullcontext)
     monkeypatch.setattr(core, "get_rank", lambda: 0)
-    monkeypatch.setattr(core, "plot_class_distance_matrix", lambda model: [])
+
+    def class_matrix(model, *, log_domain, log_range):
+        assert log_domain is True
+        assert log_range[0] < -18 and log_range[1] == 0
+        return []
+
+    monkeypatch.setattr(core, "plot_class_distance_matrix", class_matrix)
     figures = [plt.figure(), plt.figure()]
     figures[0].text(0.5, 0.5, "Species test")
     monkeypatch.setattr(core, "plot_probabilistic_dendrogram", lambda model: [(fig, {}) for fig in figures])

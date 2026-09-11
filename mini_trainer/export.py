@@ -20,6 +20,7 @@ def main(
     preprocessing: dict | None = None,
     model_args: dict | None = None,
     dynamic_batch: bool = True,
+    include_embeddings: bool = False,
     batch_size: int = 2,
     reference_device: str = "cpu",
     materialize_int8_training: bool = False,
@@ -56,6 +57,7 @@ def main(
         output,
         preprocessing=preprocessing,
         dynamic_batch=dynamic_batch,
+        include_embeddings=include_embeddings,
         checkpoint_sha256=checkpoint_hash,
         reference_device=reference_device,
     )
@@ -74,6 +76,7 @@ def run():
     parser.add_argument("--input-shape", type=int, nargs="+", help="Preprocessed input dimensions, excluding batch (usually C H W).")
     parser.add_argument("--preprocessing", type=Path, help="JSON deployment recipe for preprocessing outside the graph.")
     parser.add_argument("--model-args", type=json.loads, help="JSON constructor arguments for the existing architecture loader.")
+    parser.add_argument("--include-embeddings", action="store_true", help="Also export the linear head preclassification embedding.")
     parser.add_argument("--static-batch", action="store_false", dest="dynamic_batch", help="Export a fixed batch size.")
     parser.add_argument("--batch-size", type=int, default=2, help="Example/static batch size (default: 2).")
     parser.add_argument("--reference-device", default="cpu", help="PyTorch parity device; native INT8 training requires cuda.")
