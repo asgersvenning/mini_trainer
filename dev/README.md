@@ -338,3 +338,8 @@ For a deliberately shared allocation, set worker counts explicitly when needed.
 The relevant interfaces are documented by the
 [Linux kernel](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files)
 and [Slurm](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_CPUS_PER_TASK).
+
+CI runs on pull requests targeting `master` and on pushes to `master`. Feature
+branches such as `quant` use PR checks, avoiding duplicate push/PR jobs. New
+commits cancel superseded runs for the same PR or branch. The x86 quantization
+job forces AVX2 to verify portability without relying on runner VNNI support.

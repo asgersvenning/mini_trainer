@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["master", "quant"]
+    branches: ["master"]
     # Only agent documents are exempt; source, public docs and workflow edits run checks.
     paths-ignore:
       - 'AGENTS.md'
@@ -13,6 +13,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   scope:
@@ -98,4 +102,7 @@ jobs:
       - name: QAT continuation and native INT8 inference
         env:
           OMP_NUM_THREADS: "1"
+          # Exercise portable kernels even when the runner supports VNNI.
+          ONEDNN_MAX_CPU_ISA: AVX2
+          DNNL_MAX_CPU_ISA: AVX2
         run: bash dev/check.sh test tests/quantization/test_quantization.py
