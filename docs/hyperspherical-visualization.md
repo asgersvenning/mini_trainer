@@ -442,20 +442,24 @@ unordered off-diagonal pairs and about 638 MB per dense float32 square matrix
 graphs, sampled diagnostics and periodic training-time summaries have different
 cost boundaries. Keep them explicit.
 
-## 7. Recommended next increments
+## 7. Research candidates
 
-**First: an exact-radius anchor atlas.** It extends the current photo browser,
+The [explorer roadmap](prototype-explorer-roadmap.md) owns current implementation
+order and status. The candidates below retain the research rationale; their
+original ordering is not a separate development queue.
+
+**An exact-radius anchor atlas.** It extends the current photo browser,
 answers a precise angular question and requires no new package. Add selectable
 bearings, angular rings, unresolved-bearing handling and original-neighbour
 overlays. Show that radii are exact while bearings are reduced.
 
-**Second: a metric-controlled globe comparison.** Fit angular-input UMAP to a
+**A metric-controlled globe comparison.** Fit angular-input UMAP to a
 plane and to spherical output, alongside the existing t-SNE. Add a small custom
 spherical-stress pilot if fidelity warrants it. Inspect both original-angle
 errors and neighbour recall before deciding whether a globe helps browsing.
 Use Three.js for a genuinely rotatable sphere, with the current thumbnail policy.
 
-**Third: interactive great-circle/great-sphere slices.** These address the
+**Interactive great-circle/great-sphere slices.** These address the
 partition question directly, complementing the neighbour atlas and compressed
 global map. Retain all prototype coefficients when evaluating winning regions;
 photo labels identify the classes appearing in the slice.

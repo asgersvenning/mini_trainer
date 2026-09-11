@@ -6,6 +6,9 @@ class photos. The viewer uses the repository's effective-weight handling and
 class-distance functions. Projections and movable image labels do not change
 prototype coordinates or neighbour rankings.
 
+See the [compact development and research roadmap](prototype-explorer-roadmap.md)
+for delivered capabilities and ordered next steps.
+
 Install the optional dependencies in your intended environment:
 
 ```bash

@@ -273,7 +273,8 @@ exact local baseline submatrices and log-domain values against an independent
 `math.erfc` reference. Browser interaction checks additionally exercise case
 switching, class search, neighbour navigation, tree navigation and matrix modes.
 
-Promising follow-ups after trying this prototype:
+The [maintained roadmap](../../docs/prototype-explorer-roadmap.md) owns priority
+and status. Supporting research questions include:
 
 - Evaluate log-domain clustering with explicit representation and compatibility
   decisions. Compare any changed tree against this preserved baseline before

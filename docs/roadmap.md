@@ -4,6 +4,8 @@ The active quantization feature branch has a separate
 [execution roadmap](quantization-roadmap.md) covering measured bottlenecks,
 target-machine dependencies, integration gates and deferred work.
 
+The prototype explorer has a focused [development and research roadmap](prototype-explorer-roadmap.md).
+
 This is the implementation order. Each increment should leave the existing default
 training and prediction interfaces working and include its own validation evidence.
 Items below are planned unless explicitly marked delivered.
