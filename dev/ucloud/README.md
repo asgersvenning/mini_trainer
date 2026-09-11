@@ -787,3 +787,7 @@ For four full GPUs with figures, W&B, a bounded batch sweep and checkpoint
 continuation, use [the DDP qualification and production handoff](ddp.md).
 Production training uses `mt_htrain` under `torchrun`; the Python API harness
 remains a qualification tool.
+
+For the post-training expert benchmark, start with the
+[bounded RAM-staging inference trial](expert-trial.md). It generates its minimal
+configuration and runs the standard prediction CLI without rebuilding an index.
