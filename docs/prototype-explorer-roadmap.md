@@ -23,6 +23,35 @@ CLI/file-picker checks passed. Current extraction supports float32 linear
 `Classifier` and `HierarchicalClassifier` heads; dense analysis needs several GB
 for the 12,632-class case. These checks do not establish full-suite/GPU coverage.
 
+## Standalone client direction
+
+Target: browser inference and embedding inspection without a Python/PyTorch/CUDA
+runtime. Export preparation may use mini_trainer once; the distributed viewer
+loads an ONNX bundle, class/prototype metadata, and executable preprocessing.
+The existing `.pt` picker remains a Python workflow, not this standalone path.
+
+Next feasibility gate: export actual prediction outputs plus the precise
+preclassification embedding; verify preprocessing, embeddings and scores against
+real-image reference results in ONNX Runtime Web (WASM first, then WebGPU).
+CPU ONNX parity alone does not establish browser compatibility or performance.
+
+Then add image selection, original-space neighbours/margins and query overlays.
+Save PCA means/bases for new points; define and validate placement into the fixed
+t-SNE map separately. Anchor views can expose direct query-to-prototype angles.
+Geometry explains relationships; observed probabilities retain actual head semantics.
+
+Deliver a static/installable viewer with locally selected models and images.
+Precomputed global diagnostics are an initial delivery option; moving their
+construction client-side is a separate milestone requiring blocked computation,
+workers, memory/latency measurements and baseline numerical parity. Keep direct
+log-domain semantics when porting diagnostics. GBIF networking/offline photo
+availability must be explicit and independent of local inference.
+
+References: [current export contract](onnx.md),
+[ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/),
+[browser deployment](https://onnxruntime.ai/docs/tutorials/web/deploy.html).
+This is planned work; no browser model inference is implemented or validated yet.
+
 ## Ordered next work
 
 | Order / status | Increment | Done when |
@@ -34,7 +63,8 @@ for the 12,632-class case. These checks do not establish full-suite/GPU coverage
 | 5 · Research | Compare further planar/spherical layouts; add a globe only if useful. | Near/far angular error, neighbour retention, seed stability, fit cost and display distortion justify a new option. |
 | 6 · Later | Checkpoint trajectories, then held-out embedding overlays and observed confusion. | Comparisons align class IDs and distinguish rotation/layout changes from changes in relationships; empirical claims identify their sample data. |
 
-Take one bounded increment at a time. The next scientific feature is local packing
+Take one bounded increment at a time. Qualify standalone inference before committing
+to its runtime design. The next geometry feature is local packing
 profiles followed by the anchor atlas; reliability work supports both. Integration
 into the target branch requires review and validation of the combined result.
 
