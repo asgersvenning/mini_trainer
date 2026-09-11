@@ -112,7 +112,76 @@ Acceptance: opt-in supported recipes, reproducible paired quality/resource evide
 and unchanged default behavior. Use [training feature validation](training-feature-validation.md)
 for the deferred optimizer, loss and augmentation comparisons.
 
+### Optional dataset preparation for scalable loading
+
+Target: remove repeated small-file access bottlenecks on shared storage through an
+optional preprocessing command that prepares an indexed, sharded dataset for the
+existing training and prediction loaders. This is an efficiency representation of
+already-supported inputs, not a requirement to migrate source datasets or adopt a
+new training API. Keep the public design independent of a particular provider.
+
+- Reuse the current source/metadata adapters. Cover every currently supported
+  input, flat and hierarchical labels, multilabel targets, supplied splits,
+  class ordering and sample identity. Retain lazy loading, inference and supported
+  single-process/DDP behavior. Define a compatibility matrix before implementation;
+  do not silently drop cases that are inconvenient for a shard backend.
+- Preserve original encoded image bytes by default and apply the existing decoder,
+  resize, transforms and hooks at loading time. Do not bake stochastic augmentation
+  into prepared data. Any later materialized-preprocessing option must be explicit,
+  versioned and checked against the requested runtime preprocessing.
+- Store a versioned manifest with source provenance, sample-to-shard index, labels,
+  splits, class mappings and integrity information. Support bounded, resumable
+  preparation with atomic publication of completed artifacts and explicit errors
+  for missing, changed or corrupt samples; never silently skip them.
+- Evaluate indexed uncompressed TAR shards before inventing a container format.
+  Preserve current sampler order and epoch coverage in the first implementation.
+  Treat locality-aware or streaming shuffles as separate opt-in behavior changes,
+  with explicit DDP partitioning, equal-step and checkpoint/resume contracts.
+- Allow direct reads of prepared shards and optional staging to verified node-local
+  storage. Share a byte-bounded cache across ranks/workers on each node, coordinate
+  downloads, protect in-use shards and publish verified cache entries atomically.
+  Measure cache churn under the actual sampler; packing files alone does not
+  guarantee efficient random access or eliminate cold-read latency.
+- Keep implementation within the existing metadata/reader boundaries, using a
+  focused preparation/storage module where needed. Expose it through the normal
+  CLI and Python configuration paths, keep new dependencies optional, and preserve
+  the original uncached path and defaults.
+
+Deliver in bounded increments: compatibility fixtures and a preparation/loader
+round trip; indexed shards; optional shared local staging/cache. A separate small
+loader improvement may add bounded concurrent encoded-byte reads within each
+batch, preserving sample order and hook execution without multiplying process-local
+metadata. Benchmark that independently of changing storage representation.
+
+Acceptance: byte-identical decoded inputs for the default representation, identical
+labels/splits/class ordering and sampler coverage, supported training/prediction and
+DDP restoration checks, corruption/interrupted-preparation recovery, and bounded
+memory/disk use. Compare first-pass and repeated-pass end-to-end throughput on a
+representative working set, including conversion/staging time, validation and
+figures. Report the number of epochs needed to amortize preparation; a warmed tiny
+subset is insufficient evidence. Implementation and GPU qualification remain open.
+
 ## 5. mini_metrics and continuous model evaluation
+
+Planned target: economical continuous benchmarks with a GitHub audit dashboard.
+Connect hosted CPU checks and small, on-demand GPU runs to durable report history
+through an independent publisher. Use fixed representative subsets of existing
+datasets, preserve supplied splits, and compare baseline/candidate under matching
+hardware and workload conditions. Large distributed qualification and production
+training remain separately triggered activities, outside the continuous schedule.
+
+Keep allocation credentials in a trusted controller isolated from candidate code,
+pull requests and report publishing. Restrict profiles, revisions, dataset access,
+concurrency and allocation duration; enforce a persistent spending budget, reconcile
+ambiguous submissions before retrying, and disable automatic time extension.
+Provider/account configuration and infrastructure review details remain local.
+
+Acceptance: dry-run and mocked lifecycle tests cover interruption, duplicate
+submission, budget exhaustion and credential isolation before a capped live trial.
+Then demonstrate cancellation/cleanup and auditable success, failure and publishing
+retry records before enabling a schedule. Missing runs must remain visible; partial
+GPU allocations must not imply full-device or distributed performance qualification.
+Build on the existing [reporting integration](../dev/benchmarks/reporting.md).
 
 Document measured effects of MuonAuxAdamW versus AdamW/SGD, `normalized`,
 EMLACrossEntropy, class-weight distribution regularization, automatic label smoothing,
