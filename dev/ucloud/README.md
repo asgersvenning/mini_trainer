@@ -808,10 +808,11 @@ The default sweep tests 1–1,024 concurrent reads with eight-second trial limit
 then retests the three strongest candidates twice in shuffled order. It recommends
 the smallest concurrency within 5% of the best median confirmation throughput.
 The default overall budget is 180 seconds; blocked filesystem metadata calls may
-outlast the budget. Each trial uses a disjoint, shuffled image selection, including
-when a previous trial timed out. Shared cache state remains unknown. Run away from
-other heavy read jobs when selecting a baseline; use a fresh report filename for
-subsequent runs.
+outlast the budget. Each trial consumes only paths actually submitted to its reader pool; untouched
+paths remain available after a timeout. Submitted selections are disjoint and
+shuffled. Shared cache state remains unknown. Run away from other heavy read jobs
+when selecting a baseline. Existing reports are preserved and a numeric suffix is
+chosen automatically for subsequent runs.
 
 `--mode read` (the default) measures concurrent encoded-byte reads without retaining
 a second copy. `--mode stage --destination PATH` also measures writes to the intended
@@ -822,9 +823,12 @@ read/decode tasks, **not** a recommendation to create that many DataLoader proce
 This file calibrates concurrency; it does not install read-ahead into training.
 
 `--workers`, `--files-per-trial`, `--trial-seconds`, `--budget-seconds`, and
-`--confirmation-rounds` are adjustable. Each trial defaults to 2,048 files and
-at most 4 GiB of encoded data; Linux child RSS is monitored against a 4 GiB stop
-threshold. Failed settings are excluded. The JSON report contains per-trial
+`--confirmation-rounds` are adjustable. Each trial selects at most 2,048 files and
+16 GiB of encoded data by default. Selection shrinks automatically to fit the byte
+cap and staging destination; actual and requested concurrency are both recorded
+when fewer files fit. Small trials (including ten-file trials) run normally, and
+completed reads are ranked without an arbitrary 32-image minimum. Linux child RSS
+is monitored against a 4 GiB stop threshold. Failed settings are excluded. The JSON report contains per-trial
 throughput, latency, errors, sampled paths and the recommendation. If samples or
 time are exhausted, inspect the confirmation coverage before treating the result
 as repeatable. Very fast RAM trials benefit from increasing `--files-per-trial`.

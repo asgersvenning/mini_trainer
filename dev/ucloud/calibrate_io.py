@@ -110,8 +110,15 @@ def child(job_path):
     next_snapshot = started + 0.25
     items = iter(enumerate(job["paths"]))
     # Bound outstanding tasks and buffers instead of queuing the whole dataset.
-    with ThreadPoolExecutor(max_workers=job["workers"]) as pool:
-        pending = {pool.submit(operation, item) for item in list_next(items, job["workers"])}
+    with open(job["attempted"], "wb", buffering=0) as journal, ThreadPoolExecutor(max_workers=job["workers"]) as pool:
+
+        def submit(item):
+            # Record BEFORE submission. After a timeout only this prefix may
+            # have read source bytes; the untouched suffix remains available.
+            journal.write(b"x")
+            return pool.submit(operation, item)
+
+        pending = {submit(item) for item in list_next(items, job["workers"])}
         while pending:
             done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
             for future in done:
@@ -123,7 +130,7 @@ def child(job_path):
                     errors.append(f"{type(error).__name__}: {error}")
                 item = next(items, None)
                 if item is not None and not errors:
-                    pending.add(pool.submit(operation, item))
+                    pending.add(submit(item))
             if errors or time.monotonic() >= next_snapshot:
                 snapshot()
                 next_snapshot = time.monotonic() + 0.25
@@ -156,11 +163,26 @@ def stop(proc):
 
 def run_trial(args, paths, workers, phase, work, deadline):
     started = time.monotonic()
-    sizes = [os.stat(path).st_size for path in paths]
-    if sum(sizes) > args.max_mib * 2**20:
-        raise RuntimeError("Trial exceeds --max-mib; reduce --files-per-trial")
+    byte_limit = args.max_mib * 2**20
+    if args.mode == "stage":
+        byte_limit = min(byte_limit, max(0, shutil.disk_usage(args.destination).free - 256 * 2**20))
+    sizes = []
+    total = 0
+    for path in paths:
+        size = os.stat(path).st_size
+        if total + size > byte_limit:
+            break
+        sizes.append(size)
+        total += size
+    if not sizes:
+        raise RuntimeError(f"A single image exceeds available trial space ({byte_limit / 2**20:.1f} MiB): {paths[0]}")
+    paths = paths[: len(sizes)]
+    requested_workers = workers
+    workers = min(workers, len(paths))
     result_path, job_path = work / "result.json", work / "job.json"
+    attempted_path = work / "attempted.bin"
     result_path.unlink(missing_ok=True)
+    attempted_path.unlink(missing_ok=True)
     destination = None
     if args.mode == "stage":
         if shutil.disk_usage(args.destination).free < sum(sizes) + 256 * 2**20:
@@ -173,6 +195,7 @@ def run_trial(args, paths, workers, phase, work, deadline):
         "resize": args.resize,
         "destination": destination,
         "result": str(result_path),
+        "attempted": str(attempted_path),
     }
     write_json(job_path, job)
     proc = None
@@ -213,6 +236,8 @@ def run_trial(args, paths, workers, phase, work, deadline):
             )
             row.update(
                 workers=workers,
+                requested_workers=requested_workers,
+                attempted=attempted_path.stat().st_size if attempted_path.exists() else 0,
                 phase=phase,
                 selected=len(paths),
                 selected_bytes=sum(sizes),
@@ -221,7 +246,7 @@ def run_trial(args, paths, workers, phase, work, deadline):
             )
             if proc.returncode and reason is None:
                 row["errors"].append((work / "child.log").read_text()[-2000:])
-            row["eligible"] = not row["errors"] and reason != "memory_limit" and row["completed"] >= min(32, len(paths))
+            row["eligible"] = not row["errors"] and reason != "memory_limit" and row["completed"] > 0
             return row
     finally:
         if proc is not None and proc.poll() is None:
@@ -261,11 +286,11 @@ def main():
     parser.add_argument("--destination", type=Path, help="Required for stage; use the intended real staging filesystem")
     parser.add_argument("--output", type=Path, default=Path("io-calibration.json"))
     parser.add_argument("--workers", default="1,4,16,64,128,256,512,1024")
-    parser.add_argument("--files-per-trial", type=int, default=2048)
+    parser.add_argument("--files-per-trial", type=int, default=2048, help="Maximum per trial; only submitted paths are consumed")
     parser.add_argument("--trial-seconds", type=float, default=8)
     parser.add_argument("--budget-seconds", type=float, default=180)
     parser.add_argument("--confirmation-rounds", type=int, default=2)
-    parser.add_argument("--max-mib", type=int, default=4096, help="Selected encoded bytes per trial")
+    parser.add_argument("--max-mib", type=int, default=16384, help="Encoded byte cap per trial; sample size shrinks automatically")
     parser.add_argument("--max-rss-mib", type=int, default=4096, help="Child RSS stop threshold on Linux")
     parser.add_argument("--resize", type=int, default=0, help="Optional square bicubic resize in decode mode")
     parser.add_argument("--seed", type=int, default=42)
@@ -287,9 +312,16 @@ def main():
         args.destination = args.destination.resolve(strict=True)
         if args.destination.is_relative_to(args.source):
             parser.error("Staging destination must be outside the source tree")
-    if args.output.exists():
-        parser.error("Output already exists; choose a fresh --output")
+    original_output = args.output
+    suffix = 2
+    while args.output.exists():
+        args.output = original_output.with_name(f"{original_output.stem}-{suffix}{original_output.suffix}")
+        suffix += 1
+    print(f"Report: {args.output}", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    if max(workers) > args.files_per_trial:
+        workers = sorted({min(value, args.files_per_trial) for value in workers})
+        print(f"Concurrency capped by --files-per-trial: {workers}", flush=True)
     rng = random.Random(args.seed)
     deadline = time.monotonic() + args.budget_seconds
     maximum = args.files_per_trial * (len(workers) + 3 * args.confirmation_rounds)
@@ -313,18 +345,18 @@ def main():
     def measure(concurrency, phase, work):
         nonlocal cursor
         count = min(args.files_per_trial, len(paths) - cursor)
-        if count < max(32, concurrency) or time.monotonic() >= deadline:
+        if count == 0 or time.monotonic() >= deadline:
             return False
         selected = paths[cursor : cursor + count]
-        cursor += count  # Even unfinished/timed-out selections are never reused.
         row = run_trial(args, selected, concurrency, phase, work, deadline)
+        cursor += row["attempted"]
         report["trials"].append(row)
-        report["selection_paths"].append(selected)
+        report["selection_paths"].append(selected[: row["attempted"]])
         report["recommendation"] = recommend(report["trials"], args.tolerance)
         write_json(args.output, report)
         print(
-            f"{phase:7} {concurrency:4} threads: {row['images_per_second']:9.1f} images/s; "
-            f"{row['completed']}/{count} completed; {row['termination'] or 'finished'}; eligible={row['eligible']}",
+            f"{phase:7} {row['workers']:4} threads (requested {concurrency}): {row['images_per_second']:9.1f} images/s; "
+            f"{row['completed']} completed, {row['attempted']} attempted; {row['termination'] or 'finished'}",
             flush=True,
         )
         return True
@@ -336,7 +368,7 @@ def main():
                 if not measure(concurrency, "sweep", work):
                     break
             top = sorted((row for row in report["trials"] if row["eligible"]), key=lambda row: row["images_per_second"], reverse=True)[:3]
-            finalists = [row["workers"] for row in top]
+            finalists = list(dict.fromkeys(row["workers"] for row in top))
             for _ in range(args.confirmation_rounds):
                 rng.shuffle(finalists)
                 for concurrency in finalists:
@@ -353,6 +385,8 @@ def main():
             "Disjoint paths do not guarantee cold data, balanced file sizes, or independence from shared-service load.",
         ]
         write_json(args.output, report)
+    if report["recommendation"]["workers"] is None:
+        print("No completed reads to rank. Increase --trial-seconds or inspect the recorded errors.", flush=True)
     print(json.dumps(report["recommendation"], indent=2), flush=True)
     print(f"Full timings, errors and disjoint sample manifest: {args.output}", flush=True)
 

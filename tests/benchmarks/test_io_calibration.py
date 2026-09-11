@@ -87,3 +87,73 @@ def test_blocked_read_is_terminated_without_hanging_calibration(tmp_path):
     assert row["termination"] == "time_limit"
     assert row["completed"] == 0
     assert not row["eligible"]
+
+
+def test_timeout_does_not_consume_unsubmitted_paths(tmp_path):
+    import os
+    import time
+    from types import SimpleNamespace
+
+    paths = []
+    for index in range(100):
+        path = tmp_path / f"{index}.jpg"
+        os.mkfifo(path)
+        paths.append(str(path))
+    args = SimpleNamespace(mode="read", resize=0, max_mib=1, trial_seconds=0.5, max_rss_mib=4096)
+    row = calibrator.run_trial(args, paths, 1, "sweep", tmp_path, time.monotonic() + 5)
+    assert row["selected"] == 100
+    assert row["attempted"] == 1
+    assert row["completed"] == 0
+
+
+def test_byte_limit_shrinks_trial_instead_of_aborting(tmp_path):
+    import time
+    from types import SimpleNamespace
+
+    paths = []
+    for index in range(3):
+        path = tmp_path / f"{index}.jpg"
+        path.write_bytes(b"x" * 600000)
+        paths.append(str(path))
+    args = SimpleNamespace(mode="read", resize=0, max_mib=1, trial_seconds=5, max_rss_mib=4096)
+    row = calibrator.run_trial(args, paths, 512, "sweep", tmp_path, time.monotonic() + 10)
+    assert row["completed"] == row["selected"] == row["attempted"] == 1
+    assert row["workers"] == 1
+    assert row["requested_workers"] == 512
+    assert row["eligible"]
+
+
+def test_ten_file_trials_and_existing_output_work(tmp_path):
+    source = tmp_path / "images"
+    source.mkdir()
+    for index in range(40):
+        (source / f"{index}.jpg").write_bytes(b"encoded bytes")
+    output = tmp_path / "report.json"
+    output.write_text("previous report")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(source),
+            "--mode",
+            "read",
+            "--output",
+            str(output),
+            "--workers",
+            "1,4,16",
+            "--files-per-trial",
+            "10",
+            "--confirmation-rounds",
+            "0",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert output.read_text() == "previous report"
+    report = json.loads((tmp_path / "report-2.json").read_text())
+    assert len(report["trials"]) == 3
+    assert all(row["completed"] == 10 for row in report["trials"])
+    assert report["recommendation"]["workers"] is not None
+    assert "report-2.json" in result.stdout
