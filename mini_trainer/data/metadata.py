@@ -256,11 +256,13 @@ def _inference_folder_labels(folders: list[str], cls2idx: dict, labels) -> Order
     if missing:
         if not is_taxonomical_cls2idx(cls2idx):
             raise ValueError(f"Missing hierarchical labels for input folders: {missing}")
-        fetched = labels_from_taxonomy(create_taxonomy(missing, levels))
+        # An integer is an inclusive deepest-rank index in create_taxonomy,
+        # not a level count: 3 would include order as a fourth level.
+        fetched = labels_from_taxonomy(create_taxonomy(missing, list(range(levels))))
         for name in missing:
             value = fetched.get(name)
             if value is None or len(value) != levels:
-                raise ValueError(f"Could not resolve {levels} hierarchy levels for input folder {name!r}")
+                raise ValueError(f"Could not resolve {levels} hierarchy levels for input folder {name!r}; received {value!r}")
             # Folder IDs are supplied ground truth; do not silently canonicalize
             # unseen/synonymous species into the model's vocabulary.
             resolved[name] = (name if name.isdigit() else str(value[0]), *map(str, value[1:]))

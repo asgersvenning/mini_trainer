@@ -30,7 +30,7 @@ def test_inference_folders_include_unseen_species(tmp_path, monkeypatch, mapping
     ground_truth, paths = metadata_module.auto_find_images(str(tmp_path), cls2idx=cls2idx, labels=labels)
     actual = {os.path.basename(os.path.dirname(path)): tuple(label) for path, label in zip(paths, ground_truth, strict=True)}
     assert actual == {"111": known, "999": ("999", "888", "333")}
-    assert calls == [(["999"], 3)]
+    assert calls == [(["999"], [0, 1, 2])]
     collector = HierarchicalResultCollector(cls2idx=cls2idx, scientific_names=False)
     collector.collect(paths=paths, predictions=[torch.zeros(2, 1) for _ in range(3)], labels=ground_truth)
     collector.save(str(tmp_path))
@@ -151,3 +151,21 @@ def test_presplit_folder_discovery_retains_only_test(tmp_path):
         folder.mkdir(parents=True)
         (folder / "image.jpg").write_bytes(b"\xff\xd8\xff")
     assert metadata_module.auto_find_images(str(tmp_path)) == (["cat"], [str(tmp_path / "test/cat/image.jpg")])
+
+
+def test_folder_resolution_uses_level_count_not_deepest_rank(tmp_path, monkeypatch):
+    from mini_trainer.integrations import gbif
+
+    folder = tmp_path / "1775152"
+    folder.mkdir()
+    (folder / "image.jpg").write_bytes(b"\xff\xd8\xff")
+    taxonomy = OrderedDict(
+        species=("1775152", "Dichonia aprilina"),
+        genus=("genus-id", "Dichonia"),
+        family=("family-id", "Noctuidae"),
+        order=("order-id", "Lepidoptera"),
+    )
+    monkeypatch.setattr(gbif, "resolve_name_or_id", lambda ids: [taxonomy for _ in ids])
+    labels, paths = metadata_module.auto_find_images(str(tmp_path), cls2idx={"0": {"111": 0}, "1": {"222": 0}, "2": {"333": 0}}, labels={})
+    assert labels == [("1775152", "genus-id", "family-id")]
+    assert paths == [str(folder / "image.jpg")]
