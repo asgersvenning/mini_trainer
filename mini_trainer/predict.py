@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from argparse import ArgumentParser
@@ -17,6 +18,7 @@ from mini_trainer.config import (
 from mini_trainer.data import auto_find_images, get_metadata
 from mini_trainer.logging import BaseResultCollector, RawResultCollector
 from mini_trainer.modeling import EmbeddingContext, classification_module, predict
+from mini_trainer.modeling.mask import restrict_class_labels
 from mini_trainer.utils import TQDM, increment_name_dir, setup_device
 
 
@@ -39,6 +41,7 @@ def main(  # noqa: D417
     augmentation_builder_kwargs: dict[str, Any] = {},
     criterion_builder_kwargs: dict[str, Any] = {},
     collector_cls_kwargs: dict[str, Any] = {},
+    class_list: str | None = None,
 ):
     """Predict with a classifier.
 
@@ -52,6 +55,9 @@ def main(  # noqa: D417
         name: Name of the output model. If not provided, a descriptive name
             will be inferred from other arguments. Default is ``None``.
         threshold: Confidence threshold.
+        class_list: UTF-8 file with one candidate class label per line (leaf labels
+            for hierarchical models). Restricts predictions, not input images or
+            ground truth. Blank lines and duplicate labels are ignored.
         data_index: File containing metadata describing test set from training run to run inference on.
         subsample: Subsampling multiplier (2 = 50%, 3 = 33.3%, etc.).
         device: Device used for training (e.g., ``'cuda'``, ``'cpu'``). Default is ``'cuda'``.
@@ -113,6 +119,20 @@ def main(  # noqa: D417
     )
     nn_model.eval()
     metadata = classification_module(nn_model).metadata.copy()
+    if class_list is not None:
+        with open(class_list, "rb") as handle:
+            contents = handle.read()
+        labels_to_keep = [line.strip() for line in contents.decode("utf-8-sig").splitlines() if line.strip()]
+        report = restrict_class_labels(nn_model, labels_to_keep)
+        report.update(source=os.path.abspath(class_list), sha256=hashlib.sha256(contents).hexdigest())
+        with open(os.path.join(output_dir, "class_filter.json"), "w", encoding="utf-8") as handle:
+            json.dump(report, handle, indent=2)
+        print(
+            f"Class list: retained {report['retained_count']}/{report['original_candidate_count']} candidates; "
+            f"{len(report['missing_labels'])} requested labels absent from active vocabulary",
+            flush=True,
+        )
+        # Keep original metadata for resolving ground truth, including excluded labels.
 
     # Prepare dataloader
     labels: list[int] | list[list[int]] | None = None
@@ -208,6 +228,14 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         "where the name of each subdirectory should correspond to the name of the class.",
     )
     mod_args = parser.add_argument_group("Model [optional]")
+    mod_args.add_argument(
+        "--class-list",
+        "--class_list",
+        dest="class_list",
+        default=None,
+        help="File with one candidate label per line (species IDs for hierarchical models). "
+        "Restricts predictions only; all input images and ground-truth labels are retained.",
+    )
     mod_args.add_argument(
         "-w",
         "--weights",

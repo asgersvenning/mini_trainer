@@ -259,3 +259,8 @@ multilabel behavior, lazy loading, and useful errors. Keep format dependencies o
 
 Acceptance: tiny fixtures exercise each new format through training and prediction
 without changing existing format detection or defaults.
+
+Follow-up from candidate-filter inference validation: `classification_module`
+caches an empty attribute name when passed a bare classifier head, causing a
+subsequent lookup to fail. Normal built backbone models are unaffected. Cover
+bare-head lookup separately rather than expanding the class-list CLI change.

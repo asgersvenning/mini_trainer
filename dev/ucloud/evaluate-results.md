@@ -64,3 +64,31 @@ cat /work/evaluation-1/test/all_labels.csv
 Keep per-class output as a file rather than pasting it into the terminal.
 All outputs remain under `/work`; computation can also be rerun on a CPU job
 from the saved prediction CSVs without retaining the source images or GPU node.
+
+## Regional candidate vocabulary
+
+Both `mt_predict` and `mt_hpredict` accept `--class-list FILE` (YAML key
+`class_list`). Supply one exact model class label per UTF-8 line; for GBIF
+hierarchical models these are species IDs. Blank lines and duplicates are
+ignored. The list restricts the model's current candidate vocabulary and cannot
+add species absent from the checkpoint. Missing requested labels are reported;
+an empty overlap fails before loading images.
+
+Every input image and ground-truth label remains in evaluation, including labels
+excluded by the list. Species outputs and parent mappings are filtered together.
+`class_filter.json` in the prediction output records retained, excluded and
+missing labels, plus the list's SHA-256. With a pre-masked checkpoint, filtering
+further restricts its active vocabulary rather than restoring excluded classes.
+
+For example, in an environment containing this CLI feature:
+
+```bash
+mt_hpredict --config /work/expert-full-2/inference.yaml \
+  --class-list /work/regional-evaluation/mambo-v2-reduced.txt \
+  --output /work/regional-evaluation --name predictions
+```
+
+Use the all-label report for global versus regional comparisons on the same
+images. `known_label` now describes the active filtered vocabulary. Confidence
+scores are computed over the restricted candidates, so thresholds calibrated
+for the global model should not be assumed equivalent.
