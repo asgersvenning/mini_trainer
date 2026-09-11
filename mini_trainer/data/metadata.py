@@ -241,6 +241,33 @@ def partition_class_samples(
     return split_samples, violations
 
 
+def _inference_folder_labels(src: str, cls2idx: dict, labels) -> OrderedDict:
+    """Resolve input folders independently of the model's prediction vocabulary."""
+    folders = sorted(name for name in os.listdir(src) if os.path.isdir(os.path.join(src, name)))
+    levels = len(cls2idx)
+    known = labels if isinstance(labels, dict) else {str(value[0]): value for value in (labels or [])}
+    resolved = OrderedDict()
+    missing = []
+    for name in folders:
+        value = known.get(name)
+        if isinstance(value, (list, tuple)) and len(value) == levels:
+            resolved[name] = tuple(map(str, value))
+        else:
+            missing.append(name)
+    if missing:
+        if not is_taxonomical_cls2idx(cls2idx):
+            raise ValueError(f"Missing hierarchical labels for input folders: {missing}")
+        fetched = labels_from_taxonomy(create_taxonomy(missing, levels))
+        for name in missing:
+            value = fetched.get(name)
+            if value is None or len(value) != levels:
+                raise ValueError(f"Could not resolve {levels} hierarchy levels for input folder {name!r}")
+            # Folder IDs are supplied ground truth; do not silently canonicalize
+            # unseen/synonymous species into the model's vocabulary.
+            resolved[name] = (name if name.isdigit() else str(value[0]), *map(str, value[1:]))
+    return OrderedDict((name, resolved[name]) for name in folders)
+
+
 def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], list[str]]:
     """Find images in source and possibly create training metadata."""
     metadata = labels = images = None
@@ -252,6 +279,9 @@ def auto_find_images(src: str, **kwargs) -> tuple[list[int] | list[list[int]], l
     elif os.path.isdir(src):
         contains_only_dirs = all([os.path.isdir(os.path.join(src, p)) for p in os.listdir(src)])
         if contains_only_dirs:
+            cls2idx = kwargs.get("cls2idx")
+            if isinstance(cls2idx, dict) and isinstance(cls2idx.get("0"), dict):
+                kwargs = dict(kwargs, labels=_inference_folder_labels(src, cls2idx, kwargs.get("labels")))
             metadata = create_metadata(src, **{**kwargs, **{"train_proportion": 0, "val_proportion": 0}})
         else:
             images = find_images(src)
