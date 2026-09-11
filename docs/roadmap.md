@@ -1,8 +1,18 @@
 # Repository strengthening roadmap
 
-The active quantization feature branch has a separate
-[execution roadmap](quantization-roadmap.md) covering measured bottlenecks,
-target-machine dependencies, integration gates and deferred work.
+The quantization branch has been merged into master. Its
+[execution roadmap](quantization-roadmap.md) remains the specialist backlog;
+fully quantized training performance is not established by that merge.
+
+The completed four-GPU production campaign is assessed in the
+[training workflow post-mortem and next-run plan](training-workflow-postmortem.md).
+For the next training run, first deliver its bounded P0 workflow slice: durable
+stage state and recovery, preallocated evaluation/export preparation, and separate
+compute/storage qualification. Then measure concurrent staging before investing in
+prepared shards. Preserve normal CLIs, operator overrides, figures and W&B.
+These are proposed development priorities, not implemented capabilities. They fit
+the safeguards, export, loading and evaluation boundaries below; defer another
+large optimization matrix until it can change a specific production decision.
 
 This is the implementation order. Each increment should leave the existing default
 training and prediction interfaces working and include its own validation evidence.
