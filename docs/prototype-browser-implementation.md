@@ -4,6 +4,10 @@ Status: ready for goal setting; implementation has not started. This plan define
 execution and acceptance for the standalone direction in the
 [compact roadmap](prototype-explorer-roadmap.md). It does not create an active goal.
 
+The [unified execution plan](prototype-explorer-implementation.md) schedules
+milestones 1–3 as a bounded feasibility goal before the inference UI. The goal
+below remains the full seven-milestone destination, not the next single increment.
+
 ## Goal text
 
 > Build and validate a standalone prototype explorer that loads a mini_trainer

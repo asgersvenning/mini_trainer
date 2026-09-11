@@ -30,8 +30,10 @@ CLI/file-picker checks passed. Current extraction supports float32 linear
 `Classifier` and `HierarchicalClassifier` heads; dense analysis needs several GB
 for the 12,632-class case. These checks do not establish full-suite/GPU coverage.
 
-The names/probability/layout increment additionally passed 133 browser assertions,
-11 affected Python tests, log-tail reference and motion checks, and static checks.
+The latest viewer increment passed 150 browser assertions; the preceding
+names/probability increment also passed
+11 affected Python tests and log-tail reference and motion checks. Static checks
+passed for the latest changes. These are scoped results, not a new full-suite audit.
 
 Current real-data reference: `tmp/best_global-lepi-production-w32-1_epoch26.pt`
 (training progress reported as 26/30 epochs), SHA-256
@@ -76,17 +78,24 @@ This is planned work; no browser model inference is implemented or validated yet
 
 | Order / status | Increment | Done when |
 | --- | --- | --- |
-| 1 · Next | Reliable repeated exploration: progress/cancellation, analysis cache keyed by checkpoint and numerical configuration, saved viewer state. | Reopening avoids unnecessary analysis; cancellation leaves a usable session; loading, peak memory and frame motion are measured on the real case. |
-| 2 · Planned | Local packing: angular cap counts, neighbour-radius distributions, mutual-neighbour links and taxonomy composition across scales. | Selected-class profiles and linked outliers agree with exact original-space calculations; unknown taxonomy remains explicit. |
-| 3 · Planned | Anchor atlas, then two-anchor comparison: angular rings, selectable bearings and existing photo controls. | Radius matches the chosen baseline angular convention; bearing degeneracies and non-anchor distortion are disclosed and tested. |
-| 4 · Research | Great-circle/great-sphere slices with winners, competing classes and margins. | Slice scores match direct high-dimensional evaluation; geometric regions are distinguished from the full classifier decision rule and global cell volumes. |
-| 5 · Research | Compare further planar/spherical layouts; add a globe only if useful. | Near/far angular error, neighbour retention, seed stability, fit cost and display distortion justify a new option. |
-| 6 · Later | Checkpoint trajectories, then held-out embedding overlays and observed confusion. | Comparisons align class IDs and distinguish rotation/layout changes from changes in relationships; empirical claims identify their sample data. |
+| 1 · Next | Reliable repeated exploration: saved viewer state, versioned analysis cache, preparation progress/cancellation. | Compatible reopening restores state and skips analysis; cancelled/stale jobs cannot replace valid results; real-case load and memory costs are recorded. |
+| 2 · Qualification | Real-model browser inference: standalone milestones 1–3. | Exact preprocessing/embedding/output contracts are identified; epoch-26 predictions and embeddings pass real-image WASM browser parity with latency/memory evidence. |
+| 3 · Planned | Local packing: angular cap counts, neighbour-radius curves, mutual neighbours and taxonomy composition. | Radius/rank selection links the same original-space class set across views; calculations match exact references. |
+| 4 · Planned | Single-anchor view, then bearings and two-anchor comparison. | Angular radii match direct calculation; degeneracies and non-anchor distortion are disclosed; existing image controls work. |
+| 5 · Depends on 2 | Query inference UI and embedding placement: standalone milestones 4–5. | Actual predictions, query geometry and fixed-transform PCA/anchor placement are linked; nonlinear insertion is separately qualified. |
+| 6 · Depends on 2 and 5 | Client-side global diagnostics and standalone distribution: milestones 6–7. | The real bundle generates global views locally and works offline without Python/PyTorch/CUDA; numerical and resource gates pass. |
+| Later · Research | Great-sphere slices, alternative layouts, checkpoint trajectories and empirical calibration. | Each proposal earns implementation through a bounded experiment and original-space validation. |
 
-Take one bounded increment at a time. Qualify standalone inference before committing
-to its runtime design. The next geometry feature is local packing
-profiles followed by the anchor atlas; reliability work supports both. Integration
-into the target branch requires review and validation of the combined result.
+The [next-increment implementation plan](prototype-explorer-implementation.md)
+specifies code boundaries, deliverables, tests and the recommended next goal.
+This table is the unified execution order; the standalone plan provides detailed
+acceptance gates, not a second competing priority list. Geometry increments 3–4
+can proceed if browser qualification needs an external input, with the blocker
+recorded. Do not treat such progress as completion of browser qualification.
+
+Take one bounded increment at a time. Preserve the full-pane UX as the baseline;
+further presentation changes should support a diagnostic or demonstrated issue.
+Integration into the target branch requires review and combined validation.
 
 ## Rules for research and prioritization
 
