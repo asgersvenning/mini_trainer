@@ -41,7 +41,7 @@ The file is sent only to the local process, stored outside the served report
 folder, and read with PyTorch's `weights_only=True` loader. The server binds to
 loopback on an available port. Stop it with Ctrl+C when finished. Session files
 are temporary; use **Save HTML report** to retain the portable numerical viewer.
-Photos require the local server and network access to GBIF.
+Names and reference photos use the browser directly; no Python photo server is required. Live lookups and uncached images require network access.
 
 Preparation reports the current stage and elapsed time. **Cancel preparation**
 stops the owned analysis process; selecting replacement weights starts a new job.
@@ -102,11 +102,11 @@ subtree survive view changes. Related panels wrap below the main feature.
 
 ## Class names and chance alignment
 
-Open **Class names** to enable aliases in selection, neighbourhood profiles,
-dendrogram leaves, local matrix axes, and neighbour tables. Explicitly enable
-GBIF lookup when the class IDs are GBIF taxon keys. Names resolve asynchronously,
+Open **Settings → Names and class identity** to enable aliases in selection, neighbourhood profiles,
+dendrogram leaves, local matrix axes, and neighbour tables. Set the global **Class IDs** setting to **GBIF taxon IDs** when appropriate.
+Name and photo visibility are separate display preferences. Names resolve asynchronously,
 prioritizing visible labels and the selected neighbourhood; unresolved classes
-retain their IDs. Online resolution requires the local server and GBIF access.
+retain their IDs. Online resolution requires GBIF access; packaged names work offline.
 Search accepts IDs, already resolved names, or `row N` for a checkpoint row.
 
 For offline aliases, import JSON such as `{"1837646": "Taxon name"}`, or

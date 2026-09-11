@@ -320,3 +320,8 @@ This selects the file with Chromium's native input, generates the default angula
 map, opens the report, and returns to the picker. Use a small supported checkpoint
 for this bounded regression check. The original `check_browser.mjs` exercises the
 full real-checkpoint report with its three synthetic comparison cases.
+
+The [portable viewer qualification](portable-qualification.md) records the shared
+browser GBIF client, optional metadata snapshots, prediction previews and focused
+checks. See the [browser guide](../../docs/prototype-browser.md) for snapshot
+preparation and static distribution.

@@ -1,115 +1,173 @@
-# Prototype explorer: next implementation increments
+# Prototype explorer: next implementation increment
 
-Status: increment 1 implemented and qualified, including responsiveness and
-thumbnail-loading improvements added to its goal. Increments 2–4 remain proposed. The [roadmap](prototype-explorer-roadmap.md)
-owns priorities; the [standalone plan](prototype-browser-implementation.md) owns
-the complete browser inference and distribution contract.
+Status: implemented and qualified; human layout review and PR integration remain pending. Updated 2026-09-11. The
+[roadmap](prototype-explorer-roadmap.md) owns priorities; this document is the
+executable plan for the next bounded increment.
 
-## Starting point
+## Objective and baseline
 
-Baseline: `feature/prototype-space`, through `05aafee`. Preserve the full-pane map,
-floating controls, names, score semantics, thumbnail continuity and existing
-Python entry points. Continue in `/home/asger/mini_trainer/.worktrees/prototype-space`;
-verify its status before work. Use assigned worktrees for any authorized parallel
-implementation; integration remains a separate reviewed step.
+Make the existing static prototype explorer coherent to navigate and portable for
+GBIF-labelled models: one global class-ID interpretation, browser-side names and
+reference images, and predicted-species thumbnails integrated with the existing
+map and inspector.
 
-Use the epoch-26 checkpoint and hash recorded in the roadmap. Epoch 4 is the
-longitudinal comparison. Existing effective-weight extraction, class ordering,
-distance and log-tail functions remain the numerical baseline. Synthetic cases
-exercise edge conditions without specifying how the real prototypes should pack.
+Start from `feature/prototype-browser-inference` at `1eb2a32`, which includes
+master `1d2dae0251989b067908a7c06c0701a890b11580`. Before implementation, check the
+current master head and integrate any newer changes through the normal reviewed
+branch workflow. Preserve unrelated work and the existing published release.
+Use the assigned `prototype-browser-inference` worktree or a newly assigned
+worktree following repository rules; do not use the older prototype-space worktree.
 
-## 1. Reliable repeated exploration — delivered
+The first browser inference and fixed-map t-SNE insertion are already implemented.
+Preserve their model/preprocessing contracts, class order, scores, embeddings,
+projection coordinates, pan/zoom, selection and saved-view functionality. No new
+projection method, model re-export or inference engine is required for this increment.
+Prefer the existing architecture where practical. Evaluate a framework if it offers
+clear maintainability or usability benefits; explain the migration cost and
+compatibility implications before committing to that direction.
 
-> Make the current explorer resumable and reusable: restore compatible viewer
-> state, reuse completed analysis, expose preparation progress, and cancel or
-> replace preparation without publishing stale results. Validate with the real
-> epoch-26 case and preserve existing numerical outputs and interaction behavior.
+## Problems at the starting point
 
-Deliver in three reviewable slices:
+- `report.html` resolves names through `/api/taxon/`.
+- `photos.js` fetches albums through `/api/gbif/`; it and `thumbnails.js` probe
+  `/api/health`, and images use the Python `/gbif-image/` proxy.
+- `gbif-names`, `photo-enabled` and `map-photos` independently imply GBIF
+  interpretation; `state.js` persists those independent controls.
+- `inference.js` renders raw class IDs and scores without reference thumbnails.
+- Model loading, prediction, exploration and numerous settings compete for space.
+  Earlier focused-layout work does not resolve the current combined interface.
 
-| Slice | Implementation boundary | Acceptance |
-| --- | --- | --- |
-| 1a · Viewer state | Versioned state serializer in the packaged viewer. Save case/model identity, selected class ID, focused view, plane and pan/zoom, subtree, colour range, name preferences and thumbnail settings. Provide explicit reset and JSON export/import. | Reload restores a compatible view without refitting or changing class order. Different models and malformed/older state fall back clearly. Storage failure does not prevent use. Do not persist transient force positions or local image files. |
-| 1b · Analysis reuse | Extend `launch.py` and `explore.py` with an explicit persistent cache location and a manifest keyed by checkpoint content hash, extraction/analysis version, numerical settings and projection method/seed. Store completed numerical artifacts separately from viewer assets. Publish atomically; bound cache size and expose clearing. | A second open skips analysis; changed weights/settings invalidate the entry; partial or corrupt entries rebuild safely. Viewer-only changes render current assets over cached data. Cache hit/miss and provenance are visible. |
-| 1c · Preparation lifecycle | Extend the launcher's existing child-process build into an owned cancellable job. Report named stages and elapsed time, not invented percentage progress. Reuse its subprocess boundary for non-interruptible library stages. Use job identities for publication. | Cancel, replacement, failure and shutdown release owned resources. A cancelled/older job never replaces a newer report or cache entry. The last completed report remains usable. |
+## Reviewable implementation slices
 
-Before changing behavior, record cold preparation time, reopening time, peak RSS,
-HTML size, browser load time and interaction frame timing on the same machine.
-Repeat after implementation with identical numerical options; distinguish disk,
-analysis and browser costs. A cache hit must execute no analysis stages. Do not
-turn environment-dependent timing into brittle regression assertions.
+### 1. Global class identity and shared browser GBIF access
 
-Checks: extend `test_prototype_launcher.py` for invalidation, interrupted writes
-and stale-job races; use `test_prototype_exploration.py` for unchanged results.
-Extend the browser harness for restoration, model mismatch and storage failures.
-Run affected Python tests and static checks; run the full harness if changes
-extend into model loading or the validation harness as required by repository policy.
-Refresh the real-data preview after each accepted slice.
+Add one model-scoped `classIdNamespace` setting with `generic` and `gbif` values.
+Expose it once in shared settings. Numeric strings alone must not enable GBIF.
+Allow explicit report/bundle metadata to supply a default, with the user's saved
+choice taking precedence. Generic is the fallback when neither exists; synthetic
+cases make no GBIF requests. Treat names and photos as presentation preferences,
+not alternative namespace settings.
 
-## 2. Real-model browser feasibility — next decision gate
+Extend `state.js` rather than creating a parallel state store. Version the saved
+state and migrate older views: an explicitly enabled legacy GBIF name/photo option
+maps to GBIF mode; otherwise retain generic mode. Record this migration in tests
+and documentation. Keep imported aliases usable in either mode. Use one shared
+label resolver, with imported aliases, packaged names, resolved online names and
+raw IDs in that order. Namespace/model changes cancel obsolete work and invalidate
+render generations so late results cannot overwrite current labels or images.
 
-Execute milestones 1–3 of the standalone plan as a bounded qualification goal:
-contract and fixtures, opt-in predictions-plus-embedding export, then WASM browser
-parity. Inspect the actual architecture and preprocessing first. The current
-prototype-only loader does not establish that a complete inference model can be
-reconstructed without additional metadata.
+Put GBIF transport and metadata normalization in one logical `gbif.js` module.
+Share it across name labels, selected-class cards, map thumbnails and prediction
+cards. Reuse existing request deduplication, visible-item prioritization and photo
+rendering where possible. Use session caching and bounded requests, seeded by an optional versioned GBIF
+metadata snapshot packaged with the artifact. Precompute scientific names for the
+model vocabulary so labels can render offline without thousands of initial calls.
+Include snapshot provenance, retrieval dates and original taxon IDs; allow partial
+snapshots and fetch missing entries on demand. Photo metadata (URLs and attribution)
+may also be included, but does not imply that remote image bytes work offline.
+Keep snapshot preparation optional and resumable; do not make live API availability
+a prerequisite for export or build a general taxonomy service.
 
-Deliver a versioned bundle proposal, reproducible export/qualification command,
-real-image reference fixtures, and a minimal browser inference harness. Start
-with identical preprocessed tensors, then qualify image decoding/preprocessing.
-Measure cold load, warm latency and peak memory on a named browser/machine.
-Use the existing ONNX exporter and output semantics; do not duplicate the head.
+Use public GBIF species and occurrence APIs directly from the browser. Verify
+actual CORS access from a static HTTP origin before expanding implementation.
+Select a browser-accessible thumbnail source, preserving creator, licence,
+occurrence link and source URL. Respect the chosen endpoint's documented request
+limits. Bound timeouts/retries and handle 429, unavailable images and offline
+operation without blocking numerical views. Do not replace the Python dependency
+with a mandatory third-party proxy. If image delivery needs a fallback, prove it
+on the static host before claiming portability.
 
-Pass only when real checkpoint embeddings and predictions satisfy the standalone
-plan's parity gates. If required metadata/images are missing or runtime operators
-fail, report the concrete missing input or operation and the smallest next step.
-Do not replace real-model evidence with a tiny model or silently relax tolerances.
-Full inference UI, WebGPU and client-side global analysis remain later milestones.
+Accepted-name/synonym resolution is display metadata: retain original class IDs
+and model row ordering. Validate occurrence taxonomy before associating an image
+with a predicted species; do not silently use unrelated or merely same-genus
+images. Render external text safely and restrict media/link URL schemes.
 
-## 3. Local packing diagnostics — next geometry feature
+Keep existing Python endpoints compatible for local users during this increment,
+but remove their use from browser name/photo features. The local weight picker
+and optional server-side saved state remain separate Python capabilities.
 
-Add a selected-class packing panel linked to the existing inspector. Compute
-angular cap counts and neighbour-radius curves from original-space relationships;
-let the user select a radius or rank and highlight the same class set in map,
-matrix and tree. Add mutual-neighbour membership and taxonomy composition using
-available checkpoint hierarchy; missing names/taxonomy stay explicit.
+### 2. Prediction cards with species reference images
 
-Start with selected-class computation rather than another dense all-pairs payload.
-Record the source, clamp convention, self-exclusion and tie handling. Keep empirical
-counts separate from any optional uniform-sphere reference. Chance-alignment q
-remains a reference tail, not a learned-class posterior or an automatic significance
-decision across many selected pairs.
+Extend `inference.js` to use the shared label resolver and photo components.
+Species results show name, original ID, unchanged score and a small reference
+thumbnail with accessible attribution. Label these as reference examples, distinct
+from the user's inference image. Load only visible results; share albums with map
+and inspector consumers, and discard stale requests after new inference/model changes.
 
-Gate: exact agreement with repository-derived relationships on epoch 26 and
-algebraic fixtures (duplicates, antipodes, orthogonality and ties). Selection must
-not refit the projection or restart thumbnail motion. Provide a preview where a
-radius change visibly identifies the same neighbourhood across linked views.
+Genus/family results use shared names but need not acquire species thumbnails.
+Do not imply that an arbitrary descendant is the predicted species. Preserve
+existing map linkage where meaningful and make any parent-rank selection behavior
+explicit. Missing images, unknown taxa and offline operation retain useful ID/score
+rows. Generic classes render normally with no GBIF calls.
 
-## 4. Anchor view — then query embedding UI
+### 3. Cohesive layout using existing components
 
-Implement a single-anchor view with angular radius, followed by selectable bearing
-and two-anchor comparison only after the first view is validated. Define bearing
-degeneracy at parallel/antipodal directions and disclose non-anchor distortion.
-Reuse image labels, floating controls and culling rather than creating a new viewer.
+Organize the interface around Explore and Predict, with shared Settings. Keep the
+full-pane map available and the current query overlay linked to prediction results.
+Place model loading and image selection together, with one clear progress/error
+area. Group prediction results by rank; put advanced projection, thumbnail and
+numerical controls behind labelled disclosure panels. Consolidate duplicated
+controls rather than adding another toolbar.
 
-Gate: anchor radii agree with direct angular calculations; changing display bearings
-does not change neighbourhood membership. This provides a geometrically defined
-view for query embeddings once browser inference is qualified.
+Preserve keyboard operation, visible focus, readable status, attribution access,
+mobile usability and pan/zoom across navigation. Prepare desktop and narrow-screen
+previews for human review before polishing. Do not redesign the underlying
+analytical views or remove expert controls to simplify the first screen.
 
-Then execute standalone milestones 4–5: local image selection, actual predictions,
-query-to-prototype diagnostics and fixed-transform PCA/anchor placement. Qualify
-fixed-map t-SNE insertion separately. Finish milestones 6–7 for client-side global
-diagnostic construction and standalone/offline distribution; inference alone does
-not complete the standalone goal.
+## Acceptance and validation
 
-## Research queue and reporting
+| Area | Required evidence |
+| --- | --- |
+| Static portability | Serve the exported viewer using a plain static server with no Python API endpoints. Names, map photos, inspector photos and prediction thumbnails work. Network assertions find no `/api/taxon`, `/api/gbif`, `/gbif-image` or GBIF health-probe dependency. Test the intended HTTPS hosting origin as well. |
+| One setting | A single global namespace choice governs every consumer. Switching to generic prevents new GBIF requests and stale results; numeric generic IDs and synthetic cases remain generic. |
+| Compatibility | Legacy saved views migrate deterministically; aliases, class order, hierarchy, scores and query positions stay unchanged. Browser storage failure does not prevent use. |
+| Shared resources | Multiple consumers requesting one taxon share in-flight work and cached metadata. Navigation/inference replacement does not create unbounded queues or stale cards. |
+| Failure handling | Mock timeout, 429, malformed responses, missing ranks/images, synonym records and offline mode. Useful labels and predictions remain; retries are bounded. |
+| Predictions | Known species has a credited thumbnail; missing-image species has a stable placeholder; genus/family rows do not masquerade as species. Local query pixels are never sent to GBIF. |
+| UX | Desktop and narrow-screen screenshots plus browser checks cover navigation, keyboard focus, settings, prediction cards, map selection, zoom retention and readable loading/error states. Obtain human review of the preview. |
+| Performance | Record same-machine initial display, interaction responsiveness and visible-thumbnail request counts before/after. Do not resolve all 12,632 names or fetch all species albums at startup. |
 
-Keep slices, alternative layouts and checkpoint trajectories behind these gates.
-Formalizing chance-alignment inference, multiplicity and empirical calibration is
-a research task; it must not change the baseline numerical semantics implicitly.
+Browser acceptance for this increment targets the existing Chromium/WASM setup.
+Narrow-screen checks use that browser; Firefox, Safari and other runtime backends
+are deferred to the roadmap and are not completion gates for this goal.
 
-Each increment ends with a runnable preview, focused commit, tests and compact
-real-data evidence, plus roadmap status and remaining limitations. Do not start
-all increments as one implementation task. Increment 2 is the
-recommended next goal; no token/time budget is implied. Increment 1 evidence is
-recorded in the [qualification note](../dev/prototype_space/reuse-performance.md).
+Extend the existing browser harnesses in `dev/prototype_space/` with mocked GBIF
+responses for deterministic checks and a small separate live static-host smoke test.
+Run `bash dev/check.sh static` and affected prototype Python tests; use the existing
+inference harness to establish unchanged predictions and embedding placement.
+If packaged assets change, run the installed-wheel smoke check. Follow repository
+full-suite requirements if model loading or the validation harness scope expands.
+Report live-network failures separately from deterministic regressions.
+
+## Completion and distribution
+
+Deliver focused normal commits for the state/client contract, prediction integration
+and layout changes, with tests alongside each. Keep agent-only notes separate.
+Update usage and browser guides, this plan and the roadmap. Integrate through a
+reviewed PR against current master and validate the combined state. Prepare a
+versioned static preview with provenance and asset hashes; do not overwrite the
+published production release as a side effect of development.
+
+## Executable goal
+
+> Implement the portable viewer UX increment in
+> `docs/prototype-explorer-implementation.md`, keeping compatibility with current
+> master. Consolidate GBIF interpretation into one model-scoped global setting;
+> replace Python-backed name/photo lookups with one shared browser GBIF client;
+> show attributed predicted-species thumbnails; and reorganize existing controls
+> into coherent Explore, Predict and Settings flows. Preserve numerical behavior,
+> class IDs/order, saved-view compatibility and fixed-map t-SNE query placement.
+> Complete the acceptance matrix, static-host browser proof, focused checks and
+> human-reviewable desktop/mobile preview. Deliver focused commits and a reviewed
+> integration PR, updated documentation and a versioned release candidate. Prefer
+> the existing architecture where practical; a framework may be justified by clear
+> maintainability or usability benefits, with migration cost and compatibility
+> implications explained before committing to that direction. Do not
+> change training/inference semantics or implement new geometry,
+> require a proxy service, or overwrite the existing public release. Report any
+> externally blocked check explicitly rather than claiming it passed.
+
+This goal is active. The [qualification record](../dev/prototype_space/portable-qualification.md)
+contains passing check evidence. Remaining completion gates are human review,
+the integration PR and candidate delivery. No token or time
+budget is implied.

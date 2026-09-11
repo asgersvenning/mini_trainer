@@ -83,9 +83,12 @@ WASM configuration. A downloaded HTML retains numerical exploration, but browser
 inference requires HTTP(S) serving and the model/runtime files; double-clicking the
 HTML is not the complete inference distribution.
 
-GBIF photos/name lookup retain the existing explorer's network/local-service
-requirements. The release's precomputed numerical views do not depend on those
-services. The broader standalone-analysis roadmap is still open: this version does
+GBIF names and reference images are fetched directly by the browser, controlled
+by **Settings → Class IDs**. Generic IDs make no GBIF requests. Species prediction
+rows share attributed reference examples with the map and inspector; those photos
+are not the user's query image. Missing names/images leave IDs and scores usable.
+Optional packaged names work offline; remote photo URLs still require networking.
+The precomputed numerical views do not depend on GBIF. The broader standalone-analysis roadmap is still open: this version does
 not recompute global Ward/PCA/t-SNE diagnostics in the browser.
 
 ## Browser smoke check
@@ -104,3 +107,36 @@ separate numerical qualification checks. The smoke check alone does not establis
 accuracy or cross-browser compatibility. The pinned runtime module is distributed
 with a `.js` extension because some static servers do not assign `.mjs` a JavaScript
 MIME type; its contents are unchanged.
+
+## Optional packaged GBIF names
+
+For a GBIF-labelled report, prepare a resumable metadata snapshot before rendering
+the release candidate. No credentials are needed. Each entry retains the original
+ID and retrieval date; name resolution never changes the model vocabulary.
+
+```bash
+.venv/bin/python dev/prototype_space/prepare_gbif.py \
+  --report /path/to/report/report-data.json \
+  --output /path/to/report/gbif-snapshot.json
+```
+
+Use `--limit 100` for a bounded first pass; rerunning fills missing entries. Failed
+lookups remain missing and can be retried. `render_report` embeds a neighbouring
+`gbif-snapshot.json` in the HTML when present, so it survives downloading the report.
+Re-render existing numerical data without recomputing geometry:
+
+```bash
+.venv/bin/python - /path/to/report <<'PY'
+import sys
+from pathlib import Path
+from mini_trainer.visualization.prototype_space.explore import render_report
+root = Path(sys.argv[1])
+render_report(root, (root / "report-data.json").read_text())
+PY
+```
+
+A snapshot explicitly supplies a GBIF default; saved user preferences take precedence.
+The current helper packages taxon names, not image bytes or occurrence albums.
+Static publication should include the snapshot as well as the regenerated HTML,
+and regenerate its asset hashes. Keep a new release candidate separate from an
+already published production release.

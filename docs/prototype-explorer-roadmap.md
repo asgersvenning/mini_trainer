@@ -39,68 +39,48 @@ names/probability increment also passed
 11 affected Python tests and log-tail reference and motion checks. Static checks
 passed for the latest changes. These are scoped results, not a new full-suite audit.
 
-Current real-data reference: `tmp/best_global-lepi-production-w32-1_epoch26.pt`
-(training progress reported as 26/30 epochs), SHA-256
-`abb9f66d95fe867bd31847cb33782a353b1d3faf4c79c4b10d93037f33fe61f4`.
-Verified extraction: 12,632 × 1,280 float32 normalized prototypes, zero biases,
-and unchanged class ordering/hierarchy relative to epoch 4. Retain epoch 4 for
-longitudinal comparisons. Browser inference parity is still an open gate.
+## Current browser delivery
 
-## Standalone client direction
+The subsequent `feature/prototype-browser-inference` increment (`1eb2a32`)
+includes master `1d2dae0` and implements browser WASM inference, exported
+preclassification embeddings and browser-side insertion into the fixed t-SNE map.
+See the [browser guide](prototype-browser.md) and
+[distribution plan](production-release-integration.md).
 
-The [goal-ready implementation plan](prototype-browser-implementation.md) defines
-the bundle contract, ordered milestones, and end-to-end completion gates.
-
-Target: browser inference and embedding inspection without a Python/PyTorch/CUDA
-runtime. Export preparation may use mini_trainer once; the distributed viewer
-loads an ONNX bundle, class/prototype metadata, and executable preprocessing.
-The existing `.pt` picker remains a Python workflow, not this standalone path.
-
-Next feasibility gate: export actual prediction outputs plus the precise
-preclassification embedding; verify preprocessing, embeddings and scores against
-real-image reference results in ONNX Runtime Web (WASM first, then WebGPU).
-CPU ONNX parity alone does not establish browser compatibility or performance.
-
-Then add image selection, original-space neighbours/margins and query overlays.
-Save PCA means/bases for new points; define and validate placement into the fixed
-t-SNE map separately. Anchor views can expose direct query-to-prototype angles.
-Geometry explains relationships; observed probabilities retain actual head semantics.
-
-Deliver a static/installable viewer with locally selected models and images.
-Precomputed global diagnostics are an initial delivery option; moving their
-construction client-side is a separate milestone requiring blocked computation,
-workers, memory/latency measurements and baseline numerical parity. Keep direct
-log-domain semantics when porting diagnostics. GBIF networking/offline photo
-availability must be explicit and independent of local inference.
-
-References: [current export contract](onnx.md),
-[ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/),
-[browser deployment](https://onnxruntime.ai/docs/tutorials/web/deploy.html).
-This is planned work; no browser model inference is implemented or validated yet.
+The final production checkpoint replaces epoch 26 as the browser reference:
+SHA-256 `174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a`.
+It retains 12,632 species and 1,280-dimensional normalized prototypes. Earlier
+checkpoint evidence above remains historical. Browser inference was checked on
+Chromium/WASM with identical tensors and one real image; this is not broad browser
+or accuracy qualification. Global diagnostic construction remains offline
+preparation. The current portable-UX increment replaces the name/photo Python
+transport with a shared browser client and optional packaged names; see its
+[qualification evidence](../dev/prototype_space/portable-qualification.md).
+Human layout review and integration remain pending.
 
 ## Ordered next work
 
 | Order / status | Increment | Done when |
 | --- | --- | --- |
-| 1 · Delivered | Reliable repeated exploration: saved viewer state, versioned analysis cache, preparation progress/cancellation. | Compatible reopening restores state and skips analysis; cancelled/stale jobs cannot replace valid results; real-case load and memory costs are recorded. |
-| 2 · Next qualification | Real-model browser inference: standalone milestones 1–3. | Exact preprocessing/embedding/output contracts are identified; epoch-26 predictions and embeddings pass real-image WASM browser parity with latency/memory evidence. |
-| 3 · Planned | Local packing: angular cap counts, neighbour-radius curves, mutual neighbours and taxonomy composition. | Radius/rank selection links the same original-space class set across views; calculations match exact references. |
-| 4 · Planned | Single-anchor view, then bearings and two-anchor comparison. | Angular radii match direct calculation; degeneracies and non-anchor distortion are disclosed; existing image controls work. |
-| 5 · Depends on 2 | Query inference UI and embedding placement: standalone milestones 4–5. | Actual predictions, query geometry and fixed-transform PCA/anchor placement are linked; nonlinear insertion is separately qualified. |
-| 6 · Depends on 2 and 5 | Client-side global diagnostics and standalone distribution: milestones 6–7. | The real bundle generates global views locally and works offline without Python/PyTorch/CUDA; numerical and resource gates pass. |
+| Delivered | Reliable repeated exploration and first browser inference/query placement. | Existing evidence is retained; limitations remain explicit in the browser guide. |
+| **Implemented · Review pending** | **Coherent UI and portable GBIF integration.** One global class-ID setting, shared browser-side names/photos and predicted-species thumbnails. | Static hosting needs no Python name/photo service; all consumers obey one namespace setting; attributed prediction thumbnails and desktop/mobile navigation pass the implementation plan's acceptance checks. |
+| Planned | Local packing: angular cap counts, neighbour-radius curves, mutual neighbours and taxonomy composition. | Radius/rank selection links the same original-space class set across views; calculations match exact references. |
+| Planned | Single-anchor view, then bearings and two-anchor comparison. | Angular radii match direct calculation; degeneracies and non-anchor distortion are disclosed. |
+| Later | Client-side global diagnostics and offline distribution. | Real bundles generate global views locally within measured resource bounds; packaged data and optional GBIF networking have explicit offline behavior. |
+| Later · Compatibility | Alternate-browser qualification, starting with Firefox and then Safari. Separate from the current UI/GBIF goal. | Verify model loading, preprocessing/output parity, one-image inference, fixed-map t-SNE insertion, GBIF names/photos, saved state and core interactions on named browser versions; document capability limits. WebGPU qualification remains a separate decision. |
 | Later · Research | Great-sphere slices, alternative layouts, checkpoint trajectories and empirical calibration. | Each proposal earns implementation through a bounded experiment and original-space validation. |
 
 The [next-increment implementation plan](prototype-explorer-implementation.md)
-specifies code boundaries, deliverables and tests. Increment 1 is delivered;
-the next bounded goal is real-model browser qualification (standalone milestones 1–3).
-This table is the unified execution order; the standalone plan provides detailed
-acceptance gates, not a second competing priority list. Geometry increments 3–4
-can proceed if browser qualification needs an external input, with the blocker
-recorded. Do not treat such progress as completion of browser qualification.
+contains the executable goal, code boundaries, state migration and acceptance
+matrix. The [standalone plan](prototype-browser-implementation.md) retains broader
+inference/distribution contracts, not a competing priority order.
 
-Take one bounded increment at a time. Preserve the full-pane UX as the baseline;
-further presentation changes should support a diagnostic or demonstrated issue.
-Integration into the target branch requires review and combined validation.
+UI cleanup is now an explicit priority, extending earlier focused-layout work in
+response to the combined viewer's usability problems. Keep expert controls
+accessible and preserve the full-pane map and human review of previews.
+Take one bounded increment at a time. Integration into master requires review and
+combined validation; do not overwrite the published production artifact during
+implementation.
 
 ## Rules for research and prioritization
 
