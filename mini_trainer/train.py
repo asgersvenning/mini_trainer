@@ -21,9 +21,11 @@ from mini_trainer.config import (
 from mini_trainer.data import debug_augmentation
 from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
+from mini_trainer.modeling.quantized_training import prepare_quantized_training
 from mini_trainer.trainer import train
 from mini_trainer.training import MuonAuxAdamW
 from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
+from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
 from mini_trainer.utils import (
     broadcast_from_master,
     ddp_train_wrapper,
@@ -203,8 +205,6 @@ def main(  # noqa: D417
         )
         validate_type(nn_model, torch.nn.Module)
         if quantized_training or getattr(nn_model, "_quantized_training_recipe", None):
-            from mini_trainer.modeling.quantized_training import prepare_quantized_training
-
             if device.type != "cuda":
                 raise ValueError("Quantized training requires a CUDA device.")
             if ddp_info and ddp_info.get("world_size", 1) > 1:
@@ -297,8 +297,6 @@ def main(  # noqa: D417
         log.info(f"Training restarted from checkpoint(s): {checkpoint}")
 
     if compile_optimizer:
-        from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
-
         prepare_compiled_optimizer(optimizer, cudagraphs=optimizer_cudagraphs)
         log.info("Optimizer updates compiled; scheduler and AMP step gating remain active.")
 

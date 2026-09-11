@@ -62,7 +62,7 @@ jobs:
         run: bash dev/check.sh static
 
       - name: Test with pytest
-        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term
+        run: bash dev/check.sh test --cov=mini_trainer --cov-report=xml --cov-report=term --durations=15
 
       - name: Standalone ONNX Runtime parity
         run: bash dev/check-onnx.sh
