@@ -276,6 +276,7 @@ def render_report(output, payload):
     (output / "explorer.html").write_text(
         template.replace("__REPORT_DATA__", payload)
         .replace("__PHOTO_SCRIPT__", Path(__file__).with_name("photos.js").read_text())
+        .replace("__INFERENCE_SCRIPT__", Path(__file__).with_name("inference.js").read_text())
         .replace("__PROJECTION_SCRIPT__", Path(__file__).with_name("projection.js").read_text())
         .replace("__THUMBNAIL_SCRIPT__", Path(__file__).with_name("thumbnails.js").read_text())
         .replace("__STATE_SCRIPT__", Path(__file__).with_name("state.js").read_text())

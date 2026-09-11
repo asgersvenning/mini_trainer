@@ -174,3 +174,8 @@ See the [view guide](../dev/prototype_space/README.md#try-the-views),
 [diagnostic API](prototype-diagnostics.md), and
 [hyperspherical visualization review](hyperspherical-visualization.md) for
 metric semantics, display clipping, projection distortion and thumbnail controls.
+
+## Browser inference
+
+See [browser inference](prototype-browser.md) for the optional ONNX bundle, local
+image predictions, and fixed-map t-SNE/PCA query placement.

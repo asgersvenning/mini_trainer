@@ -47,6 +47,7 @@ function drawProjection(refreshThumbnails=true) {
  ctx.font=`${12*pixels}px system-ui`;
  for(const i of original){const [x,y]=projectionHits[i];ctx.fillStyle='#087e8b';ctx.beginPath();ctx.arc(x,y,4.5*pixels,0,2*Math.PI);ctx.fill();if(!$('map-photos').checked)ctx.fillText(classLabel(i),x+7,y-5);}
  ctx.fillStyle='#c2344b';ctx.beginPath();ctx.arc(sx,sy,6*pixels,0,2*Math.PI);ctx.fill();ctx.font=`bold ${13*pixels}px system-ui`;if(!$('map-photos').checked)ctx.fillText(classLabel(selected),sx+9,sy+17);
+ if(typeof drawInferenceQuery==='function')drawInferenceQuery(ctx,p,pixels);
  const fractions=p.variance_fraction?.map(v=>(v*100).toFixed(2));
  const summary=fractions?`Variance retained: ${(100*p.variance_fraction.reduce((a,b)=>a+b,0)).toFixed(2)}% (${p.axes[0]} ${fractions[0]}%, ${p.axes[1]} ${fractions[1]}%). `:`Angular t-SNE · perplexity ${p.parameters.perplexity.toFixed(1)} · seed ${p.parameters.seed}. Map gaps and areas do not measure spherical distances or areas. `;
  $('projection-quality').textContent=`${summary}Original top-${data.stats.k} neighbours retained among plane top-${data.stats.k}: ${(100*p.mean_retained_fraction).toFixed(1)}% averaged over classes; ${(100*p.retained_fraction[selected]).toFixed(1)}% for selected class. Exact plane-distance ties use class order.`;

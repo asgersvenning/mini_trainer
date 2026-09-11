@@ -54,6 +54,7 @@ def prototype_projections(weight, neighbours):
         key = f"PCA {start + 1}–{start + 2}"
         result[key] = {
             "coordinates": points.tolist(),
+            "transform": {"mean": directions.mean(dim=0).tolist(), "basis": axes[:, start : start + 2].tolist(), "normalize": True},
             "axes": [f"PC {start + 1}", f"PC {start + 2}"],
             "variance_fraction": (variances[start : start + 2] / total).tolist() if total > 0 else [0.0, 0.0],
             "neighbours": near,

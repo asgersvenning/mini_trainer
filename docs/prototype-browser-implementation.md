@@ -1,6 +1,9 @@
 # Standalone prototype explorer: implementation plan
 
-Status: ready for goal setting; implementation has not started. This plan defines
+Status: the first browser-inference increment is implemented; see
+[browser inference](prototype-browser.md). It uses the final production checkpoint,
+not the historical epoch-26 reference below. Full browser-side global analysis and
+the remaining broader milestones are still pending. This plan defines
 execution and acceptance for the standalone direction in the
 [compact roadmap](prototype-explorer-roadmap.md). It does not create an active goal.
 

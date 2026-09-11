@@ -81,6 +81,12 @@ body[data-view=projection] #score-note{order:0;padding:12px;margin:0}
 </div></details><label>Scores <select id="score-display"><option value="z">z-scores</option><option value="tail">Chance-alignment p-value (approx.)</option></select></label><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
 </div></details>
 <main>
+<section class="panel" id="inference-panel"><h2>Try your own image</h2>
+<p class="muted">Run this model locally in your browser. Images are not uploaded. Model download and inference may take time on this device.</p>
+<label>Browser model manifest <input id="inference-url" type="url" value="browser-model/manifest.json" style="width:min(600px,100%)"></label>
+<button id="inference-load">Load model</button><button id="inference-cancel">Stop</button>
+<label>Image <input id="inference-image" type="file" accept="image/png,image/jpeg" disabled></label>
+<p id="inference-status" role="status">Load the matching browser bundle to begin.</p><div id="inference-results"></div></section>
 <p id="score-note" class="caption" hidden>Chance-alignment p-value (approx.): q = Φ(−z) is the one-sided upper-tail probability under independent uniform directions on the unit hypersphere. Small q means random directions would rarely be this closely aligned. It is not a calibrated class posterior or a formal probability that two prototypes are different; that interpretation remains to be formalized. Ward linkage heights retain their original units.</p>
 <p id="case-note" class="case-note muted"></p>
 <div class="stats" id="stats"></div>
@@ -263,6 +269,7 @@ $('tree-root').onclick=()=>{treeFocus=2*data.names.length-2;drawTree();};$('tree
 Object.keys(cases).forEach(name=>{const o=document.createElement('option');o.value=o.textContent=name;$('case').append(o);});$('case').onchange=setCase;setCase();
 </script>
 <script>__PHOTO_SCRIPT__</script>
+<script>__INFERENCE_SCRIPT__</script>
 <script>__PROJECTION_SCRIPT__</script>
 <script>__THUMBNAIL_SCRIPT__</script>
 </html>
