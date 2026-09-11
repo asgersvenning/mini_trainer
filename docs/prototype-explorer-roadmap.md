@@ -18,12 +18,18 @@ development branch; reusable-package baseline `4763041`):
   and retained class/plane/subtree state; verified at landscape, portrait and mobile sizes.
 - GBIF photo labels, configurable footprints/culling, continuous arrival motion,
   pan/zoom retention, and quick navigation exit fades.
+- Optional asynchronous taxon names with visible-label priority and offline aliases;
+  z/chance-alignment probability views with explicit reference semantics.
+- Display-density projection rendering and viewport-height focused panels.
 
 Evidence: real checkpoint diagnostics match the preserved baseline; 84 browser
 checks, 12 affected Python tests, motion checks, static checks, and installed-wheel
 CLI/file-picker checks passed. Current extraction supports float32 linear
 `Classifier` and `HierarchicalClassifier` heads; dense analysis needs several GB
 for the 12,632-class case. These checks do not establish full-suite/GPU coverage.
+
+The names/probability/layout increment additionally passed 133 browser assertions,
+11 affected Python tests, log-tail reference and motion checks, and static checks.
 
 Current real-data reference: `tmp/best_global-lepi-production-w32-1_epoch26.pt`
 (training progress reported as 26/30 epochs), SHA-256

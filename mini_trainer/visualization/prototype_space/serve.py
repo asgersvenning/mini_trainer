@@ -90,6 +90,14 @@ class PhotoService:
         # Serialize all upstream requests, including image proxy requests.
         self.lock = threading.Lock()
 
+    def taxon_name(self, class_id):
+        """Resolve a name without occurrence or image lookups; preserve the ID."""
+        if class_id not in self.allowed_ids or not class_id.isdigit():
+            raise ValueError("Class is not a GBIF-ID candidate in this report")
+        with self.lock:
+            taxon = gbif.retrive_request(f"{gbif.GBIF_SPECIES_API_ENDPOINT}{class_id}")
+        return {"class_id": class_id, "display_name": taxon.get("canonicalName") or taxon.get("scientificName") or class_id}
+
     def metadata(self, class_id):
         if class_id not in self.allowed_ids or not class_id.isdigit():
             raise ValueError("Class is not a GBIF-ID candidate in this report")
@@ -148,6 +156,8 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if path == "/api/health":
                 return self.send_json({"photo_api": True})
+            if path.startswith("/api/taxon/"):
+                return self.send_json(self.service.taxon_name(path.removeprefix("/api/taxon/")))
             if path.startswith("/api/gbif/"):
                 return self.send_json(self.service.metadata(path.removeprefix("/api/gbif/")))
             if re.fullmatch(r"/gbif-image/\d+/[a-f0-9]{32}", path):

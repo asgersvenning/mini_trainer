@@ -62,6 +62,11 @@ def test_algebraic_cases_keep_baseline_ties_and_original_submatrix_values():
     names = [f"class-{i}" for i in range(len(weight))]
     result = analyze(weight, names, [[name] for name in names], neighbours=3)
     assert result["neighbours"][0][:2] == [1, 5]
+    for i, ranks in enumerate(result["profile_neighbours"]):
+        row = z[i].copy()
+        row[i] = -np.inf
+        expected = np.argsort(-row, kind="stable")[np.asarray(result["profile_ranks"]) - 1]
+        assert ranks == expected.tolist()
     assert all(i not in row for i, row in enumerate(result["neighbours"]))
     assert result["zero_count"][0] == 2
     assert result["stats"]["pair_sample_count"] == 15

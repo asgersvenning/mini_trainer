@@ -135,11 +135,15 @@ def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None, inc
     k = min(neighbours, n - 1)
     # z is a separately labelled refinement of saturated distance ties.
     # Stable sorting uses checkpoint class order for exactly equal z values.
+    ranks = [1, min(5, n - 1), min(12, n - 1), min(32, n - 1)]
+    profile_neighbours = np.empty((n, len(ranks)), dtype=np.int32)
     near = np.empty((n, k), dtype=np.int32)
     for i in range(n):
         row = z[i].copy()
         row[i] = -np.inf
-        near[i] = np.argsort(-row, kind="stable")[:k]
+        ordered = np.argsort(-row, kind="stable")
+        near[i] = ordered[:k]
+        profile_neighbours[i] = ordered[np.asarray(ranks) - 1]
     ids = np.column_stack((np.arange(n), near))
     local_d = distance[ids[:, :, None], ids[:, None, :]]
     local_z = z[ids[:, :, None], ids[:, None, :]]
@@ -213,6 +217,7 @@ def analyze(weight, names, groups, *, neighbours=12, seed=42, metadata=None, inc
         "stable_neighbour_distance": array_payload(stable_near.numpy(), dtype="<f8"),
         "profiles": profiles.tolist(),
         "profile_ranks": ranks,
+        "profile_neighbours": profile_neighbours.tolist(),
         "zero_count": zero_count.tolist(),
         "tree": tree.tolist(),
         "order": order.tolist(),

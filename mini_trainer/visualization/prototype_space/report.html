@@ -26,7 +26,18 @@ body.focused main{max-width:none;padding:16px;display:flex;flex-wrap:wrap;gap:16
 body.focused #overview-charts{display:contents}
 body.focused main .panel{min-width:0;margin:0;flex:1 1 480px;max-width:100%}
 body.focused main .primary-view{order:-1;flex-basis:100%}
-body.focused #projection-map{aspect-ratio:auto!important;height:max(300px,calc(100dvh - 340px));border:0!important}
+body.focused #projection-panel.primary-view,body.focused #tree-panel.primary-view{height:max(560px,calc(100dvh - var(--toolbar-height,100px) - 32px));display:flex;flex-direction:column}
+body.focused .primary-view>p.muted{display:none}
+body.focused #projection-panel.primary-view #projection-stage{flex:1;min-height:300px}
+body.focused #projection-panel.primary-view #projection-map{aspect-ratio:auto!important;height:100%!important;border:0!important}
+body.focused #tree-panel.primary-view .tree-wrap{flex:1;min-height:300px;max-height:none}
+body.focused #projection-panel.primary-view .caption{margin:3px 0;font-size:12px}
+body.focused #thumbnail-options{margin:4px 0 8px}
+body.focused #score-note{flex-basis:100%;order:-2}
+.controls input[type=checkbox]{width:auto}
+#name-status{max-width:260px}
+.label-settings{position:relative;margin:0}.label-settings>div{position:absolute;top:100%;left:0;width:330px;max-width:90vw;padding:16px;display:grid;gap:10px;background:white;border:1px solid var(--line);box-shadow:0 3px 12px #0002;z-index:30}
+@media(max-width:600px){.label-settings>div{position:fixed;top:auto;left:8px;right:8px;width:auto}}
 body.focused .tree-wrap{max-height:calc(100dvh - 210px);min-height:300px;overflow:auto}
 body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));margin:auto}
 .panel-focus{font-size:12px;float:right;margin:0 0 8px 12px}
@@ -38,10 +49,14 @@ body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));marg
 <a href="explorer.html" download>Save HTML report</a>
 <label>View <select id="workspace-view"><option value="all">All views</option><option value="projection">Spatial projection</option><option value="tree">Dendrogram</option><option value="matrix">Distance matrices</option><option value="photos">Class images</option><option value="local">Local neighbourhood</option></select></label>
 <label>Case <select id="case"></select></label>
-<label>Class ID <input id="search" placeholder="Search checkpoint ID" list="classes"></label><datalist id="classes"></datalist>
-<button id="find">Inspect</button><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
+<label>Class ID / name <input id="search" placeholder="Search checkpoint ID" list="classes"></label><datalist id="classes"></datalist>
+<button id="find">Inspect</button>
+<details class="label-settings"><summary>Class names</summary><div><label><input id="class-names" type="checkbox"> Class names</label><label><input id="gbif-names" type="checkbox"> Resolve GBIF IDs online</label>
+<label>Import names <input id="name-file" type="file" accept=".json" style="width:110px"></label><span id="name-status" class="caption" role="status"></span>
+</div></details><label>Scores <select id="score-display"><option value="z">z-scores</option><option value="tail">Chance-alignment p-value (approx.)</option></select></label><button id="crowded">Strongest nearest pair</button><button id="sparse">Weakest nearest pair</button><span id="search-status" role="status"></span>
 </div>
 <main>
+<p id="score-note" class="caption" hidden>Chance-alignment p-value (approx.): q = Φ(−z) is the one-sided upper-tail probability under independent uniform directions on the unit hypersphere. Small q means random directions would rarely be this closely aligned. It is not a calibrated class posterior or a formal probability that two prototypes are different; that interpretation remains to be formalized. Ward linkage heights retain their original units.</p>
 <p id="case-note" class="case-note muted"></p>
 <div class="stats" id="stats"></div>
 <div class="grid" id="overview-charts">
@@ -50,7 +65,7 @@ body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));marg
 </div>
 <section class="panel" id="projection-panel"><div class="row"><h2>Prototype space · spatial projection</h2><label>Plane <select id="projection-plane"></select></label><button id="projection-reset">Fit all</button><button id="projection-focus">Fit selected neighbourhood</button><label><input type="checkbox" id="projection-edges" checked> Original-space neighbour links</label></div>
 <p class="muted">Compare linear PCA with angular t-SNE when available. Scroll to zoom, drag to pan, click a point or thumbnail to inspect its class. Each case is fitted separately.</p>
-<div class="row" style="margin:12px 0"><label><input type="checkbox" id="map-photos"> GBIF thumbnails on map</label><label><input type="checkbox" id="map-photo-labels" checked> Labels beneath images</label><label><input type="checkbox" id="map-photo-aspect"> Original aspect ratio</label><label><input type="checkbox" id="map-photo-push"> Push thumbnails apart</label><label><input type="checkbox" id="map-photo-anchors"> Show thumbnail anchors</label><label>Image size <input id="map-photo-size" type="range" min="32" max="160" value="64" step="8"> <output id="map-size-value">64 px</output></label><label>Density <input id="map-photo-density" type="range" min="5" max="200" value="40" step="5"> <output id="map-density-value">40 / MP</output></label><label>Max overlap <input id="map-photo-overlap" type="range" min="0" max="75" value="0" step="5"> <output id="map-overlap-value">0%</output></label><button id="map-photo-retry">Retry images</button></div>
+<details id="thumbnail-options" open><summary>Thumbnail settings</summary><div class="row" style="margin:12px 0"><label><input type="checkbox" id="map-photos"> GBIF thumbnails on map</label><label><input type="checkbox" id="map-photo-labels" checked> Labels beneath images</label><label><input type="checkbox" id="map-photo-aspect"> Original aspect ratio</label><label><input type="checkbox" id="map-photo-push"> Push thumbnails apart</label><label><input type="checkbox" id="map-photo-anchors"> Show thumbnail anchors</label><label>Image size <input id="map-photo-size" type="range" min="32" max="160" value="64" step="8"> <output id="map-size-value">64 px</output></label><label>Density <input id="map-photo-density" type="range" min="5" max="200" value="40" step="5"> <output id="map-density-value">40 / MP</output></label><label>Max overlap <input id="map-photo-overlap" type="range" min="0" max="75" value="0" step="5"> <output id="map-overlap-value">0%</output></label><button id="map-photo-retry">Retry images</button></div></details>
 <div id="projection-stage" style="position:relative"><canvas id="projection-map" width="1200" height="600" style="width:100%;aspect-ratio:2;display:block;touch-action:none;cursor:crosshair;background:#f8fafc;border:1px solid var(--line)" role="img" aria-label="Interactive projection of class prototype directions"></canvas><div id="map-thumbnail-layer" style="position:absolute;inset:0;pointer-events:none;overflow:hidden"></div></div>
 <p id="map-photo-status" class="caption" role="status"></p><p id="map-photo-credit" class="caption"></p>
 <p id="projection-quality" class="caption"></p><p id="projection-hover" class="caption" role="status">Hover a point for its class ID.</p><p class="caption">Red: selected class · teal: its neighbours in the original space · orange rings: nearby in this plane only · grey: other classes. Links follow the original-space ranking. Projected gaps and apparent overlaps can differ from the full embedding geometry.</p></section>
@@ -67,9 +82,9 @@ body.focused #matrix-panel .matrix{max-width:min(100%,calc(100dvh - 350px));marg
  <p id="matrix-note" class="caption"></p>
 </section>
 <section class="panel" id="inspector" style="scroll-margin-top:85px">
- <div class="row"><h2>Local observatory · <span id="selected-name" class="selected-title"></span></h2><label>Matrix values <select id="metric"><option value="logtail">−log₁₀ tail (float32)</option><option value="distance">Baseline class distance</option><option value="z">Pre-CDF z-score</option></select></label></div>
+ <div class="row"><h2>Local observatory · <span id="selected-name" class="selected-title"></span></h2><label>Matrix values <select id="metric"><option value="logtail">−log₁₀ tail (float32)</option><option value="tail">Chance-alignment p-value (approx.)</option><option value="distance">Baseline class distance</option><option value="z">Pre-CDF z-score</option></select></label></div>
  <p id="selected-meta" class="muted"></p><div class="notice" id="ties"></div>
- <div class="grid" style="margin-top:20px"><div><svg id="local" viewBox="0 0 480 480" aria-label="Local neighbourhood matrix"></svg><p id="cell-info" class="caption" role="status">Hover a cell for its exact stored values; click to select its column class.</p><p id="local-scale" class="caption"></p></div><div><h3>Nearest directions</h3><p class="muted">Ranked by repository z-score, descending. This explicitly refines ties in baseline distance; exactly tied z-scores retain checkpoint class order.</p><table><thead><tr><th>Rank</th><th>Class ID</th><th>Baseline d</th><th>log₁₀ tail</th><th>z</th><th>Same parent</th></tr></thead><tbody id="neighbours"></tbody></table></div></div>
+ <div class="grid" style="margin-top:20px"><div><svg id="local" viewBox="0 0 480 480" aria-label="Local neighbourhood matrix"></svg><p id="cell-info" class="caption" role="status">Hover a cell for its exact stored values; click to select its column class.</p><p id="local-scale" class="caption"></p></div><div><h3>Nearest directions</h3><p class="muted">Ranked by repository z-score, descending. This explicitly refines ties in baseline distance; exactly tied z-scores retain checkpoint class order.</p><table><thead><tr><th>Rank</th><th>Class ID</th><th>Baseline d</th><th>log₁₀ tail</th><th id="score-column">z</th><th>Same parent</th></tr></thead><tbody id="neighbours"></tbody></table></div></div>
 </section>
 <section class="panel"><h2>Questions this opens up</h2><div class="grid"><div><h3>With prototype weights alone</h3><p class="muted">Compare local crowding across taxonomy; follow cross-branch nearest neighbours; measure how many baseline distances tie; examine neighbour stability across checkpoints. Keep alternate metrics alongside the reference rather than silently replacing it.</p></div><div><h3>With held-out image embeddings</h3><p class="muted">Add sample-to-prototype alignment, decision margins, observed occupancy and actual confusion. Those quantities are not inferred from this weight-only report. A sampled decision-territory experiment would be a separate geometric reference.</p></div></div><details><summary>Provenance and limits</summary><pre id="provenance"></pre><p class="muted">Class and parent IDs come from checkpoint metadata; no online taxonomic remapping. A single checkpoint does not establish a training trajectory. Synthetic cases are deliberately constructed display/calculation probes, not targets. Their smaller class counts do not provide a matched packing comparison. Zero distance may result from CDF rounding and does not prove identical vectors. Grey matrix cells contain no off-diagonal pairs; display flooring never alters stored numerical values.</p></details></section>
 <footer>Self-contained numerical report · optional GBIF photo lookup when enabled · computations use mini_trainer’s class_similarity and class_distance APIs.</footer>
@@ -82,6 +97,62 @@ const $ = id => document.getElementById(id), ns = 'http://www.w3.org/2000/svg';
 function el(tag, attrs={}, text='') {const n=document.createElementNS(ns,tag); for(const [k,v] of Object.entries(attrs)) n.setAttribute(k,v); if(text!=='') n.textContent=text; return n;}
 function add(svg,tag,attrs,text) {const n=el(tag,attrs,text);svg.append(n);return n;}
 function decode(s,bits=32){const raw=atob(s), bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));const view=new DataView(bytes.buffer),width=bits/8;return (bits===32?Float32Array:Float64Array).from({length:bytes.length/width},(_,i)=>bits===32?view.getFloat32(i*width,true):view.getFloat64(i*width,true));}
+// Labels are presentation metadata: row IDs and numerical arrays never change.
+const resolvedNames=new Map(),importedNames=new WeakMap(),nameFailures=new Set();
+let nameBusy=false,nameTimer=null,labelRefreshTimer=null;
+function classLabel(index){
+ const id=data.names[index];if(!$('class-names').checked)return id;
+ return importedNames.get(data)?.get(index)||data.display_names?.[index]||($('gbif-names').checked?resolvedNames.get(id):undefined)||id;
+}
+function classIdentity(index){const label=classLabel(index),id=data.names[index];return label===id?id:`${label} [${id}]`;}
+function markClass(node,index){node.dataset.classIndex=index;node.append(el('title',{},classIdentity(index)));return node;}
+function rebuildClassOptions(){
+ const options=document.createDocumentFragment();
+ data.names.forEach((id,i)=>{const o=document.createElement('option');o.value=classIdentity(i);o.label=`row ${i} · ${id}`;options.append(o);});
+ $('classes').replaceChildren(options);
+}
+function refreshClassLabels(){
+ drawProfile();drawTree();drawLocal();$('selected-name').textContent=classIdentity(selected);
+ if(document.activeElement!==$('search'))$('search').value=classIdentity(selected);
+ rebuildClassOptions();if(typeof drawProjection==='function'&&projectionCanvas.getBoundingClientRect().width)drawProjection(false);
+}
+function requestClassNames(){
+ clearTimeout(nameTimer);nameTimer=setTimeout(resolveVisibleNames,100);
+}
+async function resolveVisibleNames(){
+ if(nameBusy||!$('class-names').checked||!$('gbif-names').checked||data.metadata.synthetic)return;
+ const priority=[];
+ for(const node of document.querySelectorAll('[data-class-index]')){
+  const r=node.getBoundingClientRect();if(r.width&&r.height&&r.bottom>=0&&r.top<innerHeight)priority.push(Number(node.dataset.classIndex));
+ }
+ priority.push(selected,...data.neighbours[selected]);
+ const candidate=priority.find(i=>/^\d+$/.test(data.names[i])&&!resolvedNames.has(data.names[i])&&!nameFailures.has(data.names[i])&&!importedNames.get(data)?.has(i));
+ if(candidate===undefined){$('name-status').textContent='Visible names resolved where available. Search IDs or resolved names; scroll to resolve more.';return;}
+ const id=data.names[candidate];nameBusy=true;$('name-status').textContent='Resolving visible GBIF names…';
+ try{
+  const response=await fetch('/api/taxon/'+encodeURIComponent(id),{signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw Error('Name lookup unavailable');const value=await response.json();
+  if(value.class_id!==id||typeof value.display_name!=='string')throw Error('Invalid name response');
+  resolvedNames.set(id,value.display_name);
+  if($('class-names').checked){clearTimeout(labelRefreshTimer);labelRefreshTimer=setTimeout(refreshClassLabels,80);}
+ }catch(error){nameFailures.add(id);$('name-status').textContent='Some names are unavailable. IDs remain visible; use the local server or import a name map.';}
+ finally{nameBusy=false;requestClassNames();}
+}
+// Approximation to log Phi(-z), evaluated without forming 1-CDF(z).
+// The erfc approximation is independently checked against torch log_ndtr.
+function referenceLogTail(z){
+ const x=Math.abs(z)/Math.SQRT2,t=1/(1+.5*x);
+ const logSmall=Math.log(t)-x*x-1.26551223+t*(1.00002368+t*(.37409196+t*(.09678418+t*(-.18628806+t*(.27886807+t*(-1.13520398+t*(1.48851587+t*(-.82215223+t*.17087277))))))))-Math.LN2;
+ return z>=0?logSmall:Math.log1p(-Math.exp(logSmall));
+}
+function probabilityText(log10){
+ if(log10===-Infinity)return '0';
+ if(log10< -4){const exponent=Math.floor(log10);return `${Math.pow(10,log10-exponent).toFixed(3)}e${exponent}`;}
+ if(log10>Math.log10(.9999)){const complement=-Math.expm1(log10*Math.LN10);return complement?`1 − ${complement.toExponential(3)}`:'1';}
+ return Math.pow(10,log10).toPrecision(5);
+}
+function scoreText(z){return $('score-display').value==='tail'?probabilityText(referenceLogTail(z)/Math.LN10):fmt(z);}
+
 function fmt(x){return x===0?'0':Math.abs(x)<.001?x.toExponential(3):x.toFixed(4);}
 function median(xs){const x=xs.slice().sort((a,b)=>a-b),m=Math.floor(x.length/2);return x.length%2?x[m]:(x[m-1]+x[m])/2;}
 let data, selected=0, distances, zs, logtails, stableNear, globalValues, parents, starts, ends, positions, treeFocus, profileMedian;
@@ -102,22 +173,37 @@ function setCase(){
  for(const [value,label] of [[n.toLocaleString(),'class prototypes'],[data.stats.dimensions.toLocaleString(),'embedding dimensions'],[data.stats.off_diagonal_zero_distance_pairs.toLocaleString(),'unordered pairs with baseline distance 0'],[data.stats.nearest_z_median.toFixed(2),'median nearest-neighbour z']]){const d=document.createElement('div');d.className='stat';const b=document.createElement('strong'),s=document.createElement('span');b.textContent=value;s.textContent=label;d.append(b,s);$('stats').append(d);}
  setRangePreset();
  $('provenance').textContent=JSON.stringify({metadata:data.metadata,statistics:data.stats},null,2);
- drawHistogram();selectClass(0);$('search-status').textContent='';
+ drawHistogram();rebuildClassOptions();selectClass(0);$('search-status').textContent='';
 }
 function axes(svg,xlabel,ylabel){svg.replaceChildren();add(svg,'path',{d:'M 52 15 V 195 H 540',fill:'none',stroke:'#a5b7c5'});add(svg,'text',{x:295,y:233,'text-anchor':'middle',fill:'#52687b','font-size':12},xlabel);add(svg,'text',{x:54,y:12,fill:'#52687b','font-size':11},ylabel);}
-function drawHistogram(){const svg=$('hist'),h=data.histogram;axes(svg,'Pairwise z-score','log₁₀(pair count + 1)');const max=Math.max(...h.counts),width=488/h.counts.length;h.counts.forEach((count,i)=>{const y=180*Math.log10(count+1)/Math.log10(max+1);add(svg,'rect',{x:52+i*width,y:195-y,width:Math.max(.5,width-.3),height:y,fill:'#168b92'});});for(let i=0;i<=4;i++){const x=52+488*i/4;add(svg,'text',{x,y:215,'text-anchor':'middle','font-size':11,fill:'#52687b'},(h.edges[0]+(h.edges.at(-1)-h.edges[0])*i/4).toFixed(1));}for(let i=0;i<=3;i++)add(svg,'text',{x:47,y:198-i*60,'text-anchor':'end','font-size':11,fill:'#52687b'},(Math.log10(max+1)*i/3).toFixed(1));$('hist-note').textContent=`${data.stats.pair_sampling}; ${data.stats.pair_sample_count.toLocaleString()} pairs. Mean ${fmt(data.stats.pair_z_mean)}, SD ${fmt(data.stats.pair_z_std)}. ${data.stats.histogram_excluded} pairs outside the displayed range.`;}
-function drawProfile(){const svg=$('profile'),p=data.profiles[selected],lo=Math.min(0,...p,...profileMedian),hi=Math.max(1,...p,...profileMedian);axes(svg,'Neighbour rank','z-score');const y=v=>195-170*(v-lo)/(hi-lo);for(let i=0;i<4;i++){add(svg,'text',{x:60+i*155,y:215,'text-anchor':'middle','font-size':11},data.profile_ranks[i]);}for(const [vals,col] of [[profileMedian,'#aab8c5'],[p,'#087e8b']]){add(svg,'polyline',{points:vals.map((v,i)=>`${60+i*155},${y(v)}`).join(' '),fill:'none',stroke:col,'stroke-width':2.5});vals.forEach((v,i)=>add(svg,'circle',{cx:60+i*155,cy:y(v),r:4,fill:col}));}for(let i=0;i<4;i++){const v=lo+(hi-lo)*i/3;add(svg,'text',{x:47,y:y(v)+4,'text-anchor':'end','font-size':11},v.toFixed(1));}}
+function drawHistogram(){const svg=$('hist'),h=data.histogram;axes(svg,$('score-display').value==='tail'?'Upper-tail q (positions retain z bins)':'Pairwise z-score','log₁₀(pair count + 1)');const max=Math.max(...h.counts),width=488/h.counts.length;h.counts.forEach((count,i)=>{const y=180*Math.log10(count+1)/Math.log10(max+1);add(svg,'rect',{x:52+i*width,y:195-y,width:Math.max(.5,width-.3),height:y,fill:'#168b92'});});for(let i=0;i<=4;i++){const x=52+488*i/4;add(svg,'text',{x,y:215,'text-anchor':'middle','font-size':11,fill:'#52687b'},scoreText(h.edges[0]+(h.edges.at(-1)-h.edges[0])*i/4));}for(let i=0;i<=3;i++)add(svg,'text',{x:47,y:198-i*60,'text-anchor':'end','font-size':11,fill:'#52687b'},(Math.log10(max+1)*i/3).toFixed(1));$('hist-note').textContent=`${data.stats.pair_sampling}; ${data.stats.pair_sample_count.toLocaleString()} pairs. Mean ${fmt(data.stats.pair_z_mean)}, SD ${fmt(data.stats.pair_z_std)}. ${data.stats.histogram_excluded} pairs outside the displayed range.`;}
+function drawProfile(){
+ const svg=$('profile'),tail=$('score-display').value==='tail',convert=z=>tail?-referenceLogTail(z)/Math.LN10:z;
+ const p=data.profiles[selected].map(convert),med=profileMedian.map(convert),lo=Math.min(0,...p,...med),hi=Math.max(1,...p,...med);
+ axes(svg,'Neighbour rank',''+(tail?'Upper-tail q (log scale)':'z-score'));svg.setAttribute('viewBox','0 0 560 310');
+ const y=v=>195-170*(v-lo)/(hi-lo);
+ for(let i=0;i<4;i++){
+  const rank=data.profile_ranks[i],id=data.profile_neighbours?.[selected]?.[i]??data.neighbours[selected][rank-1];
+  add(svg,'text',{x:60+i*155,y:215,'text-anchor':'middle','font-size':11},rank);
+  if(id!==undefined){const label=classLabel(id);markClass(add(svg,'text',{x:60+i*150,y:257,'text-anchor':'middle','font-size':10},label.length>18?label.slice(0,17)+'…':label),id);}
+ }
+ for(const [vals,col] of [[med,'#aab8c5'],[p,'#087e8b']]){
+  add(svg,'polyline',{points:vals.map((v,i)=>`${60+i*155},${y(v)}`).join(' '),fill:'none',stroke:col,'stroke-width':2.5});
+  vals.forEach((v,i)=>add(svg,'circle',{cx:60+i*155,cy:y(v),r:4,fill:col}).append(el('title',{},tail?probabilityText(-v):fmt(v))));
+ }
+ for(let i=0;i<4;i++){const v=lo+(hi-lo)*i/3;add(svg,'text',{x:47,y:y(v)+4,'text-anchor':'end','font-size':10},tail?probabilityText(-v):v.toFixed(1));}
+}
 function drawTree(){
  const svg=$('tree'),n=data.names.length;svg.replaceChildren();let frontier=[treeFocus];
  while(frontier.length<32){let at=-1;frontier.forEach((node,i)=>{if(node>=n&&(at<0||height(node)>height(frontier[at])))at=i;});if(at<0)break;frontier.splice(at,1,...children(frontier[at]));}
  frontier.sort((a,b)=>starts[a]-starts[b]);const tips=new Set(frontier),ys=new Map(frontier.map((node,i)=>[node,30+i*19]));
  const focused=document.body.dataset.view==='tree',treeWidth=focused?Math.max(760,svg.parentElement.clientWidth):1200;
- const totalHeight=Math.max(100,frontier.length*19+50,focused?innerHeight-260:0);
+ const totalHeight=Math.max(100,frontier.length*19+50,focused?svg.parentElement.clientHeight:0);
  if(focused)frontier.forEach((node,i)=>ys.set(node,30+i*(totalHeight-60)/Math.max(1,frontier.length-1)));
  const branchWidth=treeWidth-410;svg.setAttribute('viewBox',`0 0 ${treeWidth} ${totalHeight}`);
  const max=height(treeFocus),x=node=>max>0?24+branchWidth*(1-height(node)/max):24+branchWidth*(1-size(node)/Math.max(1,size(treeFocus)));
- function draw(node){if(!tips.has(node)){const [a,b]=children(node);draw(a);draw(b);ys.set(node,(ys.get(a)+ys.get(b))/2);for(const child of [a,b])add(svg,'path',{d:`M ${x(node)} ${ys.get(node)} V ${ys.get(child)} H ${x(child)}`,fill:'none',stroke:contains(child,selected)?'#008e9b':'#b3c1cd','stroke-width':contains(child,selected)?2:1});}else{const y=ys.get(node),label=node<n?`class ${data.names[node]}`:`${size(node).toLocaleString()} classes · expand`;add(svg,'line',{x1:x(node),x2:branchWidth+40,y1:y,y2:y,stroke:'#d1dce4','stroke-dasharray':'3 4'});const text=add(svg,'text',{x:branchWidth+50,y:y+4,'font-size':12,fill:contains(node,selected)?'#087e8b':'#172e46',class:'tree-label',tabindex:0,role:'button'},label);const action=()=>{if(node<n)selectClass(node);else{treeFocus=node;drawTree();}};text.onclick=action;text.onkeydown=e=>{if(e.key==='Enter')action();};if(contains(node,selected))add(svg,'circle',{cx:x(node),cy:y,r:4,fill:'#087e8b'});}}
- draw(treeFocus);$('tree-note').textContent=`Showing ${size(treeFocus).toLocaleString()} classes · root height ${fmt(max)} · ${frontier.length} visible tips${max===0?' · all heights zero: horizontal positions use class counts for display':''}`;
+ function draw(node){if(!tips.has(node)){const [a,b]=children(node);draw(a);draw(b);ys.set(node,(ys.get(a)+ys.get(b))/2);for(const child of [a,b])add(svg,'path',{d:`M ${x(node)} ${ys.get(node)} V ${ys.get(child)} H ${x(child)}`,fill:'none',stroke:contains(child,selected)?'#008e9b':'#b3c1cd','stroke-width':contains(child,selected)?2:1});}else{const y=ys.get(node),label=node<n?classIdentity(node):`${size(node).toLocaleString()} classes · expand`;add(svg,'line',{x1:x(node),x2:branchWidth+40,y1:y,y2:y,stroke:'#d1dce4','stroke-dasharray':'3 4'});const text=add(svg,'text',{x:branchWidth+50,y:y+4,'font-size':12,fill:contains(node,selected)?'#087e8b':'#172e46',class:'tree-label',tabindex:0,role:'button'},label);if(node<n)markClass(text,node);const action=()=>{if(node<n)selectClass(node);else{treeFocus=node;drawTree();}};text.onclick=action;text.onkeydown=e=>{if(e.key==='Enter')action();};if(contains(node,selected))add(svg,'circle',{cx:x(node),cy:y,r:4,fill:'#087e8b'});}}
+ draw(treeFocus);requestClassNames();$('tree-note').textContent=`Showing ${size(treeFocus).toLocaleString()} classes · root height ${fmt(max)} · ${frontier.length} visible tips${max===0?' · all heights zero: horizontal positions use class counts for display':''}`;
 }
 function setRangePreset(){const mode=$('range-preset').value;let bounds;if(mode==='focus')bounds=[-8,0];else if(mode==='robust')bounds=data.robust_log10_range;else if(mode==='full')bounds=[data.matrix_log10_floor,0];if(bounds){$('range-low').value=bounds[0].toFixed(3);$('range-high').value=bounds[1].toFixed(3);}drawGlobal();}
 function drawGlobal(){
@@ -132,17 +218,19 @@ function drawGlobal(){
  $('global-ticks').replaceChildren();for(let i=0;i<=4;i++){const span=document.createElement('span');span.textContent=(i===0?'≤ ':i===4?'≥ ':'')+`10^${(lo+(hi-lo)*i/4).toFixed(1)}`;$('global-ticks').append(span);}
  $('matrix-note').textContent=`Each pixel summarizes up to ${data.matrix_block} × ${data.matrix_block} classes. Cyan lines locate the selected class’s block. Both panels share the selected colour window; full numerical values remain available. ${useLog?'Float32 log-domain values.':'Legacy CDF rounding is retained for comparison.'}`;
 }
-function selectClass(id){selected=id;$('search').value=data.names[id];$('selected-name').textContent=data.names[id];$('selected-meta').textContent=`Checkpoint row ${id} · taxonomy IDs: ${data.groups[id].join(' → ')}`;$('ties').textContent=`${data.zero_count[id]} other classes have baseline distance 0 to this class. Neighbour ranks below use the pre-CDF z-score; the baseline distances are unchanged. The log-tail view evaluates log Φ(−z) directly in float32, retaining the repository z-score. Hover a baseline distance in the table for a separate float64 reference.`;drawProfile();drawTree();drawLocal();if(typeof renderPhotos==='function')renderPhotos();if(typeof drawProjection==='function')drawProjection();const pos=(positions[id]+.5)/(Math.ceil(data.names.length/data.matrix_block)*data.matrix_block)*100;document.querySelectorAll('.marker:not(.horizontal)').forEach(m=>m.style.left=pos+'%');document.querySelectorAll('.marker.horizontal').forEach(m=>m.style.top=pos+'%');}
+function selectClass(id){selected=id;$('search').value=classIdentity(id);$('selected-name').textContent=classIdentity(id);$('selected-meta').textContent=`Checkpoint row ${id} · taxonomy IDs: ${data.groups[id].join(' → ')}`;$('ties').textContent=`${data.zero_count[id]} other classes have baseline distance 0 to this class. Neighbour ranks below use the pre-CDF z-score; the baseline distances are unchanged. The log-tail view evaluates log Φ(−z) directly in float32, retaining the repository z-score. Hover a baseline distance in the table for a separate float64 reference.`;drawProfile();drawTree();drawLocal();requestClassNames();if(typeof renderPhotos==='function')renderPhotos();if(typeof drawProjection==='function')drawProjection();const pos=(positions[id]+.5)/(Math.ceil(data.names.length/data.matrix_block)*data.matrix_block)*100;document.querySelectorAll('.marker:not(.horizontal)').forEach(m=>m.style.left=pos+'%');document.querySelectorAll('.marker.horizontal').forEach(m=>m.style.top=pos+'%');}
 function drawLocal(){
- const svg=$('local');svg.replaceChildren();const ids=[selected,...data.neighbours[selected]],n=ids.length,stride=n*n,offset=selected*stride,mode=$('metric').value,useZ=mode!=='distance',arr=mode==='z'?zs:mode==='logtail'?Float32Array.from(logtails,v=>-v):distances,vals=Array.from(arr.slice(offset,offset+stride));const finite=vals.filter((_,i)=>Math.floor(i/n)!==i%n),lo=useZ?Math.min(...finite):0,hi=Math.max(...finite,lo+1e-9),cell=400/n;
+ const svg=$('local');svg.replaceChildren();const ids=[selected,...data.neighbours[selected]],n=ids.length,stride=n*n,offset=selected*stride,mode=$('metric').value,useZ=mode!=='distance',arr=mode==='z'?zs:(mode==='logtail'||mode==='tail')?Float32Array.from(logtails,v=>-v):distances,vals=Array.from(arr.slice(offset,offset+stride));const finite=vals.filter((_,i)=>Math.floor(i/n)!==i%n),lo=useZ?Math.min(...finite):0,hi=Math.max(...finite,lo+1e-9),cell=400/n,labelled=$('class-names').checked,margin=labelled?175:62;svg.setAttribute('viewBox',`0 0 ${margin+418} ${margin+418}`);
  const palette=t=>`hsl(${220-190*t} 65% ${94-55*t}%)`;
- ids.forEach((_,i)=>{add(svg,'text',{x:62+(i+.5)*cell,y:47,'text-anchor':'middle','font-size':11},i);add(svg,'text',{x:52,y:62+(i+.5)*cell+4,'text-anchor':'end','font-size':11},i);});
- for(let r=0;r<n;r++)for(let c=0;c<n;c++){const index=offset+r*n+c,v=arr[index];const t=useZ?(v-lo)/(hi-lo):1-Math.log1p(v)/Math.log1p(hi);const rect=add(svg,'rect',{x:62+c*cell,y:62+r*cell,width:cell-.5,height:cell-.5,fill:r===c?'#dce3e9':palette(Math.max(0,Math.min(1,t)))});const label=`${data.names[ids[r]]} ↔ ${data.names[ids[c]]} · distance ${fmt(distances[index])} · z ${fmt(zs[index])} · log₁₀ tail ${fmt(logtails[index])}`;rect.append(el('title',{},label));rect.onmouseenter=()=>{$('cell-info').textContent=label;};rect.onclick=()=>selectClass(ids[c]);}
- $('cell-info').textContent='Row/column 0 is the selected class; remaining numbers match neighbour ranks. Hover for stored values.';
+ ids.forEach((id,i)=>{const text=labelled?classLabel(id):String(i);const top=markClass(add(svg,'text',{x:margin+(i+.5)*cell,y:margin-12,'text-anchor':labelled?'start':'middle','font-size':11},text.length>25?text.slice(0,24)+'…':text),id);if(labelled)top.setAttribute('transform',`rotate(-55 ${margin+(i+.5)*cell} ${margin-12})`);markClass(add(svg,'text',{x:margin-10,y:margin+(i+.5)*cell+4,'text-anchor':'end','font-size':11},text.length>25?text.slice(0,24)+'…':text),id);});
+ for(let r=0;r<n;r++)for(let c=0;c<n;c++){const index=offset+r*n+c,v=arr[index];const t=useZ?(v-lo)/(hi-lo):1-Math.log1p(v)/Math.log1p(hi);const rect=add(svg,'rect',{x:margin+c*cell,y:margin+r*cell,width:cell-.5,height:cell-.5,fill:r===c?'#dce3e9':palette(Math.max(0,Math.min(1,t)))});const label=`${classIdentity(ids[r])} ↔ ${classIdentity(ids[c])} · distance ${fmt(distances[index])} · z ${fmt(zs[index])} · log₁₀ tail ${fmt(logtails[index])} · q ${probabilityText(logtails[index])}`;rect.append(el('title',{},label));rect.onmouseenter=()=>{$('cell-info').textContent=label;};rect.onclick=()=>selectClass(ids[c]);}
+ $('cell-info').textContent='First row/column is the selected class; remaining entries follow neighbour rank. Hover for stored values.';
  $('local-scale').textContent=useZ?`Local colour range: ${mode==='z'?'z':'−log₁₀ tail'} ${fmt(lo)} (pale) → ${fmt(hi)} (dark). Diagonal masked. Scale adapts to this neighbourhood.`:`Local colour range: distance 0 (dark) → ${fmt(hi)} (pale), log1p display. Diagonal masked. Scale adapts to this neighbourhood.`;
- $('neighbours').replaceChildren();ids.slice(1).forEach((id,i)=>{const tr=document.createElement('tr');const parent=data.groups[selected][1],same=parent===undefined?'—':data.groups[id][1]===parent?'yes':'no';[i+1,data.names[id],fmt(distances[offset+i+1]),fmt(logtails[offset+i+1]),fmt(zs[offset+i+1]),same].forEach((value,j)=>{const td=document.createElement('td');if(j===1){const b=document.createElement('button');b.textContent=value;b.onclick=()=>selectClass(id);td.append(b);}else td.textContent=value;if(j===2)td.title=`Float64 reference d: ${fmt(stableNear[selected*(n-1)+i])}`;tr.append(td);});$('neighbours').append(tr);});
+ if(mode==='tail')$('local-scale').textContent=`Upper-tail q: ${probabilityText(-lo)} → ${probabilityText(-hi)}; colours use −log₁₀ q. Diagonal masked.`;
+ $('score-column').textContent=$('score-display').value==='tail'?'q = Φ(−z)':'z';
+ $('neighbours').replaceChildren();ids.slice(1).forEach((id,i)=>{const tr=document.createElement('tr');const parent=data.groups[selected][1],same=parent===undefined?'—':data.groups[id][1]===parent?'yes':'no';[i+1,classIdentity(id),fmt(distances[offset+i+1]),fmt(logtails[offset+i+1]),scoreText(zs[offset+i+1]),same].forEach((value,j)=>{const td=document.createElement('td');if(j===1){const b=document.createElement('button');b.textContent=value;b.dataset.classIndex=id;b.title=`Class ${data.names[id]} · row ${id}`;b.onclick=()=>selectClass(id);td.append(b);}else td.textContent=value;if(j===2)td.title=`Float64 reference d: ${fmt(stableNear[selected*(n-1)+i])}`;tr.append(td);});$('neighbours').append(tr);});
 }
-$('find').onclick=()=>{const query=$('search').value.trim();const exact=data.names.indexOf(query),id=exact>=0?exact:data.names.findIndex(n=>n.includes(query));if(!query||id<0){$('search-status').textContent='No matching class ID.';return;}$('search-status').textContent=exact>=0?'Exact match.':'First partial match.';selectClass(id);};
+$('find').onclick=()=>{const query=$('search').value.trim();const exact=data.names.indexOf(query),row=/^row \d+$/i.test(query)?Number(query.slice(4)):-1;const id=exact>=0?exact:row>=0&&row<data.names.length?row:data.names.findIndex((n,i)=>classIdentity(i).toLowerCase().includes(query.toLowerCase()));if(!query||id<0){$('search-status').textContent='No matching class ID.';return;}$('search-status').textContent=exact>=0?'Exact match.':'First partial match.';selectClass(id);};
 $('search').onkeydown=e=>{if(e.key==='Enter')$('find').click();};
 $('crowded').onclick=()=>selectClass(data.profiles.reduce((best,p,i)=>p[0]>data.profiles[best][0]?i:best,0));
 $('sparse').onclick=()=>selectClass(data.profiles.reduce((best,p,i)=>p[0]<data.profiles[best][0]?i:best,0));
@@ -164,12 +252,13 @@ function setWorkspaceView(view){
  if(view!=='all'&&!viewGroups[view])view='all';
  document.body.dataset.view=view;document.body.classList.toggle('focused',view!=='all');
  $('workspace-view').value=view;
+ $('thumbnail-options').open=view==='all';
  for(const panel of document.querySelectorAll('main .panel')){
   panel.hidden=view!=='all'&&!viewGroups[view].includes(panel.id);
   panel.classList.toggle('primary-view',view!=='all'&&panel.id===viewGroups[view][0]);
  }
  document.querySelectorAll('.panel-focus').forEach(button=>button.hidden=view!=='all');
- drawTree();window.scrollTo(0,0);
+ drawTree();window.scrollTo(0,0);requestClassNames();
 }
 for(const [view,ids] of Object.entries(viewGroups)){
  const button=document.createElement('button');button.className='panel-focus';button.textContent='Focus view';
@@ -178,4 +267,24 @@ for(const [view,ids] of Object.entries(viewGroups)){
 }
 $('workspace-view').onchange=()=>setWorkspaceView($('workspace-view').value);
 new ResizeObserver(()=>{if(document.body.dataset.view==='tree')drawTree();}).observe($('tree').parentElement);
+</script>
+
+<script>
+$('class-names').onchange=()=>{refreshClassLabels();requestClassNames();};
+$('gbif-names').onchange=()=>{nameFailures.clear();refreshClassLabels();requestClassNames();};
+$('name-file').onchange=async()=>{try{
+ const mapping=JSON.parse(await $('name-file').files[0].text()),labels=new Map();
+ const byIndex=mapping.by_index||{},byId=mapping.by_id||(mapping.by_index?{}:mapping);
+ data.names.forEach((id,i)=>{const name=byId[id]??byIndex[i];if(typeof name==='string'&&name.trim())labels.set(i,name.trim());});
+ if(!labels.size)throw Error('No matching IDs or indices in name map');
+ importedNames.set(data,labels);$('class-names').checked=true;refreshClassLabels();$('name-status').textContent=`${labels.size} names imported; class ordering unchanged.`;
+}catch(error){$('name-status').textContent=error.message;}};
+$('score-display').onchange=()=>{$('score-note').hidden=$('score-display').value!=='tail';drawHistogram();drawProfile();$('metric').value=$('score-display').value==='tail'?'tail':'z';drawLocal();};
+window.addEventListener('scroll',requestClassNames,{passive:true});
+</script>
+
+<script>
+new ResizeObserver(entries=>{
+ document.documentElement.style.setProperty('--toolbar-height',entries[0].target.getBoundingClientRect().height+'px');
+}).observe(document.querySelector('.controls'));
 </script>

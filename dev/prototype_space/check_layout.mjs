@@ -97,3 +97,12 @@ for(let i=0;i<600&&coordinator.motion();i++)frame();
 assert.equal(coordinator.motion(),null,'joined animation eventually settles');
 await running;
 console.log(JSON.stringify({arrivalContinuityChecks:12}));
+
+const template=readFileSync(new URL('./report.html',import.meta.url),'utf8');
+const {referenceLogTail,probabilityText}=Function(template.slice(template.indexOf('function referenceLogTail'),template.indexOf('function scoreText'))+'return {referenceLogTail,probabilityText};')();
+const probabilityReference=[[-56.0, -0.0], [-12.0, -1.776482112077648e-33], [-8.0, -6.220960574271758e-16], [-1.0, -0.17275377902344985], [0.0, -0.6931471805599453], [1.0, -1.841021645009264], [8.0, -35.01343715991456], [12.0, -75.41067300156881], [31.0, -484.8539636271794], [56.0, -1572.9446088476825]];
+for(const [z,logTail] of probabilityReference)assert.ok(Math.abs(referenceLogTail(z)-logTail)<3e-7,'direct browser log tail agrees with independent torch float64 reference');
+for(let z=-56;z<56;z+=.1)assert.ok(referenceLogTail(z+.1)<=referenceLogTail(z),'chance-alignment tail decreases with alignment');
+assert.notEqual(probabilityText(referenceLogTail(56)/Math.LN10),'0','extreme probability remains readable without underflow');
+assert.ok(probabilityText(Math.log10(.999999)).startsWith('1 −'),'near-one values show their complement');
+console.log(JSON.stringify({logTailReferenceChecks:probabilityReference.length}));

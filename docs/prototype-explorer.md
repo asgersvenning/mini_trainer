@@ -61,11 +61,39 @@ neighbourhood inspection. Each focus keeps related panels together: for example,
 projection includes the neighbourhood profile, local inspector, and class photos.
 Choose **All views** to return to the overview.
 
-Focused layouts use the available screen width. The spatial map adapts its aspect
-ratio to viewport height while preserving equal geometric scale on both axes.
+Focused projection and dendrogram panels use the available viewport height as
+well as width. Thumbnail settings collapse to leave more space for the map.
+The spatial map adapts its aspect ratio while preserving equal geometric scale
+on both axes; its raster follows display pixel density with readable screen-size labels.
 Dendrograms use the wider layout with readable labels and internal scrolling on
 narrow displays. Class selection, projection centre/plane, and the current tree
 subtree survive view changes. Related panels wrap below the main feature.
+
+## Class names and chance alignment
+
+Open **Class names** to enable aliases in selection, neighbourhood profiles,
+dendrogram leaves, local matrix axes, and neighbour tables. Explicitly enable
+GBIF lookup when the class IDs are GBIF taxon keys. Names resolve asynchronously,
+prioritizing visible labels and the selected neighbourhood; unresolved classes
+retain their IDs. Online resolution requires the local server and GBIF access.
+Search accepts IDs, already resolved names, or `row N` for a checkpoint row.
+
+For offline aliases, import JSON such as `{"1837646": "Taxon name"}`, or
+`{"by_id": {"1837646": "Taxon name"}, "by_index": {"0": "Another name"}}`.
+Aliases affect display only and never change checkpoint class ordering or IDs.
+
+The score selector switches between z-scores and **Chance-alignment p-value
+(approx.)**, `q = Φ(−z)`. This is the approximate one-sided tail under independent
+uniform directions on the unit hypersphere: small q means random directions
+would rarely be this closely aligned. It is not a posterior probability of
+similarity or a calibrated test of whether two learned classes differ.
+The reference does not assume that the learned prototypes themselves are uniform.
+
+Probability formatting uses a direct log-tail approximation; the local matrix
+retains the repository's stored log-tail values. Logarithmic colour limits remain
+configurable, and tooltips retain unclipped values. Histogram bins retain their
+original z positions, while the neighbourhood probability profile uses a log
+axis. Ward linkage heights keep their original units.
 
 ## Export without serving
 

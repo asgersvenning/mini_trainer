@@ -73,3 +73,19 @@ def test_cached_photos_bypass_busy_upstream_connection(monkeypatch):
     thread.join(timeout=2)
     assert bypassed, "Cached responses must not wait behind an upstream download"
     assert results == [album, (b"cached", "image/jpeg")]
+
+
+def test_name_lookup_does_not_request_occurrences_or_images(monkeypatch):
+    calls = []
+
+    def retrieve(url):
+        calls.append(url)
+        return {"canonicalName": "Example taxon", "acceptedKey": 99}
+
+    monkeypatch.setattr(serve.gbif, "retrive_request", retrieve)
+    service = serve.PhotoService({"42"}, {})
+    assert service.taxon_name("42") == {"class_id": "42", "display_name": "Example taxon"}
+    assert calls == [serve.gbif.GBIF_SPECIES_API_ENDPOINT + "42"]
+    assert not service.image_paths
+    with pytest.raises(ValueError):
+        service.taxon_name("43")
