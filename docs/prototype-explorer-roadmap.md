@@ -23,6 +23,13 @@ CLI/file-picker checks passed. Current extraction supports float32 linear
 `Classifier` and `HierarchicalClassifier` heads; dense analysis needs several GB
 for the 12,632-class case. These checks do not establish full-suite/GPU coverage.
 
+Current real-data reference: `tmp/best_global-lepi-production-w32-1_epoch26.pt`
+(training progress reported as 26/30 epochs), SHA-256
+`abb9f66d95fe867bd31847cb33782a353b1d3faf4c79c4b10d93037f33fe61f4`.
+Verified extraction: 12,632 × 1,280 float32 normalized prototypes, zero biases,
+and unchanged class ordering/hierarchy relative to epoch 4. Retain epoch 4 for
+longitudinal comparisons. Browser inference parity is still an open gate.
+
 ## Standalone client direction
 
 Target: browser inference and embedding inspection without a Python/PyTorch/CUDA
