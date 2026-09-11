@@ -557,28 +557,28 @@ def test_fresh_job_setup_uses_pins_and_stops_on_install_failure(tmp_path, fail_s
         (repo / filename).write_text("# fixture\n")
     subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-m",
-            "Fixture",
-        ],
-        check=True,
-        capture_output=True,
-    )
-    sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     template = json.loads(setup.with_name("qualification.json").read_text())
-    for entry in template["environments"].values():
-        entry["commit"] = sha
+    for branch, entry in template["environments"].items():
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-m",
+                f"Fixture {branch}",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        entry["commit"] = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     template_path = repo / "qualification.json"
     template_path.write_text(json.dumps(template))
     (fake_bin / "python3").symlink_to(sys.executable)
