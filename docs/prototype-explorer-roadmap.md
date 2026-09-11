@@ -32,6 +32,9 @@ longitudinal comparisons. Browser inference parity is still an open gate.
 
 ## Standalone client direction
 
+The [goal-ready implementation plan](prototype-browser-implementation.md) defines
+the bundle contract, ordered milestones, and end-to-end completion gates.
+
 Target: browser inference and embedding inspection without a Python/PyTorch/CUDA
 runtime. Export preparation may use mini_trainer once; the distributed viewer
 loads an ONNX bundle, class/prototype metadata, and executable preprocessing.
