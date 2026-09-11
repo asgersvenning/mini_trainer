@@ -52,6 +52,18 @@ Complete a bounded, validated increment before moving to the next priority.
 - Slow backbone tests require `RUN_SLOW_TESTS=1` and may need model downloads.
   The compatibility runner can update the backbone blacklist; use it only when
   that mutation is part of the task.
+- Be economical with validation: choose the smallest set of checks that covers the
+  changed behavior and credible regressions, while satisfying the requirements above.
+  Before an expensive suite or benchmark, identify the unresolved question it answers.
+- Reuse passing evidence for unchanged code and environments. Batch related edits
+  before expensive checks; do not rerun the same suite for documentation changes or
+  automatically repeat focused checks already covered by a passing broader run.
+  Repeat or broaden checks when new changes, failures, integration conflicts or a
+  concrete unresolved risk justify it, not merely for additional reassurance.
+- Add tests for meaningful behavior and failure modes, not assertions that mirror
+  implementation details or low-impact presentation changes. Prefer existing
+  coverage and a focused browser/manual check where appropriate. Keep required CI
+  gates intact; report the limits of focused validation rather than implying full coverage.
 - Report checks run, failures, skips, and limits honestly. Do not weaken checks or
   alter expected results merely to make a refactor pass.
 
