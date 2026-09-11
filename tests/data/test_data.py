@@ -94,3 +94,60 @@ def test_parse_class_spec(tmp_path):
     parse_class_spec(path=str(p), dir=str(d))
     loaded = parse_class_spec(path=str(p))
     assert loaded == spec
+
+
+@pytest.mark.parametrize("mapping", [None, {"cat": "feline"}, OrderedDict(cat="feline"), ["cat"]])
+def test_folder_discovery_is_independent_of_training_metadata(tmp_path, monkeypatch, mapping):
+    for name in ("cat", "unseen"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "image.jpg").write_bytes(b"\xff\xd8\xff")
+    (tmp_path / "README.md").write_text("Dataset description")
+    (tmp_path / "empty").mkdir()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Inference discovery must not construct training metadata")
+
+    monkeypatch.setattr(metadata_module, "create_metadata", forbidden)
+    labels, images = metadata_module.auto_find_images(str(tmp_path), labels=mapping, cls2idx={"cat": 0})
+    assert images == [str(tmp_path / name / "image.jpg") for name in ("cat", "unseen")]
+    assert labels == ["feline" if isinstance(mapping, dict) else "cat", "unseen"]
+    assert metadata_module.auto_find_images(str(tmp_path), labels=mapping)[0] == labels
+
+
+def test_mixed_root_images_are_unlabelled(tmp_path):
+    (tmp_path / "nested").mkdir()
+    for path in (tmp_path / "root.jpg", tmp_path / "nested" / "image.jpg"):
+        path.write_bytes(b"\xff\xd8\xff")
+    labels, images = metadata_module.auto_find_images(str(tmp_path))
+    assert labels == []
+    assert len(images) == 2
+
+
+def test_empty_and_single_file_discovery(tmp_path):
+    assert metadata_module.auto_find_images(str(tmp_path)) == ([], [])
+    image = tmp_path / "image.jpg"
+    image.write_bytes(b"\xff\xd8\xff")
+    assert metadata_module.auto_find_images(str(image)) == ([], [str(image)])
+
+
+def test_parquet_discovery_preserves_test_selection(tmp_path, monkeypatch):
+    source = tmp_path / "source.parquet"
+    source.touch()
+    monkeypatch.setattr(
+        metadata_module,
+        "get_metadata_from_parquet",
+        lambda *args, **kwargs: {
+            "path": ["train.jpg", "test.jpg", "val.jpg"],
+            "label": ["a", "unseen", "b"],
+            "split": ["train", "test", "validation"],
+        },
+    )
+    assert metadata_module.auto_find_images(str(source)) == (["unseen"], ["test.jpg"])
+
+
+def test_presplit_folder_discovery_retains_only_test(tmp_path):
+    for split in ("train", "valid", "test"):
+        folder = tmp_path / split / "cat"
+        folder.mkdir(parents=True)
+        (folder / "image.jpg").write_bytes(b"\xff\xd8\xff")
+    assert metadata_module.auto_find_images(str(tmp_path)) == (["cat"], [str(tmp_path / "test/cat/image.jpg")])
