@@ -22,6 +22,7 @@ development branch; reusable-package baseline `4763041`):
   z/chance-alignment probability views with explicit reference semantics.
 - Display-density projection rendering and viewport-height focused panels; map
   details and settings overlays prevent hover/status text from resizing the canvas.
+  Projection focus fills the viewport with collapsible floating navigation and controls.
 
 Evidence: real checkpoint diagnostics match the preserved baseline; 84 browser
 checks, 12 affected Python tests, motion checks, static checks, and installed-wheel

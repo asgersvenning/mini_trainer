@@ -63,8 +63,11 @@ Choose **All views** to return to the overview.
 
 Focused projection and dendrogram panels use the available viewport height as
 well as width. Thumbnail settings and **Map details & credits** open as overlays, leaving the
-map size fixed while hover credits and loading status change. Focused projection
-padding is compact to leave more room for the map.
+map size fixed while hover credits and loading status change. The focused projection
+fills the viewport edge to edge. **Explorer · view & class** and **Map controls**
+are collapsible floating menus for navigation, selection, projection and thumbnail
+settings. Related inspection panels remain below the map. Leaving projection
+focus restores the regular toolbar and panel headings.
 The spatial map adapts its aspect ratio while preserving equal geometric scale
 on both axes; its raster follows display pixel density with readable screen-size labels.
 Dendrograms use the wider layout with readable labels and internal scrolling on

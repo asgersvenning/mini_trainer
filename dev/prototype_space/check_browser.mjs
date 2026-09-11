@@ -218,6 +218,12 @@ try{
    const rect=projectionCanvas.getBoundingClientRect();
    check(! $('inspector').hidden&&!$('photo-panel').hidden&&$('tree-panel').hidden,'projection groups related panels');
    check(rect.width>innerWidth*.8&&rect.height>=300,'projection uses viewport width and height');
+   check(rect.top===0&&rect.left===0&&Math.abs(rect.height-innerHeight)<1&&Math.abs(rect.width-document.documentElement.clientWidth)<1,'projection fills the viewport');
+   $('workspace-controls').open=true;$('projection-controls').open=true;await new Promise(r=>setTimeout(r,60));
+   const expanded=projectionCanvas.getBoundingClientRect();
+   check(expanded.width===rect.width&&expanded.height===rect.height&&expanded.top===rect.top,'floating controls do not resize map');
+   check($('workspace-view').getBoundingClientRect().width>0&&$('projection-plane').getBoundingClientRect().width>0,'view and map settings remain accessible');
+   $('workspace-controls').open=false;$('projection-controls').open=false;
    check(Math.abs(rect.width/1200-rect.height/projectionHeight)<1e-8,'projection preserves equal screen scale');
    check(selected===before.selected&&treeFocus===before.treeFocus&&$('projection-plane').value===before.plane,'focus preserves selection tree and plane');
    check(projectionView.x===before.x&&projectionView.y===before.y,'focus preserves projection center');
