@@ -1141,7 +1141,7 @@ class MultiLogger:
 
         with main_process_first():
             if get_rank() == 0 and model is not None:
-                cdm_figs = plot_class_distance_matrix(model)
+                cdm_figs = plot_class_distance_matrix(model, log_domain=True, log_range=(-8 * math.log(10), 0.0))
                 for lvl, fig in enumerate(cdm_figs):
                     self.add_figure(f"Class distance matrix/lvl{lvl}", fig)
                 try:

@@ -11,7 +11,7 @@ from .classifier import (
     predict,
 )
 from .context import EmbeddingContext, SupervisionContext
-from .distance import class_distance, class_similarity
+from .distance import class_distance, class_log_similarity, class_similarity
 from .ema import EMATeacher, ema_lambda_per_update
 from .mask import mask_classifier, set_classification_mask
 from .prior import get_prior_method, prior_from_labels
@@ -40,6 +40,7 @@ __all__ = [
     "SupervisionContext",
     "class_distance",
     "class_similarity",
+    "class_log_similarity",
     "mask_classifier",
     "set_classification_mask",
 ]

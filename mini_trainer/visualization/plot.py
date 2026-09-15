@@ -5,11 +5,11 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.backends import backend_agg
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
 from torch import nn
 from torchvision.transforms.functional import resize
 
-from mini_trainer.modeling import class_similarity
+from mini_trainer.modeling import class_log_similarity, class_similarity
 
 # --- Constants ---
 MIN_DISPLAY_DIM_HEATMAP = 500
@@ -19,7 +19,7 @@ COLORBAR_TARGET_WIDTH_PIXELS = 200  # Approximate width for the colorbar image
 
 
 # --- Helper: Matrix Aggregation ---
-def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> np.ndarray:
+def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int], pad_value: float = 0) -> np.ndarray:
     """Aggregates matrix by taking the maximum in blocks.
 
     Handles non-divisible shapes by padding.
@@ -32,7 +32,7 @@ def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> n
 
     padded_matrix = matrix
     if pad_rows > 0 or pad_cols > 0:
-        padded_matrix = np.pad(matrix, ((0, pad_rows), (0, pad_cols)), mode="constant", constant_values=0)
+        padded_matrix = np.pad(matrix, ((0, pad_rows), (0, pad_cols)), mode="constant", constant_values=pad_value)
 
     new_rows, new_cols = padded_matrix.shape
     target_rows, target_cols = new_rows // block_rows, new_cols // block_cols
@@ -42,7 +42,7 @@ def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> n
 
 
 # --- Helper: Matrix Scaling ---
-def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
+def _get_scaled_matrix_for_display(mat: np.ndarray, pad_value: float = 0) -> np.ndarray:
     """Resizes matrix: downscales then upscales to fit display dimension constraints."""
     processed_mat = mat
     orig_rows, orig_cols = mat.shape
@@ -52,7 +52,7 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     block_c = math.ceil(orig_cols / MAX_DISPLAY_DIM_HEATMAP) if orig_cols > MAX_DISPLAY_DIM_HEATMAP else 1
 
     if block_r > 1 or block_c > 1:
-        processed_mat = _aggregate_matrix_max(processed_mat, (block_r, block_c))
+        processed_mat = _aggregate_matrix_max(processed_mat, (block_r, block_c), pad_value=pad_value)
 
     curr_rows, curr_cols = processed_mat.shape
 
@@ -106,6 +106,54 @@ def _generate_heatmap_rgb_array(display_mat: np.ndarray, min_val_display: float 
     for start, values in chunks():
         rgb[start : start + len(values)] = cmap(norm(values), bytes=True)[:, :, :3]
     return rgb, norm, norm_vmin, norm_vmax
+
+
+def _generate_log_heatmap_rgb_array(display_mat, min_val_display, cmap_name, percent, log_range=None):
+    """Map natural-log inputs directly to colours; never exponentiate a matrix."""
+    if min_val_display is not None and min_val_display < 0:
+        raise ValueError("min_val_display must be nonnegative for log inputs")
+    if log_range is not None and (len(log_range) != 2 or not all(math.isfinite(x) for x in log_range) or log_range[0] >= log_range[1]):
+        raise ValueError("log_range must contain two finite, increasing natural-log bounds")
+    threshold = math.log(min_val_display) if min_val_display is not None and min_val_display > 0 else -np.inf
+
+    def chunks():
+        rows = max(1, 262144 // max(1, display_mat.shape[1]))
+        for start in range(0, len(display_mat), rows):
+            values = np.ma.masked_invalid(display_mat[start : start + rows])
+            yield start, np.ma.masked_less_equal(values, threshold)
+
+    minimum, maximum = float("inf"), -float("inf")
+    for _, values in chunks():
+        if values.count():
+            minimum = min(minimum, float(values.min()))
+            maximum = max(maximum, float(values.max()))
+    rgb = np.zeros((*display_mat.shape, 3), dtype=np.uint8)
+    if not np.isfinite(minimum):
+        return rgb, None, 0.0, 1.0
+    vmin = math.floor(min(-1, minimum / math.log(10))) * math.log(10)
+    vmax = 0.0 if percent else maximum
+    if vmin >= vmax:
+        vmax = vmin + math.log(10)
+    if log_range is not None:
+        vmin, vmax = log_range
+    norm = Normalize(vmin, vmax, clip=log_range is not None)
+    cmap = mpl.colormaps[cmap_name].copy()
+    cmap.set_bad((0, 0, 0) if cmap_name == "magma" else (1, 1, 1), alpha=1)
+    for start, values in chunks():
+        rgb[start : start + len(values)] = cmap(norm(values), bytes=True)[:, :, :3]
+    return rgb, norm, vmin, vmax
+
+
+def _log_colorbar_ticks(vmin, vmax, max_ticks, percent):
+    """Format log probabilities without underflowing a linear tick value."""
+    ticks = np.linspace(vmin, vmax, max(0, max_ticks)).tolist()
+    labels = []
+    for tick in ticks:
+        exponent = tick / math.log(10) + (2 if percent else 0)
+        if abs(exponent - round(exponent)) < 1e-6:
+            exponent = round(exponent)
+        labels.append(f"10^{exponent:g}" + ("%" if percent else ""))
+    return ticks, labels
 
 
 # --- Helper: Colorbar Ticks ---
@@ -172,7 +220,7 @@ def _get_colorbar_ticks_and_labels(norm_vmin: float, norm_vmax: float, max_ticks
 
 # --- Helper: Colorbar Array Generation ---
 def _generate_colorbar_rgb_array(
-    norm_obj: mpl.colors.LogNorm,
+    norm_obj: mpl.colors.Normalize,
     cmap_name_str: str,
     tick_list: list[float],
     tick_label_list: list[str],
@@ -225,10 +273,17 @@ def plot_heatmap(
     percent: bool = True,
     min_val_display: float | None = None,
     colorbar: bool = True,
+    *,
+    log_input: bool = False,
+    log_range: tuple[float, float] | None = None,
 ):
     """Plots a high-resolution confusion matrix using NumPy and Matplotlib.
 
-    Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
+    Returns a combined RGB NumPy array (heatmap + colorbar).
+    With log_input=True, inputs are natural logs and stay logarithmic through
+    aggregation, normalization and colourbar formatting. min_val_display remains
+    a linear threshold. -inf represents zero and is masked; padding uses -inf.
+    log_range optionally clips colours to natural-log bounds, not input values.
     """
     if isinstance(mat, torch.Tensor):
         mat = mat.cpu().detach().float().numpy()
@@ -238,10 +293,17 @@ def plot_heatmap(
         return img
 
     # 1. Scale matrix for display
-    display_mat = _get_scaled_matrix_for_display(mat)
+    display_mat = _get_scaled_matrix_for_display(mat, pad_value=-np.inf if log_input else 0)
 
     # 2. Generate heatmap RGB array
-    heatmap_rgb_array, norm_obj, vmin, vmax = _generate_heatmap_rgb_array(display_mat, min_val_display, cmap_name, percent)
+    if log_range is not None and not log_input:
+        raise ValueError("log_range requires log_input=True")
+    if log_input:
+        heatmap_rgb_array, norm_obj, vmin, vmax = _generate_log_heatmap_rgb_array(
+            display_mat, min_val_display, cmap_name, percent, log_range
+        )
+    else:
+        heatmap_rgb_array, norm_obj, vmin, vmax = _generate_heatmap_rgb_array(display_mat, min_val_display, cmap_name, percent)
 
     if not colorbar:
         return heatmap_rgb_array
@@ -253,7 +315,12 @@ def plot_heatmap(
         return np.hstack((heatmap_rgb_array, empty_cbar_space))
 
     # 3. Get colorbar ticks and labels
-    tick_values, tick_labels = _get_colorbar_ticks_and_labels(vmin, vmax, max_colorbar_ticks, percent)
+    tick_generator = _log_colorbar_ticks if log_input else _get_colorbar_ticks_and_labels
+    tick_values, tick_labels = tick_generator(vmin, vmax, max_colorbar_ticks, percent)
+    if log_range is not None and tick_labels:
+        tick_labels[0] = "≤" + tick_labels[0]
+        if len(tick_labels) > 1:
+            tick_labels[-1] = "≥" + tick_labels[-1]
 
     # 4. Generate colorbar RGB array
     colorbar_rgb_array = _generate_colorbar_rgb_array(
@@ -266,11 +333,16 @@ def plot_heatmap(
     return final_rgb_image
 
 
-def plot_class_distance_matrix(model: nn.Module, **kwargs):
+def plot_class_distance_matrix(model: nn.Module, *, log_domain: bool = False, **kwargs):
     """Plot the pairwise class distance matrix.
 
     CDF of pairwise inner products between rows
     in the last-layer weight matrix, assuming that these
     have unit norm.
+    log_domain=True computes the same complementary probability directly in
+    float32 log space, avoiding subtraction from a rounded CDF. The default
+    preserves the legacy rendering for comparisons.
     """
+    if log_domain:
+        return [plot_heatmap(log_tail.cpu(), log_input=True, **kwargs) for log_tail in class_log_similarity(model, complement=True)]
     return [plot_heatmap(1 - csi.cpu(), **kwargs) for csi in class_similarity(model, cdf=True)]

@@ -43,6 +43,7 @@ mt_predict = "mini_trainer.predict:run"
 mt_export = "mini_trainer.export:run"
 mt_htrain = "mini_trainer.hierarchical.train:run"
 mt_hpredict = "mini_trainer.hierarchical.predict:run"
+mt_explore = "mini_trainer.visualization.prototype_space.launch:run"
 mt_plot_dendrogram = "mini_trainer.visualization.dendrogram:run"
 mt_create_combinations = "mini_trainer.utils.create_combinations:run"
 mt_create_data_index = "mini_trainer.utils.create_data_index:run"
@@ -77,6 +78,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
+explorer = ["scipy", "scikit-learn>=1.5"]
 recommended = [
   "tensorboard",
   "setuptools<=81.0.0", # Temporary fix to the error "ModuleNotFoundError: No module named 'pkg_resources'" from tensorboard
@@ -93,6 +95,7 @@ all = [
   "mini_trainer[bioclip]",
   "mini_trainer[transformers]",
   "mini_trainer[export]",
+  "mini_trainer[explorer]",
 ]
 quantization = ["torchao>=0.17,<0.18"]
 export = ["onnx>=1.17", "onnxscript>=0.3", "onnxruntime>=1.20"]

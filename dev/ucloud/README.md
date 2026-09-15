@@ -1,5 +1,10 @@
 # UCloud global_lepi training comparison
 
+For findings from the completed production campaign and proposed next-run
+improvements, see the [workflow post-mortem](../../docs/training-workflow-postmortem.md).
+The commands below retain historical comparison profiles and pins; they are not
+a newly qualified production recipe for every node.
+
 Run inside **one allocated node**, with 1, 2, 4 or 8 visible GPUs. More than one
 GPU uses one `torchrun` process per GPU and the package's existing DDP trainer
 (including SyncBatchNorm). One GPU uses ordinary training. Do not invoke the

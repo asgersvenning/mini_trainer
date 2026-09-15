@@ -225,3 +225,31 @@ def test_efficientnet_v2_s_symmetric_normalized_heads(tmp_path, head):
     assert {case["batch_size"] for case in manifest["verification"]["cases"]} == {1, 2, 3, 4}
     assert len(manifest["outputs"]) == (2 if head is HierarchicalClassifier else 1)
     assert manifest["classifiers"][0]["metadata"]["in_features"] == 1280
+
+
+@pytest.mark.parametrize("head", [Classifier, HierarchicalClassifier])
+def test_embedding_export_matches_actual_head(tmp_path, head):
+    import onnxruntime as ort
+
+    from mini_trainer.modeling.context import EmbeddingContext
+
+    model, _ = build_classifier(head, normalized=True)
+    model.eval()
+    inputs = torch.randn(2, 3, 5, 5)
+    captured = []
+    hook = model.fc.register_forward_pre_hook(lambda module, args: captured.append(args[0]))
+    with torch.no_grad():
+        predictions = model(inputs)
+        embedding = model.fc.preclassification(captured[-1])
+    hook.remove()
+    path = export_onnx(model, inputs, tmp_path / "embedding", include_embeddings=True)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 1
+    session = ort.InferenceSession(str(path / "model.onnx"), sess_options=options)
+    actual = session.run(None, {"images": inputs.numpy()})
+    expected = predictions if isinstance(predictions, list) else [predictions]
+    for result, value in zip(actual, [*expected, embedding], strict=True):
+        np.testing.assert_allclose(result, value.numpy(), rtol=1e-4, atol=1e-5)
+    assert session.get_outputs()[-1].name == "embedding"
+    assert not EmbeddingContext.active()
+    assert not model.fc._forward_pre_hooks

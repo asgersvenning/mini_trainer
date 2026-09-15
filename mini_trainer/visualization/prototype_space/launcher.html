@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype explorer — open weights</title>
+<style>body{font:16px system-ui;color:#173449;background:#f4f7fa;max-width:720px;margin:8vh auto;padding:24px}main{background:white;border-radius:12px;padding:32px}h1{margin-top:0}button,a{font:inherit}button{padding:10px 18px;background:#087e8b;color:white;border:0;border-radius:6px;cursor:pointer}input{display:block;margin:20px 0}#status{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#087e8b}</style>
+<main><h1>Explore model prototypes</h1><p>Choose a mini_trainer weight file. The explorer reads the classifier weights and class labels, then prepares the distance matrix, dendrogram and spatial projections.</p>
+<p>Analysis runs locally and can take several minutes for large models. Optional GBIF images are requested only when you enable them in the viewer.</p>
+<form id="open"><label for="weights">Model weights</label><input id="weights" type="file" accept=".pt,.pth,.bin" required><button id="submit">Open weights</button></form><button id="cancel" type="button" hidden>Cancel preparation</button>
+<p id="status" role="status" aria-live="polite">Choose a checkpoint to begin.</p><p><a id="view" href="/explorer.html" hidden>Open explorer →</a></p></main>
+<script>
+const status=document.getElementById('status'),button=document.getElementById('submit'),view=document.getElementById('view');
+let uploading=false;
+document.getElementById('cancel').onclick=async()=>{await fetch('/api/cancel',{method:'POST',headers:{'X-Explorer-Token':'__SESSION_TOKEN__'}});};
+document.getElementById('open').onsubmit=async event=>{event.preventDefault();uploading=true;button.disabled=true;status.textContent='Reading checkpoint…';try{const response=await fetch('/api/weights',{method:'POST',headers:{'X-Explorer-Token':'__SESSION_TOKEN__','X-Weights-Name':encodeURIComponent(document.getElementById('weights').files[0].name)},body:document.getElementById('weights').files[0]});const result=await response.json();if(!response.ok)throw Error(result.error);}catch(error){status.textContent=error.message;}finally{uploading=false;}};
+async function poll(){try{const response=await fetch('/api/session',{cache:'no-store'});const data=await response.json();if(!uploading){button.disabled=data.state==='uploading';document.getElementById('cancel').hidden=data.state!=='running';view.hidden=!data.ready;button.textContent=data.state==='running'?'Replace weights':'Open weights';if(data.state==='running')status.textContent=(data.stage||'Starting analysis')+' · '+(data.elapsed||0)+' s';if(data.state==='ready'){status.textContent='Your model is ready. Analysis cache: '+(data.cache||'disabled')+'.';view.hidden=false;}if(data.state==='cancelled')status.textContent='Preparation cancelled. You can open another checkpoint.';if(data.state==='error')status.textContent='Could not open this checkpoint:\n'+data.error;}}catch(error){status.textContent='The local explorer server is unavailable.';}setTimeout(poll,1000);}poll();
+</script></html>
