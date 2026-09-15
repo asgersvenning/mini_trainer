@@ -4,13 +4,24 @@ The explorer can run an embedding-enabled ONNX bundle locally using ONNX Runtime
 Web 1.24.3 (WASM CPU). User images stay in the browser. The static server serves
 model and application files; it performs no inference.
 
-The first version accepts one opaque RGB JPEG or PNG at a time. Load the model,
-choose an image, and inspect the five highest-scoring classes at each hierarchy
-level. Species buttons select the corresponding prototype. Parent-level buttons
-select a descendant for inspection, not a separate parent prototype. Scores are
-softmax probabilities from the actual exported forward, not calibrated reliability.
-Rotated EXIF images and transparent inputs are rejected rather than silently using
-a different image interpretation. Folder and ZIP ingestion remain future work.
+Load the model, then choose an image or use **Take photo** to request the phone’s
+rear camera. Camera capture depends on the browser/device; the ordinary gallery
+picker remains available. JPEG, PNG, WebP and other browser-decodable images are
+accepted. HEIC/HEIF depends on native browser support; unsupported files get a
+conversion hint. No decoder service or image upload is required.
+
+EXIF rotation and mirroring are applied before sampling. Transparent pixels are
+composited onto white. The preview shows the oriented, square image supplied to
+the model. The former 40-megapixel restriction is removed: preprocessing samples
+straight into a model-sized canvas instead of allocating a full-resolution canvas
+and pixel array. The browser still needs enough memory to decode the source image.
+Opaque, unrotated images retain the existing nearest-neighbour sampling recipe.
+
+Inspect the five highest-scoring classes at each hierarchy level. Species buttons
+select the corresponding prototype; higher-rank results do not select an arbitrary
+species. Scores are softmax probabilities, not calibrated reliability. On the map,
+use one finger to pan and two to pinch-zoom; mouse drag and wheel zoom remain.
+Folder and ZIP ingestion remain future work.
 
 ## Image placement
 

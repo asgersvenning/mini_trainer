@@ -1,11 +1,12 @@
 /* Predictions use the exported forward; PCA queries use the fitted prototype transform. */
 let inferenceWorker=null,inferenceManifest=null,inferenceQuery=null,inferenceSequence=0,predictionPhotos=null,lastPrediction=null,inferencePreviewURL=null;
+function setInferenceInputDisabled(disabled){for(const id of ['inference-image','inference-camera','inference-camera-button'])$(id).disabled=disabled;}
 const inferenceStatus=message=>$('inference-status').textContent=message;
-function resetInferenceModel(){++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;inferenceQuery=null;lastPrediction=null;predictionPhotos?.abort();$('inference-results').replaceChildren();$('inference-image').disabled=true;$('inference-preview').hidden=true;if(inferencePreviewURL){URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=null;}inferenceStatus('Load the matching browser bundle to begin.');}
+function resetInferenceModel(){++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;inferenceQuery=null;lastPrediction=null;predictionPhotos?.abort();$('inference-results').replaceChildren();setInferenceInputDisabled(true);$('inference-preview').hidden=true;if(inferencePreviewURL){URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=null;}inferenceStatus('Load the matching browser bundle to begin.');}
 
 $('inference-load').onclick=async()=>{
  inferenceWorker?.terminate();inferenceWorker=null;inferenceQuery=null;inferenceManifest=null;lastPrediction=null;predictionPhotos?.abort();$('inference-results').replaceChildren();
- $('inference-image').disabled=true;++inferenceSequence;
+ setInferenceInputDisabled(true);++inferenceSequence;
  try{
   const url=new URL($('inference-url').value,location.href);
   if(!['http:','https:'].includes(url.protocol))throw Error('Use an HTTP or HTTPS browser-bundle manifest URL.');
@@ -18,30 +19,58 @@ $('inference-load').onclick=async()=>{
   worker.onerror=event=>inferenceStatus(`Browser worker failed: ${event.message}. Check same-origin hosting and JavaScript MIME types.`);
   worker.onmessage=({data:result})=>{
    if(worker!==inferenceWorker)return;
-   if(result.kind==='ready'){inferenceManifest=m;$('inference-image').disabled=false;inferenceStatus('Model ready. Choose an image; inference runs on this device.');}
-   if(result.kind==='error'){inferenceStatus(result.message);$('inference-image').disabled=!inferenceManifest;}
-   if(result.kind==='result'&&result.id===inferenceSequence){showInference(result,m);$('inference-image').disabled=false;}
+   if(result.kind==='ready'){inferenceManifest=m;setInferenceInputDisabled(false);inferenceStatus('Model ready. Choose an image; inference runs on this device.');}
+   if(result.kind==='error'){inferenceStatus(result.message);setInferenceInputDisabled(!inferenceManifest);}
+   if(result.kind==='result'&&result.id===inferenceSequence){showInference(result,m);setInferenceInputDisabled(false);}
   };
   worker.postMessage({kind:'load',base:url.href,manifest:m,coordinates:data.projections?.['Angular t-SNE']?.coordinates});inferenceStatus('Loading the ONNX model into this browser…');
  }catch(error){inferenceStatus(`${error.message} Cross-origin hosts must allow CORS; this model bundle can be served beside the explorer.`);}
 };
-$('inference-cancel').onclick=()=>{++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;$('inference-image').disabled=true;inferenceStatus('Stopped. Load the model to continue.');};
-$('inference-image').onchange=async event=>{
- const file=event.target.files[0];if(!file||!inferenceManifest)return;
- if(inferencePreviewURL)URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=URL.createObjectURL(file);$('inference-preview').src=inferencePreviewURL;$('inference-preview').hidden=false;
- const id=++inferenceSequence;$('inference-image').disabled=true;inferenceStatus('Preparing image…');
+$('inference-cancel').onclick=()=>{++inferenceSequence;inferenceWorker?.terminate();inferenceWorker=null;inferenceManifest=null;setInferenceInputDisabled(true);inferenceStatus('Stopped. Load the model to continue.');};
+$('inference-camera-button').onclick=()=>$('inference-camera').click();
+$('inference-image').onchange=$('inference-camera').onchange=async event=>{
+ const file=event.target.files[0];event.target.value='';if(!file||!inferenceManifest)return;
+ const id=++inferenceSequence,m=inferenceManifest,worker=inferenceWorker;
+ setInferenceInputDisabled(true);inferenceStatus('Preparing image…');
  try{
-  rejectRotatedExif(await file.arrayBuffer());
-  const bitmap=await createImageBitmap(file,{imageOrientation:'none',premultiplyAlpha:'none'});
-  if(bitmap.width*bitmap.height>40000000){bitmap.close();throw Error('Use an image smaller than 40 megapixels.');}
-  const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
-  const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(bitmap,0,0);bitmap.close();
-  const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const tensor=browserPreprocess(pixels,inferenceManifest);
+  const pixels=await prepareInferenceImage(file,m.size);
   if(id!==inferenceSequence)return;
-  inferenceStatus('Running inference locally…');inferenceWorker.postMessage({kind:'infer',id,tensor},[tensor.buffer]);
- }catch(error){inferenceStatus(error.message);$('inference-image').disabled=false;}
+  if(inferencePreviewURL){URL.revokeObjectURL(inferencePreviewURL);inferencePreviewURL=null;}
+  const preview=document.createElement('canvas');preview.width=preview.height=m.size;
+  preview.getContext('2d').putImageData(pixels,0,0);
+  $('inference-preview').src=preview.toDataURL();$('inference-preview').hidden=false;
+  const tensor=browserPreprocess(pixels,m);
+  inferenceStatus('Running inference locally…');worker.postMessage({kind:'infer',id,tensor},[tensor.buffer]);
+ }catch(error){if(id===inferenceSequence){inferenceStatus(error.message);setInferenceInputDisabled(!inferenceManifest);}}
 };
+// Decode orientation once, then sample only the pixels required by the model.
+// No full-resolution canvas or RGBA readback: camera images can exceed 40 MP.
+async function prepareInferenceImage(file,size){
+ let image,url;
+ try{
+  try{image=await createImageBitmap(file,{imageOrientation:'from-image',premultiplyAlpha:'none'});}
+  catch{
+   // Some browser-native formats are available through <img> but not ImageBitmap.
+   image=new Image();url=URL.createObjectURL(file);image.src=url;await image.decode();
+  }
+  const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height;
+  if(!width||!height)throw Error('Empty image');
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=size;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle='white';ctx.fillRect(0,0,size,size);ctx.imageSmoothingEnabled=false;
+  for(let y=0;y<size;y++){
+   const sy=Math.min(height-1,Math.floor(Math.fround(y*Math.fround(height/size))));
+   for(let x=0;x<size;x++){
+    const sx=Math.min(width-1,Math.floor(Math.fround(x*Math.fround(width/size))));
+    ctx.drawImage(image,sx,sy,1,1,x,y,1,1);
+   }
+  }
+  return ctx.getImageData(0,0,size,size);
+ }catch{
+  const format=/\.hei[cf]$/i.test(file.name)||/hei[cf]/i.test(file.type)?'HEIC/HEIF':'';
+  throw Error(format?'This browser cannot decode this HEIC/HEIF photo. Choose a JPEG/PNG copy or use the camera’s compatible JPEG setting.':'This browser could not open the image. Try a JPEG, PNG or WebP copy; for very large images, export a smaller copy.');
+ }finally{image?.close?.();if(url)URL.revokeObjectURL(url);}
+}
 function browserPreprocess(image,m){
  if(m.preprocessing!=='nearest-square-uint8-bilinear-center-imagenet-v1')throw Error('Unsupported preprocessing contract.');
  const n=m.size,r=m.resize;const square=new Uint8Array(n*n*3);
@@ -104,23 +133,6 @@ function drawInferenceQuery(ctx,p,pixels){
 }
 function paintInferencePoint(ctx,point,pixels){
  const [x,y]=projectionPoint(point);ctx.fillStyle='#8a26bb';ctx.beginPath();ctx.moveTo(x,y-9*pixels);ctx.lineTo(x+9*pixels,y);ctx.lineTo(x,y+9*pixels);ctx.lineTo(x-9*pixels,y);ctx.closePath();ctx.fill();
-}
-
-function rejectRotatedExif(buffer){
- const d=new DataView(buffer);if(d.byteLength<4||d.getUint16(0)!==0xffd8)return;
- let p=2;
- while(p+4<=d.byteLength){
-  const marker=d.getUint16(p);p+=2;if(marker===0xffda||marker===0xffd9)return;
-  const size=d.getUint16(p);if(size<2||p+size>d.byteLength)throw Error('Malformed JPEG metadata.');
-  if(marker===0xffe1&&size>=16&&d.getUint32(p+2)===0x45786966){
-   const t=p+8,le=d.getUint16(t)===0x4949,ifd=t+d.getUint32(t+4,le);
-   if(ifd+2>p+size)throw Error('Malformed EXIF metadata.');
-   const count=d.getUint16(ifd,le);
-   for(let i=0;i<count;i++){const e=ifd+2+12*i;if(e+12>p+size)throw Error('Malformed EXIF entries.');
-    if(d.getUint16(e,le)===0x112&&d.getUint16(e+8,le)!==1)throw Error('This image has EXIF rotation. Export an unrotated RGB copy for this model.');
-   }
-  }p+=size;
- }
 }
 
 async function showPredictionPhoto(row,id,signal){

@@ -325,3 +325,16 @@ The [portable viewer qualification](portable-qualification.md) records the share
 browser GBIF client, optional metadata snapshots, prediction previews and focused
 checks. See the [browser guide](../../docs/prototype-browser.md) for snapshot
 preparation and static distribution.
+
+## Mobile image and touch regression
+
+Against a plain static export, this bounded check exercises all eight EXIF
+orientations, unchanged opaque-image sampling, PNG transparency, WebP, decoder
+fallback, camera input wiring, large-image sampling and CDP touch pinch/pan/cancel.
+Physical camera capture and native HEIC support still require device review.
+
+```bash
+.venv/bin/python -c "from PIL import Image; Image.new('RGB', (7000, 6000), (55, 115, 165)).save('/tmp/large-camera.jpg')"
+CHROME_PATH=/path/to/chrome node dev/prototype_space/check_mobile.mjs \
+  http://127.0.0.1:8771/explorer.html /tmp/large-camera.jpg /tmp/mobile-check.json
+```
