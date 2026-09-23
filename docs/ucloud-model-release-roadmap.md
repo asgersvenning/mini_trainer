@@ -15,8 +15,11 @@ The release targets **backwards compatibility with MAMBO_v2**, with native PyTor
 and standard floating-point ONNX as equal supported paths. Use the existing raw
 PyTorch weights, standard prediction-only ONNX, and tested floating-point
 prediction-plus-embedding ONNX derivative. Preserve the original files and pipeline
-identities. PTQ, new FP16 graph conversions, TensorRT and new model formats are
-outside this release increment.
+identities. This release ships the native PyTorch and standard ONNX models with
+the region-specific presets. Quantization is deferred to a later release: no PTQ
+artifact packaging, calibration, quantized benchmarks or quantization acceptance
+gates belong to this increment. New FP16 graph conversions, TensorRT and new model
+formats are also outside its scope.
 
 Both backends must support `full`, `europe`, `north_europe`, custom class lists,
 and predictions with or without embeddings through aligned interfaces. Compare
@@ -86,7 +89,7 @@ Paths below are relative to that directory:
 | `models/pytorch/best.pt` | Final selected checkpoint; SHA-256 `174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a` |
 | `models/onnx-fp32/model.onnx` | Original prediction graph; SHA-256 `aa02baa22765a04de03c5ba46029e2a66ca7e430bfddce0a001af5cec2e7c15d` |
 | `models/onnx-fp32/model.onnx.data` | External tensors; SHA-256 `9ffb389ec4c6fe9864a4dfb16b167cf68950d7fa35b3fa39d84b1987b1845f4e` |
-| `models/onnx-ptq/` | Experimental PTQ graph, external tensors and calibration report; qualification remains open |
+| `models/onnx-ptq/` | Historical experimental artifacts only; preserve in the original archive, exclude from this consumer release |
 | `training/`, `evaluation/`, `export/` | Retained configuration, logs, resume state, predictions and export/calibration evidence |
 | `provenance.json`, `SHA256SUMS` | Packaging inventory and original file integrity records |
 | `viewer/browser-model/model.onnx` | Separate prediction-plus-embedding graph; SHA-256 `70130c3dbc2b8a6bc4610bb213a1aaf029816fb634faf104bbb27ffa997dfc44` |
@@ -321,7 +324,7 @@ for every claimed profile. “ONNX compatible” is not a qualification result.
 | P1 other desktops | Windows x64 and macOS arm64 CPU | Same contracts and install/restriction fixtures on actual OS/hardware; support claims only after checks |
 | P1 edge ARM | Linux aarch64 CPU | Target RAM/latency and runtime availability; reduced batch profile |
 | P1 browser | Existing Chromium WASM implementation, then other browsers/devices | Reuse existing evidence; new preprocessing/hosting claims separately qualified |
-| Deferred acceleration | PTQ, FP16 graph conversions, TensorRT and other providers | Outside this release's core variant matrix |
+| Later release | Quantization, FP16 graph conversions, TensorRT and other providers | No implementation, packaging or qualification in this release |
 
 The laptop GPU/CPU were queried on 2026-09-23; the GPU reports driver 610.47.
 The ordinary sandbox blocked NVML, while the permitted host query succeeded.

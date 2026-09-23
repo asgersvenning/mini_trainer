@@ -11,7 +11,8 @@ native PyTorch and standard ONNX, support presets/custom class lists and predict
 with/without embeddings, then compare in-domain/Flemming quality and laptop CPU/GPU
 speed before staging publication. Start with its bounded increments A and B.
 Small ONNX numerical differences are acceptable; task-level quality and aligned
-behavior matter. Retraining and experimental quantization are outside this release.
+behavior matter. Retraining is outside this release; quantization is reserved for
+a later release and adds no packaging, benchmarking or acceptance work here.
 
 The completed four-GPU production campaign is assessed in the
 [training workflow post-mortem and next-run plan](training-workflow-postmortem.md).
