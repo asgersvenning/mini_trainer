@@ -2,7 +2,7 @@ schema_version = 2
 qualification_status = "provisional; pending final release decision"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "adb63292c301c98daacdc611e5535cc1b70ed6183d16403559e180f6aa60e10d"
+definitions_sha256 = "36ef5aeba81f01e42468cdfa830ea95658bce6818d72f267cf6354a694a527ed"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 
@@ -126,6 +126,16 @@ selected_rows = 149267
 species_before_threshold = 1129
 sha256 = "471c14708f50d98e51b8513ec49e978fae360e1099b6f40491c008e9bd1d59c1"
 
+[presets.north_africa]
+path = "presets/north_africa.classes"
+count = 236
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 4393
+species_before_threshold = 422
+sha256 = "015e6c49e7c220421fdd646743216d34464708e6bfeebfac408f912a87e4a62b"
+
 [presets.subsaharan_africa]
 path = "presets/subsaharan_africa.classes"
 count = 796
@@ -135,6 +145,16 @@ excluded_by_global_gate_after_regional = 0
 selected_rows = 144918
 species_before_threshold = 904
 sha256 = "1cc936061b0037c71d60d5cdb74fc8af1817dd567e54dcd6904a6901009d9184"
+
+[presets.madagascar]
+path = "presets/madagascar.classes"
+count = 107
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2584
+species_before_threshold = 169
+sha256 = "cda395b4bab28ffec49a698487cbb2aa6578a79107ce7a9885c8260e421b9c54"
 
 [presets.mediterranean]
 path = "presets/mediterranean.classes"
@@ -165,6 +185,26 @@ excluded_by_global_gate_after_regional = 0
 selected_rows = 584477
 species_before_threshold = 2337
 sha256 = "bf6f77aeb7700a0e1d46f7d51e5a45b842485a16d2f9777b3c5e61a899b84b47"
+
+[presets.new_zealand]
+path = "presets/new_zealand.classes"
+count = 425
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 110030
+species_before_threshold = 441
+sha256 = "81b4facb4283f0e0e867fa7219f8bc5f33418e68cde61fc18df212b2a085887b"
+
+[presets.oceania_excluding_australia_nz]
+path = "presets/oceania_excluding_australia_nz.classes"
+count = 352
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 8721
+species_before_threshold = 533
+sha256 = "5a38ae5ba587577b7dcad4a8850089f1b8036abc6f1e676436968f97e34f322d"
 
 [presets.southeast_asia]
 path = "presets/southeast_asia.classes"

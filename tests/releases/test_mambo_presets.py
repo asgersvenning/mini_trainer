@@ -88,3 +88,24 @@ def test_overlap_distinguishes_containment_from_similarity():
     assert overlap({"a"}, {"a", "b", "c", "d"}) == (1, 0.25, 1.0)
     assert overlap({"a", "b", "c", "d"}, {"a"}) == (1, 0.25, 0.25)
     assert overlap({"a"}, {"b"}) == (0, 0.0, 0.0)
+
+
+def test_other_oceania_excludes_records_not_shared_species():
+    table = pa.table(
+        {
+            "countryCode": ["AU", "NZ", "FJ", "PG", "CK", "MG"],
+            "continent": ["OCEANIA", "OCEANIA", "OCEANIA", "", "OCEANIA", "AFRICA"],
+            "speciesKey": ["shared"] * 6,
+        }
+    )
+    selected = select_region(table, RULES["oceania_excluding_australia_nz"])
+    assert selected["countryCode"].to_pylist() == ["FJ", "PG", "CK"]
+    assert selected["speciesKey"].to_pylist() == ["shared"] * 3
+    assert select_region(table, RULES["new_zealand"])["countryCode"].to_pylist() == ["NZ"]
+    assert select_region(table, RULES["madagascar"])["countryCode"].to_pylist() == ["MG"]
+
+
+def test_northern_africa_intentionally_overlaps_subsaharan_transition():
+    countries = ["MA", "EG", "SD", "MR", "ZA", "MG"]
+    assert countries_selected("north_africa", countries) == ["MA", "EG", "SD", "MR"]
+    assert countries_selected("subsaharan_africa", countries) == ["SD", "MR", "ZA", "MG"]

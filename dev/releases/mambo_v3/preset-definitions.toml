@@ -74,12 +74,22 @@ continents = ["AFRICA"]
 countries = ["DZ", "AO", "BJ", "BW", "BF", "BI", "CV", "CM", "CF", "TD", "KM", "CG", "CD", "CI", "DJ", "EG", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN", "GW", "KE", "LS", "LR", "LY", "MG", "MW", "ML", "MR", "MU", "YT", "MA", "MZ", "NA", "NE", "NG", "RE", "RW", "SH", "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD", "TZ", "TG", "TN", "UG", "EH", "ZM", "ZW"]
 scope = "All AFRICA records plus the listed African countries and island territories. AFRICA-labelled records from transcontinental/overseas countries remain included."
 
+[presets.north_africa]
+label = "Northern Africa (broad)"
+countries = ["DZ", "EG", "LY", "MA", "TN", "EH", "SD", "MR"]
+scope = "Algeria, Egypt, Libya, Morocco, Tunisia, Western Sahara, Sudan and Mauritania. Sudan and Mauritania deliberately overlap the broad sub-Saharan preset."
+
 [presets.subsaharan_africa]
 label = "Sub-Saharan Africa (broad)"
 continents = ["AFRICA"]
 countries = ["AO", "BJ", "BW", "BF", "BI", "CV", "CM", "CF", "TD", "KM", "CG", "CD", "CI", "DJ", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN", "GW", "KE", "LS", "LR", "MG", "MW", "ML", "MR", "MU", "YT", "MZ", "NA", "NE", "NG", "RE", "RW", "SH", "ST", "SN", "SC", "SL", "SO", "ZA", "SS", "SD", "TZ", "TG", "UG", "ZM", "ZW"]
 excluded_countries = ["DZ", "EG", "LY", "MA", "TN", "EH"]
 scope = "Broad African selection excluding Algeria, Egypt, Libya, Morocco, Tunisia and Western Sahara. Includes Sudan, Mauritania, Mali, Niger, Chad, the Horn, Madagascar and island territories; this is not a Sahara boundary polygon."
+
+[presets.madagascar]
+label = "Madagascar only"
+countries = ["MG"]
+scope = "All records assigned countryCode MG. Species recorded in Madagascar, not only endemic species; neighbouring island countries/territories are excluded."
 
 [presets.mediterranean]
 label = "Mediterranean (broad)"
@@ -97,6 +107,18 @@ label = "Oceania"
 continents = ["OCEANIA"]
 countries = ["AU", "NZ", "PG", "FJ", "SB", "VU", "NC", "PF", "WS", "AS", "TO", "TV", "KI", "NR", "FM", "MH", "PW", "GU", "MP", "CK", "NU", "TK", "WF", "PN", "NF"]
 scope = "All OCEANIA records plus Australia, New Zealand, Papua New Guinea and the listed Pacific countries/territories. Australia and Tasmania intentionally overlap."
+
+[presets.new_zealand]
+label = "New Zealand"
+countries = ["NZ"]
+scope = "All records assigned countryCode NZ, including islands recorded under NZ. Separately coded Cook Islands, Niue and Tokelau remain in the other-Oceania preset."
+
+[presets.oceania_excluding_australia_nz]
+label = "Oceania excluding Australia and New Zealand"
+continents = ["OCEANIA"]
+countries = ["AU", "NZ", "PG", "FJ", "SB", "VU", "NC", "PF", "WS", "AS", "TO", "TV", "KI", "NR", "FM", "MH", "PW", "GU", "MP", "CK", "NU", "TK", "WF", "PN", "NF"]
+excluded_countries = ["AU", "NZ"]
+scope = "The Oceania metadata selection with all AU and NZ records excluded, even when continent is OCEANIA. Species shared with Australia or New Zealand remain eligible if they qualify from records elsewhere in Oceania; this is not subtraction of their species lists."
 
 [presets.southeast_asia]
 label = "Southeast Asia"

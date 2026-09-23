@@ -13,9 +13,9 @@ DISPLAY_GROUPS = (
     ("north_america", "central_america", "caribbean", "south_america"),
     ("arctic", "europe", "north_europe"),
     ("mediterranean", "middle_east"),
-    ("africa", "subsaharan_africa"),
+    ("africa", "north_africa", "subsaharan_africa", "madagascar"),
     ("asia", "south_asia", "southeast_asia", "east_asia", "japan"),
-    ("oceania", "australia", "tasmania"),
+    ("oceania", "australia", "tasmania", "new_zealand", "oceania_excluding_australia_nz"),
 )
 
 
@@ -55,8 +55,9 @@ def render(preview=None):
                 shared, jaccard, coverage = scores[i][j]
                 writer.writerow([left, right, shared, f"{jaccard * 100:.6f}", f"{coverage * 100:.6f}"])
     plt.rcParams.update({"svg.hashsalt": "mambo-preset-overlap-v1", "font.size": 9})
-    fig, axes = plt.subplots(1, 2, figsize=(25, 13), layout="constrained")
-    labels = [f"{name.replace('_', ' ')} ({len(sets[name]):,})" for name in names]
+    fig, axes = plt.subplots(1, 2, figsize=(27, 15), layout="constrained")
+    display_names = {"oceania_excluding_australia_nz": "oceania excl. AU/NZ"}
+    labels = [f"{display_names.get(name, name.replace('_', ' '))} ({len(sets[name]):,})" for name in names]
     for ax, metric, title in zip(axes, (1, 2), ("Jaccard: shared / union (%)", "Coverage: row species also in column (%)")):
         values = np.array([[cell[metric] * 100 for cell in row] for row in scores])
         im = ax.imshow(values, vmin=0, vmax=100, cmap="viridis")

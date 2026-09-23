@@ -29,10 +29,14 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `asia` | 4,981 | 3 | 25 | 1,031,247 | All ASIA records plus all records from the listed Asian countries and territories, including Russia, Turkey, Georgia, Armenia, Azerbaijan in full. Includes their European-labelled records and records with blank continent. Cyprus is excluded even when its continent is ASIA. |
 | `japan` | 697 | 3 | 25 | 30,076 | All records assigned countryCode JP, including islands. |
 | `africa` | 924 | 3 | 25 | 149,267 | All AFRICA records plus the listed African countries and island territories. AFRICA-labelled records from transcontinental/overseas countries remain included. |
+| `north_africa` | 236 | 3 | 25 | 4,393 | Algeria, Egypt, Libya, Morocco, Tunisia, Western Sahara, Sudan and Mauritania. Sudan and Mauritania deliberately overlap the broad sub-Saharan preset. |
 | `subsaharan_africa` | 796 | 3 | 25 | 144,918 | Broad African selection excluding Algeria, Egypt, Libya, Morocco, Tunisia and Western Sahara. Includes Sudan, Mauritania, Mali, Niger, Chad, the Horn, Madagascar and island territories; this is not a Sahara boundary polygon. |
+| `madagascar` | 107 | 3 | 25 | 2,584 | All records assigned countryCode MG. Species recorded in Madagascar, not only endemic species; neighbouring island countries/territories are excluded. |
 | `mediterranean` | 2,680 | 3 | 25 | 660,065 | Whole Mediterranean coastal countries/territories plus Portugal, Andorra, San Marino, Vatican City, North Macedonia, Bulgaria, Serbia and Jordan. Includes inland and overseas records of selected countries, not only Mediterranean climate zones. |
 | `arctic` | 4,333 | 3 | 25 | 871,155 | Canada, Alaska (US records only when stateProvince is Alaska), Greenland, Iceland, Faroe Islands, Norway, Svalbard/Jan Mayen, Sweden, Finland, Åland and Russia. Other countries remain whole-country proxies including southern records; this is not an Arctic Circle or tundra filter. US records with blank state are excluded. |
 | `oceania` | 2,273 | 3 | 25 | 584,477 | All OCEANIA records plus Australia, New Zealand, Papua New Guinea and the listed Pacific countries/territories. Australia and Tasmania intentionally overlap. |
+| `new_zealand` | 425 | 3 | 25 | 110,030 | All records assigned countryCode NZ, including islands recorded under NZ. Separately coded Cook Islands, Niue and Tokelau remain in the other-Oceania preset. |
+| `oceania_excluding_australia_nz` | 352 | 3 | 25 | 8,721 | The Oceania metadata selection with all AU and NZ records excluded, even when continent is OCEANIA. Species shared with Australia or New Zealand remain eligible if they qualify from records elsewhere in Oceania; this is not subtraction of their species lists. |
 | `southeast_asia` | 1,672 | 3 | 25 | 172,424 | Brunei, Cambodia, Indonesia, Laos, Malaysia, Myanmar, Philippines, Singapore, Thailand, Timor-Leste, Vietnam and Papua New Guinea; whole-island-region overlap with Oceania is intentional. |
 | `east_asia` | 4,123 | 3 | 25 | 659,767 | China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russia. All Russia is included because this preset uses whole-country filters. |
 | `middle_east` | 846 | 3 | 25 | 24,805 | Turkey, Cyprus, Syria, Lebanon, Israel, Palestine, Jordan, Iraq, Iran, Kuwait, Saudi Arabia, Bahrain, Qatar, UAE, Oman, Yemen, Egypt, Armenia, Azerbaijan, Georgia, Afghanistan and Pakistan. Deliberate overlap with Mediterranean, Africa and South Asia. |
@@ -59,10 +63,14 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 - **asia** (Asia): (`continent` in `ASIA` OR `countryCode` in `AF, AM, AZ, BH, BD, BT, BN, KH, CN, GE, HK, IN, ID, IR, IQ, IL, JP, JO, KZ, KP, KR, KW, KG, LA, LB, MO, MY, MV, MN, MM, NP, OM, PK, PS, PH, QA, RU, SA, SG, LK, SY, TW, TJ, TH, TL, TR, TM, AE, UZ, VN, YE`) AND country NOT in `CY`.
 - **japan** (Japan): `countryCode` in `JP`.
 - **africa** (Africa): `continent` in `AFRICA` OR `countryCode` in `DZ, AO, BJ, BW, BF, BI, CV, CM, CF, TD, KM, CG, CD, CI, DJ, EG, GQ, ER, SZ, ET, GA, GM, GH, GN, GW, KE, LS, LR, LY, MG, MW, ML, MR, MU, YT, MA, MZ, NA, NE, NG, RE, RW, SH, ST, SN, SC, SL, SO, ZA, SS, SD, TZ, TG, TN, UG, EH, ZM, ZW`.
+- **north_africa** (Northern Africa (broad)): `countryCode` in `DZ, EG, LY, MA, TN, EH, SD, MR`.
 - **subsaharan_africa** (Sub-Saharan Africa (broad)): (`continent` in `AFRICA` OR `countryCode` in `AO, BJ, BW, BF, BI, CV, CM, CF, TD, KM, CG, CD, CI, DJ, GQ, ER, SZ, ET, GA, GM, GH, GN, GW, KE, LS, LR, MG, MW, ML, MR, MU, YT, MZ, NA, NE, NG, RE, RW, SH, ST, SN, SC, SL, SO, ZA, SS, SD, TZ, TG, UG, ZM, ZW`) AND country NOT in `DZ, EG, LY, MA, TN, EH`.
+- **madagascar** (Madagascar only): `countryCode` in `MG`.
 - **mediterranean** (Mediterranean (broad)): `countryCode` in `AL, DZ, BA, HR, CY, EG, FR, GR, IL, IT, LB, LY, MT, MC, ME, MA, PS, SI, ES, SY, TN, TR, PT, GI, AD, SM, VA, MK, BG, RS, JO`.
 - **arctic** (Arctic / broad northern-country scope): `countryCode` in `CA, US, GL, IS, FO, NO, SJ, SE, FI, AX, RU`; `US` records additionally require `stateProvince` in `Alaska`.
 - **oceania** (Oceania): `continent` in `OCEANIA` OR `countryCode` in `AU, NZ, PG, FJ, SB, VU, NC, PF, WS, AS, TO, TV, KI, NR, FM, MH, PW, GU, MP, CK, NU, TK, WF, PN, NF`.
+- **new_zealand** (New Zealand): `countryCode` in `NZ`.
+- **oceania_excluding_australia_nz** (Oceania excluding Australia and New Zealand): (`continent` in `OCEANIA` OR `countryCode` in `AU, NZ, PG, FJ, SB, VU, NC, PF, WS, AS, TO, TV, KI, NR, FM, MH, PW, GU, MP, CK, NU, TK, WF, PN, NF`) AND country NOT in `AU, NZ`.
 - **southeast_asia** (Southeast Asia): `countryCode` in `BN, KH, ID, LA, MY, MM, PH, SG, TH, TL, VN, PG`.
 - **east_asia** (East Asia): `countryCode` in `CN, HK, MO, TW, JP, KP, KR, MN, RU`.
 - **middle_east** (Middle East): `countryCode` in `TR, CY, SY, LB, IL, PS, JO, IQ, IR, KW, SA, BH, QA, AE, OM, YE, EG, AM, AZ, GE, AF, PK`.
