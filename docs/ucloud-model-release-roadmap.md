@@ -52,17 +52,94 @@ The [campaign record](training-workflow-postmortem.md#outcomes-and-strength-of-e
 reports EfficientNetV2-S, a normalized hierarchical head, 384-pixel inputs, 30 epochs,
 and floating training on four B200 GPUs. It reports completed evaluation and
 verified archival checksums, but does not contain the final immutable artifact
-identities. This planning pass has not independently opened the training archive.
-FP32 ONNX parity was synthetic; PTQ loadability did not establish retained accuracy
-or integer execution. The production checkpoint is not a native INT8 checkpoint.
+identities. The feature-branch follow-up below identifies the public distribution
+and adds limited real-image evidence. The original FP32 ONNX parity was synthetic;
+PTQ loadability did not establish retained accuracy or integer execution. The
+production checkpoint is not a native INT8 checkpoint.
+
+### Located production artifacts and existing browser work
+
+Follow-up inspection on 2026-09-23 used `feature/prototype-browser-inference` at
+`b174426a22e42618424fcb0345610ede4a415d01`, without switching or modifying its
+worktree. Its [release integration record](https://github.com/asgersvenning/mini_trainer/blob/b174426a22e42618424fcb0345610ede4a415d01/docs/production-release-integration.md)
+identifies an already-published production distribution. This release roadmap is
+therefore about consolidating and qualifying a successor consumer release, not
+locating or publishing those original files for the first time.
+
+Public root: [global-lepi-production-release-20260911T150236Z](https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/index.html).
+Paths below are relative to that directory:
+
+| Artifact | Identity / role |
+| --- | --- |
+| `models/pytorch/best.pt` | Final selected checkpoint; SHA-256 `174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a` |
+| `models/onnx-fp32/model.onnx` | Original prediction graph; SHA-256 `aa02baa22765a04de03c5ba46029e2a66ca7e430bfddce0a001af5cec2e7c15d` |
+| `models/onnx-fp32/model.onnx.data` | External tensors; SHA-256 `9ffb389ec4c6fe9864a4dfb16b167cf68950d7fa35b3fa39d84b1987b1845f4e` |
+| `models/onnx-ptq/` | Experimental PTQ graph, external tensors and calibration report; qualification remains open |
+| `training/`, `evaluation/`, `export/` | Retained configuration, logs, resume state, predictions and export/calibration evidence |
+| `provenance.json`, `SHA256SUMS` | Packaging inventory and original file integrity records |
+| `viewer/browser-model/model.onnx` | Separate prediction-plus-embedding graph; SHA-256 `70130c3dbc2b8a6bc4610bb213a1aaf029816fb634faf104bbb27ffa997dfc44` |
+| `viewer/verification.json`, `viewer/SHA256SUMS` | Browser verification and separate viewer integrity scope |
+
+The source record reports 1,224 original files totaling 25,455,849,324 bytes,
+verified ZIP/internal checksums, remote size inventory and selected binary readback.
+This follow-up retrieved the public index, README, provenance, original checksum
+list, FP32 manifest, browser manifests and verification report. README, provenance
+and FP32 manifest bytes matched their original checksum entries. The large weights,
+full archive and browser execution were **not** downloaded/reverified in this pass;
+the binary hashes above are recorded identities, not fresh binary hash checks.
+
+The FP32 manifest records opset 18, float32 NCHW input `[batch, 3, 384, 384]`, and
+ordered outputs of 12,632 species, 4,476 genera and 104 families. Packaging provenance
+records checkout `52954edae5dae31a62ecb639533e6f8573d57055` and mini-trainer `0.1.1`,
+but explicitly warns these are packaging-time identities, not necessarily training
+identities. Recover the latter from retained logs rather than copying this commit.
+Earlier epoch-4/epoch-26 explorer checkpoints are not the release checkpoint.
+
+The [separate RC2 browser manifest](https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-viewer-20260915-rc2/browser-model/manifest.json)
+references the same final checkpoint, graph and tensor hashes as the production
+browser bundle. UI publication and model release identity remain separate.
+Reuse these implemented branch components after review/integration:
+
+| Existing component | Reuse and remaining boundary |
+| --- | --- |
+| `mt_export --include-embeddings`, export tests | Opt-in actual prediction outputs plus 1,280-dimensional preclassification embedding; preserve default export behavior and head restrictions |
+| `mini_trainer/visualization/prototype_space/browser.py`, `tests/utils/test_browser_bundle.py` | Atomic packaging, checked source hashes/class order, external tensors, pinned ONNX Runtime Web 1.24.3 assets and license; adapt metadata instead of inventing another exporter |
+| Browser inference worker and preprocessing | Single-thread CPU WASM and explicit `nearest-square-uint8-bilinear-center-imagenet-v1` recipe, size 384/resize 438; bounded existing contract, not arbitrary transforms |
+| `check_inference.mjs`, `check_mobile.mjs`, `check_portable.mjs` | Existing numerical/image, orientation/transparency, touch and static-host checks; broaden evidence only for affected behavior and newly claimed targets |
+| Shared GBIF client and packaged names | Optional network enrichment, IDs remain usable offline; packaged names are partial and remote photos are not offline assets |
+
+The public [browser verification report](https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/viewer/verification.json)
+records one real-image fixture: identical-input prediction max error about
+`1.72e-5`, embedding error `1.80e-7`; end-to-end image prediction error about
+`0.00552`, embedding error `0.000250`, with top predictions matching. This is useful
+existing evidence, **not** strict end-to-end equality or broad accuracy acceptance.
+Preserve that distinction when setting gates; do not restart browser inference as
+if absent, or apply its evidence to the original prediction-only graph untested.
+
+The branch's newer image adapter applies EXIF rotation/mirroring and white alpha
+compositing; the core reader disables EXIF orientation. Reconcile and version these
+policies before claiming one shared image contract. The historical recipe name alone
+does not encode this later adapter behavior. Also retain the actual hosting lesson:
+ERDA previously lacked `.mjs`/`.wasm` MIME declarations and cross-origin permission;
+the verified same-origin deployment uses an unchanged runtime module renamed `.js`
+and explicit runtime paths. Current header behavior needs a targeted recheck before
+new hosting claims. Model/runtime assets contain executable code; authoring hash
+checks do not imply that the current browser worker validates every fetch.
+
+The branch's [qualification record](https://github.com/asgersvenning/mini_trainer/blob/b174426a22e42618424fcb0345610ede4a415d01/dev/prototype_space/portable-qualification.md)
+already reports focused Python/browser and installed-wheel checks. Integration,
+physical-device review, broader browsers/providers and complete offline installation
+remain distinct work. Review/reuse the branch export and deployment changes for A/B;
+do not require completion of all explorer UI or global-analysis milestones.
 
 ## 1. Freeze identity and the compatibility contract — P0
 
 Produce a compact release inventory before changing inference behavior:
 
-- Locate the retained archive, verify its checksum, and identify the selected
-  inference checkpoint, training source revision, package/harness revisions,
-  resolved configuration, taxonomy, dataset split identities and evaluation files.
+- Start from the identified public distribution above; retrieve and verify the
+  required model files against its checksums. Complete the training source and
+  package/harness revision audit, and inventory the resolved configuration,
+  taxonomy, dataset split identities and evaluation files.
   Confirm that the reported best epoch and the selected weights agree. Record
   hashes and sizes, including every ONNX external tensor file.
 - Retrieve the actual previous public weights and hash them. Record the baseline
@@ -88,14 +165,17 @@ to new weights. For the new deployment API, prefer explicit model-bundle selecti
 Store regional lists with provenance and hashes, and disclose excluded true labels.
 
 **Done when:** immutable candidate and baseline inventories exist, compatibility
-fixtures are specified, and release identity/default decisions are recorded. Missing
-archive or weight access blocks certification, not drafting the remainder of the plan.
+fixtures are specified, and release identity/default decisions are recorded. The
+public artifact location and candidate hash are now known; remaining binary
+verification and historical-baseline access still gate certification.
 
 ## 2. Build a self-contained portable bundle — P0
 
-Extend [the existing ONNX exporter](onnx.md) and its manifest rather than creating a
-second exporter. A release-level manifest can reference its unchanged export
-manifest and add deployment metadata with an explicit schema version.
+Reuse the existing public FP32 artifacts where unchanged, and review/integrate the
+feature branch's export and browser packaging changes. Extend [the existing ONNX
+exporter](onnx.md) and its manifest rather than creating a second exporter. A
+release-level manifest can reference its unchanged export manifest and add
+deployment metadata with an explicit schema version.
 
 Proposed deployment contents:
 
@@ -150,8 +230,8 @@ imports, and validate its installed distribution outside the checkout.
 
 - Provide a documented Python image-to-prediction example using ONNX Runtime and
   an explicit decoder, plus a tensor-in/tensor-out example. Add one non-Python
-  consumer, preferably JavaScript from the existing viewer work, using identical
-  conformance data. Additional language SDKs can follow demonstrated demand.
+  consumer by reusing the existing JavaScript viewer inference, using identical
+  conformance data and an explicitly versioned image adapter. Additional language SDKs can follow demonstrated demand.
 - Restore a thin `mini_trainer.deploy.Predictor`/`mambo_predict` compatibility layer
   or ship an explicitly versioned migration package. Preserve documented result
   contracts, masking and embedding access where promised; embedding dimensions
@@ -311,18 +391,19 @@ has been exercised. Release notes distinguish model changes from package/API cha
 
 | Increment | Concrete deliverable | Dependency / completion gate |
 | --- | --- | --- |
-| A — identity and migration | Candidate/baseline inventory; vocabulary and API diff; release/default decisions | Archive and historical weight access; section 1 |
-| B — portable vertical slice | FP32 bundle, executable preprocessing, tiny CPU client and real-image fixtures | A; relocated offline inference in a clean Linux environment |
+| A — identity and migration | Complete known candidate inventory and baseline retrieval; vocabulary and API diff; release/default decisions | Archive and historical weight access; section 1 |
+| B — portable vertical slice | Reuse FP32/browser artifacts and integrate relevant branch code; reconcile preprocessing; tiny CPU client and real-image fixtures | A; relocated offline inference in a clean Linux environment |
 | C — consumer compatibility | MAMBO adapter, bounded batches, explicit cache/download policy, pinned installs | B; tagged-interface fixtures and clean installed-package checks |
 | D — release qualification | Windows/macOS CPU checks, restriction matrix, old/new quality report and frozen gates | B/C; publish only evidenced support and quality claims |
 | E — staged release | Versioned prerelease, readback, model card, migration and rollback; promotion review | A–D; concrete release checklist and evidence |
 | F — optional acceleration | One selected GPU/browser/quantized profile at a time | Portable baseline; demonstrated demand and quality/resource benefit |
 
-Start with **A and B**. They resolve the main uncertainty—exactly which bytes and
-input/output contract are being released—and produce a reviewable usable artifact.
+Start with **A and B**. Verify the identified model bytes, finish the migration
+contract and reuse the delivered export/browser work to produce a small, reviewable
+consumer bundle.
 The next-training-run orchestration plan is not on this release's critical path.
 
-Open decisions to resolve during A: retained archive location and checksum; exact
-previous weight identities; target consumer examples; final release/package versions;
-artifact host; numerical/quality/resource budgets; and access to Windows/macOS target
+Open work during A: verify the identified candidate binaries; recover exact training
+revision and previous weight identities; choose target consumer examples, final
+release/package versions and successor artifact hosting; set numerical/quality/resource budgets; and access to Windows/macOS target
 machines. This roadmap proposes defaults where possible but does not invent evidence.
