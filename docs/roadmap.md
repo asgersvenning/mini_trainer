@@ -4,6 +4,13 @@ The quantization branch has been merged into master. Its
 [execution roadmap](quantization-roadmap.md) remains the specialist backlog;
 fully quantized training performance is not established by that merge.
 
+The next delivery priority is releasing the already-trained September UCloud
+model. Follow the [model release roadmap](ucloud-model-release-roadmap.md): freeze
+candidate and prior-release identities, deliver an offline portable FP32 bundle,
+preserve MAMBO consumer compatibility, qualify deployment profiles, then stage and
+review publication. Start with its bounded increments A and B. This does not
+require another training run or completion of the optional accelerator matrix.
+
 The completed four-GPU production campaign is assessed in the
 [training workflow post-mortem and next-run plan](training-workflow-postmortem.md).
 For the next training run, first deliver its bounded P0 workflow slice: durable
