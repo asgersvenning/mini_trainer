@@ -165,7 +165,9 @@ def charts(data, output):
 
     def save(fig, name, note):
         fig.text(0.02, 0.025, note, fontsize=9, color="#555555")
-        fig.savefig(output / f"{name}.svg", bbox_inches="tight", metadata={"Date": None})
+        svg = output / f"{name}.svg"
+        fig.savefig(svg, bbox_inches="tight", metadata={"Date": None})
+        svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
         fig.savefig(output / f"{name}.png", bbox_inches="tight", dpi=160)
         plt.close(fig)
 
