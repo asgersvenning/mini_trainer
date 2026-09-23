@@ -136,7 +136,7 @@ def benchmark(args):
         runtime = predictor._torch if args.backend == "torch" else predictor._onnx
         for size in args.batches:
             prepared = np.stack([preprocess(path) for path in paths[:size]])
-            for preset in ("full", "europe_v3"):
+            for preset in args.presets:
                 selector = Predictor(args.bundle, model=preset)
                 predictor._apply_class_mask(selector.class_list)
                 for _ in range(args.warmup):
@@ -181,6 +181,7 @@ def main():
     parser.add_argument("--embeddings", action="store_true")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--batches", nargs="+", type=int, default=[1, 8, 32])
+    parser.add_argument("--presets", nargs="+", default=["full", "europe_v3"])
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--seed", type=int, default=20260923)
