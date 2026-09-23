@@ -178,11 +178,14 @@ names must not be treated as original image identities. Verify the supplied spli
 source membership and expected 632,913 predictions before a full run, with a small
 qualification first. Do not regenerate a random split from the training proportion.
 
-Portable assets, aligned PyTorch/ONNX adapters and small CPU/GPU Flemming checks
-are implemented; see [deployment qualification](deployment-qualification.md).
-Next implementation: full local task metrics
-and CPU/laptop-GPU timings. Use the same versioned runner/config on UCloud for
-in-domain results. Archived selected predictions support a historical baseline,
-not new-backend top-k or embedding quality claims. Small fresh inference checks
-are complete; no speed benchmark has been performed. Training-source revision and best-epoch
+Portable assets and aligned PyTorch/ONNX adapters are implemented; see
+[deployment qualification](deployment-qualification.md). Full Flemming metrics and
+local CPU/GPU timings are documented in the
+[measured release report](../../../docs/mambo-v3-evaluation.md), with reproduction
+commands and the prepared UCloud handoff in [evaluation.md](evaluation.md).
+
+The original in-domain split and taxonomy have been checked against all 632,913
+archived test identities. Image verification and inference still require UCloud.
+Archived selected predictions support historical context, not MAMBO_v2 model
+quality or downstream embedding claims. Training-source revision and best-epoch
 provenance remain unresolved; packaging checkout is not training provenance.

@@ -90,8 +90,29 @@ defaults, so explicit backend/device arguments are recommended in scripts.
 
 ## Qualification
 
-Preset generation and artifact integrity have been checked. This increment adds
-small real-image inference and installed-package checks, not full performance or
-accuracy qualification. Full Flemming metrics, in-domain UCloud evaluation,
-laptop GPU/CPU benchmarks, other operating systems and publication/license
-review remain release work. Small ONNX numerical differences are expected.
+On all 58,640 Flemming images, PyTorch and ONNX return identical top-1 species,
+genus and family labels for the full list and both legacy/updated European presets.
+Updated Europe reaches **68.81% species accuracy overall**, or **79.74%** on images
+whose true species is in the list. Unknown species remain in the overall result.
+CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
+this checks prediction consistency, not downstream embedding usefulness.
+
+On an i7-12800H / RTX 3080 Ti Laptop GPU, with four CPU threads and the updated
+Europe preset, warmed prediction-only measurements were:
+
+| Runtime | CPU, one image | GPU, one image | GPU, batch 32 |
+|---|---:|---:|---:|
+| ONNX | 115 ms | 33 ms | 41 images/s |
+| PyTorch | 156 ms | 35 ms | 44 images/s |
+
+These include image preparation and result handling. First prediction including
+loading took about 0.37 s CPU / 1.64 s GPU for ONNX, versus 40–42 s for PyTorch;
+reuse a loaded predictor. ONNX also used less CPU process memory. Prefer it for
+new lightweight integrations; native PyTorch remains suitable for existing callers
+and persistent GPU workers. Embedding-mode results, variability, memory and the
+Linux/WSL qualification limits are in the [measured report](../docs/mambo-v3-evaluation.md).
+
+The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
+reproduction commands and UCloud handoff. In-domain evaluation, other operating
+systems and publication/license review remain open. Small ONNX numerical
+differences are expected even where top-1 labels agree.

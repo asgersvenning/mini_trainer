@@ -48,7 +48,7 @@ working directory, blocks Python socket connections, runs both API modes and the
 CLI, and verifies bundle contents remain unchanged. This is not an OS-level
 network isolation test; platform-native runtime networking is outside that guard.
 
-## Observed result
+## Initial adapter increment
 
 | Check | Result |
 |---|---|
@@ -78,12 +78,13 @@ The shared NumPy preprocessing implements the recorded campaign recipe. A sample
 comparison to the original torchvision path differed by at most one uint8 level
 at resize rounding boundaries; it is not a byte-exact preprocessing claim.
 
-## Remaining release work
+## Subsequent evaluation and remaining work
 
-Full Flemming metrics and CPU/GPU latency, throughput and memory measurements are
-next. Use outer evaluation batches to bound accumulated result memory. Include
-out-of-vocabulary truth in all-image metrics and report covered-image metrics
-separately. In-domain evaluation must run on UCloud with the original test split.
+The [measured release report](../../../docs/mambo-v3-evaluation.md) supersedes the
+initial subset-only evidence above with full Flemming metrics, CPU/GPU timings
+and a completed broad test suite. The [evaluation workflow](evaluation.md) preserves
+unknown truth and documents the UCloud commands. In-domain inference still needs
+to run on UCloud with the verified original test split.
 
 Four deterministic images establish execution contracts, not representative
 accuracy, embedding quality or speed. Windows/macOS, clean CUDA installations,

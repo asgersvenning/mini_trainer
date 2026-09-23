@@ -1,7 +1,7 @@
 # UCloud model release roadmap
 
 Status: release preparation started, 2026-09-23. This document does not publish
-artifacts or claim deployment qualification. Target: the completed 10–11 September
+artifacts. Qualification claims are limited to the linked measured evidence. Target: the completed 10–11 September
 2026 UCloud model, not a new training campaign.
 
 The [first input-audit increment](../dev/releases/mambo_v3/README.md) now pins and
@@ -10,9 +10,10 @@ MAMBO weights. It recovers both regional presets, confirms identical old/new cla
 and parent mappings, and captures a small legacy output fixture. Its regional-scope
 table now includes reproducible Parquet filters: Europe uses the metadata continent
 field; northern Europe has an exact country-filter reconstruction with documented
-ambiguity for membership-neutral additions such as Ireland. Adapter compatibility
-and inference qualification remain outstanding.
-Local evaluation will use Flemming; the large in-domain dataset remains on UCloud
+ambiguity for membership-neutral additions such as Ireland. Aligned deployment
+adapters and full Flemming backend comparison are implemented; see the
+[evaluation workflow](../dev/releases/mambo_v3/evaluation.md).
+The large in-domain dataset remains on UCloud
 and must be evaluated there using the original supplied split.
 The [public preset catalogue](model-presets.md) defines the expanded geographic
 selection, including Australia/Tasmania and deliberately overlapping regions.
@@ -584,17 +585,19 @@ has been exercised. Release notes distinguish model changes from package/API cha
 | D — staged release | Consumer bundles, migration notes, measured trade-offs, offline checks and rollback | A–C; concrete reviewed candidate |
 | E — broader portability | Additional OS/browser profiles and distribution channels | Core release preserved; qualify only new boundaries |
 
-Start with **A and B**, then use C to make the release recommendation concrete.
-The portable bundle and aligned inference implementation now have bounded
-CPU/GPU and installed-package evidence; see the
+A and B are implemented, and C now has local Flemming and CPU/GPU evidence; see
+the [measured release report](mambo-v3-evaluation.md),
 [deployment qualification](../dev/releases/mambo_v3/deployment-qualification.md)
-and [consumer guide](../deployment/README.md). The next increment is C; unresolved
-training provenance and publication gates remain open.
-The next-training-run orchestration plan and experimental quantization are not on
-this release's critical path.
+and [consumer guide](../deployment/README.md). The
+[evaluation workflow](../dev/releases/mambo_v3/evaluation.md) prepares the remaining
+in-domain work on UCloud using the original split. D remains preparation only:
+training-source/best-epoch provenance, redistribution notices and final publication
+review are open. No model release has been published or tagged.
 
-Open work during A: verify candidate binaries and historical weights; locate local
-in-domain/Flemming images and manifests; recover training revision and actual preset
-memberships; pin the compatible runtime/metric environments. Final package/version
-and publication choices follow the measured candidate. CPU/GPU qualification uses
-the identified laptop; additional machines are needed only for later support claims.
+Native cold-start measurement identified costly classifier initialization before
+checkpoint restoration. Any optimization must originate on a separate core
+feature/fix branch and pass checkpoint validation before merging here. The report keeps
+startup and warmed inference costs separate.
+The next-training-run orchestration plan and experimental quantization are not on
+this release's critical path. Additional OS and clean CUDA installation checks
+are needed before making broader support claims.
