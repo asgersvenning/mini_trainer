@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from deployment.mambo_deploy import Predictor
+from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
 from deployment.mambo_deploy.preprocessing import preprocess
 from deployment.mambo_deploy.results import Prediction, hierarchy
 from dev.benchmarks.inference.onnx_inference import file_hash
@@ -166,7 +167,7 @@ def main():
     run.add_argument("--backend", choices=["torch", "onnx"], required=True)
     run.add_argument("--device", default="cpu")
     run.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="fp32")
-    run.add_argument("--tta", choices=["none", "hflip", "five_crop", "ten_crop", "d4", "light_noise"], default="none")
+    run.add_argument("--tta", nargs="?", const=DEFAULT_TTA, choices=PROFILES, default="none")
     run.add_argument("--embeddings", action="store_true")
     run.add_argument("--count", type=int)
     run.add_argument("--seed", type=int, default=20260923)

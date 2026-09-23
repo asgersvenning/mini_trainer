@@ -371,3 +371,45 @@ def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
             assert actual.shape == (3, 384, 384) and np.isfinite(actual).all()
             np.testing.assert_array_equal(actual, preprocess(transform(image.copy())))
     np.testing.assert_array_equal(image, original)
+
+
+@pytest.mark.parametrize("option", [True, "padded_scale"])
+def test_enabled_tta_uses_qualified_padded_recipe(bundle, monkeypatch, option):
+    from dev.releases.mambo_v3.tta_candidates import candidate_policy
+
+    p = Predictor(bundle, tta=option, preprocess_workers=1)
+    image = np.random.default_rng(18).integers(0, 256, (3, 23, 41), dtype=np.uint8)
+    observed = []
+
+    def runtime(images, embeddings):
+        observed.append(images[0].copy())
+        return np.ones((len(images), 3), np.float32), None
+
+    monkeypatch.setattr(p, "_onnx", runtime)
+    result = p.predict(image)
+    expected = candidate_policy("padded_scale")
+    assert len(observed) == 3
+    for actual, transform in zip(observed, expected.transforms, strict=True):
+        np.testing.assert_array_equal(actual, preprocess(transform(image)))
+    assert result.metadata["tta"] == "padded_scale" and result.metadata["tta_views"] == 3
+    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
+
+
+@pytest.mark.parametrize(
+    ("options", "recipe"), [([], None), (["--tta"], "padded_scale"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
+)
+def test_cli_tta_optional_recipe(bundle, monkeypatch, options, recipe):
+    from deployment.mambo_deploy import cli
+
+    class Parsed(Exception):
+        pass
+
+    def capture(*args, **kwargs):
+        p = Predictor(*args, **kwargs)
+        assert (p.tta.name if p.tta else None) == recipe
+        raise Parsed
+
+    monkeypatch.setattr(cli, "Predictor", capture)
+    monkeypatch.setattr("sys.argv", ["mambo_predict", "-i", "example.jpg", "--bundle", str(bundle), *options])
+    with pytest.raises(Parsed):
+        cli.run()

@@ -14,6 +14,7 @@ from unittest.mock import patch
 import numpy as np
 
 from deployment.mambo_deploy import Predictor
+from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
 from deployment.mambo_deploy.preprocessing import preprocess
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluate import runtime_settings
@@ -112,7 +113,7 @@ def benchmark(args):
         "boundaries": {
             "end_to_end": "image path through CPU result/embedding; threaded decode/preprocess/transfer/reduction included",
             "preprocessing": "serial preparation diagnostic; public API uses threads for batches",
-            "prepared": "preprocessed CPU tensor through CPU leaf scores/embeddings; transfers included; no decode or reduction",
+            "prepared": "single-view diagnostic (also with TTA): CPU input to CPU output; transfers included; no decode/reduction",
             "cold": "first image after Predictor construction; lazy model/session load included; runtime import/config measured separately",
         },
     }
@@ -128,6 +129,7 @@ def benchmark(args):
             threads=args.threads,
             batch_size=max(args.batches),
             precision=args.precision,
+            tta=getattr(args, "tta", "none"),
         )
         report["effective_precision"] = predictor.effective_precision
         report["runtime"].update(
@@ -192,6 +194,7 @@ def main():
     parser.add_argument("--backend", choices=["torch", "onnx"], required=True)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="fp32")
+    parser.add_argument("--tta", nargs="?", const=DEFAULT_TTA, choices=PROFILES, default="none")
     parser.add_argument("--embeddings", action="store_true")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--batches", nargs="+", type=int, default=[1, 8, 32])

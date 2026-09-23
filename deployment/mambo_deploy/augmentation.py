@@ -34,6 +34,22 @@ class View:
 
 
 @dataclass(frozen=True)
+class EdgePad:
+    """Pad each source edge by a fraction of its axis, preserving original pixels."""
+
+    fraction: float
+
+    def __post_init__(self):
+        if not np.isfinite(self.fraction) or self.fraction < 0:
+            raise ValueError("Padding fraction must be finite and nonnegative")
+
+    def __call__(self, image):
+        height, width = image.shape[1:]
+        y, x = int(np.ceil(height * self.fraction)), int(np.ceil(width * self.fraction))
+        return np.pad(image, ((0, 0), (y, y), (x, x)), mode="edge")
+
+
+@dataclass(frozen=True)
 class SaltAndPepper:
     """Deterministic image-keyed noise; one black/white pixel mask shared by RGB."""
 
@@ -72,17 +88,24 @@ class TTA:
             raise ValueError("TTA name must be a nonempty string")
 
 
-PROFILES = ("none", "hflip", "five_crop", "ten_crop", "d4", "light_noise")
+DEFAULT_TTA = "padded_scale"
+PROFILES = ("none", "padded_scale", "hflip", "five_crop", "ten_crop", "d4", "light_noise")
 
 
 def resolve_tta(value):
+    if value is True:
+        value = DEFAULT_TTA
+    elif value is False:
+        value = "none"
     if isinstance(value, TTA):
         return value
     if value not in PROFILES:
         raise ValueError(f"tta must be a TTA object or one of {PROFILES}")
     if value == "none":
         return None
-    if value == "hflip":
+    if value == "padded_scale":
+        views = (View(), EdgePad(0.08), EdgePad(0.15))
+    elif value == "hflip":
         views = (View(), View(hflip=True))
     elif value == "light_noise":
         views = (View(), SaltAndPepper(seed=0), SaltAndPepper(seed=1))

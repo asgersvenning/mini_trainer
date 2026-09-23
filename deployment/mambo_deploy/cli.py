@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .augmentation import PROFILES
+from .augmentation import DEFAULT_TTA, PROFILES
 from .predictor import Predictor
 
 
@@ -22,7 +22,14 @@ def run(default_backend="onnx", default_device="cpu"):
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="auto")
-    parser.add_argument("--tta", choices=PROFILES, default="none")
+    parser.add_argument(
+        "--tta",
+        nargs="?",
+        const=DEFAULT_TTA,
+        choices=PROFILES,
+        default="none",
+        help="Enable TTA (default recipe: padded_scale), or choose a recipe",
+    )
     parser.add_argument("--preprocess-workers", type=int, help="Preparation threads; defaults to --threads")
     parser.add_argument("--topk", type=int, default=1)
     parser.add_argument("--threshold", type=float, default=0)
