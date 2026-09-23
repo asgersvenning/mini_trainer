@@ -1,5 +1,10 @@
 # Why MAMBO v3 batch throughput plateaus
 
+This records the pre-optimization diagnosis at commit `a99b855`. See the
+[accelerated deployment qualification](mambo-accelerated-deployment.md) for the
+implemented fixes and their new measurements. Historical preprocessing probes
+should be replayed from that commit, since the current adapter is optimized.
+
 The plateau comes from **serial, allocation-heavy CPU preprocessing plus a strict
 FP32 convolutional backend that gains little throughput beyond batch 8**. It is
 not a batch-size parameter being ignored. Forward hooks observed exactly

@@ -46,10 +46,18 @@ preparation. `batch_size=8` bounds model batches; returned results remain in mem
 For native inference, install the matching `mini_trainer` wheel with your chosen
 PyTorch/CUDA build and use `backend="torch"`. The checkpoint is loaded with
 `weights_only=True`; the architecture is constructed without pretrained downloads.
+CUDA PyTorch defaults to FP16 backbone autocast with an FP32 classifier and
+FP32 outputs. Set `precision="fp32"` to disable autocast, or
+`precision="bf16"` on CUDA devices with native BF16 support. Native inference
+respects the caller's PyTorch TF32 backend flags; reference benchmarks disable them.
 For ONNX CUDA, install `onnxruntime-gpu` instead of the CPU ONNX Runtime package,
 with its matching CUDA/cuDNN dependencies. Select `device="cuda:0"` explicitly.
 Unavailable CUDA raises an error rather than silently changing to CPU-only
-execution. ONNX CUDA may still place individual unsupported operators on CPU.
+execution. ONNX CUDA may still place individual unsupported operators on CPU. Its automatic
+precision enables TF32 using the standard FP32 graph; `precision="fp32"` disables
+TF32. ONNX FP16/BF16 is not selected by PyTorch autocast. CPU always uses FP32.
+The resolved choice is available as `predictor.effective_precision` and in result
+metadata; the CLI exposes the same `--precision` option.
 
 Portable results use NumPy arrays; embeddings are float32 `[images, 1280]` CPU
 arrays from the normalized preclassification stage. Prediction-only ONNX uses
@@ -84,13 +92,15 @@ mambo_predict -i moth.jpg --bundle /path/to/mambo-bundle --backend onnx --device
 Directory input recursively discovers images in sorted order. Outputs are
 `predictions.json` and `mini_metric.csv`; `--embeddings` also writes `embeddings.npy`.
 Use `--class-list`, `--batch-size`, `--topk` and `--threads` as needed. `--threads`
-controls ONNX CPU threads; native callers configure PyTorch threads. The standalone
+bounds parallel image preparation and controls ONNX CPU threads; native callers
+configure PyTorch model threads separately. Use `--threads 1` for serial preparation. The standalone
 wheel defaults to ONNX/CPU; the training-wheel entry point retains native/CUDA
 defaults, so explicit backend/device arguments are recommended in scripts.
 
 ## Qualification
 
-On all 58,640 Flemming images, PyTorch and ONNX return identical top-1 species,
+In the strict FP32 reference evaluation on all 58,640 Flemming images, PyTorch and
+ONNX return identical top-1 species,
 genus and family labels for the full list and both legacy/updated European presets.
 Northern Europe reaches **71.24% macro species accuracy** (v2: **68.52%**) and
 **70.79% micro species accuracy overall** (**82.04%** on images
@@ -101,28 +111,33 @@ CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
 this checks prediction consistency, not downstream embedding usefulness.
 
 On an i7-12800H / RTX 3080 Ti Laptop GPU, with four CPU threads and the legacy
-northern-Europe preset, warmed prediction-only measurements were:
+northern-Europe preset, the updated defaults deliver:
 
-| Runtime | CPU, one image | GPU, one image | GPU, batch 32 |
-|---|---:|---:|---:|
-| ONNX | 104 ms | 33 ms | 42 images/s |
-| PyTorch | 148 ms | 37 ms | 45 images/s |
+| Runtime | CPU, batch 1 | GPU, batch 1 | GPU, batch 8 | GPU, batch 32 |
+|---|---:|---:|---:|---:|
+| ONNX auto | 10.1 | 46.7 | 114.1 | 111.3 |
+| PyTorch auto | 5.7 | 29.8 | 126.7 | 136.2 |
 
-These include image preparation and result handling. First prediction including
-loading took about 0.38 s CPU / 1.65 s GPU for ONNX, versus 40–42 s for PyTorch;
-reuse a loaded predictor. ONNX also used less CPU process memory. Prefer it for
-new lightweight integrations; native PyTorch remains suitable for existing callers
-and persistent GPU workers. Embedding-mode results, variability, memory and the
-Linux/WSL qualification limits are in the [measured report](../docs/mambo-v3-evaluation.md).
+All speeds are **images per second**, including decoding, preparation and result
+handling. GPU batch-32 throughput improves by **2.62× ONNX / 3.06× PyTorch** over
+the original v3 FP32 pipeline. CPU gains are not uniform. First prediction including
+loading takes about 0.37 s CPU / 1.46 s GPU for ONNX, versus 42–43 s for PyTorch;
+reuse a loaded predictor. ONNX uses less host memory and suits lightweight
+integrations; native PyTorch suits existing callers and persistent GPU workers.
 
-The [v2-versus-v3 charts](../docs/mambo-release-comparison.md) compare quality,
-speed and memory for northern Europe, Europe and global, including the advantages
-and costs of each released pipeline, with macro metrics leading and full
-all/known-truth metric tables. The [batch-scaling diagnosis](../docs/mambo-batch-scaling.md)
-identifies serial CPU preparation and FP32 backbone work as the main throughput
-limits. V3 uses less host memory and is faster on CPU
-(v2 required a documented input cast here); v2 is faster at GPU batch 32. V2 also
-retains higher global micro species accuracy and family accuracy across these lists.
+Both automatic GPU variants were evaluated on all 58,640 Flemming images. Northern-
+Europe macro species accuracy is **71.25% PyTorch / 71.24% ONNX**; macro-F1 is
+**0.2543** for both. The largest macro-accuracy change from FP32 across five presets,
+three ranks and both truth populations is under 0.094 percentage points. BF16 has
+4,096-image qualification only. Small cross-precision label differences are expected.
+
+The [accelerated comparison and charts](../docs/mambo-accelerated-deployment.md)
+cover speed, memory, all/known-truth metrics and updated European lists. The
+[original v2/v3 comparison](../docs/mambo-release-comparison.md) preserves the FP32
+reference and explains the metric definitions. V3 improves northern-Europe macro
+accuracy over v2, but v2 retains slightly higher macro-F1 there and higher global
+micro species accuracy. Choose presets for the deployment region; see the
+[preset catalogue](../docs/model-presets.md).
 
 The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
 reproduction commands and UCloud handoff. In-domain evaluation, other operating

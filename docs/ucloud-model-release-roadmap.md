@@ -604,8 +604,11 @@ this release's critical path. Additional OS and clean CUDA installation checks
 are needed before making broader support claims.
 
 Batch scaling has been [diagnosed](mambo-batch-scaling.md): serial non-contiguous
-NumPy interpolation and the strict FP32 backbone limit throughput. Next qualify
-pixel-preserving preparation changes and bounded overlap; retain existing measured
-baselines until fresh end-to-end qualification. The broader
+NumPy interpolation and the strict FP32 backbone limited throughput. The
+[accelerated deployment defaults](mambo-accelerated-deployment.md) now use
+pixel-preserving preparation, bounded preparation threads, native backbone AMP
+and ONNX TF32 through existing facilities. Both automatic GPU variants have full
+Flemming evaluation; BF16 has subset qualification. No shared-core changes or
+new model artifacts were needed. The broader
 [metric baseline](mambo-release-comparison.md) now leads with macro scores and
 retains all/known-truth results at every rank.

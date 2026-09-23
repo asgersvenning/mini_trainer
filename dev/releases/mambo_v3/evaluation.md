@@ -27,6 +27,14 @@ python -m dev.releases.mambo_v3.run_local qualification \
   --root /path/to/flemming --output /path/to/new-subset-run
 ```
 
+The evaluation and timing commands retain `--precision fp32` by default to
+preserve the original reference protocol. Pass `--precision auto` to measure the
+current deployment defaults (native CUDA FP16 backbone, ONNX CUDA TF32, CPU FP32).
+The [accelerated comparison workflow](../../../docs/mambo-accelerated-deployment.md#reproduce)
+provides the full qualification and three-trial timing commands. The public
+`Predictor` and deployment CLI default to `auto`; every report records the resolved
+precision.
+
 Preparation joins all three archived truth ranks by original species/image identity
 and hashes local image bytes. It rejects missing/extra images and duplicate or
 incomplete truth. The seeded 256-image subset comes from the existing benchmark

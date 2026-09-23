@@ -1,5 +1,9 @@
 # MAMBO_v2 → v3: real-world deployment comparison
 
+The v3 figures below preserve the **original FP32 reference pipeline**. The
+[accelerated-default comparison](mambo-accelerated-deployment.md) adds the updated
+PyTorch FP16 / ONNX TF32 results and the complete-pipeline speed improvements.
+
 This compares the models and inference pipelines used by the two releases on the
 same **58,640 Flemming images** and the same laptop. **Northern Europe is the lead
 preset for Flemming**; Europe and global show how the result changes with a broader
