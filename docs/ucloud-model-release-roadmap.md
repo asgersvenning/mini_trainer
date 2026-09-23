@@ -14,6 +14,11 @@ ambiguity for membership-neutral additions such as Ireland. Adapter compatibilit
 and inference qualification remain outstanding.
 Local evaluation will use Flemming; the large in-domain dataset remains on UCloud
 and must be evaluated there using the original supplied split.
+The [public preset catalogue](model-presets.md) defines the expanded geographic
+selection, including Australia/Tasmania and deliberately overlapping regions.
+These are permissive guards against geographically nonsensical predictions,
+not native-distribution maps. Preserve these names, filters and counts in bundle
+metadata and API preset discovery when implementing the adapters.
 
 ## Branch and integration policy
 

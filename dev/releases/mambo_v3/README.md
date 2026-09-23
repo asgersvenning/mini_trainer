@@ -39,11 +39,22 @@ backbone; they are not standalone offline baseline bundles.
 
 ## Regional scope and construction
 
-The presets restrict possible species predictions. They are not geographic
-boundaries, exhaustive regional checklists, locality detection, or guarantees
-that an excluded species cannot occur in the region. They inherit the coverage,
-sampling and taxonomy of the training data. Changing the allowed classes also
-changes score normalization; confidence is conditional on the selected list.
+The release-facing [preset catalogue](../../../docs/model-presets.md) defines every
+preset, its geographic filter, species count and evidence threshold. It includes
+Australia (including Tasmania), Tasmania-only, the requested overlapping American,
+Asian, African, Mediterranean and Arctic regions, plus Oceania, Southeast Asia,
+East Asia and the Middle East. The northern-European scope lists ambiguous
+historical additions in parentheses.
+
+Presets aim to avoid most geographically nonsensical predictions while allowing
+species that **can be found** in a region. They do not describe natural/native
+distributions or where a species should occur. Introduced species, migrants and
+vagrants are eligible; no establishment-status filter is applied. Exclusion does
+not prove absence. Lists inherit metadata coverage and errors, sampling and
+taxonomy. Changing allowed classes changes score normalization; confidence is
+conditional on the selected list. The reconstruction details below concern the
+two unchanged legacy presets; new filters and thresholds are defined in
+[preset-definitions.toml](preset-definitions.toml).
 
 | Preset | Species | Construction and evidence | Limits |
 | --- | ---: | --- | --- |

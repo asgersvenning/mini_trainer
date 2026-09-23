@@ -1,0 +1,157 @@
+schema_version = 1
+source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
+model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
+definitions_sha256 = "9aecb12cf91616a7fecba830f5d34bbed7decad1876a914a705e2b86663389b9"
+exclusive_minimum_rows = 0
+
+[presets.europe]
+path = "presets/europe.classes"
+count = 3014
+exclusive_minimum_rows = 25
+selected_rows = 2079617
+species_before_threshold = 3132
+sha256 = "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
+
+[presets.north_europe]
+path = "presets/north_europe.classes"
+count = 1977
+exclusive_minimum_rows = 25
+selected_rows = 768497
+species_before_threshold = 2291
+sha256 = "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
+
+[presets.australia]
+path = "presets/australia.classes"
+count = 1907
+exclusive_minimum_rows = 0
+selected_rows = 465726
+species_before_threshold = 1907
+sha256 = "438894723315284f8c855a22593bceec25018ffa2a7844f67f391fb9bef258e7"
+
+[presets.tasmania]
+path = "presets/tasmania.classes"
+count = 401
+exclusive_minimum_rows = 0
+selected_rows = 4457
+species_before_threshold = 401
+sha256 = "b3a80867c42949d95a4780092bf26b7ff094adf18bcc59f2de86d5993076eba8"
+
+[presets.north_america]
+path = "presets/north_america.classes"
+count = 4551
+exclusive_minimum_rows = 0
+selected_rows = 2300391
+species_before_threshold = 4551
+sha256 = "cd026fbfa8495f9da227044884fb544af0fb2126033274d171cb2d6a5a54b567"
+
+[presets.central_america]
+path = "presets/central_america.classes"
+count = 2022
+exclusive_minimum_rows = 0
+selected_rows = 210173
+species_before_threshold = 2022
+sha256 = "aa89d57e723b5acd33ce82323853a219a85534f40d7cc44e6ea3df9726fe8908"
+
+[presets.south_america]
+path = "presets/south_america.classes"
+count = 1683
+exclusive_minimum_rows = 0
+selected_rows = 257026
+species_before_threshold = 1683
+sha256 = "d43148782784345fb1ba4842edf1d95b1f85fd0440729028237c33d3faa17acf"
+
+[presets.caribbean]
+path = "presets/caribbean.classes"
+count = 1092
+exclusive_minimum_rows = 0
+selected_rows = 28652
+species_before_threshold = 1092
+sha256 = "3434f6ae528d1b03502ecb4a6aaadb6931f56d6158e950f3267c2160fd208523"
+
+[presets.south_asia]
+path = "presets/south_asia.classes"
+count = 1929
+exclusive_minimum_rows = 0
+selected_rows = 177926
+species_before_threshold = 1929
+sha256 = "760f92644af8612f4b534f78a89c758e90506c52f3c793562e14991314bfdf6f"
+
+[presets.asia]
+path = "presets/asia.classes"
+count = 5336
+exclusive_minimum_rows = 0
+selected_rows = 1033931
+species_before_threshold = 5336
+sha256 = "f64bc11f9ac7f6fc26b21b3d595f0643390cabd8411d1380040e117a3dec0ebf"
+
+[presets.japan]
+path = "presets/japan.classes"
+count = 974
+exclusive_minimum_rows = 0
+selected_rows = 30076
+species_before_threshold = 974
+sha256 = "013efd64ada461805a007c203f6dc5ce48827c1bc449b0772f390fef8a403b1b"
+
+[presets.africa]
+path = "presets/africa.classes"
+count = 1129
+exclusive_minimum_rows = 0
+selected_rows = 149267
+species_before_threshold = 1129
+sha256 = "7391792f70c42282eada6fabd74bbba239587d6d49a991117ee6ef7e05942cbf"
+
+[presets.subsaharan_africa]
+path = "presets/subsaharan_africa.classes"
+count = 904
+exclusive_minimum_rows = 0
+selected_rows = 144918
+species_before_threshold = 904
+sha256 = "b9fa770116df2265519d83634a2be05a694073b00d3cc89ff94880b1622752aa"
+
+[presets.mediterranean]
+path = "presets/mediterranean.classes"
+count = 2874
+exclusive_minimum_rows = 0
+selected_rows = 660065
+species_before_threshold = 2874
+sha256 = "2fd31151b358bb5c049184d756bd7719ed907fe6b209d1a625c42082ada3fa10"
+
+[presets.arctic]
+path = "presets/arctic.classes"
+count = 6096
+exclusive_minimum_rows = 0
+selected_rows = 2496358
+species_before_threshold = 6096
+sha256 = "e6307e5a7ea2899e5a98ebae976ce147a2870914bcccea7fcb14908f8dbec876"
+
+[presets.oceania]
+path = "presets/oceania.classes"
+count = 2337
+exclusive_minimum_rows = 0
+selected_rows = 584477
+species_before_threshold = 2337
+sha256 = "cb0ae7907166a0d594c3426795de8f50eaeba551f2b78a599e2c394fd65e61ff"
+
+[presets.southeast_asia]
+path = "presets/southeast_asia.classes"
+count = 2031
+exclusive_minimum_rows = 0
+selected_rows = 172424
+species_before_threshold = 2031
+sha256 = "5ee08bf46f253eecd7a99afe25d126c3c13ea46c118a1bdb6b5d7fac4834b1e9"
+
+[presets.east_asia]
+path = "presets/east_asia.classes"
+count = 4447
+exclusive_minimum_rows = 0
+selected_rows = 659767
+species_before_threshold = 4447
+sha256 = "f8c292f1a907747c2254c9122e234df8315d979d65d01031d877befa737fdb8d"
+
+[presets.middle_east]
+path = "presets/middle_east.classes"
+count = 1330
+exclusive_minimum_rows = 0
+selected_rows = 24805
+species_before_threshold = 1330
+sha256 = "796dbb7a2a99bea640e9ff67845ca89bd2ca59774c150090720b75caed05321b"
