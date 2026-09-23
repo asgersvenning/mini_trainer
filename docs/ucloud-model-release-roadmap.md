@@ -4,6 +4,26 @@ Status: proposed development roadmap, 2026-09-23. This document does not publish
 artifacts or claim deployment qualification. Target: the completed 10–11 September
 2026 UCloud model, not a new training campaign.
 
+## Branch and integration policy
+
+Release development takes place on `release/mambo-v3`, created after the package
+minor-version bump from `0.2.0` to `0.3.0` on `master`. The package version is
+separate from the proposed `MAMBO_v3` model release tag; no release tag or public
+promotion is implied by creating this branch.
+
+Direct commits are limited to release assets, deployment adapters, presets,
+packaging, documentation and release-specific compatibility/evaluation tooling.
+Fixes or refactors to shared core code (including model loading, preprocessing,
+prediction, hierarchy and export internals) must originate on `master` or a
+dedicated feature/fix branch, pass their relevant checks, and then be merged into
+the release branch. Review the merge scope and validate affected combined behavior.
+Apply this rule to the existing browser/export branch too; integrate the required
+reviewed work rather than reimplementing core changes directly here.
+
+Classify a change by its purpose and affected boundary, not just its filename:
+release adapters may use existing core interfaces, but a prerequisite core fix
+remains a separate upstream change. Keep unrelated improvements out of this branch.
+
 ## Release objective and scope
 
 Ship a versioned successor to the public MAMBO deployment release that is easy to
