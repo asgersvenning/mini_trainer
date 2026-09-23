@@ -274,3 +274,41 @@ Follow-up from candidate-filter inference validation: `classification_module`
 caches an empty attribute name when passed a bare classifier head, causing a
 subsequent lookup to fail. Normal built backbone models are unaffected. Cover
 bare-head lookup separately rather than expanding the class-list CLI change.
+
+## Deferred portable prototype viewer completion
+
+The portable-viewer goal was paused for the prototype-coordinate research. The
+[bounded study](prototype-coordinate-study.md) is now recorded; viewer completion
+remains deferred. Resume the existing implementation; do not restart features already
+present in `feature/prototype-browser-inference` (`b174426`). The implementation
+plan and acceptance matrix currently live in that branch at
+[`docs/prototype-explorer-implementation.md`](https://github.com/asgersvenning/mini_trainer/blob/b174426/docs/prototype-explorer-implementation.md),
+with recorded qualification in `dev/prototype_space/portable-qualification.md`.
+The versioned `global-lepi-viewer-20260915-rc2` candidate has been published for
+manual inspection; candidate publication itself is no longer an outstanding task.
+
+Remaining TODOs:
+
+- [ ] Obtain and incorporate human desktop/mobile layout review of the live
+  candidate. Confirm physical-phone pinch zoom, camera capture, EXIF orientation,
+  large-image handling and actionable unsupported-format errors. Existing browser
+  checks are not a substitute for physical-device acceptance.
+- [ ] Finish review and integration of PR #3 against the then-current master;
+  resolve review findings and validate only the affected combined behavior.
+- [ ] Reconcile the implementation-plan status and qualification record with the
+  delivered candidate, actual review outcomes and any externally blocked checks.
+  Publish a new versioned candidate only if review requires changes; preserve the
+  original public production release.
+- [ ] Preserve the single model-scoped GBIF setting, shared client-side GBIF
+  names/photos, attributed prediction thumbnails and Explore/Predict/Settings
+  organization. These are implemented on the feature branch, but their acceptance
+  and integration remain part of completion.
+- [ ] Preserve class identity/order, numerical behavior, saved-view compatibility
+  and fixed-map t-SNE query placement through integration. Keep static hosting
+  independent of a Python/proxy taxonomy service.
+
+Use the existing architecture unless a framework has a demonstrated usability or
+maintenance benefit with an explained migration cost. This deferred increment
+must not change training/inference semantics or introduce new geometry. Broader
+browser support and more complete cached taxonomy/media remain separate roadmap
+work, not additional completion gates for this increment.
