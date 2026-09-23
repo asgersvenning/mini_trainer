@@ -7,7 +7,6 @@ import tomllib
 from pathlib import Path
 
 from dev.releases.mambo_v3.audit import HERE, sha256
-from dev.releases.mambo_v3.reconstruct_presets import membership
 
 ROOT = HERE.parents[2]
 
@@ -17,7 +16,16 @@ def select_region(table, rule):
     import pyarrow as pa
     import pyarrow.compute as pc
 
-    permitted = {"label", "scope", "countries", "continents", "excluded_countries", "state_province", "exclusive_minimum_rows"}
+    permitted = {
+        "label",
+        "scope",
+        "countries",
+        "continents",
+        "excluded_countries",
+        "state_province",
+        "minimum_regional_rows",
+        "minimum_global_rows",
+    }
     if unknown := set(rule) - permitted:
         raise ValueError(f"Unknown region fields: {sorted(unknown)}")
     mask = None
@@ -34,8 +42,14 @@ def select_region(table, rule):
     return table.filter(mask)
 
 
-def ordered_membership(counts, threshold, vocabulary):
-    chosen = membership(counts, threshold)
+def ordered_membership(counts, minimum, vocabulary, global_counts=None, global_minimum=0):
+    if global_minimum and global_counts is None:
+        raise ValueError("Global qualification requires global counts")
+    chosen = {
+        species
+        for species, count in counts.items()
+        if count >= minimum and (not global_minimum or global_counts.get(species, 0) >= global_minimum)
+    }
     if unknown := chosen - set(vocabulary):
         raise ValueError(f"Selected species missing from model: {sorted(unknown)}")
     return [label for label in vocabulary if label in chosen]
@@ -75,14 +89,18 @@ def build(metadata, evidence_root, write=False):
     table = pq.read_table(metadata, columns=["speciesKey", "countryCode", "continent", "stateProvince"])
     if table.num_rows != source["rows"] or table["speciesKey"].null_count:
         raise ValueError("Unexpected metadata rows or null species IDs")
-    threshold = definitions["exclusive_minimum_rows"]
+    regional_minimum = definitions["minimum_regional_rows"]
+    global_minimum = definitions["minimum_global_rows"]
+    global_counts = {row["values"]: row["counts"] for row in table["speciesKey"].value_counts().to_pylist()}
     outputs = {}
     manifest = [
-        "schema_version = 1",
+        "schema_version = 2",
+        f'qualification_status = "{definitions["qualification_status"]}"',
         f'source_sha256 = "{source["sha256"]}"',
         f'model_manifest_sha256 = "{manifest_item["sha256"]}"',
         f'definitions_sha256 = "{sha256(definitions_path)}"',
-        f"exclusive_minimum_rows = {threshold}",
+        f"minimum_regional_rows = {regional_minimum}",
+        f"minimum_global_rows = {global_minimum}",
     ]
     documentation = [
         "# Model preset scope",
@@ -99,22 +117,36 @@ def build(metadata, evidence_root, write=False):
         "Each row counts once even if it matches both a country and a continent predicate. "
         "Full uses all model species without a regional threshold. Lists retain the model's species order.",
         "",
+        f"**Provisional qualification:** new presets require at least {regional_minimum} regional rows and "
+        f"at least {global_minimum} global rows for a species. These inclusive thresholds are a working proposal, "
+        "pending the final release decision. They reduce weak occurrence evidence but do not prove that records are independent "
+        "or correctly geolocated: multiple images may belong to one observation. The global count measures available examples, "
+        "not demonstrated model quality. Legacy presets retain their historical >25 regional-row rule with no new global gate.",
+        "",
+        f"In this pinned snapshot every model species has at least {min(global_counts.get(label, 0) for label in vocabulary)} "
+        f"global rows; {sum(global_counts.get(label, 0) < global_minimum for label in vocabulary)} model species fall below "
+        f"the proposed global minimum of {global_minimum}. "
+        "Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, "
+        "and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.",
+        "",
         "Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries in northern Europe's scope "
         "have ambiguous historical inclusion and do not change its membership. The other presets are new release definitions. "
         "These are release assets; adapter/API discovery integration and preset-specific inference qualification are still pending.",
         "",
         "## Presets",
         "",
-        "| ID | Species | Minimum rows per species | Selected rows | Geographic scope |",
+        "| ID | Species | Minimum regional / global rows | Selected rows | Geographic scope |",
         "| --- | ---: | ---: | ---: | --- |",
         f"| `full` | {len(vocabulary):,} | — | — | All species in the pinned model. |",
     ]
     summaries = {}
     for name, rule in definitions["presets"].items():
-        region_threshold = rule.get("exclusive_minimum_rows", threshold)
+        region_minimum = rule.get("minimum_regional_rows", regional_minimum)
+        world_minimum = rule.get("minimum_global_rows", global_minimum)
         selected = select_region(table, rule)
         counts = {row["values"]: row["counts"] for row in selected["speciesKey"].value_counts().to_pylist()}
-        labels = ordered_membership(counts, region_threshold, vocabulary)
+        labels = ordered_membership(counts, region_minimum, vocabulary, global_counts, world_minimum)
+        regional_only = ordered_membership(counts, region_minimum, vocabulary)
         if not labels:
             raise ValueError(f"Empty preset: {name}")
         data = ("\n".join(labels) + "\n").encode()
@@ -128,13 +160,16 @@ def build(metadata, evidence_root, write=False):
                 f"[presets.{name}]",
                 f'path = "presets/{name}.classes"',
                 f"count = {len(labels)}",
-                f"exclusive_minimum_rows = {region_threshold}",
+                f"minimum_regional_rows = {region_minimum}",
+                f"minimum_global_rows = {world_minimum}",
+                f"excluded_by_global_gate_after_regional = {len(regional_only) - len(labels)}",
                 f"selected_rows = {selected.num_rows}",
                 f"species_before_threshold = {len(counts)}",
                 f'sha256 = "{digest}"',
             ]
         )
-        documentation.append(f"| `{name}` | {len(labels):,} | {region_threshold + 1} | {selected.num_rows:,} | {rule['scope']} |")
+        gate = f"{region_minimum} / {world_minimum or 'none'}"
+        documentation.append(f"| `{name}` | {len(labels):,} | {gate} | {selected.num_rows:,} | {rule['scope']} |")
         summaries[name] = len(labels)
     documentation.extend(["", "## Exact metadata filters", ""])
     for name, rule in definitions["presets"].items():

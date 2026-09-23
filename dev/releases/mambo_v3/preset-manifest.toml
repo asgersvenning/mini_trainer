@@ -1,13 +1,17 @@
-schema_version = 1
+schema_version = 2
+qualification_status = "provisional; pending final release decision"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "9aecb12cf91616a7fecba830f5d34bbed7decad1876a914a705e2b86663389b9"
-exclusive_minimum_rows = 0
+definitions_sha256 = "8c653a37a1d3c6d3ceeea05896cba7b75811a2b93f00b121e3ff2aa71302d79e"
+minimum_regional_rows = 3
+minimum_global_rows = 25
 
 [presets.europe]
 path = "presets/europe.classes"
 count = 3014
-exclusive_minimum_rows = 25
+minimum_regional_rows = 26
+minimum_global_rows = 0
+excluded_by_global_gate_after_regional = 0
 selected_rows = 2079617
 species_before_threshold = 3132
 sha256 = "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
@@ -15,143 +19,179 @@ sha256 = "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
 [presets.north_europe]
 path = "presets/north_europe.classes"
 count = 1977
-exclusive_minimum_rows = 25
+minimum_regional_rows = 26
+minimum_global_rows = 0
+excluded_by_global_gate_after_regional = 0
 selected_rows = 768497
 species_before_threshold = 2291
 sha256 = "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
 
 [presets.australia]
 path = "presets/australia.classes"
-count = 1907
-exclusive_minimum_rows = 0
+count = 1874
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 465726
 species_before_threshold = 1907
-sha256 = "438894723315284f8c855a22593bceec25018ffa2a7844f67f391fb9bef258e7"
+sha256 = "04892d628263fa751c268693fccd9afd480a819b4896791ac5e0219b8467cb53"
 
 [presets.tasmania]
 path = "presets/tasmania.classes"
-count = 401
-exclusive_minimum_rows = 0
+count = 274
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 4457
 species_before_threshold = 401
-sha256 = "b3a80867c42949d95a4780092bf26b7ff094adf18bcc59f2de86d5993076eba8"
+sha256 = "21248a60d54592bc4db4e638e6565b07ee37ad1911c7e7f4e4a8fd0fc49d913f"
 
 [presets.north_america]
 path = "presets/north_america.classes"
-count = 4551
-exclusive_minimum_rows = 0
+count = 4425
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 2300391
 species_before_threshold = 4551
-sha256 = "cd026fbfa8495f9da227044884fb544af0fb2126033274d171cb2d6a5a54b567"
+sha256 = "2707b4956327c31e719331cc2c40cd457f3d1fa67896a831d26a3e7e9accb44f"
 
 [presets.central_america]
 path = "presets/central_america.classes"
-count = 2022
-exclusive_minimum_rows = 0
+count = 1639
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 210173
 species_before_threshold = 2022
-sha256 = "aa89d57e723b5acd33ce82323853a219a85534f40d7cc44e6ea3df9726fe8908"
+sha256 = "835b3447932cc142dd7c470617e0ce5f948ec2d6f6119be7d06b78e365f79885"
 
 [presets.south_america]
 path = "presets/south_america.classes"
-count = 1683
-exclusive_minimum_rows = 0
+count = 1506
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 257026
 species_before_threshold = 1683
-sha256 = "d43148782784345fb1ba4842edf1d95b1f85fd0440729028237c33d3faa17acf"
+sha256 = "47ee75929656a4f66874861e54a05b8503aa7974ebb5eb3d1eef1a68dbf7b130"
 
 [presets.caribbean]
 path = "presets/caribbean.classes"
-count = 1092
-exclusive_minimum_rows = 0
+count = 876
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 28652
 species_before_threshold = 1092
-sha256 = "3434f6ae528d1b03502ecb4a6aaadb6931f56d6158e950f3267c2160fd208523"
+sha256 = "ebb9cfbb63a4ad434ae8fa49b2709e09de0df30f3d31a2f939846e41c9731dc3"
 
 [presets.south_asia]
 path = "presets/south_asia.classes"
-count = 1929
-exclusive_minimum_rows = 0
+count = 1552
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 177926
 species_before_threshold = 1929
-sha256 = "760f92644af8612f4b534f78a89c758e90506c52f3c793562e14991314bfdf6f"
+sha256 = "5d838de414acb5a4ca14a5098972bbd36c3078c44525584860f6e2e7a94f3849"
 
 [presets.asia]
 path = "presets/asia.classes"
-count = 5336
-exclusive_minimum_rows = 0
+count = 4993
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 1033931
 species_before_threshold = 5336
-sha256 = "f64bc11f9ac7f6fc26b21b3d595f0643390cabd8411d1380040e117a3dec0ebf"
+sha256 = "e29dff2ea39343eec16e9df64f4ad05743c37799a6c7a91db9a35305ab917a6b"
 
 [presets.japan]
 path = "presets/japan.classes"
-count = 974
-exclusive_minimum_rows = 0
+count = 697
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 30076
 species_before_threshold = 974
-sha256 = "013efd64ada461805a007c203f6dc5ce48827c1bc449b0772f390fef8a403b1b"
+sha256 = "8b3a9cd5874c26ecb5217e61f6402fb7e60082f3ebeea13273abe177c233a64b"
 
 [presets.africa]
 path = "presets/africa.classes"
-count = 1129
-exclusive_minimum_rows = 0
+count = 924
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 149267
 species_before_threshold = 1129
-sha256 = "7391792f70c42282eada6fabd74bbba239587d6d49a991117ee6ef7e05942cbf"
+sha256 = "471c14708f50d98e51b8513ec49e978fae360e1099b6f40491c008e9bd1d59c1"
 
 [presets.subsaharan_africa]
 path = "presets/subsaharan_africa.classes"
-count = 904
-exclusive_minimum_rows = 0
+count = 796
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 144918
 species_before_threshold = 904
-sha256 = "b9fa770116df2265519d83634a2be05a694073b00d3cc89ff94880b1622752aa"
+sha256 = "1cc936061b0037c71d60d5cdb74fc8af1817dd567e54dcd6904a6901009d9184"
 
 [presets.mediterranean]
 path = "presets/mediterranean.classes"
-count = 2874
-exclusive_minimum_rows = 0
+count = 2680
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 660065
 species_before_threshold = 2874
-sha256 = "2fd31151b358bb5c049184d756bd7719ed907fe6b209d1a625c42082ada3fa10"
+sha256 = "f203302f8bfdcb92aec580fa3f11e6ebda8c3886f5fd691379860408e84fd4e3"
 
 [presets.arctic]
 path = "presets/arctic.classes"
-count = 6096
-exclusive_minimum_rows = 0
+count = 5884
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 2496358
 species_before_threshold = 6096
-sha256 = "e6307e5a7ea2899e5a98ebae976ce147a2870914bcccea7fcb14908f8dbec876"
+sha256 = "b753af8455a3578aa2f2e1d9fbf4f349cefeb6f9fd257247027d36f1d6dad687"
 
 [presets.oceania]
 path = "presets/oceania.classes"
-count = 2337
-exclusive_minimum_rows = 0
+count = 2273
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 584477
 species_before_threshold = 2337
-sha256 = "cb0ae7907166a0d594c3426795de8f50eaeba551f2b78a599e2c394fd65e61ff"
+sha256 = "bf6f77aeb7700a0e1d46f7d51e5a45b842485a16d2f9777b3c5e61a899b84b47"
 
 [presets.southeast_asia]
 path = "presets/southeast_asia.classes"
-count = 2031
-exclusive_minimum_rows = 0
+count = 1672
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 172424
 species_before_threshold = 2031
-sha256 = "5ee08bf46f253eecd7a99afe25d126c3c13ea46c118a1bdb6b5d7fac4834b1e9"
+sha256 = "ad2f4d1ed1f78abd66594f59d9550383f37f96b9bdcda81138c11f64c3907ccd"
 
 [presets.east_asia]
 path = "presets/east_asia.classes"
-count = 4447
-exclusive_minimum_rows = 0
+count = 4123
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 659767
 species_before_threshold = 4447
-sha256 = "f8c292f1a907747c2254c9122e234df8315d979d65d01031d877befa737fdb8d"
+sha256 = "f32e57e3e186d994712542c8d2221346cc15c1db4090c6c3f62e90e5ee7abb78"
 
 [presets.middle_east]
 path = "presets/middle_east.classes"
-count = 1330
-exclusive_minimum_rows = 0
+count = 846
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
 selected_rows = 24805
 species_before_threshold = 1330
-sha256 = "796dbb7a2a99bea640e9ff67845ca89bd2ca59774c150090720b75caed05321b"
+sha256 = "2f74a654f035774373e25b9518b1d3d0724a456389647be6584dab4ab85261a9"

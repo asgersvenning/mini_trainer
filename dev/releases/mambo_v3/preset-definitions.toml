@@ -1,16 +1,20 @@
-schema_version = 1
-exclusive_minimum_rows = 0
+schema_version = 2
+qualification_status = "provisional; pending final release decision"
+minimum_regional_rows = 3
+minimum_global_rows = 25
 # Geographic predicates are OR-ed; state_province/excluded_countries then constrain that union.
 # Counts include all metadata splits, without additional deduplication.
 
 [presets.europe]
-exclusive_minimum_rows = 25
+minimum_regional_rows = 26
+minimum_global_rows = 0
 label = "Europe (legacy)"
 continents = ["EUROPE"]
 scope = "Records assigned EUROPE by the metadata, including European-labelled portions of transcontinental countries."
 
 [presets.north_europe]
-exclusive_minimum_rows = 25
+minimum_regional_rows = 26
+minimum_global_rows = 0
 label = "Northern Europe (legacy)"
 countries = ["DE", "DK", "EE", "FI", "LT", "LV", "NL", "NO", "PL", "SE"]
 scope = "Germany, Denmark, Estonia, Finland, Lithuania, Latvia, Netherlands, Norway, Poland, Sweden (Ireland, Iceland, Åland, Faroe Islands, Guernsey, Isle of Man, Jersey, Svalbard/Jan Mayen: ambiguous historical inclusion; adding any or all leaves the species list unchanged)."

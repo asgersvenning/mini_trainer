@@ -44,10 +44,19 @@ def test_union_does_not_duplicate_rows_and_exclusion_overrides_continent():
 
 
 def test_membership_preserves_model_order_and_rejects_unknown_species():
-    assert ordered_membership({"a": 26, "b": 25, "c": 80}, 25, ["c", "b", "a"]) == ["c", "a"]
-    assert ordered_membership({"a": 1, "b": 0}, 0, ["b", "a"]) == ["a"]
+    assert ordered_membership({"a": 26, "b": 25, "c": 80}, 26, ["c", "b", "a"]) == ["c", "a"]
+    assert ordered_membership({"a": 1, "b": 0}, 1, ["b", "a"]) == ["a"]
     with pytest.raises(ValueError, match="missing from model"):
         ordered_membership({"unknown": 26}, 25, ["a"])
+
+
+def test_qualification_requires_both_inclusive_minima():
+    regional = {"boundary": 3, "few_local": 2, "few_global": 10, "strong": 5, "missing": 3}
+    worldwide = {"boundary": 25, "few_local": 100, "few_global": 24, "strong": 50}
+    vocabulary = ["strong", "boundary", "few_local", "few_global", "missing"]
+    assert ordered_membership(regional, 3, vocabulary, worldwide, 25) == ["strong", "boundary"]
+    with pytest.raises(ValueError, match="requires global counts"):
+        ordered_membership(regional, 3, vocabulary, global_minimum=25)
 
 
 def test_misspelled_or_empty_filter_fails_closed():
