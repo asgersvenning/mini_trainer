@@ -1,8 +1,17 @@
 # UCloud model release roadmap
 
-Status: proposed development roadmap, 2026-09-23. This document does not publish
+Status: release preparation started, 2026-09-23. This document does not publish
 artifacts or claim deployment qualification. Target: the completed 10–11 September
 2026 UCloud model, not a new training campaign.
+
+The [first input-audit increment](../dev/releases/mambo_v3/README.md) now pins and
+verifies 44 retrieved files, including candidate PyTorch/ONNX weights and historical
+MAMBO weights. It recovers both regional presets, confirms identical old/new class
+and parent mappings, and captures a small legacy output fixture. Its regional-scope
+table distinguishes the established Europe threshold from unresolved geographic
+provenance. Adapter compatibility and inference qualification remain outstanding.
+Local evaluation will use Flemming; the large in-domain dataset remains on UCloud
+and must be evaluated there using the original supplied split.
 
 ## Branch and integration policy
 
@@ -201,8 +210,9 @@ Store regional lists with provenance and hashes, and disclose excluded true labe
 
 **Done when:** immutable candidate and baseline inventories exist, compatibility
 fixtures are specified, and release identity/default decisions are recorded. The
-public artifact location and candidate hash are now known; remaining binary
-verification and historical-baseline access still gate certification.
+public artifacts and historical weights have now been retrieved and hashed; see
+the input-audit increment above. Training-revision/best-epoch provenance and full
+wrapper/CLI fixtures remain outstanding before compatibility certification.
 
 ## 2. Build a self-contained portable bundle — P0
 
