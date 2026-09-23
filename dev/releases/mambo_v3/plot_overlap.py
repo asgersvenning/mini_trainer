@@ -8,6 +8,15 @@ from pathlib import Path
 from dev.releases.mambo_v3.audit import HERE, sha256
 
 ASSETS = HERE.parents[2] / "docs/assets"
+# Presentation groups, not mutually exclusive biogeographic classifications.
+DISPLAY_GROUPS = (
+    ("north_america", "central_america", "caribbean", "south_america"),
+    ("arctic", "europe", "north_europe"),
+    ("mediterranean", "middle_east"),
+    ("africa", "subsaharan_africa"),
+    ("asia", "south_asia", "southeast_asia", "east_asia", "japan"),
+    ("oceania", "australia", "tasmania"),
+)
 
 
 def overlap(left, right):
@@ -26,7 +35,9 @@ def render(preview=None):
     manifest = tomllib.loads((HERE / "preset-manifest.toml").read_text())
     if sha256(HERE / "preset-definitions.toml") != manifest["definitions_sha256"]:
         raise ValueError("Rebuild presets before plotting modified definitions")
-    names = list(manifest["presets"])
+    names = [name for group in DISPLAY_GROUPS for name in group]
+    if len(names) != len(set(names)) or set(names) != set(manifest["presets"]):
+        raise ValueError("Update display groups to include every preset exactly once")
     sets = {}
     for name, item in manifest["presets"].items():
         path = HERE / item["path"]
@@ -52,6 +63,11 @@ def render(preview=None):
         ax.set_xticks(range(len(names)), labels, rotation=60, ha="right", rotation_mode="anchor")
         ax.set_yticks(range(len(names)), labels)
         ax.set_title(title, fontsize=15, pad=18)
+        boundary = 0
+        for group in DISPLAY_GROUPS[:-1]:
+            boundary += len(group)
+            ax.axhline(boundary - 0.5, color="white", linewidth=1.4)
+            ax.axvline(boundary - 0.5, color="white", linewidth=1.4)
         for i in range(len(names)):
             for j in range(len(names)):
                 value = values[i, j]
