@@ -19,6 +19,16 @@ label = "Northern Europe (legacy)"
 countries = ["DE", "DK", "EE", "FI", "LT", "LV", "NL", "NO", "PL", "SE"]
 scope = "Germany, Denmark, Estonia, Finland, Lithuania, Latvia, Netherlands, Norway, Poland, Sweden (Ireland, Iceland, Åland, Faroe Islands, Guernsey, Isle of Man, Jersey, Svalbard/Jan Mayen: ambiguous historical inclusion; adding any or all leaves the species list unchanged)."
 
+[presets.europe_v3]
+label = "Europe (updated)"
+continents = ["EUROPE"]
+scope = "Same EUROPE metadata filter as legacy europe, including European-labelled portions of transcontinental countries; updated occurrence thresholds only."
+
+[presets.north_europe_v3]
+label = "Northern Europe (updated)"
+countries = ["DE", "DK", "EE", "FI", "LT", "LV", "NL", "NO", "PL", "SE"]
+scope = "Germany, Denmark, Estonia, Finland, Lithuania, Latvia, Netherlands, Norway, Poland, Sweden. Same explicit country filter as reconstructed legacy north_europe; updated occurrence thresholds only. The UK and historically ambiguous additions are not included in this definition."
+
 [presets.australia]
 label = "Australia including Tasmania"
 countries = ["AU"]

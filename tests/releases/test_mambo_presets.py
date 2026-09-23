@@ -11,6 +11,25 @@ pa = pytest.importorskip("pyarrow")
 RULES = tomllib.loads((HERE / "preset-definitions.toml").read_text())["presets"]
 
 
+@pytest.mark.parametrize("legacy", ["europe", "north_europe"])
+def test_updated_european_lists_preserve_geography_and_legacy_membership(legacy):
+    definitions = tomllib.loads((HERE / "preset-definitions.toml").read_text())
+    updated = f"{legacy}_v3"
+    descriptive = {"label", "scope", "minimum_regional_rows", "minimum_global_rows"}
+    assert {k: v for k, v in RULES[legacy].items() if k not in descriptive} == {
+        k: v for k, v in RULES[updated].items() if k not in descriptive
+    }
+    assert RULES[updated].get("minimum_regional_rows", definitions["minimum_regional_rows"]) == 3
+    assert RULES[updated].get("minimum_global_rows", definitions["minimum_global_rows"]) == 25
+    old = (HERE / "presets" / f"{legacy}.classes").read_text().splitlines()
+    new = (HERE / "presets" / f"{updated}.classes").read_text().splitlines()
+    assert set(old) < set(new)
+    assert [label for label in new if label in set(old)] == old
+    changes = tomllib.loads((HERE / "preset-updates.toml").read_text())["updates"][updated]
+    assert changes["added"] == [label for label in new if label not in set(old)]
+    assert changes["removed"] == []
+
+
 def countries_selected(name, countries):
     table = pa.table({"countryCode": countries, "continent": [""] * len(countries)})
     return select_region(table, RULES[name])["countryCode"].to_pylist()

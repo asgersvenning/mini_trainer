@@ -11,7 +11,7 @@ ASSETS = HERE.parents[2] / "docs/assets"
 # Presentation groups, not mutually exclusive biogeographic classifications.
 DISPLAY_GROUPS = (
     ("north_america", "central_america", "caribbean", "south_america"),
-    ("arctic", "europe", "north_europe"),
+    ("arctic", "europe", "europe_v3", "north_europe", "north_europe_v3"),
     ("mediterranean", "middle_east"),
     ("africa", "north_africa", "subsaharan_africa", "madagascar"),
     ("asia", "south_asia", "southeast_asia", "east_asia", "japan"),
@@ -56,7 +56,13 @@ def render(preview=None):
                 writer.writerow([left, right, shared, f"{jaccard * 100:.6f}", f"{coverage * 100:.6f}"])
     plt.rcParams.update({"svg.hashsalt": "mambo-preset-overlap-v1", "font.size": 9})
     fig, axes = plt.subplots(1, 2, figsize=(27, 15), layout="constrained")
-    display_names = {"oceania_excluding_australia_nz": "oceania excl. AU/NZ"}
+    display_names = {
+        "oceania_excluding_australia_nz": "oceania excl. AU/NZ",
+        "europe": "Europe (legacy)",
+        "europe_v3": "Europe (updated)",
+        "north_europe": "N. Europe (legacy)",
+        "north_europe_v3": "N. Europe (updated)",
+    }
     labels = [f"{display_names.get(name, name.replace('_', ' '))} ({len(sets[name]):,})" for name in names]
     for ax, metric, title in zip(axes, (1, 2), ("Jaccard: shared / union (%)", "Coverage: row species also in column (%)")):
         values = np.array([[cell[metric] * 100 for cell in row] for row in scores])

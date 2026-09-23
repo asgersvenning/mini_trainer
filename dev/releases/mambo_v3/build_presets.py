@@ -156,9 +156,11 @@ def build(metadata, evidence_root, write=False):
         "Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, "
         "and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.",
         "",
-        "Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries in northern Europe's scope "
-        "have ambiguous historical inclusion and do not change its membership. The other presets are new release definitions. "
-        "These are release assets; adapter/API discovery integration and preset-specific inference qualification are still pending.",
+        "`europe` and `north_europe` preserve MAMBO_v2 membership and the default remains legacy Europe. "
+        "Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. "
+        "Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; "
+        "that equivalence does not establish equivalence at the lower threshold, so they are not silently added. "
+        "The deployment API discovers all lists from the bundle; preset-specific quality evaluation remains pending.",
         "",
         "## Presets",
         "",
@@ -166,7 +168,7 @@ def build(metadata, evidence_root, write=False):
         "| --- | ---: | ---: | ---: | ---: | --- |",
         f"| `full` | {len(vocabulary):,} | None | None | — | All species in the pinned model. |",
     ]
-    summaries = {}
+    summaries, memberships = {}, {}
     for name, rule in definitions["presets"].items():
         region_minimum = rule.get("minimum_regional_rows", regional_minimum)
         world_minimum = rule.get("minimum_global_rows", global_minimum)
@@ -199,6 +201,34 @@ def build(metadata, evidence_root, write=False):
             f"| `{name}` | {len(labels):,} | {region_minimum} | {world_minimum or 'None'} | {selected.num_rows:,} | {rule['scope']} |"
         )
         summaries[name] = len(labels)
+        memberships[name] = labels
+    changes = ["schema_version = 1", f'source_sha256 = "{source["sha256"]}"']
+    documentation.extend(
+        [
+            "",
+            "## Updated European presets",
+            "",
+            "| Updated ID | Legacy ID | Added species | Removed species |",
+            "| --- | --- | ---: | ---: |",
+        ]
+    )
+    for legacy in ("europe", "north_europe"):
+        updated = f"{legacy}_v3"
+        old_set, new_set = set(memberships[legacy]), set(memberships[updated])
+        added = [label for label in memberships[updated] if label not in old_set]
+        removed = [label for label in memberships[legacy] if label not in new_set]
+        changes.extend(
+            ["", f"[updates.{updated}]", f'legacy = "{legacy}"', f"added = {json.dumps(added)}", f"removed = {json.dumps(removed)}"]
+        )
+        documentation.append(f"| `{updated}` | `{legacy}` | {len(added)} | {len(removed)} |")
+    documentation.extend(
+        [
+            "",
+            "The [exact added/removed species IDs](../dev/releases/mambo_v3/preset-updates.toml) "
+            "retain model order. Geographic filters are unchanged; only qualification thresholds differ.",
+        ]
+    )
+    outputs[HERE / "preset-updates.toml"] = ("\n".join(changes) + "\n").encode()
     documentation.extend(
         [
             "",

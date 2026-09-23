@@ -84,6 +84,7 @@ def build(source, destination):
             }
         write_json("presets.json", regions)
         shutil.copyfile(HERE / "preset-definitions.toml", root / "PRESET_DEFINITIONS.toml")
+        shutil.copyfile(HERE / "preset-updates.toml", root / "PRESET_UPDATES.toml")
         shutil.copyfile(HERE.parents[2] / "deployment/README.md", root / "README.md")
         shutil.copyfile(HERE.parents[2] / "LICENSE", root / "CODE_LICENSE")
         lines = [
@@ -118,7 +119,7 @@ def build(source, destination):
         manifest = {
             "schema": "mambo-release-v1",
             "model_id": "MAMBO_v3-candidate",
-            "artifact_revision": 1,
+            "artifact_revision": 2,
             "package_version": "0.3.0",
             "score_semantics": "hierarchical-leaf-logits-logsumexp-v1",
             "profiles": profiles,

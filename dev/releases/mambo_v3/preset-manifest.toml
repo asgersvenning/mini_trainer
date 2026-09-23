@@ -2,7 +2,7 @@ schema_version = 2
 qualification_status = "provisional; pending final release decision"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "5ce9da8954624c5d41ed411c5339ffb4b8cc75fdadcc689a3e8c54ad2c2fa700"
+definitions_sha256 = "4f6f269417c3c3aa1dbba184230c8bf1d34bd839bda149375bd0fec390630e97"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 
@@ -25,6 +25,26 @@ excluded_by_global_gate_after_regional = 0
 selected_rows = 768497
 species_before_threshold = 2291
 sha256 = "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
+
+[presets.europe_v3]
+path = "presets/europe_v3.classes"
+count = 3086
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2079617
+species_before_threshold = 3132
+sha256 = "465e644095abe381b7b6a44f7ce05d5da0ba77bf75b76e1c53d0eba6c89f487a"
+
+[presets.north_europe_v3]
+path = "presets/north_europe_v3.classes"
+count = 2199
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 768497
+species_before_threshold = 2291
+sha256 = "78ee7693c7352244cd8a99b7276196aa32de27e620ed66648c4087f826d47092"
 
 [presets.australia]
 path = "presets/australia.classes"

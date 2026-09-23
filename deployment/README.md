@@ -29,6 +29,9 @@ it with `class_list=["GBIF_SPECIES_ID", ...]` (also accepts a UTF-8 filename).
 Unknown IDs and empty lists are errors; duplicates are removed and model ordering
 is preserved. Filtering happens before ranking and hierarchy normalization.
 See PRESETS.md in the bundle for short geographic scopes and provisional cutoffs.
+Use `europe_v3` or `north_europe_v3` for updated lists requiring at least 3 regional
+and 25 global records. `europe` (the default) and `north_europe` retain their legacy
+membership. The updated versions use the same explicit geographic filters.
 Presets retain species with qualifying occurrence records; they are practical
 prediction filters, not maps of native distributions or exhaustive checklists.
 

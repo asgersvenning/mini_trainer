@@ -10,7 +10,7 @@ Each geographic preset applies the minimum row count shown below. Counts use all
 
 In this pinned snapshot every model species has at least 50 global rows; 0 model species fall below the proposed global minimum of 25. Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.
 
-Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries in northern Europe's scope have ambiguous historical inclusion and do not change its membership. The other presets are new release definitions. These are release assets; adapter/API discovery integration and preset-specific inference qualification are still pending.
+`europe` and `north_europe` preserve MAMBO_v2 membership and the default remains legacy Europe. Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; that equivalence does not establish equivalence at the lower threshold, so they are not silently added. The deployment API discovers all lists from the bundle; preset-specific quality evaluation remains pending.
 
 ## Presets
 
@@ -19,6 +19,8 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `full` | 12,632 | None | None | — | All species in the pinned model. |
 | `europe` | 3,014 | 26 | None | 2,079,617 | Records assigned EUROPE by the metadata, including European-labelled portions of transcontinental countries. |
 | `north_europe` | 1,977 | 26 | None | 768,497 | Germany, Denmark, Estonia, Finland, Lithuania, Latvia, Netherlands, Norway, Poland, Sweden (Ireland, Iceland, Åland, Faroe Islands, Guernsey, Isle of Man, Jersey, Svalbard/Jan Mayen: ambiguous historical inclusion; adding any or all leaves the species list unchanged). |
+| `europe_v3` | 3,086 | 3 | 25 | 2,079,617 | Same EUROPE metadata filter as legacy europe, including European-labelled portions of transcontinental countries; updated occurrence thresholds only. |
+| `north_europe_v3` | 2,199 | 3 | 25 | 768,497 | Germany, Denmark, Estonia, Finland, Lithuania, Latvia, Netherlands, Norway, Poland, Sweden. Same explicit country filter as reconstructed legacy north_europe; updated occurrence thresholds only. The UK and historically ambiguous additions are not included in this definition. |
 | `australia` | 1,874 | 3 | 25 | 465,726 | All Australian records, including Tasmania and other territories recorded under AU; not all Oceania. |
 | `tasmania` | 274 | 3 | 25 | 4,457 | Australian records explicitly assigned stateProvince Tasmania. Species recorded there, not only endemic species; blank/other state values are excluded. |
 | `north_america` | 4,425 | 3 | 25 | 2,300,391 | Canada, United States, Mexico, Greenland, Bermuda, Saint Pierre and Miquelon. Whole countries, including US records outside the continental mainland. |
@@ -41,6 +43,15 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `east_asia` | 3,430 | 3 | 25 | 549,482 | China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russian records assigned continent ASIA. This includes all Asian Russia, not only the Russian Far East; European or unassigned Russian records are excluded. |
 | `middle_east` | 846 | 3 | 25 | 24,805 | Turkey, Cyprus, Syria, Lebanon, Israel, Palestine, Jordan, Iraq, Iran, Kuwait, Saudi Arabia, Bahrain, Qatar, UAE, Oman, Yemen, Egypt, Armenia, Azerbaijan, Georgia, Afghanistan and Pakistan. Deliberate overlap with Mediterranean, Africa and South Asia. |
 
+## Updated European presets
+
+| Updated ID | Legacy ID | Added species | Removed species |
+| --- | --- | ---: | ---: |
+| `europe_v3` | `europe` | 72 | 0 |
+| `north_europe_v3` | `north_europe` | 222 | 0 |
+
+The [exact added/removed species IDs](../dev/releases/mambo_v3/preset-updates.toml) retain model order. Geographic filters are unchanged; only qualification thresholds differ.
+
 ## Species overlap
 
 ![Pairwise species overlap and directional coverage](assets/preset-overlap.svg)
@@ -53,6 +64,8 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 
 - **europe** (Europe (legacy)): `continent` in `EUROPE`.
 - **north_europe** (Northern Europe (legacy)): `countryCode` in `DE, DK, EE, FI, LT, LV, NL, NO, PL, SE`.
+- **europe_v3** (Europe (updated)): `continent` in `EUROPE`.
+- **north_europe_v3** (Northern Europe (updated)): `countryCode` in `DE, DK, EE, FI, LT, LV, NL, NO, PL, SE`.
 - **australia** (Australia including Tasmania): `countryCode` in `AU`.
 - **tasmania** (Tasmania only): (`countryCode` in `AU`) AND `stateProvince` in `Tasmania`.
 - **north_america** (North America): `countryCode` in `CA, US, MX, GL, BM, PM`.
