@@ -59,7 +59,10 @@ features are reused across masks only after equality of the learned states is
 established. Image bytes are checked against the manifest. Every original truth
 label remains in the canonical CSVs.
 
-Replace `qualification` with `full` for the full dataset. For every list, run the
+Replace `qualification` with `full` for the full dataset, using
+`--output /path/to/v2-full-phase/v2-full` for the chart aggregator's directory layout.
+Alternatively, use `release_comparison full` with the shared arguments shown below.
+For every list, run the
 pinned metric environment using `dev.releases.mambo_v3.metrics --source ... --output ...`
 as described in [evaluation.md](evaluation.md). `compare_quality.compare` with
 `presets=["north_europe", "europe", "full"]` verifies paired v2/v3 identities,
@@ -85,7 +88,16 @@ CPU batches are 1/8; GPU batches are 1/8/32. Calls include decoding, preprocessi
 hierarchy reduction and completed CPU results. Timings cover predictions only;
 existing v3 embedding-mode evidence remains in the separate local report.
 
-V2 uses the original public API for timing: an initial 512-pixel resize, BioCLIP
+The first unadapted v2 CPU attempt is retained as failed evidence: its bfloat16
+preprocessed input meets float32 convolution weights and raises
+`RuntimeError: expected scalar type BFloat16 but found Float` in this environment.
+The ancillary CPU benchmark uses `--cpu-float32`, a caller-side wrapper that casts
+the original preprocessor's output to float32. It preserves its values and leaves
+all historical source and learned weights unchanged. The orchestrator selects this
+flag only for CPU, records it explicitly, and the CPU charts label the adapter.
+It is not a shipped core fix. GPU and full quality use the original path.
+
+V2 uses the original public API for GPU timing: an initial 512-pixel resize, BioCLIP
 preprocessing to 224 pixels, and CUDA float16 autocast. V3 uses the qualified
 384-pixel recipe and FP32. Both disable TF32. This is the intended real-world comparison of the models and pipelines shipped
 in the two versions. Their resolution and precision choices explain the results. V2 has no qualified ONNX
@@ -122,3 +134,15 @@ data are intentional release documentation assets.
 In-domain comparison remains UCloud work using the original test split. This local
 comparison neither changes thresholds/presets from test results nor publishes a
 release. Core loading optimizations require a separate feature/fix branch.
+
+The local run retains full v2 quality under
+`local-evidence/mambo-release-comparison-quality/v2-full/` and successful timing
+trials under `local-evidence/mambo-release-comparison-performance-cpu-adapter/`.
+The original unadapted CPU failure remains in
+`local-evidence/mambo-release-comparison-performance/trial-0-v2-cpu/report.json`.
+Earlier v3 quality and timing inputs remain under `local-evidence/mambo-v3/`.
+
+All 18 additional timing processes completed. An interrupted final v2 GPU trial
+is retained separately and excluded; its successful replacement is
+`trial-2-v2-cuda-0-retry1`. Every reported timing cell contains exactly three
+successful trials. The original interrupted plan remains as `interrupted-plan.json`.

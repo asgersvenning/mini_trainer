@@ -36,6 +36,8 @@ def run(args):
                 name = f"trial-{trial}-{release}-{device.replace(':', '-')}"
                 if release == "v2":
                     command = [*legacy, "--device", device]
+                    if device == "cpu":
+                        command.append("--cpu-float32")
                 else:
                     command = [
                         str(args.v3_python),

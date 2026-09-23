@@ -122,6 +122,12 @@ def run(args):
         report["before"] = snapshot()
         start = time.perf_counter()
         predictor = Predictor(device=args.device, model=str(args.weights / FILENAMES["full"]))
+        report["cpu_input_cast"] = args.cpu_float32
+        if args.cpu_float32:
+            if args.device != "cpu":
+                raise ValueError("The ancillary float32 input adapter is CPU-only")
+            original_preproc = predictor.preproc
+            predictor.preproc = lambda image: original_preproc(image).float()
         first = predictor.predict(str(args.root / records[0]["path"]))
         list(first)  # Complete CPU label/confidence materialization before stopping the clock.
         report["load_and_first_image_seconds"] = time.perf_counter() - start
@@ -210,6 +216,7 @@ def main():
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--count", type=int)
+    parser.add_argument("--cpu-float32", action="store_true", help="Ancillary CPU run: cast original preprocessor output to float32")
     args = parser.parse_args()
     if args.phase == "qualification" and args.count is None:
         args.count = 256

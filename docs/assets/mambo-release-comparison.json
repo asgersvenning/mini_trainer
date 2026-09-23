@@ -1,0 +1,1192 @@
+{
+  "quality": [
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.68712482946794,
+          "micro_accuracy_known": 0.7963358235503379
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58639,
+          "list_coverage": 0.9999829467939972,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7922919508867667,
+          "micro_accuracy_known": 0.7923054622350313
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9449351978171896,
+          "micro_accuracy_known": 0.9449351978171896
+        }
+      },
+      "macro_f1_all": 0.2575380033854696,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.669594133697135,
+          "micro_accuracy_known": 0.7760188149729238
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7764495225102319,
+          "micro_accuracy_known": 0.7764495225102319
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9423090040927694,
+          "micro_accuracy_known": 0.9423090040927694
+        }
+      },
+      "macro_f1_all": 0.19998360830548267,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.5936050477489768,
+          "micro_accuracy_known": 0.6879520929681016
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7285129604365621,
+          "micro_accuracy_known": 0.7285129604365621
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9265006821282401,
+          "micro_accuracy_known": 0.9265006821282401
+        }
+      },
+      "macro_f1_all": 0.08990868448899293,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5"
+    },
+    {
+      "model": "v3",
+      "preset": "north_europe",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.7078956343792633,
+          "micro_accuracy_known": 0.8204079212617099
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58639,
+          "list_coverage": 0.9999829467939972,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7936732605729877,
+          "micro_accuracy_known": 0.7936867954774126
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9298090040927695,
+          "micro_accuracy_known": 0.9298090040927695
+        }
+      },
+      "macro_f1_all": 0.25450880594788156,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
+    },
+    {
+      "model": "v3",
+      "preset": "europe",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.6894952251023192,
+          "micro_accuracy_known": 0.7990829677062334
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7793656207366985,
+          "micro_accuracy_known": 0.7793656207366985
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9286323328785812,
+          "micro_accuracy_known": 0.9286323328785812
+        }
+      },
+      "macro_f1_all": 0.19931852384419563,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
+    },
+    {
+      "model": "v3",
+      "preset": "full",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.5843281036834925,
+          "micro_accuracy_known": 0.6772006798687695
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7058321964529332,
+          "micro_accuracy_known": 0.7058321964529332
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.903137789904502,
+          "micro_accuracy_known": 0.903137789904502
+        }
+      },
+      "macro_f1_all": 0.09709532327738138,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5"
+    },
+    {
+      "model": "v3",
+      "preset": "north_europe_v3",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.703206002728513,
+          "micro_accuracy_known": 0.8149729238309814
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7889154160982265,
+          "micro_accuracy_known": 0.7889154160982265
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9289222373806275,
+          "micro_accuracy_known": 0.9289222373806275
+        }
+      },
+      "macro_f1_all": 0.23669244246452395,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "78ee7693c7352244cd8a99b7276196aa32de27e620ed66648c4087f826d47092"
+    },
+    {
+      "model": "v3",
+      "preset": "europe_v3",
+      "ranks": {
+        "species": {
+          "images": 58640,
+          "known_images": 50598,
+          "list_coverage": 0.8628581173260573,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 522,
+          "micro_accuracy_all": 0.6880627557980901,
+          "micro_accuracy_known": 0.7974228230364837
+        },
+        "genus": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 322,
+          "micro_accuracy_all": 0.7779160982264666,
+          "micro_accuracy_known": 0.7779160982264666
+        },
+        "family": {
+          "images": 58640,
+          "known_images": 58640,
+          "list_coverage": 1.0,
+          "abstention_coverage": 1.0,
+          "truth_species_or_taxa": 23,
+          "micro_accuracy_all": 0.9254945429740792,
+          "micro_accuracy_known": 0.9254945429740792
+        }
+      },
+      "macro_f1_all": 0.19747553631500317,
+      "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+      "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
+      "list_sha256": "465e644095abe381b7b6a44f7ce05d5da0ba77bf75b76e1c53d0eba6c89f487a"
+    }
+  ],
+  "speed": [
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 779.0169740001147,
+      "p95_ms": 844.8682549969817,
+      "trial_min_ms": 765.1125749980565,
+      "trial_max_ms": 795.3343949993723,
+      "images_per_second": 1.2836690770230288
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 5850.575989999925,
+      "p95_ms": 5944.596474997525,
+      "trial_min_ms": 5746.777247000864,
+      "trial_max_ms": 5879.015160000563,
+      "images_per_second": 1.3673867348572124
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 786.2400800004252,
+      "p95_ms": 878.9685310002824,
+      "trial_min_ms": 761.7254659999162,
+      "trial_max_ms": 859.430982000049,
+      "images_per_second": 1.271876142462057
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 5863.136789001146,
+      "p95_ms": 6006.966568002099,
+      "trial_min_ms": 5482.436258000234,
+      "trial_max_ms": 5984.705701001076,
+      "images_per_second": 1.3644573353648284
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 796.1964119967888,
+      "p95_ms": 855.2797960001044,
+      "trial_min_ms": 780.1338070021302,
+      "trial_max_ms": 827.1140280012332,
+      "images_per_second": 1.255971497651051
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 5765.8902689981915,
+      "p95_ms": 5890.259110001352,
+      "trial_min_ms": 5732.572058997903,
+      "trial_max_ms": 5802.123346998997,
+      "images_per_second": 1.387470039624944
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 21.484739001607522,
+      "p95_ms": 29.487491003237665,
+      "trial_min_ms": 20.258914999431,
+      "trial_max_ms": 25.015052997332532,
+      "images_per_second": 46.5446659568533
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 184.61432399999467,
+      "p95_ms": 205.47707299920148,
+      "trial_min_ms": 180.04209799983073,
+      "trial_max_ms": 199.17996799995308,
+      "images_per_second": 43.33358228476481
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 32,
+      "median_ms": 386.83066299927304,
+      "p95_ms": 396.4832749989,
+      "trial_min_ms": 371.3045529984811,
+      "trial_max_ms": 390.7396550021076,
+      "images_per_second": 82.72353528515431
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 24.006794999877457,
+      "p95_ms": 30.195898001693422,
+      "trial_min_ms": 22.45696499812766,
+      "trial_max_ms": 26.05628300079843,
+      "images_per_second": 41.654873130924166
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 182.16871000186075,
+      "p95_ms": 210.70991599845001,
+      "trial_min_ms": 174.61328799981857,
+      "trial_max_ms": 198.96718300151406,
+      "images_per_second": 43.915335404846886
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 32,
+      "median_ms": 384.66329000220867,
+      "p95_ms": 399.98923299935996,
+      "trial_min_ms": 375.0903689979168,
+      "trial_max_ms": 393.06417599800625,
+      "images_per_second": 83.18963839730134
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 22.129188000690192,
+      "p95_ms": 28.487998999480624,
+      "trial_min_ms": 21.078697001939872,
+      "trial_max_ms": 23.72169799855328,
+      "images_per_second": 45.18918633475439
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 178.38607100202353,
+      "p95_ms": 190.12071899851435,
+      "trial_min_ms": 173.67241900137742,
+      "trial_max_ms": 178.83818200061796,
+      "images_per_second": 44.84655082688184
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "median_ms": 383.29957200039644,
+      "p95_ms": 395.5446789987036,
+      "trial_min_ms": 365.05659100293997,
+      "trial_max_ms": 387.3802570014959,
+      "images_per_second": 83.48561370156422
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 108.51240400006645,
+      "p95_ms": 123.77933399693575,
+      "trial_min_ms": 97.39962699677562,
+      "trial_max_ms": 113.84981300216168,
+      "images_per_second": 9.215536317851623
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 822.0081180006673,
+      "p95_ms": 870.8548600006907,
+      "trial_min_ms": 820.2729259974149,
+      "trial_max_ms": 846.277905999159,
+      "images_per_second": 9.732263982329071
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "europe_v3",
+      "batch": 1,
+      "median_ms": 114.8194630004582,
+      "p95_ms": 134.62799300032202,
+      "trial_min_ms": 105.08139800003846,
+      "trial_max_ms": 124.61581699972157,
+      "images_per_second": 8.709324829328015
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "europe_v3",
+      "batch": 8,
+      "median_ms": 829.4069539988413,
+      "p95_ms": 904.6590870020736,
+      "trial_min_ms": 772.6378150000528,
+      "trial_max_ms": 864.606418999756,
+      "images_per_second": 9.645446015890501
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 112.84695399808697,
+      "p95_ms": 135.95893499950762,
+      "trial_min_ms": 111.31972099974519,
+      "trial_max_ms": 115.08480599877657,
+      "images_per_second": 8.86155952438869
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 865.4289660007635,
+      "p95_ms": 896.7971799975203,
+      "trial_min_ms": 831.8117230010103,
+      "trial_max_ms": 880.8760790016095,
+      "images_per_second": 9.243970694635777
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 103.7234499999613,
+      "p95_ms": 124.14646799879847,
+      "trial_min_ms": 97.68370800156845,
+      "trial_max_ms": 119.08456600212958,
+      "images_per_second": 9.6410213890916
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 824.3145499982347,
+      "p95_ms": 861.5687530000287,
+      "trial_min_ms": 791.8309580018104,
+      "trial_max_ms": 852.1146800012502,
+      "images_per_second": 9.705033109044518
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "north_europe_v3",
+      "batch": 1,
+      "median_ms": 112.1231870019983,
+      "p95_ms": 126.15529799950309,
+      "trial_min_ms": 102.30596700057504,
+      "trial_max_ms": 123.34861300041666,
+      "images_per_second": 8.918761825617548
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "preset": "north_europe_v3",
+      "batch": 8,
+      "median_ms": 818.1298460003745,
+      "p95_ms": 854.9832339995191,
+      "trial_min_ms": 797.6780380013224,
+      "trial_max_ms": 835.7702249995782,
+      "images_per_second": 9.778398916883345
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 31.974444002116797,
+      "p95_ms": 36.03833899978781,
+      "trial_min_ms": 31.499988999712514,
+      "trial_max_ms": 33.238082000025315,
+      "images_per_second": 31.274976976418955
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 190.02189400271163,
+      "p95_ms": 203.95815500160097,
+      "trial_min_ms": 181.0136739986774,
+      "trial_max_ms": 194.3993130007584,
+      "images_per_second": 42.100411860360886
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 32,
+      "median_ms": 751.9461080009933,
+      "p95_ms": 938.8219909997133,
+      "trial_min_ms": 733.0324560025474,
+      "trial_max_ms": 805.7348090005689,
+      "images_per_second": 42.556241277809406
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 1,
+      "median_ms": 33.4465949999867,
+      "p95_ms": 38.38332599843852,
+      "trial_min_ms": 30.618580000009388,
+      "trial_max_ms": 35.84958700230345,
+      "images_per_second": 29.898409688651345
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 8,
+      "median_ms": 194.54678400143166,
+      "p95_ms": 211.8438170000445,
+      "trial_min_ms": 181.03928100026678,
+      "trial_max_ms": 202.35563499954878,
+      "images_per_second": 41.121214319025334
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 32,
+      "median_ms": 774.5358419997501,
+      "p95_ms": 949.0962469972146,
+      "trial_min_ms": 764.2361749967677,
+      "trial_max_ms": 784.2745119996835,
+      "images_per_second": 41.31506673387792
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 38.574180001887726,
+      "p95_ms": 41.16026200063061,
+      "trial_min_ms": 37.06625300037558,
+      "trial_max_ms": 40.838097000232665,
+      "images_per_second": 25.92407667385444
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 202.19900700249127,
+      "p95_ms": 211.71870800026227,
+      "trial_min_ms": 198.48519999868586,
+      "trial_max_ms": 202.6014760012913,
+      "images_per_second": 39.56498164158359
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 32,
+      "median_ms": 804.4566509997821,
+      "p95_ms": 961.4865859985002,
+      "trial_min_ms": 794.1813469988119,
+      "trial_max_ms": 830.9064189998026,
+      "images_per_second": 39.77840193157738
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 32.848500999534735,
+      "p95_ms": 41.949999998905696,
+      "trial_min_ms": 30.442417999438476,
+      "trial_max_ms": 40.2992199997243,
+      "images_per_second": 30.44278945983453
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 186.86159300341387,
+      "p95_ms": 231.81681699861656,
+      "trial_min_ms": 182.11845200130483,
+      "trial_max_ms": 189.51840799854835,
+      "images_per_second": 42.81243604646913
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "median_ms": 753.8683550010319,
+      "p95_ms": 914.5665709984314,
+      "trial_min_ms": 743.5950600010983,
+      "trial_max_ms": 760.9614780012635,
+      "images_per_second": 42.447729484488306
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 1,
+      "median_ms": 32.764373001555214,
+      "p95_ms": 37.03474800204276,
+      "trial_min_ms": 30.950796000979608,
+      "trial_max_ms": 35.4559719999088,
+      "images_per_second": 30.520956404462048
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 8,
+      "median_ms": 188.96362599843997,
+      "p95_ms": 209.1836069994315,
+      "trial_min_ms": 176.49814899777994,
+      "trial_max_ms": 197.84098799937055,
+      "images_per_second": 42.336190140985366
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 32,
+      "median_ms": 760.7565639991662,
+      "p95_ms": 922.7298170007998,
+      "trial_min_ms": 737.9431469998963,
+      "trial_max_ms": 802.070398000069,
+      "images_per_second": 42.063389938801855
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 139.97511000343366,
+      "p95_ms": 157.91612699831603,
+      "trial_min_ms": 132.2067729997798,
+      "trial_max_ms": 148.36850999927265,
+      "images_per_second": 7.144127266450939
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 1020.2903719982714,
+      "p95_ms": 1126.8082070018863,
+      "trial_min_ms": 990.7244099995296,
+      "trial_max_ms": 1102.0994509999582,
+      "images_per_second": 7.840905118345617
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "europe_v3",
+      "batch": 1,
+      "median_ms": 156.06195000145817,
+      "p95_ms": 174.66607700043824,
+      "trial_min_ms": 155.75652500047,
+      "trial_max_ms": 160.84377999868593,
+      "images_per_second": 6.407711809256878
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "europe_v3",
+      "batch": 8,
+      "median_ms": 1013.887937002437,
+      "p95_ms": 1098.4262460005993,
+      "trial_min_ms": 994.4540770011372,
+      "trial_max_ms": 1078.8947210021433,
+      "images_per_second": 7.8904183667990235
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 162.19867499967222,
+      "p95_ms": 183.9224630020908,
+      "trial_min_ms": 160.09652899811044,
+      "trial_max_ms": 162.8700189976371,
+      "images_per_second": 6.165278477164014
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 1099.8652199996286,
+      "p95_ms": 1168.8887240015902,
+      "trial_min_ms": 1066.5678989971639,
+      "trial_max_ms": 1130.8798369973374,
+      "images_per_second": 7.273618489366089
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 148.2759509999596,
+      "p95_ms": 161.5721569978632,
+      "trial_min_ms": 142.76755700120702,
+      "trial_max_ms": 153.29030800057808,
+      "images_per_second": 6.744182001572678
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 1082.5685600029828,
+      "p95_ms": 1133.4843360018567,
+      "trial_min_ms": 1013.1757369999832,
+      "trial_max_ms": 1087.7670109985047,
+      "images_per_second": 7.3898321968429945
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "north_europe_v3",
+      "batch": 1,
+      "median_ms": 139.39189299708232,
+      "p95_ms": 159.55598099753843,
+      "trial_min_ms": 129.97479099794873,
+      "trial_max_ms": 153.69803499925183,
+      "images_per_second": 7.174018362896696
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "preset": "north_europe_v3",
+      "batch": 8,
+      "median_ms": 1022.699465000187,
+      "p95_ms": 1107.3616229987238,
+      "trial_min_ms": 1004.2549429999781,
+      "trial_max_ms": 1085.7946290016116,
+      "images_per_second": 7.8224349124877435
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 1,
+      "median_ms": 35.489638001308776,
+      "p95_ms": 57.598117000452476,
+      "trial_min_ms": 33.89597299974412,
+      "trial_max_ms": 52.630236998084,
+      "images_per_second": 28.177238662257484
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 8,
+      "median_ms": 175.51926099986304,
+      "p95_ms": 185.99682900094194,
+      "trial_min_ms": 174.19886200150358,
+      "trial_max_ms": 176.5289369977836,
+      "images_per_second": 45.57904331654087
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe",
+      "batch": 32,
+      "median_ms": 728.2977190006932,
+      "p95_ms": 884.3167390004965,
+      "trial_min_ms": 698.9123559978907,
+      "trial_max_ms": 760.5062379989249,
+      "images_per_second": 43.938075274913146
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 1,
+      "median_ms": 35.27583799950662,
+      "p95_ms": 48.10837100012577,
+      "trial_min_ms": 33.24329500173917,
+      "trial_max_ms": 41.260214002249995,
+      "images_per_second": 28.348015432375732
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 8,
+      "median_ms": 178.32208699837793,
+      "p95_ms": 194.90453400067054,
+      "trial_min_ms": 170.77715800041915,
+      "trial_max_ms": 192.54146399907768,
+      "images_per_second": 44.86264228206779
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "europe_v3",
+      "batch": 32,
+      "median_ms": 724.5190200010256,
+      "p95_ms": 921.8273680016864,
+      "trial_min_ms": 717.8096630013897,
+      "trial_max_ms": 746.3200019992655,
+      "images_per_second": 44.167232490259124
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 1,
+      "median_ms": 45.16958599924692,
+      "p95_ms": 55.23221900148201,
+      "trial_min_ms": 36.25714399822755,
+      "trial_max_ms": 48.02743799882592,
+      "images_per_second": 22.1387904688051
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 8,
+      "median_ms": 191.97120100216125,
+      "p95_ms": 224.58959399955347,
+      "trial_min_ms": 185.349908999342,
+      "trial_max_ms": 204.552421997505,
+      "images_per_second": 41.672917386759146
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "full",
+      "batch": 32,
+      "median_ms": 758.8707609975245,
+      "p95_ms": 956.4475619990844,
+      "trial_min_ms": 727.8204619979078,
+      "trial_max_ms": 767.2486240007856,
+      "images_per_second": 42.16791797055993
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 36.8857930006925,
+      "p95_ms": 50.996198999200715,
+      "trial_min_ms": 32.99324700128636,
+      "trial_max_ms": 48.603333001665305,
+      "images_per_second": 27.11070899251714
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 171.64449200208765,
+      "p95_ms": 187.66877799862414,
+      "trial_min_ms": 168.77017200022237,
+      "trial_max_ms": 178.43948399968212,
+      "images_per_second": 46.6079622287134
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "median_ms": 718.6301279980398,
+      "p95_ms": 923.7060959967494,
+      "trial_min_ms": 686.7490500007989,
+      "trial_max_ms": 768.8245279969124,
+      "images_per_second": 44.52916563510302
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 1,
+      "median_ms": 35.540962002414744,
+      "p95_ms": 50.400192998495186,
+      "trial_min_ms": 33.24394499941263,
+      "trial_max_ms": 46.86532299820101,
+      "images_per_second": 28.136548468554604
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 8,
+      "median_ms": 185.47856499935733,
+      "p95_ms": 197.47024499883992,
+      "trial_min_ms": 182.4952110000595,
+      "trial_max_ms": 187.0011249993695,
+      "images_per_second": 43.131668611021006
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "preset": "north_europe_v3",
+      "batch": 32,
+      "median_ms": 717.1896030013158,
+      "p95_ms": 890.1827099980437,
+      "trial_min_ms": 697.0991640009743,
+      "trial_max_ms": 741.660445000889,
+      "images_per_second": 44.61860554877744
+    }
+  ],
+  "resources": [
+    {
+      "model": "v2",
+      "device": "cpu",
+      "load_first_seconds": {
+        "median": 209.39651592600057,
+        "min": 198.43300686099974,
+        "max": 209.59208342499915
+      },
+      "rss_mib": {
+        "median": 4122.8125,
+        "min": 4122.08203125,
+        "max": 4123.83203125
+      },
+      "cuda_allocated_mib": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cuda_reserved_mib": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      }
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "load_first_seconds": {
+        "median": 209.60287212600088,
+        "min": 208.6747407030016,
+        "max": 210.06140313599826
+      },
+      "rss_mib": {
+        "median": 4122.58203125,
+        "min": 4122.25390625,
+        "max": 4123.69921875
+      },
+      "cuda_allocated_mib": {
+        "median": 1935.630859375,
+        "min": 1935.630859375,
+        "max": 1935.630859375
+      },
+      "cuda_reserved_mib": {
+        "median": 2072.0,
+        "min": 2072.0,
+        "max": 2072.0
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cpu",
+      "load_first_seconds": {
+        "median": 0.38248996100082877,
+        "min": 0.36779166300038924,
+        "max": 0.40503490100309136
+      },
+      "rss_mib": {
+        "median": 586.5078125,
+        "min": 572.76953125,
+        "max": 590.7421875
+      },
+      "cuda_allocated_mib": null,
+      "cuda_reserved_mib": null
+    },
+    {
+      "model": "v3-onnx",
+      "device": "cuda:0",
+      "load_first_seconds": {
+        "median": 1.6538925760032726,
+        "min": 1.6474964560002263,
+        "max": 1.6716580809988955
+      },
+      "rss_mib": {
+        "median": 1469.08984375,
+        "min": 1461.17578125,
+        "max": 1476.80859375
+      },
+      "cuda_allocated_mib": null,
+      "cuda_reserved_mib": null
+    },
+    {
+      "model": "v3-torch",
+      "device": "cpu",
+      "load_first_seconds": {
+        "median": 40.465289795996796,
+        "min": 39.93423429299946,
+        "max": 40.48855051400096
+      },
+      "rss_mib": {
+        "median": 1573.19921875,
+        "min": 1568.90234375,
+        "max": 1636.4609375
+      },
+      "cuda_allocated_mib": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cuda_reserved_mib": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      }
+    },
+    {
+      "model": "v3-torch",
+      "device": "cuda:0",
+      "load_first_seconds": {
+        "median": 41.788645010001346,
+        "min": 41.23758513699795,
+        "max": 42.60878924099961
+      },
+      "rss_mib": {
+        "median": 1897.02734375,
+        "min": 1895.94921875,
+        "max": 1898.734375
+      },
+      "cuda_allocated_mib": {
+        "median": 865.3681640625,
+        "min": 865.3681640625,
+        "max": 865.3681640625
+      },
+      "cuda_reserved_mib": {
+        "median": 1348.0,
+        "min": 1348.0,
+        "max": 1348.0
+      }
+    }
+  ],
+  "sources_sha256": {
+    "local-evidence/mambo-v3/quality-full/comparison.json": "e30365591209612e133218dfe4abf7baa0fb9c8394a8538738261c802e75b6a0",
+    "local-evidence/mambo-release-comparison-quality/v2-full/report.json": "c9a98044cbc97ab0033b1f794e284b8f8504f26fc0b7574dfa619c16df6db263",
+    "local-evidence/mambo-release-comparison-quality/v2-full/north_europe/metrics.json": "dd25bb7b7dc8552fa0da7d3fb48f8772eb45b5824e04af8594c95f5e522a5ae9",
+    "local-evidence/mambo-release-comparison-quality/v2-full/europe/metrics.json": "bd04f55a6906d832ded0047840ace6ada6f50ed1e77bf8f81a5aa4b4e591a2db",
+    "local-evidence/mambo-release-comparison-quality/v2-full/full/metrics.json": "1789eb0f6d81b82b23ace78f57001369cbdcfb386cd00197f20172e80ad06396",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/report.json": "ba80d1580f5b563bd5eb0d9af3af392c6115766c4dcebe619f68e034c938b47d",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe/metrics.json": "7a58a33ea5cd49e26ea10b6d325f109707c1b3ab0dfb5fdb2036f70695d239a6",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe/metrics.json": "cd0001fe1cf13dd26bab63fa6ce8e357a26a8b5491a8cb82744fdd65ebb164b0",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/full/metrics.json": "b25af91cfc1b0e82c920d26844522117386cab2aad2afe028ba0871cb6b99260",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe_v3/metrics.json": "a754f78e8a09d2ee90bd65096562781755d7c180f84ce376afbb27750b5e1fad",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe_v3/metrics.json": "82181458085523df79aeaececb2b50f806c73b619820cf34692c4bfaa3e33cec",
+    "local-evidence/mambo-v3/performance/trial-0-torch-cpu-prediction-t4/report.json": "f75f2fd264d09ab6aa7bd194e7a6f8afc28980e41e81e164330f0efe5746e88f",
+    "local-evidence/mambo-v3/performance/trial-0-onnx-cpu-prediction-t4/report.json": "dbec7f2753ea649998ec3d1c6d5d75608d1465d273755910f531902247335047",
+    "local-evidence/mambo-v3/performance/trial-0-torch-cuda-0-prediction-t4/report.json": "e9d75960d5ce34a9040f6d0c1af2476bad9c3edcfaa0cb581fdf37d3bc8cc1eb",
+    "local-evidence/mambo-v3/performance/trial-0-onnx-cuda-0-prediction-t4/report.json": "41705c1cdd32397a1b7504eeb8b018308fee04716e807c9e20551f885ca9e5d2",
+    "local-evidence/mambo-v3/performance/trial-1-onnx-cuda-0-prediction-t4/report.json": "2f85c06d080971c8d677442928097f46939eaf7010707af25915c71f01c16720",
+    "local-evidence/mambo-v3/performance/trial-1-torch-cuda-0-prediction-t4/report.json": "38d58fb969176851aba53393228946658242a63d15964085f5c55ba8c617fbe7",
+    "local-evidence/mambo-v3/performance/trial-1-onnx-cpu-prediction-t4/report.json": "983887ef2d024f811d17ca21e5db55b7dfdcb26f11528a2cdf122fa3f9683e06",
+    "local-evidence/mambo-v3/performance/trial-1-torch-cpu-prediction-t4/report.json": "e092bf39351e6bb1608c643b319ab3ebdd6168498a9aea2381d07e9d6bc88ae8",
+    "local-evidence/mambo-v3/performance/trial-2-torch-cpu-prediction-t4/report.json": "ca3ffa96c7cd0c410f6804a94c66aa6fd9e3076739e76ac5276877131ec3acd7",
+    "local-evidence/mambo-v3/performance/trial-2-onnx-cpu-prediction-t4/report.json": "3c49eb94eeec2316838d18c1e691756ef5ab7e215cffa1c50084bcf0772d7ad5",
+    "local-evidence/mambo-v3/performance/trial-2-torch-cuda-0-prediction-t4/report.json": "a3958a47226f021d42acdc123d81a7e08540d9113a2ce4f0b6559eb7022fff04",
+    "local-evidence/mambo-v3/performance/trial-2-onnx-cuda-0-prediction-t4/report.json": "927bf5395c71330f8d924a621e060d73ba5cc48210013f0880d6ec1360ccf28f",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v2-cpu/report.json": "21cfb5b069af6a0e008f3b017a6514409b447d2f63d9b7df4da9972113b1aab8",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v3-torch-cpu/report.json": "ea44ddb694bd1922a717775711c1be2fc167223bba2f6827d69ee692ebefe52e",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v3-onnx-cpu/report.json": "7933e6411f95991c742bf7851fc404918ae8e86e7a03c423d4f07f2d76270f50",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v2-cuda-0/report.json": "8f01c6b3299de7ca8c1e122f3a3a41cc71e0551f27800f42f0729255ce67450a",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v3-torch-cuda-0/report.json": "079ffb75a89f7db4184f936482de647ddc9216d2cc56ca471fd70e2799a074c7",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-0-v3-onnx-cuda-0/report.json": "5985213e519f137a6f8f5d118d43a66692579608aa5169c355a4fc3f0c9ac74b",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v3-onnx-cuda-0/report.json": "1433fafea9fbb203400c83c83b68112b72dd74f0397ace1fa5eea7032899ddd3",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v3-torch-cuda-0/report.json": "7e8a7c1f30e5102378d230fb1d5ca1d1a5cdef106dff66f1cf408ffeaf17f115",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v2-cuda-0/report.json": "f9deaee77c4ee1d3ff00b63c45959cc2dcddbbcd6ee890dcbd4bf9e5ed5cbb69",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v3-onnx-cpu/report.json": "db7e71075abe904f239498fa36c831f1dce1c40284c553f54680cc4d7e62b54f",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v3-torch-cpu/report.json": "6cbadadbd51a877c335516e8abb7420ecd553e2146fb59b6275010fe58cbeabc",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-1-v2-cpu/report.json": "1d3ccb09d35977644d7f13584717b0df977d636abef06594bb55c1d1acb4f430",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v2-cpu/report.json": "9ce8be6fa3462f4ff7440b040eb5ffa54ec6e80d4eedfdc8bfc2e0c21da3d353",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v3-torch-cpu/report.json": "3332f479ebd7213ac6301f507bb63e242d4bb3ac4c5e8e4a7e0da1cfe7eaca2c",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v3-onnx-cpu/report.json": "c0d664560c4f71d97f10734348b2f37f564bedd76cd2e996fab0b0f7e3f5f8fb",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v2-cuda-0-retry1/report.json": "5853f83dee6b7009f8038327253fe92f1baa3d0454a225edf6f192560ebab0f3",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v3-torch-cuda-0/report.json": "c348b2c2af88587f075c562c94734bb68b0a29177085baacd03d669f3e2ee259",
+    "local-evidence/mambo-release-comparison-performance-cpu-adapter/trial-2-v3-onnx-cuda-0/report.json": "cabf7f6338f2a2741838547315c0da33da45ce021c26e4b8e2e043d9bd4168b6"
+  },
+  "timing_bank_sha256": "aa2aea4ecd76bbce46a38a4787f632763fe60b6296d27aa6a2ed633c59e15b63",
+  "protocol": "Same laptop and image bank; original v2 preprocessing/CUDA autocast; v2 CPU requires float32 input cast; v3 FP32; four threads; three trials; predictions only."
+}

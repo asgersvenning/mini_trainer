@@ -92,25 +92,32 @@ defaults, so explicit backend/device arguments are recommended in scripts.
 
 On all 58,640 Flemming images, PyTorch and ONNX return identical top-1 species,
 genus and family labels for the full list and both legacy/updated European presets.
-Updated Europe reaches **68.81% species accuracy overall**, or **79.74%** on images
-whose true species is in the list. Unknown species remain in the overall result.
+Northern Europe reaches **70.79% species accuracy overall** (**82.04%** on images
+whose true species is in the list), versus **68.71% overall for MAMBO_v2**. Updated
+northern Europe reaches **70.32%**. Unknown species remain in the overall result.
 CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
 this checks prediction consistency, not downstream embedding usefulness.
 
-On an i7-12800H / RTX 3080 Ti Laptop GPU, with four CPU threads and the updated
-Europe preset, warmed prediction-only measurements were:
+On an i7-12800H / RTX 3080 Ti Laptop GPU, with four CPU threads and the legacy
+northern-Europe preset, warmed prediction-only measurements were:
 
 | Runtime | CPU, one image | GPU, one image | GPU, batch 32 |
 |---|---:|---:|---:|
-| ONNX | 115 ms | 33 ms | 41 images/s |
-| PyTorch | 156 ms | 35 ms | 44 images/s |
+| ONNX | 104 ms | 33 ms | 42 images/s |
+| PyTorch | 148 ms | 37 ms | 45 images/s |
 
 These include image preparation and result handling. First prediction including
-loading took about 0.37 s CPU / 1.64 s GPU for ONNX, versus 40–42 s for PyTorch;
+loading took about 0.38 s CPU / 1.65 s GPU for ONNX, versus 40–42 s for PyTorch;
 reuse a loaded predictor. ONNX also used less CPU process memory. Prefer it for
 new lightweight integrations; native PyTorch remains suitable for existing callers
 and persistent GPU workers. Embedding-mode results, variability, memory and the
 Linux/WSL qualification limits are in the [measured report](../docs/mambo-v3-evaluation.md).
+
+The [v2-versus-v3 charts](../docs/mambo-release-comparison.md) compare quality,
+speed and memory for northern Europe, Europe and global, including the advantages
+and costs of each released pipeline. V3 uses less host memory and is faster on CPU
+(v2 required a documented input cast here); v2 is faster at GPU batch 32. V2 also
+retains higher global species accuracy and family accuracy across these lists.
 
 The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
 reproduction commands and UCloud handoff. In-domain evaluation, other operating

@@ -189,3 +189,8 @@ archived test identities. Image verification and inference still require UCloud.
 Archived selected predictions support historical context, not MAMBO_v2 model
 quality or downstream embedding claims. Training-source revision and best-epoch
 provenance remain unresolved; packaging checkout is not training provenance.
+
+The [real-world v2/v3 comparison](../../../docs/mambo-release-comparison.md) adds
+the published BioCLIP-2 model baseline across northern Europe, Europe and global,
+with quality, speed and memory charts. Reproduction and the explicit ancillary
+v2 CPU input adapter are documented in [release-comparison.md](release-comparison.md).

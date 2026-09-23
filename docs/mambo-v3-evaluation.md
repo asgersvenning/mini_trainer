@@ -5,6 +5,9 @@ on all **58,640 Flemming images**, for species, genus and family, with all five
 lists below. This establishes same-model prediction agreement on this dataset;
 it is not a claim of numerical identity or improvement over MAMBO_v2.
 
+For the subsequently measured MAMBO_v2 baseline and readable release-to-release
+charts, see the [real-world comparison](mambo-release-comparison.md).
+
 ## Quality and geographic filtering
 
 | Preset | Species accuracy, all images | Species accuracy, known truth | Macro-F1, all | Genus accuracy | Family accuracy |

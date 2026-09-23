@@ -587,6 +587,7 @@ has been exercised. Release notes distinguish model changes from package/API cha
 
 A and B are implemented, and C now has local Flemming and CPU/GPU evidence; see
 the [measured release report](mambo-v3-evaluation.md),
+[real-world MAMBO_v2/v3 comparison](mambo-release-comparison.md),
 [deployment qualification](../dev/releases/mambo_v3/deployment-qualification.md)
 and [consumer guide](../deployment/README.md). The
 [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) prepares the remaining

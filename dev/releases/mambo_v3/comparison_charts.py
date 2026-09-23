@@ -29,6 +29,14 @@ def completed(path):
 def aggregate(args):
     sources = {}
     quality = []
+    paired_path = args.v3_quality / "comparison.json"
+    paired = json.loads(paired_path.read_text())
+    reports = [args.v3_quality / f"{backend}-cuda-0-prediction/report.json" for backend in ("torch", "onnx")]
+    if paired["reports_sha256"] != [file_hash(path) for path in reports]:
+        raise ValueError("V3 backend agreement evidence is stale")
+    if any(rank["changed"] for preset in paired["presets"].values() for rank in preset.values()):
+        raise ValueError("V3 backend labels differ; plot their quality separately")
+    sources[str(paired_path)] = file_hash(paired_path)
     for model, directory, presets in (
         ("v2", args.v2_quality / "v2-full", REGIONS),
         ("v3", args.v3_quality / "torch-cuda-0-prediction", (*REGIONS, "north_europe_v3", "europe_v3")),
@@ -54,6 +62,10 @@ def aggregate(args):
             )
     if len({r["sample_ids_sha256"] for r in quality}) != 1 or len({r["metric_revision"] for r in quality}) != 1:
         raise ValueError("Quality populations or metric revisions differ")
+    for preset in REGIONS:
+        selected = [r for r in quality if r["preset"] == preset]
+        if len({r["list_sha256"] for r in selected}) != 1:
+            raise ValueError(f"Primary comparison lists differ: {preset}")
     grouped = defaultdict(list)
     resources = defaultdict(list)
     bank = None
@@ -68,6 +80,8 @@ def aggregate(args):
             old = report.get("release") == "MAMBO_v2"
             model = "v2" if old else f"v3-{settings['backend']}"
             device = settings["device"]
+            if old and device == "cpu" and not report.get("cpu_input_cast"):
+                raise ValueError("V2 CPU evidence must explicitly record the input adapter")
             records = json.loads((path.parent / "samples.json").read_text()) if old else report["samples"]
             if bank is None:
                 bank = records
@@ -125,7 +139,7 @@ def aggregate(args):
         "sources_sha256": sources,
         "timing_bank_sha256": hashlib.sha256(json.dumps(bank, sort_keys=True).encode()).hexdigest(),
         "protocol": "Same laptop and image bank; original v2 preprocessing/CUDA autocast; "
-        "v3 FP32; four threads; three trials; predictions only.",
+        "v2 CPU requires float32 input cast; v3 FP32; four threads; three trials; predictions only.",
     }
 
 
@@ -140,6 +154,7 @@ def charts(data, output):
             "font.family": "DejaVu Sans",
             "font.size": 10,
             "svg.fonttype": "none",
+            "svg.hashsalt": "mambo-release-comparison-v1",
             "axes.spines.top": False,
             "axes.spines.right": False,
             "axes.titleweight": "bold",
@@ -154,15 +169,20 @@ def charts(data, output):
         fig.savefig(output / f"{name}.png", bbox_inches="tight", dpi=160)
         plt.close(fig)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7.5))
+    axes = axes.ravel()
     x = np.arange(3)
     for m, (model, label, color) in enumerate(zip(("v2", "v3"), ("MAMBO v2", "MAMBO v3 (both backends)"), COLORS, strict=False)):
         rows = [next(r for r in data["quality"] if r["model"] == model and r["preset"] == region) for region in REGIONS]
-        for ax, values in zip(
-            axes, ([100 * r["ranks"]["species"]["micro_accuracy_all"] for r in rows], [r["macro_f1_all"] for r in rows]), strict=True
-        ):
+        values_by_rank = (
+            [100 * r["ranks"]["species"]["micro_accuracy_all"] for r in rows],
+            [r["macro_f1_all"] for r in rows],
+            [100 * r["ranks"]["genus"]["micro_accuracy_all"] for r in rows],
+            [100 * r["ranks"]["family"]["micro_accuracy_all"] for r in rows],
+        )
+        for index, (ax, values) in enumerate(zip(axes, values_by_rank, strict=True)):
             bars = ax.bar(x + (m - 0.5) * 0.34, values, 0.34, label=label, color=color)
-            ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=9)
+            ax.bar_label(bars, fmt="%.3f" if index == 1 else "%.2f", padding=3, fontsize=9)
             ax.set_xticks(x, REGION_LABELS)
             ax.grid(axis="y", alpha=0.16)
             ax.set_axisbelow(True)
@@ -172,6 +192,8 @@ def charts(data, output):
         ylabel="Pinned mini_metrics macro-F1",
         ylim=(0, max(r["macro_f1_all"] for r in data["quality"]) * 1.3),
     )
+    axes[2].set(title="Genus accuracy", ylabel="Correct predictions (%)", ylim=(0, 100))
+    axes[3].set(title="Family accuracy", ylabel="Correct predictions (%)", ylim=(0, 100))
     axes[0].legend(loc="upper left", fontsize=9)
     fig.suptitle("Flemming: MAMBO v2 versus v3", fontsize=16, fontweight="bold")
     fig.tight_layout(rect=(0, 0.1, 1, 0.95))
@@ -182,36 +204,48 @@ def charts(data, output):
         "V2: original CUDA autocast / BioCLIP recipe. V3: FP32 / release recipe. Real-world comparison of the two release pipelines.",
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
-    for ax, device, batch in zip(axes, ("cpu", "cuda:0"), (1, 8), strict=True):
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7.8))
+    axes = axes.ravel()
+    for ax, device, batch in zip(axes, ("cpu", "cuda:0", "cuda:0", "cuda:0"), (1, 1, 8, 32), strict=True):
         for m, (model, label, color) in enumerate(zip(MODELS, MODEL_LABELS, COLORS, strict=True)):
             rows = [
                 next(r for r in data["speed"] if (r["model"], r["device"], r["preset"], r["batch"]) == (model, device, region, batch))
                 for region in REGIONS
             ]
-            values = [r["median_ms"] if device == "cpu" else r["images_per_second"] for r in rows]
-            low = [r["trial_min_ms"] if device == "cpu" else batch * 1000 / r["trial_max_ms"] for r in rows]
-            high = [r["trial_max_ms"] if device == "cpu" else batch * 1000 / r["trial_min_ms"] for r in rows]
+            values = [r["median_ms"] if batch == 1 else r["images_per_second"] for r in rows]
+            low = [r["trial_min_ms"] if batch == 1 else batch * 1000 / r["trial_max_ms"] for r in rows]
+            high = [r["trial_max_ms"] if batch == 1 else batch * 1000 / r["trial_min_ms"] for r in rows]
             positions = x + (m - 1) * 0.25
-            bars = ax.bar(positions, values, 0.25, label=label, color=color)
+            ax.bar(positions, values, 0.25, label=label, color=color)
             ax.errorbar(
                 positions, (np.array(low) + high) / 2, yerr=(np.array(high) - low) / 2, fmt="none", ecolor="#333333", capsize=3, linewidth=1
             )
-            ax.bar_label(bars, fmt="%.1f", padding=7, fontsize=8)
+            for position, value, upper in zip(positions, values, high, strict=True):
+                ax.annotate(
+                    f"{value:.1f}",
+                    (position, max(value, upper)),
+                    xytext=(0, 4),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                )
         ax.set_xticks(x, REGION_LABELS)
         ax.grid(axis="y", alpha=0.16)
         ax.set_axisbelow(True)
         ax.margins(y=0.25)
-    axes[0].set(title="CPU · one image · lower is better", ylabel="End-to-end latency (ms)")
-    axes[1].set(title="GPU · batch 8 · higher is better", ylabel="End-to-end images / second")
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.91), ncol=3, frameon=False)
+    axes[0].set(title="CPU · one image · v2 with input adapter", ylabel="End-to-end latency (ms)")
+    axes[1].set(title="GPU · one image · lower is better", ylabel="End-to-end latency (ms)")
+    axes[2].set(title="GPU · batch 8 · higher is better", ylabel="End-to-end images / second")
+    axes[3].set(title="GPU · batch 32 · higher is better", ylabel="End-to-end images / second")
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=3, frameon=False)
     fig.suptitle("Laptop inference speed", fontsize=16, fontweight="bold")
-    fig.tight_layout(rect=(0, 0.11, 1, 0.82))
+    fig.tight_layout(rect=(0, 0.1, 1, 0.90))
     save(
         fig,
         "mambo-release-speed",
         "i7-12800H / RTX 3080 Ti Laptop · four CPU threads · three trials · decode, preprocessing and CPU results included\n"
-        "Whiskers: range of trial medians. V2 uses its published mixed-precision GPU path; v3 uses FP32.",
+        "Whiskers: trial-median range. V2 CPU requires a float32 input cast; GPU uses published autocast. V3 uses FP32.",
     )
 
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
@@ -227,7 +261,7 @@ def charts(data, output):
                 capsize=4,
             )
             ax.bar_label(bars, fmt="%.2f" if key == "load_first_seconds" else "%.0f", padding=6)
-            ax.set_xticks(np.arange(3), ("v2 PyTorch", "v3 PyTorch", "v3 ONNX"))
+            ax.set_xticks(np.arange(3), ("v2 + input cast" if device == "cpu" else "v2 PyTorch", "v3 PyTorch", "v3 ONNX"))
             ax.grid(axis="y", alpha=0.16)
             ax.set_axisbelow(True)
             ax.margins(y=0.3)
