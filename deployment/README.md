@@ -92,9 +92,10 @@ defaults, so explicit backend/device arguments are recommended in scripts.
 
 On all 58,640 Flemming images, PyTorch and ONNX return identical top-1 species,
 genus and family labels for the full list and both legacy/updated European presets.
-Northern Europe reaches **70.79% micro species accuracy overall** (**82.04%** on images
+Northern Europe reaches **71.24% macro species accuracy** (v2: **68.52%**) and
+**70.79% micro species accuracy overall** (**82.04%** on images
 whose true species is in the list), versus **68.71% overall for MAMBO_v2**. Updated
-northern Europe reaches **70.32%**. All predictive metrics use pinned `mini_metrics`, with threshold 0 and no
+northern Europe reaches **70.32% micro accuracy**. All predictive metrics use pinned `mini_metrics`, with threshold 0 and no
 optimization. Unknown species remain in the overall result.
 CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
 this checks prediction consistency, not downstream embedding usefulness.
@@ -116,9 +117,12 @@ Linux/WSL qualification limits are in the [measured report](../docs/mambo-v3-eva
 
 The [v2-versus-v3 charts](../docs/mambo-release-comparison.md) compare quality,
 speed and memory for northern Europe, Europe and global, including the advantages
-and costs of each released pipeline. V3 uses less host memory and is faster on CPU
+and costs of each released pipeline, with macro metrics leading and full
+all/known-truth metric tables. The [batch-scaling diagnosis](../docs/mambo-batch-scaling.md)
+identifies serial CPU preparation and FP32 backbone work as the main throughput
+limits. V3 uses less host memory and is faster on CPU
 (v2 required a documented input cast here); v2 is faster at GPU batch 32. V2 also
-retains higher global species accuracy and family accuracy across these lists.
+retains higher global micro species accuracy and family accuracy across these lists.
 
 The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
 reproduction commands and UCloud handoff. In-domain evaluation, other operating

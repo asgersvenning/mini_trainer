@@ -164,3 +164,13 @@ MAMBO_METRICS_PYTHON=/path/to/metrics-env/bin/python \
 
 It exercises imbalanced classes and excluded truth to distinguish micro accuracy,
 macro accuracy, all/known filtering and macro-F1 through the real mini_metrics API.
+
+The expanded baseline leads with macro accuracy/F1 and retains macro precision,
+recall, micro accuracy, Theil U and coverage for all three ranks and both
+all/known-truth scopes. `mambo-release-metrics.csv` contains the complete compact
+baseline, including updated presets. All values are copied from pinned mini_metrics
+outputs; no predictive metric is calculated by the chart renderer.
+
+The [batch-scaling diagnosis](../../../docs/mambo-batch-scaling.md) provides the
+sequential profiling workflow, controlled precision/layout/preprocessing probes,
+recorded causes and boundaries for subsequent implementation.

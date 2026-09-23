@@ -602,3 +602,10 @@ startup and warmed inference costs separate.
 The next-training-run orchestration plan and experimental quantization are not on
 this release's critical path. Additional OS and clean CUDA installation checks
 are needed before making broader support claims.
+
+Batch scaling has been [diagnosed](mambo-batch-scaling.md): serial non-contiguous
+NumPy interpolation and the strict FP32 backbone limit throughput. Next qualify
+pixel-preserving preparation changes and bounded overlap; retain existing measured
+baselines until fresh end-to-end qualification. The broader
+[metric baseline](mambo-release-comparison.md) now leads with macro scores and
+retains all/known-truth results at every rank.

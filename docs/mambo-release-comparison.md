@@ -10,18 +10,27 @@ ONNX deployment paths.
 
 ![Species, genus and family accuracy, plus species macro-F1 for all three lists](assets/mambo-release-quality.svg)
 
-With the northern-Europe list, v3 gains **2.08 percentage points** in species
-accuracy (68.71% → 70.79%). Updated northern Europe retains a **1.61-point gain**
-over v2. Europe also improves by 1.99 points, while global species accuracy falls
-by 0.93 points. Family accuracy falls across all three lists, and regional species
-macro-F1 is slightly lower. This is a useful species-level gain in the relevant
-regional setting, accompanied by clear trade-offs elsewhere.
+The comparison leads with **macro metrics**: each represented class has equal
+weight. Northern-Europe macro species accuracy rises from **68.52% to 71.24%**,
+while macro-F1 falls slightly from **0.2575 to 0.2545**. Europe macro accuracy also
+improves. Global macro accuracy improves slightly even though micro accuracy falls,
+so neither averaging policy alone describes the whole trade-off.
 
-| Preset | v2 species accuracy | v3 species accuracy | Change |
-|---|---:|---:|---:|
-| Northern Europe | 68.71% | 70.79% | +2.08 pp |
-| Europe | 66.96% | 68.95% | +1.99 pp |
-| Global | 59.36% | 58.43% | −0.93 pp |
+| Preset | v2 macro accuracy | v3 macro accuracy | v2 macro-F1 | v3 macro-F1 | v2 micro accuracy | v3 micro accuracy |
+|---|---:|---:|---:|---:|---:|---:|
+| Northern Europe | 68.52% | 71.24% | 0.2575 | 0.2545 | 68.71% | 70.79% |
+| Europe | 66.04% | 69.06% | 0.2000 | 0.1993 | 66.96% | 68.95% |
+| Global | 57.21% | 58.03% | 0.0899 | 0.0971 | 59.36% | 58.43% |
+
+The expanded baseline includes **macro accuracy, precision, recall and F1; micro
+accuracy; Theil U; and prediction coverage** for every preset, all three ranks and
+both all-truth and known-truth populations. The [complete CSV](assets/mambo-release-metrics.csv)
+contains 48 rows / 336 scores, including updated European lists. These values are
+also retained in the compact chart JSON, not just selected for plotting.
+
+![Six species metrics over all Flemming truth](assets/mambo-release-species-all.svg)
+
+![Six species metrics restricted to known truth](assets/mambo-release-species-known.svg)
 
 The primary comparison uses identical legacy lists in both releases. Every
 predictive metric is computed by pinned `mini_metrics` at commit
@@ -29,7 +38,8 @@ predictive metric is computed by pinned `mini_metrics` at commit
 
 | Display | `metrics.json` source | Averaging and population |
 |---|---|---|
-| Species/genus/family accuracy | `all.micro_accuracy["0"/"1"/"2"]` | Micro: each of the 58,640 images has equal weight |
+| Lead species/genus/family accuracy | `all.accuracy["0"/"1"/"2"]` | Macro: equal weight per ground-truth class |
+| Additional micro accuracy | `all.micro_accuracy[rank]` | Equal weight per image |
 | Species macro-F1 | `all.f1["0"]` | Equal weight over the union of true and predicted species |
 | Known-truth accuracy | `known.micro_accuracy[rank]` | Micro, restricted to truth in the active preset vocabulary |
 
@@ -42,9 +52,12 @@ species denominator is 50,598 images from 506 species for every compared list.
 Known membership is determined separately at each taxonomic rank.
 
 The plain `accuracy` field in this mini_metrics revision is **macro** accuracy;
-we explicitly extract `micro_accuracy`. Both macro accuracy and known-only metrics
+we explicitly extract both `accuracy` and `micro_accuracy`. Known-only metrics
 are retained in the metric files. The original direct CSV accuracy calculation
 has been replaced by mini_metrics; recomputation leaves the reported values unchanged.
+Macro precision averages predicted classes; macro recall averages truth classes.
+At threshold zero, macro accuracy equals macro recall. Theil U is the pinned
+package's information-based association score and is not interchangeable with accuracy.
 
 Macro-F1 includes species predicted despite having no ground-truth images, but
 excludes species with neither truth nor predictions. Thus its class denominator can
@@ -99,17 +112,11 @@ separate these boundaries:
 | ONNX | 8 | 134.5 | 50.6 | 42.8 |
 | ONNX | 32 | 559.4 | 180.6 | 42.4 |
 
-These are separately timed medians, not additive profiler spans. The prepared
-boundary includes transfers and completed CPU leaf scores, excluding decoding and
-hierarchy reduction. CPU preparation accounts for roughly 72–74% of end-to-end
-batch-32 time. The prepared backend also shows little throughput gain beyond batch
-8, so preprocessing alone does not explain the entire plateau. Kernel profiling
-would be needed to explain that remaining hardware/runtime behavior; these data do
-not establish a specific GPU bottleneck.
-
-A useful next optimization is to qualify parallel image preparation and overlap
-with inference while preserving exact input values. The current end-to-end figures
-remain the measured release behavior; they are not GPU-only throughput claims.
+These are separately timed medians, not additive profiler spans. Targeted profiling
+and controlled interventions now identify the causes: non-contiguous, partly
+float64 CPU interpolation, plus the FP32 backbone's large-batch throughput plateau.
+The [batch-scaling diagnosis](mambo-batch-scaling.md) includes exact shape checks,
+CUDA/ONNX placement evidence, pixel-preserving interventions and the next fixes.
 
 ## Memory and startup
 
@@ -141,7 +148,8 @@ Keep a predictor alive across requests to amortize loading. CPU sweeps use batch
 ![Accuracy changes from legacy to updated European presets](assets/mambo-release-preset-delta.svg)
 
 Updated northern Europe adds 222 candidate species, and updated Europe adds 72,
-with no removals. Their Flemming species accuracies are 70.32% and 68.81%, compared
+with no removals. Macro species accuracy changes from **71.24% to 70.49%** for
+northern Europe and **69.06% to 68.88%** for Europe. Their micro species accuracies are 70.32% and 68.81%, compared
 with 70.79% and 68.95% for the legacy lists. These are small costs for broader
 occurrence coverage. Species macro-F1 also changes from **0.2545 to 0.2367** for
 northern Europe, and **0.1993 to 0.1975** for Europe under the pinned policy.
