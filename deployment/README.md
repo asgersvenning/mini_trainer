@@ -62,7 +62,7 @@ metadata; the CLI exposes the same `--precision` option.
 Portable results use NumPy arrays; embeddings are float32 `[images, 1280]` CPU
 arrays from the normalized preclassification stage. Prediction-only ONNX uses
 the original graph; requesting embeddings selects the existing embedding graph.
-Each image uses one backbone pass. `topk` ranks each hierarchy level independently;
+Without TTA, each image uses one backbone pass. `topk` ranks each hierarchy level independently;
 a tuple is not necessarily an ancestral path. `indices` refer to the filtered
 rank vocabulary; `global_indices` refer to the full model vocabulary.
 
@@ -93,106 +93,64 @@ Directory input recursively discovers images in sorted order. Outputs are
 `predictions.json` and `mini_metric.csv`; `--embeddings` also writes `embeddings.npy`.
 Use `--class-list`, `--batch-size`, `--topk` and `--threads` as needed. `--threads`
 bounds parallel image preparation and controls ONNX CPU threads; native callers
-configure PyTorch model threads separately. Use `--threads 1` for serial preparation. The standalone
+configure PyTorch model threads separately. Use `--preprocess-workers 1` for serial preparation. The standalone
 wheel defaults to ONNX/CPU; the training-wheel entry point retains native/CUDA
 defaults, so explicit backend/device arguments are recommended in scripts.
 
 ## Optional test-time augmentation
 
-TTA runs as an outer process: transform the decoded image, use the normal
-preprocessing and backend, then average species logits before preset filtering
-and hierarchical reduction. It is **off by default**.
+TTA is off by default. Simply enable it to use the recommended recipe:
 
 ```python
-predictor = Predictor(bundle, backend="onnx", model="north_europe", tta="d4")
-result = predictor.predict(images)
+predictor = Predictor(bundle, backend="onnx", model="north_europe", tta=True)
+# CLI: append --tta
 ```
 
-Whole-image profiles are `hflip` (2 views), `d4` (8 rotations/reflections),
-and `light_noise` (original + two seeded 1% salt-and-pepper views). Experimental
-`five_crop` and `ten_crop` profiles are also available; these can remove diagnostic
-parts of a specimen and performed worse in the local subset comparison. Each model call stays within `batch_size`; images
-are decoded once per batch. More views cost more inference and preparation.
-Embeddings are the normalized mean of the view embeddings, not the single-view
-representation. TTA quality qualification and exact semantics are in the
-[TTA guide](../docs/mambo-tta.md).
+This selects `padded_scale`: the original plus views with 8% and 15% edge padding.
+It had the highest exploratory macro accuracy and lower cost than D4 or padded
+rotations. Set `tta="padded_scale"` to pin the recipe explicitly; `tta=False` or
+`--tta none` disables it. Result metadata records the resolved recipe and view count.
 
-Custom policies use the same outer layer, independently of backend or preset:
+Views use ordinary preprocessing and the chosen backend. Species logits are
+averaged before preset filtering and hierarchy reduction; embeddings are the
+normalized mean of view embeddings. Each model call stays within `batch_size`.
+The [TTA guide](../docs/mambo-tta.md) documents costs, explicit alternative recipes
+and custom image transforms through the same outer interface.
 
-```python
-from mambo_deploy import TTA, SaltAndPepper, View
+## Release comparison
 
-policy = TTA((View(), View(quarter_turns=1), SaltAndPepper(seed=7)), name="orientation-noise")
-predictor = Predictor(bundle, backend="torch", tta=policy)
-```
+Results below use all **58,640 Flemming images / 522 truth species**, including
+species outside the selected vocabulary. All predictive metrics use pinned
+`mini_metrics`, threshold zero and no threshold optimization. The main table uses
+the northern-Europe legacy list, shared by V2 and V3; charts also show Europe and
+global. TTA means the enabled padded-scale default. V3 quality uses automatic GPU precision;
+CPU timings use FP32.
 
-A policy can also contain your own callables: each receives a separate decoded
-uint8 CHW image and returns an image accepted by the normal preprocessing API.
-The CLI supports the named profiles through `--tta`.
+| Pipeline | Macro accuracy | Macro-F1 | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
+|---|---:|---:|---:|---:|---:|---:|
+| MAMBO v2 | 68.52% | 0.2575 | 1.26 | 45.2 | 44.8 | 83.5 |
+| V3 PyTorch | 71.25% | 0.2543 | 5.70 | 29.8 | 126.7 | 136.2 |
+| V3 ONNX | 71.24% | 0.2543 | 10.08 | 46.7 | 114.1 | 111.3 |
+| V3 PyTorch + TTA | 73.95% | 0.2935 | 2.29 | 8.5 | 42.7 | 50.4 |
+| V3 ONNX + TTA | 73.98% | 0.2944 | 3.56 | 16.8 | 41.7 | 39.4 |
 
-## Qualification
+Speed is **images per second**, including decoding through completed CPU results,
+on an i7-12800H / RTX 3080 Ti Laptop. Three fresh-process trials use the same image
+bank and four preparation/runtime CPU threads; V2 and ordinary V3 reuse retained
+measurements. V2 CPU uses its documented float32 input adapter.
 
-The release comparisons below use **TTA off**. Augmented results are reported
-separately in the [TTA guide](../docs/mambo-tta.md).
+![Full Flemming species metrics](../docs/assets/mambo-defaults-quality-all.svg)
 
-In the strict FP32 reference evaluation on all 58,640 Flemming images, PyTorch and
-ONNX return identical top-1 species,
-genus and family labels for the full list and both legacy/updated European presets.
-Northern Europe reaches **71.24% macro species accuracy** (v2: **68.52%**) and
-**70.79% micro species accuracy overall** (**82.04%** on images
-whose true species is in the list), versus **68.71% overall for MAMBO_v2**. Updated
-northern Europe reaches **70.32% micro accuracy**. All predictive metrics use pinned `mini_metrics`, with threshold 0 and no
-optimization. Unknown species remain in the overall result.
-CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
-this checks prediction consistency, not downstream embedding usefulness.
+![CPU and GPU throughput](../docs/assets/mambo-defaults-speed.svg)
 
-On an i7-12800H / RTX 3080 Ti Laptop GPU, with four CPU threads and the legacy
-northern-Europe preset, the updated defaults deliver:
+The [full comparison](../docs/mambo-deployment-defaults.md) includes memory charts,
+all/known-truth metrics at every rank, updated European presets and reproducible
+commands. The [frequency curves](../docs/mambo-frequency-comparison.md) compare
+training and Flemming support. The [loading study](../docs/mambo-loading-scaling.md)
+explains remaining scheduling limits; `preprocess_workers` / `--preprocess-workers`
+tunes preparation separately from ONNX runtime `threads` and defaults to it.
 
-| Runtime | CPU, batch 1 | GPU, batch 1 | GPU, batch 8 | GPU, batch 32 |
-|---|---:|---:|---:|---:|
-| MAMBO v2 (CPU input adapter) | 1.3 | 45.2 | 44.8 | 83.5 |
-| V3 ONNX auto | 10.1 | 46.7 | 114.1 | 111.3 |
-| V3 PyTorch auto | 5.7 | 29.8 | 126.7 | 136.2 |
-
-All speeds are **images per second**, including decoding, preparation and result
-handling. GPU batch-32 throughput improves by **2.62× ONNX / 3.06× PyTorch** over
-the original v3 FP32 pipeline. CPU gains are not uniform. First prediction including
-loading takes about 0.37 s CPU / 1.46 s GPU for ONNX, versus 42–43 s for PyTorch;
-reuse a loaded predictor. ONNX uses less host memory and suits lightweight
-integrations; native PyTorch suits existing callers and persistent GPU workers.
-
-Both automatic GPU variants were evaluated on all 58,640 Flemming images. Northern-
-Europe macro species accuracy is **71.25% PyTorch / 71.24% ONNX**; macro-F1 is
-**0.2543** for both. The largest macro-accuracy change from FP32 across five presets,
-three ranks and both truth populations is under 0.094 percentage points. BF16 has
-4,096-image qualification only. Small cross-precision label differences are expected.
-
-The unthresholded, all-truth **species** comparison is:
-
-| Preset | V2 macro accuracy | V3 PyTorch / ONNX | V2 macro-F1 | V3 PyTorch / ONNX |
-|---|---:|---:|---:|---:|
-| Northern Europe | 68.52% | 71.25% / 71.24% | 0.2575 | 0.2543 / 0.2543 |
-| Europe | 66.04% | 69.05% / 69.06% | 0.2000 | 0.1997 / 0.1997 |
-| Global | 57.21% | 58.01% / 58.03% | 0.0899 | 0.0973 / 0.0973 |
-
-The [frequency curves](../docs/mambo-frequency-comparison.md) compare both training
-metadata counts and Flemming image counts. The [loading study](../docs/mambo-loading-scaling.md)
-separates preparation from prepared-input inference: the remaining plateau is partly
-loading/scheduling, not solely model throughput. `preprocess_workers` (CLI:
-`--preprocess-workers`) controls preparation separately from ONNX runtime `threads`;
-it defaults to the latter. Tune workers with batch size and CPU limits rather than
-assuming more threads always help.
-
-The [accelerated comparison and charts](../docs/mambo-accelerated-deployment.md)
-cover speed, memory, all/known-truth metrics and updated European lists. The
-[original v2/v3 comparison](../docs/mambo-release-comparison.md) preserves the FP32
-reference and explains the metric definitions. V3 improves northern-Europe macro
-accuracy over v2, but v2 retains slightly higher macro-F1 there and higher global
-micro species accuracy. Choose presets for the deployment region; see the
-[preset catalogue](../docs/model-presets.md).
-
-The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
-reproduction commands and UCloud handoff. In-domain evaluation, other operating
-systems and publication/license review remain open. Small ONNX numerical
-differences are expected even where top-1 labels agree.
+Use ordinary V3 for throughput and enable TTA when its accuracy/cost trade-off fits.
+The recipe was selected on a Flemming subset, so full-set results are descriptive,
+not independent validation. In-domain UCloud evaluation, other operating systems,
+and publication/license review remain open. See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).

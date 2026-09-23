@@ -8,11 +8,20 @@ size or the selected class list.
 | Profile | Views | Spatial policy |
 |---|---:|---|
 | `none` | 1 | Ordinary single-view path; default |
+| `padded_scale` | 3 | Original plus 8% / 15% edge padding; default when TTA is enabled |
 | `hflip` | 2 | Original and horizontal reflection |
 | `five_crop` | 5 | Original and four corner crops, each 90% of original height/width |
 | `ten_crop` | 10 | Five-crop views and their horizontal reflections |
 | `d4` | 8 | Rotations of 0/90/180/270 degrees and their horizontal reflections |
 | `light_noise` | 3 | Original plus two independently seeded 1% salt-and-pepper views |
+
+Enable the recommended recipe with `Predictor(..., tta=True)` or bare `--tta`.
+Both resolve to `padded_scale`, which is also available explicitly. Omitting TTA
+keeps single-view inference; `tta=False` and `--tta none` explicitly disable it.
+The padded-scale policy was promoted from the exploratory candidates because it
+had the highest subset macro accuracy and was faster than D4 or padded rotations.
+It did not maximize every metric: padded rotations had higher subset macro-F1.
+The public `EdgePad(fraction)` transform exposes the same source-preserving padding.
 
 `SaltAndPepper(proportion=0.01, seed=0)` is also available as a public transform.
 It uses one RGB-shared black/white pixel mask and an image-keyed seed, so built-in
@@ -46,9 +55,9 @@ retrieval/clustering. The default single-view representation is unchanged.
 ## Qualification
 
 Both automatic GPU backends passed a fixed, seeded **1,024-image / 201-species**
-Flemming qualification with all six built-in profiles and all five release evaluation
-presets. Metrics use pinned `mini_metrics` at the same revision and threshold-zero
-policy as the full release comparison. Species results include all 1,024 images;
+Flemming qualification with the six original profiles and all five release evaluation
+presets; padded scale was one of the seven additional candidates below. Metrics
+use pinned `mini_metrics` at the same revision and threshold-zero policy as the full release comparison. Species results include all 1,024 images;
 880 have truth inside the northern-Europe vocabulary. These are **subset results**,
 not directly comparable to the full-set scores or evidence of a universal gain.
 
@@ -66,12 +75,13 @@ Northern Europe, all truth:
 D4 improves native macro accuracy by 3.33 percentage points in this subset;
 crop profiles are worse than single-view inference. Cropping can discard useful
 parts of a specimen or its context. These profiles were defined before this
-comparison; none is selected as a new default. Small per-image changes can have
+comparison; D4 is not the enabled default. Small per-image changes can have
 visible macro effects when species have very little evaluation support.
 
 The [compact metrics](assets/mambo-tta-comparison.json) retain all/known-truth
 macro and micro metrics at species/genus/family level for every profile, backend
-and evaluated list. Full-data TTA efficacy, in-domain behavior and downstream
+and evaluated list. The [full release comparison](mambo-deployment-defaults.md)
+evaluates the promoted padded-scale recipe on all Flemming images. In-domain behavior and downstream
 embedding usefulness remain unmeasured. Both backends passed finite-score checks,
 and public prediction/embedding agreement, custom-list and unit-embedding checks
 on the first eight qualification images for every profile. The installed ONNX-only
@@ -209,18 +219,19 @@ all truth, using the same pinned mini_metrics policy:
 These results favor padded scale/rotation views in this subset, with smaller gains
 from several photometric/noise policies. They do not establish a general ranking
 or separate padding from rotation effects. Every tested result is retained,
-including the worse crop and salt-and-pepper profiles; none is silently selected
-as a default. All 13 policies were tested on the same fixed subset. The additional
-candidates are reproducible public-interface examples, not extra CLI profiles.
+including the worse crop and salt-and-pepper profiles. All 13 policies were tested
+on the same fixed subset. Padded scale is now the named enabled-TTA default;
+the other additional candidates remain reproducible public-interface examples.
 
-Keep D4 and other whole-image policies prominent in consumer documentation; retain
-crop profiles as optional experimental comparisons. Strong hue changes, aggressive
+Keep the padded-scale default and other whole-image policies prominent in consumer
+documentation; retain crop profiles as optional experimental comparisons. Strong hue changes, aggressive
 blur, erasing/Cutout and unbounded Cartesian products are lower-priority candidates
 here because they alter diagnostic colors/details or rapidly multiply inference
 cost. This priority is a task-specific inference from the literature and current
 measurements, not a universal TTA ranking. A compact mixed policy can be tested
-next on independent validation data; full Flemming and UCloud evaluation must
-remain separate from policy selection.
+next on independent validation data. Full Flemming results include the subset
+used for recipe selection and are therefore descriptive, not independent
+validation; UCloud evaluation remains outstanding.
 
 A portable custom policy can use existing Pillow functionality directly:
 

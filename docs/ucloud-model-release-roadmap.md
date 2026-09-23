@@ -619,4 +619,7 @@ profiles and custom decoded-image transforms, plus independent preparation worke
 Flemming support axes. The [worker-scaling study](mambo-loading-scaling.md) confirms
 remaining loading/scheduling limits; one-batch lookahead is experimental and needs
 production cancellation/error and CPU/TTA contention qualification before adoption.
-TTA is opt-in and has subset evidence; full-data TTA efficacy remains unmeasured.
+TTA remains opt-in; `tta=True` and bare `--tta` select the three-view padded-scale
+recipe. The [default comparison](mambo-deployment-defaults.md) records full Flemming
+metrics and fresh-process CPU/GPU timing against V2 and ordinary V3. The full set
+includes the recipe-selection subset; independent in-domain validation remains open.

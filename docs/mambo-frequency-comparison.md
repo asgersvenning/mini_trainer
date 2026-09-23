@@ -2,7 +2,7 @@
 
 ![Macro accuracy by training and evaluation frequency](assets/mambo-frequency-accuracy.svg)
 
-These curves compare MAMBO v2 with the automatic v3 PyTorch/ONNX paths on the same
+These curves compare MAMBO v2 with the single-view automatic v3 PyTorch/ONNX paths on the same
 58,640 Flemming images. Northern Europe leads; Europe and global use the same
 legacy lists in both releases. All 522 truth species remain in the main curves.
 

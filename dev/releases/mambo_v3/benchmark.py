@@ -112,7 +112,7 @@ def benchmark(args):
         "cells": [],
         "boundaries": {
             "end_to_end": "image path through CPU result/embedding; threaded decode/preprocess/transfer/reduction included",
-            "preprocessing": "serial preparation diagnostic; public API uses threads for batches",
+            "preprocessing": "single-view serial preparation diagnostic (also with TTA); not public API timing",
             "prepared": "single-view diagnostic (also with TTA): CPU input to CPU output; transfers included; no decode/reduction",
             "cold": "first image after Predictor construction; lazy model/session load included; runtime import/config measured separately",
         },
