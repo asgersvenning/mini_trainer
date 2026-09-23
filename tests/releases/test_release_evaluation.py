@@ -130,3 +130,18 @@ def test_threaded_preprocessing_is_byte_identical_and_ordered(tmp_path):
         threaded = prepare_batch(paths, pool)
     np.testing.assert_array_equal(serial, threaded)
     assert not np.array_equal(threaded[0], threaded[-1])
+
+
+def test_loading_observer_preserves_classmethod_and_restores_it():
+    import torch
+
+    from dev.releases.mambo_v3.benchmark import observe_loading
+    from mini_trainer.modeling.classifier import Classifier
+
+    original = Classifier.init_spherical_repulsion.__func__
+    values = {}
+    with observe_loading("torch", values):
+        layer = torch.nn.Linear(2, 3)
+        assert Classifier.init_spherical_repulsion(layer, iterations=1) is layer
+    assert Classifier.init_spherical_repulsion.__func__ is original
+    assert values["spherical_initialization_within_model_build"] >= 0

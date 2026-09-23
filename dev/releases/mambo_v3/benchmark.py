@@ -74,10 +74,16 @@ def observe_loading(backend, values):
         import torch
 
         from mini_trainer.builders import BaseBuilder
+        from mini_trainer.modeling.classifier import Classifier
 
         with (
             patch.object(torch, "load", timed("checkpoint_deserialization", torch.load)),
             patch.object(BaseBuilder, "build_model", timed("architecture_and_weight_construction", BaseBuilder.build_model)),
+            patch.object(
+                Classifier,
+                "init_spherical_repulsion",
+                classmethod(timed("spherical_initialization_within_model_build", Classifier.init_spherical_repulsion.__func__)),
+            ),
         ):
             yield
     else:

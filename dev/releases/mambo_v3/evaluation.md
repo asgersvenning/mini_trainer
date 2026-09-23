@@ -171,3 +171,10 @@ matching NVIDIA dependencies into its own environment or configure library searc
 paths explicitly. Both profiled graphs then ran all 170 convolution operations on
 CUDA; one `Acos` and four `Concat` operations remained on CPU. The profiler's
 incidental timings overlapped collection and are not included in speed results.
+
+Native startup instrumentation also records spherical classifier initialization.
+That measurement is nested inside model construction, so the loading components
+must not all be added together. The existing core constructs a normalized head
+with 100 initialization iterations before loading checkpoint weights; any change
+to that shared loading behavior belongs on a separate feature/fix branch with
+checkpoint validation, not directly on the release branch.
