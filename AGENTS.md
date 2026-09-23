@@ -27,6 +27,22 @@
 
 ## Priorities
 
+### Release branch scope
+
+On `release/mambo-v3`, restrict direct work to the MAMBO release: deployment
+assets and adapters, presets, packaging, release documentation, and the associated
+compatibility and quality/performance qualification. Follow
+[the release roadmap](docs/ucloud-model-release-roadmap.md).
+
+Do not implement fixes or refactors to the shared core module on this branch.
+Develop required core changes on a dedicated feature/fix branch or `master`,
+validate them there, then merge the reviewed commits into the release branch and
+validate the affected combined behavior. Release pressure does not override this
+boundary. Existing feature-branch export work must follow the same integration
+path; do not copy it into new direct core commits on the release branch.
+
+### Repository priorities
+
 Follow the order in `docs/roadmap.md`: development safeguards; behavior-preserving
 simplification; ONNX export and Hugging Face packaging; training efficiency;
 `mini_metrics` and continuous evaluation; additional dataset formats.
