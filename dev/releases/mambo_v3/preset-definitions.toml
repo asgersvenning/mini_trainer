@@ -98,10 +98,9 @@ countries = ["AL", "DZ", "BA", "HR", "CY", "EG", "FR", "GR", "IL", "IT", "LB", "
 scope = "Whole Mediterranean coastal countries/territories plus Portugal, Andorra, San Marino, Vatican City, North Macedonia, Bulgaria, Serbia and Jordan. Includes inland and overseas records of selected countries, not only Mediterranean climate zones."
 
 [presets.arctic]
-label = "Arctic / broad northern-country scope"
-countries = ["CA", "US", "GL", "IS", "FO", "NO", "SJ", "SE", "FI", "AX", "RU"]
-country_state_restrictions = { US = ["Alaska"] }
-scope = "Canada, Alaska (US records only when stateProvince is Alaska), Greenland, Iceland, Faroe Islands, Norway, Svalbard/Jan Mayen, Sweden, Finland, Åland and Russia. Other countries remain whole-country proxies including southern records; this is not an Arctic Circle or tundra filter. US records with blank state are excluded."
+label = "Arctic / north of 60°N"
+minimum_latitude = 60
+scope = "Records at latitude 60°N or farther north, across all countries, including exactly 60°. Missing, malformed and out-of-range latitudes are excluded. A broad northern/subarctic scope, not the Arctic Circle boundary; no country or state-name proxy is used."
 
 [presets.oceania]
 label = "Oceania"

@@ -63,7 +63,7 @@ def test_misspelled_or_empty_filter_fails_closed():
     table = pa.table({"countryCode": ["AU"]})
     with pytest.raises(ValueError, match="Unknown region fields"):
         select_region(table, {"countries": ["AU"], "state_provinc": ["Tasmania"]})
-    with pytest.raises(ValueError, match="requires countries or continents"):
+    with pytest.raises(ValueError, match="requires countries, continents or minimum_latitude"):
         select_region(table, {})
 
 
@@ -72,14 +72,20 @@ def test_asia_excludes_cyprus_even_when_continent_matches():
     assert select_region(table, RULES["asia"])["countryCode"].to_pylist() == ["JP", "TR"]
 
 
-def test_arctic_us_requires_alaska_without_restricting_other_countries():
+def test_arctic_uses_inclusive_latitude_independent_of_country_or_state():
     table = pa.table(
         {
-            "countryCode": ["US", "US", "US", "US", "CA", "NO", "AU"],
-            "stateProvince": ["Alaska", "Florida", "", None, "Ontario", None, "Alaska"],
+            "countryCode": ["US", "US", "RU", "CA", "", "NO"],
+            "stateProvince": ["Alaska", "Alaska", "", "", "", ""],
+            "decimalLatitude": ["59.99", "60", "61.5", "90", " 6e1 ", "59"],
         }
     )
-    assert select_region(table, RULES["arctic"])["countryCode"].to_pylist() == ["US", "CA", "NO"]
+    assert select_region(table, RULES["arctic"])["decimalLatitude"].to_pylist() == ["60", "61.5", "90", " 6e1 "]
+
+
+def test_arctic_excludes_missing_invalid_and_southern_latitudes():
+    table = pa.table({"decimalLatitude": [None, "", "bad", "NaN", "inf", "91", "-91", "-60", "1e999"]})
+    assert select_region(table, RULES["arctic"]).num_rows == 0
 
 
 def test_overlap_distinguishes_containment_from_similarity():

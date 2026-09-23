@@ -33,7 +33,7 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `subsaharan_africa` | 796 | 3 | 25 | 144,918 | Broad African selection excluding Algeria, Egypt, Libya, Morocco, Tunisia and Western Sahara. Includes Sudan, Mauritania, Mali, Niger, Chad, the Horn, Madagascar and island territories; this is not a Sahara boundary polygon. |
 | `madagascar` | 107 | 3 | 25 | 2,584 | All records assigned countryCode MG. Species recorded in Madagascar, not only endemic species; neighbouring island countries/territories are excluded. |
 | `mediterranean` | 2,680 | 3 | 25 | 660,065 | Whole Mediterranean coastal countries/territories plus Portugal, Andorra, San Marino, Vatican City, North Macedonia, Bulgaria, Serbia and Jordan. Includes inland and overseas records of selected countries, not only Mediterranean climate zones. |
-| `arctic` | 4,333 | 3 | 25 | 871,155 | Canada, Alaska (US records only when stateProvince is Alaska), Greenland, Iceland, Faroe Islands, Norway, Svalbard/Jan Mayen, Sweden, Finland, Åland and Russia. Other countries remain whole-country proxies including southern records; this is not an Arctic Circle or tundra filter. US records with blank state are excluded. |
+| `arctic` | 1,548 | 3 | 25 | 115,881 | Records at latitude 60°N or farther north, across all countries, including exactly 60°. Missing, malformed and out-of-range latitudes are excluded. A broad northern/subarctic scope, not the Arctic Circle boundary; no country or state-name proxy is used. |
 | `oceania` | 2,273 | 3 | 25 | 584,477 | All OCEANIA records plus Australia, New Zealand, Papua New Guinea and the listed Pacific countries/territories. Australia and Tasmania intentionally overlap. |
 | `new_zealand` | 425 | 3 | 25 | 110,030 | All records assigned countryCode NZ, including islands recorded under NZ. Separately coded Cook Islands, Niue and Tokelau remain in the other-Oceania preset. |
 | `oceania_excluding_australia_nz` | 352 | 3 | 25 | 8,721 | The Oceania metadata selection with all AU and NZ records excluded, even when continent is OCEANIA. Species shared with Australia or New Zealand remain eligible if they qualify from records elsewhere in Oceania; this is not subtraction of their species lists. |
@@ -67,7 +67,7 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 - **subsaharan_africa** (Sub-Saharan Africa (broad)): (`continent` in `AFRICA` OR `countryCode` in `AO, BJ, BW, BF, BI, CV, CM, CF, TD, KM, CG, CD, CI, DJ, GQ, ER, SZ, ET, GA, GM, GH, GN, GW, KE, LS, LR, MG, MW, ML, MR, MU, YT, MZ, NA, NE, NG, RE, RW, SH, ST, SN, SC, SL, SO, ZA, SS, SD, TZ, TG, UG, ZM, ZW`) AND country NOT in `DZ, EG, LY, MA, TN, EH`.
 - **madagascar** (Madagascar only): `countryCode` in `MG`.
 - **mediterranean** (Mediterranean (broad)): `countryCode` in `AL, DZ, BA, HR, CY, EG, FR, GR, IL, IT, LB, LY, MT, MC, ME, MA, PS, SI, ES, SY, TN, TR, PT, GI, AD, SM, VA, MK, BG, RS, JO`.
-- **arctic** (Arctic / broad northern-country scope): `countryCode` in `CA, US, GL, IS, FO, NO, SJ, SE, FI, AX, RU`; `US` records additionally require `stateProvince` in `Alaska`.
+- **arctic** (Arctic / north of 60°N): valid `decimalLatitude` between 60 and 90 degrees inclusive.
 - **oceania** (Oceania): `continent` in `OCEANIA` OR `countryCode` in `AU, NZ, PG, FJ, SB, VU, NC, PF, WS, AS, TO, TV, KI, NR, FM, MH, PW, GU, MP, CK, NU, TK, WF, PN, NF`.
 - **new_zealand** (New Zealand): `countryCode` in `NZ`.
 - **oceania_excluding_australia_nz** (Oceania excluding Australia and New Zealand): (`continent` in `OCEANIA` OR `countryCode` in `AU, NZ, PG, FJ, SB, VU, NC, PF, WS, AS, TO, TV, KI, NR, FM, MH, PW, GU, MP, CK, NU, TK, WF, PN, NF`) AND country NOT in `AU, NZ`.
@@ -77,7 +77,7 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 
 ## Interpretation and reproducibility
 
-Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. Arctic uses Alaska for US records; other selected countries remain broad proxies including southern records. Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.
+Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. Arctic uses latitude at least 60°N across all countries, including the boundary; missing, malformed or out-of-range latitudes are excluded. This broad northern scope includes subarctic areas. Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.
 
 Blank geographic fields match no predicate unless another selected field matches. The Tasmania preset excludes Australian records with blank or different state values. Overlapping presets are expected; membership in one does not exclude another.
 

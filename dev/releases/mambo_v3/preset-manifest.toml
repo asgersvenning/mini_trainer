@@ -2,7 +2,7 @@ schema_version = 2
 qualification_status = "provisional; pending final release decision"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "148006ef5a5daca30bf6b770ba8aa63bcf7f146f3e4aac278400b7f24260fcfd"
+definitions_sha256 = "5ce9da8954624c5d41ed411c5339ffb4b8cc75fdadcc689a3e8c54ad2c2fa700"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 
@@ -168,13 +168,13 @@ sha256 = "f203302f8bfdcb92aec580fa3f11e6ebda8c3886f5fd691379860408e84fd4e3"
 
 [presets.arctic]
 path = "presets/arctic.classes"
-count = 4333
+count = 1548
 minimum_regional_rows = 3
 minimum_global_rows = 25
 excluded_by_global_gate_after_regional = 0
-selected_rows = 871155
-species_before_threshold = 4605
-sha256 = "dd43064d8896cadcbc85cacb916cd9bcc8712e4e89d93ee18af209061769bab0"
+selected_rows = 115881
+species_before_threshold = 1832
+sha256 = "a9138c543b90e319296d2c0cd5dc3400c9045616633988755f8057450a19ae5f"
 
 [presets.oceania]
 path = "presets/oceania.classes"

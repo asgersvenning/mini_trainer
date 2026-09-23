@@ -27,6 +27,7 @@ def select_region(table, rule):
         "country_continent_restrictions",
         "minimum_regional_rows",
         "minimum_global_rows",
+        "minimum_latitude",
     }
     if unknown := set(rule) - permitted:
         raise ValueError(f"Unknown region fields: {sorted(unknown)}")
@@ -35,8 +36,17 @@ def select_region(table, rule):
         if values := rule.get(key):
             part = pc.fill_null(pc.is_in(table[column], value_set=pa.array(values)), False)
             mask = part if mask is None else pc.or_(mask, part)
+    if "minimum_latitude" in rule:
+        minimum = rule["minimum_latitude"]
+        if not -90 <= minimum <= 90:
+            raise ValueError("minimum_latitude must be within [-90, 90]")
+        text = pc.utf8_trim_whitespace(pc.cast(table["decimalLatitude"], pa.string()))
+        numeric = pc.match_substring_regex(text, r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+        latitude = pc.cast(pc.if_else(numeric, text, None), pa.float64())
+        northern = pc.fill_null(pc.and_(pc.greater_equal(latitude, minimum), pc.less_equal(latitude, 90)), False)
+        mask = northern if mask is None else pc.and_(mask, northern)
     if mask is None:
-        raise ValueError("Region requires countries or continents")
+        raise ValueError("Region requires countries, continents or minimum_latitude")
     if values := rule.get("excluded_countries"):
         mask = pc.and_(mask, pc.invert(pc.is_in(table["countryCode"], value_set=pa.array(values))))
     if values := rule.get("state_province"):
@@ -71,6 +81,9 @@ def recipe(rule):
         if rule.get(key):
             parts.append(f"`{column}` in `{', '.join(rule[key])}`")
     result = " OR ".join(parts)
+    if "minimum_latitude" in rule:
+        latitude = f"valid `decimalLatitude` between {rule['minimum_latitude']} and 90 degrees inclusive"
+        result = f"({result}) AND {latitude}" if result else latitude
     if rule.get("excluded_countries"):
         result = f"({result}) AND country NOT in `{', '.join(rule['excluded_countries'])}`"
     if rule.get("state_province"):
@@ -100,7 +113,7 @@ def build(metadata, evidence_root, write=False):
     if sorted(mapping.values()) != list(range(len(mapping))):
         raise ValueError("Model species indices are not contiguous")
     vocabulary = sorted(mapping, key=mapping.get)
-    table = pq.read_table(metadata, columns=["speciesKey", "countryCode", "continent", "stateProvince"])
+    table = pq.read_table(metadata, columns=["speciesKey", "countryCode", "continent", "stateProvince", "decimalLatitude"])
     if table.num_rows != source["rows"] or table["speciesKey"].null_count:
         raise ValueError("Unexpected metadata rows or null species IDs")
     regional_minimum = definitions["minimum_regional_rows"]
@@ -215,7 +228,8 @@ def build(metadata, evidence_root, write=False):
             "",
             "Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. "
             "Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. "
-            "Arctic uses Alaska for US records; other selected countries remain broad proxies including southern records. "
+            "Arctic uses latitude at least 60°N across all countries, including the boundary; "
+            "missing, malformed or out-of-range latitudes are excluded. This broad northern scope includes subarctic areas. "
             "Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.",
             "",
             "Blank geographic fields match no predicate unless another selected field matches. The Tasmania preset excludes "
