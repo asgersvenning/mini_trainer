@@ -178,3 +178,11 @@ must not all be added together. The existing core constructs a normalized head
 with 100 initialization iterations before loading checkpoint weights; any change
 to that shared loading behavior belongs on a separate feature/fix branch with
 checkpoint validation, not directly on the release branch.
+
+Metric extraction uses mini_metrics for all predictive scores, explicitly selecting
+`micro_accuracy` (the bare `accuracy` field is macro), `accuracy`, `f1`, `recall`,
+`precision`, `coverage` and `theilU`. Both `known_only=False` and `True` are retained;
+rank summary fields reference those outputs. Schema `mini-metrics-quality-v2`
+rejects cached results from the older direct-accuracy extractor. Archive old metric
+JSON before recomputing from unchanged prediction CSVs. Pairwise comparison reports
+only prediction agreement; predictive accuracy comes from the metric files.

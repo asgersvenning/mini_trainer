@@ -8,31 +8,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.68712482946794,
-          "micro_accuracy_known": 0.7963358235503379
+          "micro_accuracy_known": 0.7963358235503379,
+          "macro_accuracy_all": 0.6852063621352951,
+          "macro_accuracy_known": 0.706872966471589,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58639,
           "list_coverage": 0.9999829467939972,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7922919508867667,
-          "micro_accuracy_known": 0.7923054622350313
+          "micro_accuracy_known": 0.7923054622350313,
+          "macro_accuracy_all": 0.7890053947525617,
+          "macro_accuracy_known": 0.7914633554838781,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9449351978171896,
-          "micro_accuracy_known": 0.9449351978171896
+          "micro_accuracy_known": 0.9449351978171896,
+          "macro_accuracy_all": 0.8440271040813301,
+          "macro_accuracy_known": 0.8440271040813301,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.2575380033854696,
+      "macro_f1_all": 0.25753800338546967,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
@@ -45,31 +51,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.669594133697135,
-          "micro_accuracy_known": 0.7760188149729238
+          "micro_accuracy_known": 0.7760188149729238,
+          "macro_accuracy_all": 0.6604260262269301,
+          "macro_accuracy_known": 0.6813090626293627,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7764495225102319,
-          "micro_accuracy_known": 0.7764495225102319
+          "micro_accuracy_known": 0.7764495225102319,
+          "macro_accuracy_all": 0.7728971632770847,
+          "macro_accuracy_known": 0.7728971632770847,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9423090040927694,
-          "micro_accuracy_known": 0.9423090040927694
+          "micro_accuracy_known": 0.9423090040927694,
+          "macro_accuracy_all": 0.8353711166095457,
+          "macro_accuracy_known": 0.8353711166095457,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.19998360830548267,
+      "macro_f1_all": 0.19998360830548284,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
@@ -82,31 +94,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.5936050477489768,
-          "micro_accuracy_known": 0.6879520929681016
+          "micro_accuracy_known": 0.6879520929681016,
+          "macro_accuracy_all": 0.5720627970250876,
+          "macro_accuracy_known": 0.5901517392235093,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7285129604365621,
-          "micro_accuracy_known": 0.7285129604365621
+          "micro_accuracy_known": 0.7285129604365621,
+          "macro_accuracy_all": 0.7168278641037727,
+          "macro_accuracy_known": 0.7168278641037727,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9265006821282401,
-          "micro_accuracy_known": 0.9265006821282401
+          "micro_accuracy_known": 0.9265006821282401,
+          "macro_accuracy_all": 0.8069699178640561,
+          "macro_accuracy_known": 0.8069699178640561,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.08990868448899293,
+      "macro_f1_all": 0.08990868448899282,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5"
@@ -119,28 +137,34 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.7078956343792633,
-          "micro_accuracy_known": 0.8204079212617099
+          "micro_accuracy_known": 0.8204079212617099,
+          "macro_accuracy_all": 0.7123671759291879,
+          "macro_accuracy_known": 0.734892620227344,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58639,
           "list_coverage": 0.9999829467939972,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7936732605729877,
-          "micro_accuracy_known": 0.7936867954774126
+          "micro_accuracy_known": 0.7936867954774126,
+          "macro_accuracy_all": 0.8054070319557569,
+          "macro_accuracy_known": 0.8079160881300739,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9298090040927695,
-          "micro_accuracy_known": 0.9298090040927695
+          "micro_accuracy_known": 0.9298090040927695,
+          "macro_accuracy_all": 0.8106383132501974,
+          "macro_accuracy_known": 0.8106383132501974,
+          "abstention_coverage": 1.0
         }
       },
       "macro_f1_all": 0.25450880594788156,
@@ -156,31 +180,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.6894952251023192,
-          "micro_accuracy_known": 0.7990829677062334
+          "micro_accuracy_known": 0.7990829677062334,
+          "macro_accuracy_all": 0.6906121581308468,
+          "macro_accuracy_known": 0.7124496967278696,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7793656207366985,
-          "micro_accuracy_known": 0.7793656207366985
+          "micro_accuracy_known": 0.7793656207366985,
+          "macro_accuracy_all": 0.7927684087442151,
+          "macro_accuracy_known": 0.7927684087442151,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9286323328785812,
-          "micro_accuracy_known": 0.9286323328785812
+          "micro_accuracy_known": 0.9286323328785812,
+          "macro_accuracy_all": 0.8061650335232657,
+          "macro_accuracy_known": 0.8061650335232657,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.19931852384419563,
+      "macro_f1_all": 0.19931852384419554,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
@@ -193,31 +223,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.5843281036834925,
-          "micro_accuracy_known": 0.6772006798687695
+          "micro_accuracy_known": 0.6772006798687695,
+          "macro_accuracy_all": 0.5802757153882665,
+          "macro_accuracy_known": 0.5986243546100299,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7058321964529332,
-          "micro_accuracy_known": 0.7058321964529332
+          "micro_accuracy_known": 0.7058321964529332,
+          "macro_accuracy_all": 0.7133531076261048,
+          "macro_accuracy_known": 0.7133531076261048,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.903137789904502,
-          "micro_accuracy_known": 0.903137789904502
+          "micro_accuracy_known": 0.903137789904502,
+          "macro_accuracy_all": 0.7851379223252065,
+          "macro_accuracy_known": 0.7851379223252065,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.09709532327738138,
+      "macro_f1_all": 0.09709532327738142,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5"
@@ -230,31 +266,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.703206002728513,
-          "micro_accuracy_known": 0.8149729238309814
+          "micro_accuracy_known": 0.8149729238309814,
+          "macro_accuracy_all": 0.7049027989956338,
+          "macro_accuracy_known": 0.7271922155646657,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7889154160982265,
-          "micro_accuracy_known": 0.7889154160982265
+          "micro_accuracy_known": 0.7889154160982265,
+          "macro_accuracy_all": 0.8001749661579481,
+          "macro_accuracy_known": 0.8001749661579481,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9289222373806275,
-          "micro_accuracy_known": 0.9289222373806275
+          "micro_accuracy_known": 0.9289222373806275,
+          "macro_accuracy_all": 0.8066694596309745,
+          "macro_accuracy_known": 0.8066694596309745,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.23669244246452395,
+      "macro_f1_all": 0.2366924424645238,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "78ee7693c7352244cd8a99b7276196aa32de27e620ed66648c4087f826d47092"
@@ -267,31 +309,37 @@
           "images": 58640,
           "known_images": 50598,
           "list_coverage": 0.8628581173260573,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 522,
           "micro_accuracy_all": 0.6880627557980901,
-          "micro_accuracy_known": 0.7974228230364837
+          "micro_accuracy_known": 0.7974228230364837,
+          "macro_accuracy_all": 0.6887822210592908,
+          "macro_accuracy_known": 0.7105618960334976,
+          "abstention_coverage": 1.0
         },
         "genus": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 322,
           "micro_accuracy_all": 0.7779160982264666,
-          "micro_accuracy_known": 0.7779160982264666
+          "micro_accuracy_known": 0.7779160982264666,
+          "macro_accuracy_all": 0.7907835796748087,
+          "macro_accuracy_known": 0.7907835796748087,
+          "abstention_coverage": 1.0
         },
         "family": {
           "images": 58640,
           "known_images": 58640,
           "list_coverage": 1.0,
-          "abstention_coverage": 1.0,
           "truth_species_or_taxa": 23,
           "micro_accuracy_all": 0.9254945429740792,
-          "micro_accuracy_known": 0.9254945429740792
+          "micro_accuracy_known": 0.9254945429740792,
+          "macro_accuracy_all": 0.804979506038197,
+          "macro_accuracy_known": 0.804979506038197,
+          "abstention_coverage": 1.0
         }
       },
-      "macro_f1_all": 0.19747553631500317,
+      "macro_f1_all": 0.19747553631500298,
       "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
       "sample_ids_sha256": "51a9e4ae7818a96f935527a984a61f4fd31e43f60987ca23792f2bcafd27631a",
       "list_sha256": "465e644095abe381b7b6a44f7ce05d5da0ba77bf75b76e1c53d0eba6c89f487a"
@@ -1144,18 +1192,154 @@
       }
     }
   ],
+  "v3_gpu_components": [
+    {
+      "model": "v3-onnx",
+      "batch": 1,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 32.848500999534735
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 1,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 13.389879000897054
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 1,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 16.602722000243375
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 8,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 186.86159300341387
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 8,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 50.60579099881579
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 8,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 134.49058500191313
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 32,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 753.8683550010319
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 32,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 180.64068800231325
+    },
+    {
+      "model": "v3-onnx",
+      "batch": 32,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 559.359699000197
+    },
+    {
+      "model": "v3-torch",
+      "batch": 1,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 36.8857930006925
+    },
+    {
+      "model": "v3-torch",
+      "batch": 1,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 18.508613997255452
+    },
+    {
+      "model": "v3-torch",
+      "batch": 1,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 14.880823000567034
+    },
+    {
+      "model": "v3-torch",
+      "batch": 8,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 171.64449200208765
+    },
+    {
+      "model": "v3-torch",
+      "batch": 8,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 46.71529999905033
+    },
+    {
+      "model": "v3-torch",
+      "batch": 8,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 126.31524700191221
+    },
+    {
+      "model": "v3-torch",
+      "batch": 32,
+      "stage": "end_to_end",
+      "observations": 21,
+      "median_ms": 718.6301279980398
+    },
+    {
+      "model": "v3-torch",
+      "batch": 32,
+      "stage": "prepared",
+      "observations": 21,
+      "median_ms": 181.38111200096318
+    },
+    {
+      "model": "v3-torch",
+      "batch": 32,
+      "stage": "preprocessing",
+      "observations": 21,
+      "median_ms": 519.4957230014552
+    }
+  ],
+  "quality_policy": {
+    "accuracy": "mini_metrics all.micro_accuracy at each rank; all images",
+    "macro_f1": "mini_metrics all.f1.0; equal weight over union of truth and predicted species",
+    "threshold": 0,
+    "optimal": false,
+    "known_only": false,
+    "known_accuracy": "mini_metrics known.micro_accuracy; known_only=True; truth in active preset vocabulary"
+  },
   "sources_sha256": {
-    "local-evidence/mambo-v3/quality-full/comparison.json": "e30365591209612e133218dfe4abf7baa0fb9c8394a8538738261c802e75b6a0",
+    "local-evidence/mambo-v3/quality-full/comparison.json": "b9ac190c4ca959c6a5791adc5ceabc4a500a25f9724ef5ab7ebed57cfd5e4de8",
     "local-evidence/mambo-release-comparison-quality/v2-full/report.json": "c9a98044cbc97ab0033b1f794e284b8f8504f26fc0b7574dfa619c16df6db263",
-    "local-evidence/mambo-release-comparison-quality/v2-full/north_europe/metrics.json": "dd25bb7b7dc8552fa0da7d3fb48f8772eb45b5824e04af8594c95f5e522a5ae9",
-    "local-evidence/mambo-release-comparison-quality/v2-full/europe/metrics.json": "bd04f55a6906d832ded0047840ace6ada6f50ed1e77bf8f81a5aa4b4e591a2db",
-    "local-evidence/mambo-release-comparison-quality/v2-full/full/metrics.json": "1789eb0f6d81b82b23ace78f57001369cbdcfb386cd00197f20172e80ad06396",
+    "local-evidence/mambo-release-comparison-quality/v2-full/north_europe/metrics.json": "11340899a76a11997c7b3a4813f0824a730177478bab1d5a9270de851f7fa368",
+    "local-evidence/mambo-release-comparison-quality/v2-full/europe/metrics.json": "e6bccab2d2d6cee8bc3b9322a404dcdcb456c038ace002efb430aba1191c300b",
+    "local-evidence/mambo-release-comparison-quality/v2-full/full/metrics.json": "1e6a2aabc59aacc10d03c4653de71b549ddf4a003b7a096d04a4cc7c9c2cc9b2",
     "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/report.json": "ba80d1580f5b563bd5eb0d9af3af392c6115766c4dcebe619f68e034c938b47d",
-    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe/metrics.json": "7a58a33ea5cd49e26ea10b6d325f109707c1b3ab0dfb5fdb2036f70695d239a6",
-    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe/metrics.json": "cd0001fe1cf13dd26bab63fa6ce8e357a26a8b5491a8cb82744fdd65ebb164b0",
-    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/full/metrics.json": "b25af91cfc1b0e82c920d26844522117386cab2aad2afe028ba0871cb6b99260",
-    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe_v3/metrics.json": "a754f78e8a09d2ee90bd65096562781755d7c180f84ce376afbb27750b5e1fad",
-    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe_v3/metrics.json": "82181458085523df79aeaececb2b50f806c73b619820cf34692c4bfaa3e33cec",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe/metrics.json": "da3927fad7f5901391b9a9033027d6e20f0a6f4a219e1d7d215bacda1b301599",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe/metrics.json": "a82d3c13819caa0c4e39f933b2dcc8098382172f7a8a2fc00d9cc6c4518cde27",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/full/metrics.json": "b3a724e48d3ecd783509d90899b0d96ec2f2802a2304551db5c595014561297a",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/north_europe_v3/metrics.json": "6d434a6483fd447d80b5cfd55d57cfe8c65a7420f52cbd413f2e57cee3b23725",
+    "local-evidence/mambo-v3/quality-full/torch-cuda-0-prediction/europe_v3/metrics.json": "762b26022265c8bfedcc4745ea12107b6957eca098ba6628f6d9a149b39b77ff",
     "local-evidence/mambo-v3/performance/trial-0-torch-cpu-prediction-t4/report.json": "f75f2fd264d09ab6aa7bd194e7a6f8afc28980e41e81e164330f0efe5746e88f",
     "local-evidence/mambo-v3/performance/trial-0-onnx-cpu-prediction-t4/report.json": "dbec7f2753ea649998ec3d1c6d5d75608d1465d273755910f531902247335047",
     "local-evidence/mambo-v3/performance/trial-0-torch-cuda-0-prediction-t4/report.json": "e9d75960d5ce34a9040f6d0c1af2476bad9c3edcfaa0cb581fdf37d3bc8cc1eb",

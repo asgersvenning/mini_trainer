@@ -250,7 +250,7 @@ L 421.07 243.02
     <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle" x="382.492073" y="140.249951" transform="rotate(-0 382.492073 140.249951)">58.43</text>
    </g>
    <g id="text_17">
-    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="234.017813" y="69.48" transform="rotate(-0 234.017813 69.48)">Species accuracy · all images</text>
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="234.017813" y="69.48" transform="rotate(-0 234.017813 69.48)">Species micro accuracy · all images</text>
    </g>
    <g id="legend_1">
     <g id="patch_11">
@@ -518,7 +518,7 @@ L 849.295625 243.02
     <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle" x="810.717698" y="189.559932" transform="rotate(-0 810.717698 189.559932)">0.097</text>
    </g>
    <g id="text_37">
-    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="662.243438" y="69.48" transform="rotate(-0 662.243438 69.48)">Species macro-F1 · all classes</text>
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="662.243438" y="69.48" transform="rotate(-0 662.243438 69.48)">Species macro-F1 · truth ∪ predicted classes</text>
    </g>
   </g>
   <g id="axes_3">
@@ -734,7 +734,7 @@ L 421.07 454.52
     <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle" x="382.492073" y="331.393155" transform="rotate(-0 382.492073 331.393155)">70.58</text>
    </g>
    <g id="text_54">
-    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="234.017813" y="280.98" transform="rotate(-0 234.017813 280.98)">Genus accuracy</text>
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="234.017813" y="280.98" transform="rotate(-0 234.017813 280.98)">Genus micro accuracy · all images</text>
    </g>
   </g>
   <g id="axes_4">
@@ -950,14 +950,14 @@ L 849.295625 454.52
     <text style="font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle" x="810.717698" y="298.336576" transform="rotate(-0 810.717698 298.336576)">90.31</text>
    </g>
    <g id="text_71">
-    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="662.243438" y="280.98" transform="rotate(-0 662.243438 280.98)">Family accuracy</text>
+    <text style="font-weight: 700; font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: middle" x="662.243438" y="280.98" transform="rotate(-0 662.243438 280.98)">Family micro accuracy · all images</text>
    </g>
   </g>
   <g id="text_72">
    <text style="font-weight: 700; font-size: 16px; font-family: 'DejaVu Sans'; text-anchor: middle" x="428.095625" y="19.3575" transform="rotate(-0 428.095625 19.3575)">Flemming: MAMBO v2 versus v3</text>
   </g>
   <g id="text_73">
-   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #555555" transform="translate(13.375625 512.821969)">58,640 images · legacy geographic lists for both releases · unknown species remain in the denominator</text>
+   <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #555555" transform="translate(13.375625 512.571656)">58,640 images · threshold 0 (no abstention or optimization) · known_only=False · unknown truth included</text>
    <text style="font-size: 9px; font-family: 'DejaVu Sans'; fill: #555555" transform="translate(13.375625 522.9)">V2: original CUDA autocast / BioCLIP recipe. V3: FP32 / release recipe. Real-world comparison of the two release pipelines.</text>
   </g>
  </g>

@@ -145,3 +145,32 @@ def test_loading_observer_preserves_classmethod_and_restores_it():
         assert Classifier.init_spherical_repulsion(layer, iterations=1) is layer
     assert Classifier.init_spherical_repulsion.__func__ is original
     assert values["spherical_initialization_within_model_build"] >= 0
+
+
+def test_pinned_metrics_distinguish_micro_macro_and_known_truth(tmp_path):
+    import os
+    import subprocess
+
+    executable = os.environ.get("MAMBO_METRICS_PYTHON")
+    if not executable:
+        pytest.skip("Set MAMBO_METRICS_PYTHON to the pinned metric environment")
+    source = tmp_path / "mini_metric.csv"
+    with source.open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(CSV_COLUMNS)
+        for i, truth in enumerate(("a", "a", "a", "outside")):
+            for rank in range(3):
+                writer.writerow([i, f"{i}.jpg", rank, truth, "a", 0.8, 0, int(truth == "a"), 1, 1 if truth == "a" else -1])
+    output = subprocess.check_output(
+        [executable, "-m", "dev.releases.mambo_v3.metrics", "--source", str(source), "--output", str(tmp_path / "metrics.json")],
+        text=True,
+    )
+    ranks = json.loads(output)
+    for row in ranks.values():
+        assert row["micro_accuracy_all"] == pytest.approx(0.75)
+        assert row["macro_accuracy_all"] == pytest.approx(0.5)
+        assert row["micro_accuracy_known"] == pytest.approx(1.0)
+        assert row["abstention_coverage"] == 1
+    metrics = json.loads((tmp_path / "metrics.json").read_text())
+    assert metrics["all"]["f1"]["0"] == pytest.approx(3 / 7)
+    assert metrics["known"]["f1"]["0"] == pytest.approx(1)

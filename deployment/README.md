@@ -92,9 +92,10 @@ defaults, so explicit backend/device arguments are recommended in scripts.
 
 On all 58,640 Flemming images, PyTorch and ONNX return identical top-1 species,
 genus and family labels for the full list and both legacy/updated European presets.
-Northern Europe reaches **70.79% species accuracy overall** (**82.04%** on images
+Northern Europe reaches **70.79% micro species accuracy overall** (**82.04%** on images
 whose true species is in the list), versus **68.71% overall for MAMBO_v2**. Updated
-northern Europe reaches **70.32%**. Unknown species remain in the overall result.
+northern Europe reaches **70.32%**. All predictive metrics use pinned `mini_metrics`, with threshold 0 and no
+optimization. Unknown species remain in the overall result.
 CPU/GPU and prediction/embedding variants agree on a fixed 256-image subset;
 this checks prediction consistency, not downstream embedding usefulness.
 

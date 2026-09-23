@@ -12,6 +12,7 @@ from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import write_json
 
 REVISION = "70cc69adc05362863439277048e06386c1f885e1"
+METRIC_SCHEMA = "mini-metrics-quality-v2"
 
 
 def finite_json(value):
@@ -38,6 +39,7 @@ def measure(source):
     if np.any(data.threshold != 0) or not np.isfinite(data.confidence).all():
         raise ValueError("Evaluation requires finite, unthresholded predictions")
     result = {
+        "metric_schema": METRIC_SCHEMA,
         "source_sha256": file_hash(source),
         "mini_metrics_revision": REVISION,
         "policy": "threshold=0; no optimization; undefined metrics are null",
@@ -46,15 +48,11 @@ def measure(source):
     for level, rank in enumerate(("species", "genus", "family")):
         selected = np.asarray(data.level) == level
         known = selected & np.asarray(data.known_label)
-        correct = np.asarray(data.label) == np.asarray(data.prediction)
         result["ranks"][rank] = {
             "images": int(selected.sum()),
             "known_images": int(known.sum()),
             "list_coverage": float(known.sum() / selected.sum()),
-            "abstention_coverage": 1.0,
             "truth_species_or_taxa": len(set(data.label[selected])),
-            "micro_accuracy_all": float(correct[selected].mean()),
-            "micro_accuracy_known": float(correct[known].mean()) if known.any() else None,
         }
     for scope, known_only, per_class in (("all", False, False), ("known", True, False), ("per_class", False, True)):
         result[scope] = finite_json(
@@ -66,10 +64,17 @@ def measure(source):
                 per_class=per_class,
                 simple=True,
                 hierarchical=False,
-                pattern=r"^(f1|recall|precision|coverage|theilU)$",
+                pattern=r"^(micro_accuracy|accuracy|f1|recall|precision|coverage|theilU)$",
                 verbose=0,
             )
         )
+    for level, rank in enumerate(("species", "genus", "family")):
+        row = result["ranks"][rank]
+        row["micro_accuracy_all"] = result["all"]["micro_accuracy"][str(level)]
+        row["micro_accuracy_known"] = result["known"]["micro_accuracy"][str(level)] if row["known_images"] else None
+        row["macro_accuracy_all"] = result["all"]["accuracy"][str(level)]
+        row["macro_accuracy_known"] = result["known"]["accuracy"][str(level)] if row["known_images"] else None
+        row["abstention_coverage"] = result["all"]["coverage"][str(level)]
     return result
 
 
@@ -98,7 +103,9 @@ def main():
                     prior = json.loads(output.read_text())
                     if prior["source_sha256"] != digest or prior["mini_metrics_revision"] != REVISION:
                         raise ValueError("Existing metrics do not match this input or pinned revision")
-                    continue
+                    if prior.get("metric_schema") == METRIC_SCHEMA:
+                        continue
+                    raise ValueError("Existing metrics use an older extractor; archive them before recomputing")
                 write_json(output, measure(source))
                 print(variant, name, flush=True)
     else:

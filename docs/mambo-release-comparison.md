@@ -23,11 +23,35 @@ regional setting, accompanied by clear trade-offs elsewhere.
 | Europe | 66.96% | 68.95% | +1.99 pp |
 | Global | 59.36% | 58.43% | −0.93 pp |
 
-The primary comparison uses identical legacy lists in both releases. All-image
-accuracy includes 8,042 images from 16 species absent from the model vocabulary;
-known-truth accuracy uses the remaining 50,598 images (86.29% coverage). Macro-F1
-follows the pinned metric implementation, including predicted-only classes.
-Predictions are unthresholded, and the lists were not tuned to these results.
+The primary comparison uses identical legacy lists in both releases. Every
+predictive metric is computed by pinned `mini_metrics` at commit
+`70cc69adc05362863439277048e06386c1f885e1`; the chart extracts these fields:
+
+| Display | `metrics.json` source | Averaging and population |
+|---|---|---|
+| Species/genus/family accuracy | `all.micro_accuracy["0"/"1"/"2"]` | Micro: each of the 58,640 images has equal weight |
+| Species macro-F1 | `all.f1["0"]` | Equal weight over the union of true and predicted species |
+| Known-truth accuracy | `known.micro_accuracy[rank]` | Micro, restricted to truth in the active preset vocabulary |
+
+All calls use `threshold=0`, `optimal=False`, `simple=True`,
+`hierarchical=False`; the main chart uses `known_only=False`. Every image receives
+a prediction; no threshold is fitted. The class list limits predictions, **not the
+evaluation population**. All 522 Flemming species remain in the main results,
+including 8,042 images from 16 species outside the vocabulary. The known-only
+species denominator is 50,598 images from 506 species for every compared list.
+Known membership is determined separately at each taxonomic rank.
+
+The plain `accuracy` field in this mini_metrics revision is **macro** accuracy;
+we explicitly extract `micro_accuracy`. Both macro accuracy and known-only metrics
+are retained in the metric files. The original direct CSV accuracy calculation
+has been replaced by mini_metrics; recomputation leaves the reported values unchanged.
+
+Macro-F1 includes species predicted despite having no ground-truth images, but
+excludes species with neither truth nor predictions. Thus its class denominator can
+change between pipelines: northern Europe has 1,221 active classes for v2 and 1,308
+for v3, versus 522 ground-truth species. It is not a mean over just the 506 known
+truth species, nor over every species in the preset. These results use the pinned
+metric policy; lists and thresholds were not tuned to Flemming.
 
 ## Inference speed
 
@@ -37,15 +61,17 @@ Float`. Its CPU bars therefore show an explicitly labelled caller-side adapter:
 preprocessed values while matching the model's input dtype. V2 GPU and all quality
 measurements use the original published path unchanged.
 
-![CPU latency and GPU throughput by model pipeline and region](assets/mambo-release-speed.svg)
+![CPU and GPU throughput by model pipeline and region](assets/mambo-release-speed.svg)
 
 For northern Europe, the measured medians are:
 
-| Pipeline | CPU, one image | GPU, one image | GPU, batch 8 | GPU, batch 32 |
+| Pipeline | CPU, batch 1 | GPU, batch 1 | GPU, batch 8 | GPU, batch 32 |
 |---|---:|---:|---:|---:|
-| v2 PyTorch (CPU input cast) | 796 ms | 22 ms | 44.8 images/s | 83.5 images/s |
-| v3 PyTorch | 148 ms | 37 ms | 46.6 images/s | 44.5 images/s |
-| v3 ONNX | 104 ms | 33 ms | 42.8 images/s | 42.4 images/s |
+| v2 PyTorch (CPU input cast) | 1.26 | 45.2 | 44.8 | 83.5 |
+| v3 PyTorch | 6.74 | 27.1 | 46.6 | 44.5 |
+| v3 ONNX | 9.64 | 30.4 | 42.8 | 42.4 |
+
+All speed columns and panels use **images per second; higher is better**.
 
 V3 substantially improves CPU inference. V2 retains lower single-image GPU latency
 and higher batch-32 throughput; batch-8 throughput is much closer. The released
@@ -55,6 +81,35 @@ Measurements include image decoding, preprocessing, classification and completed
 CPU results. Each configuration has three fresh-process trials on the same seeded
 image bank. Whiskers show the range of trial medians. The compact source data also
 includes CPU batch-8 results and timings for the updated v3 lists.
+
+### Why v3 throughput plateaus
+
+The adapter sends each batch as one NCHW tensor to the backend; the benchmark sets
+its batch limit to 32. It does not silently split batches into single-image calls.
+However, it decodes and preprocesses each image serially on CPU, then runs the
+model, with no CPU/GPU overlap. The existing three-trial northern-Europe timings
+separate these boundaries:
+
+| Backend | Batch | CPU preparation, ms/batch | Prepared backend, ms/batch | End-to-end, images/s |
+|---|---:|---:|---:|---:|
+| PyTorch | 1 | 14.9 | 18.5 | 27.1 |
+| PyTorch | 8 | 126.3 | 46.7 | 46.6 |
+| PyTorch | 32 | 519.5 | 181.4 | 44.5 |
+| ONNX | 1 | 16.6 | 13.4 | 30.4 |
+| ONNX | 8 | 134.5 | 50.6 | 42.8 |
+| ONNX | 32 | 559.4 | 180.6 | 42.4 |
+
+These are separately timed medians, not additive profiler spans. The prepared
+boundary includes transfers and completed CPU leaf scores, excluding decoding and
+hierarchy reduction. CPU preparation accounts for roughly 72–74% of end-to-end
+batch-32 time. The prepared backend also shows little throughput gain beyond batch
+8, so preprocessing alone does not explain the entire plateau. Kernel profiling
+would be needed to explain that remaining hardware/runtime behavior; these data do
+not establish a specific GPU bottleneck.
+
+A useful next optimization is to qualify parallel image preparation and overlap
+with inference while preserving exact input values. The current end-to-end figures
+remain the measured release behavior; they are not GPU-only throughput claims.
 
 ## Memory and startup
 

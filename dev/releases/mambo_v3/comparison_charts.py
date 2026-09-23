@@ -11,6 +11,7 @@ import numpy as np
 
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import write_json
+from dev.releases.mambo_v3.metrics import METRIC_SCHEMA
 
 REGIONS = ("north_europe", "europe", "full")
 REGION_LABELS = ("Northern Europe", "Europe", "Global")
@@ -48,6 +49,8 @@ def aggregate(args):
             metrics = json.loads(path.read_text())
             if file_hash(directory / preset / "mini_metric.csv") != metrics["source_sha256"]:
                 raise ValueError("Metric source has changed")
+            if metrics.get("metric_schema") != METRIC_SCHEMA:
+                raise ValueError("Recompute quality using the mini_metrics-only extractor")
             sources[str(path)] = file_hash(path)
             quality.append(
                 {
@@ -68,6 +71,7 @@ def aggregate(args):
             raise ValueError(f"Primary comparison lists differ: {preset}")
     grouped = defaultdict(list)
     resources = defaultdict(list)
+    components = defaultdict(list)
     bank = None
     for directory, added in ((args.v3_performance, False), (args.added_performance, True)):
         plan = completed(directory / "plan.json")
@@ -87,9 +91,14 @@ def aggregate(args):
                 bank = records
             if records != bank:
                 raise ValueError("Timing image banks differ")
+            if metrics.get("metric_schema") != METRIC_SCHEMA:
+                raise ValueError("Recompute quality using the mini_metrics-only extractor")
             sources[str(path)] = file_hash(path)
             for cell in report["cells"]:
                 grouped[(model, device, cell["preset"], cell["batch_size"])].append(cell["end_to_end"])
+                if not old and device == "cuda:0" and cell["preset"] == "north_europe":
+                    for stage in ("preprocessing", "prepared", "end_to_end"):
+                        components[(model, cell["batch_size"], stage)].extend(cell[stage]["seconds"])
             # Use the full-list-containing sweep for comparable whole-process memory.
             if old or not added:
                 resources[(model, device)].append(
@@ -136,6 +145,18 @@ def aggregate(args):
         "quality": quality,
         "speed": speed,
         "resources": memory,
+        "v3_gpu_components": [
+            {"model": model, "batch": batch, "stage": stage, "observations": len(values), "median_ms": statistics.median(values) * 1000}
+            for (model, batch, stage), values in sorted(components.items())
+        ],
+        "quality_policy": {
+            "accuracy": "mini_metrics all.micro_accuracy at each rank; all images",
+            "macro_f1": "mini_metrics all.f1.0; equal weight over union of truth and predicted species",
+            "threshold": 0,
+            "optimal": False,
+            "known_only": False,
+            "known_accuracy": "mini_metrics known.micro_accuracy; known_only=True; truth in active preset vocabulary",
+        },
         "sources_sha256": sources,
         "timing_bank_sha256": hashlib.sha256(json.dumps(bank, sort_keys=True).encode()).hexdigest(),
         "protocol": "Same laptop and image bank; original v2 preprocessing/CUDA autocast; "
@@ -188,21 +209,21 @@ def charts(data, output):
             ax.set_xticks(x, REGION_LABELS)
             ax.grid(axis="y", alpha=0.16)
             ax.set_axisbelow(True)
-    axes[0].set(title="Species accuracy · all images", ylabel="Correct predictions (%)", ylim=(0, 100))
+    axes[0].set(title="Species micro accuracy · all images", ylabel="Correct predictions (%)", ylim=(0, 100))
     axes[1].set(
-        title="Species macro-F1 · all classes",
+        title="Species macro-F1 · truth ∪ predicted classes",
         ylabel="Pinned mini_metrics macro-F1",
         ylim=(0, max(r["macro_f1_all"] for r in data["quality"]) * 1.3),
     )
-    axes[2].set(title="Genus accuracy", ylabel="Correct predictions (%)", ylim=(0, 100))
-    axes[3].set(title="Family accuracy", ylabel="Correct predictions (%)", ylim=(0, 100))
+    axes[2].set(title="Genus micro accuracy · all images", ylabel="Correct predictions (%)", ylim=(0, 100))
+    axes[3].set(title="Family micro accuracy · all images", ylabel="Correct predictions (%)", ylim=(0, 100))
     axes[0].legend(loc="upper left", fontsize=9)
     fig.suptitle("Flemming: MAMBO v2 versus v3", fontsize=16, fontweight="bold")
     fig.tight_layout(rect=(0, 0.1, 1, 0.95))
     save(
         fig,
         "mambo-release-quality",
-        "58,640 images · legacy geographic lists for both releases · unknown species remain in the denominator\n"
+        "58,640 images · threshold 0 (no abstention or optimization) · known_only=False · unknown truth included\n"
         "V2: original CUDA autocast / BioCLIP recipe. V3: FP32 / release recipe. Real-world comparison of the two release pipelines.",
     )
 
@@ -214,9 +235,9 @@ def charts(data, output):
                 next(r for r in data["speed"] if (r["model"], r["device"], r["preset"], r["batch"]) == (model, device, region, batch))
                 for region in REGIONS
             ]
-            values = [r["median_ms"] if batch == 1 else r["images_per_second"] for r in rows]
-            low = [r["trial_min_ms"] if batch == 1 else batch * 1000 / r["trial_max_ms"] for r in rows]
-            high = [r["trial_max_ms"] if batch == 1 else batch * 1000 / r["trial_min_ms"] for r in rows]
+            values = [r["images_per_second"] for r in rows]
+            low = [batch * 1000 / r["trial_max_ms"] for r in rows]
+            high = [batch * 1000 / r["trial_min_ms"] for r in rows]
             positions = x + (m - 1) * 0.25
             ax.bar(positions, values, 0.25, label=label, color=color)
             ax.errorbar(
@@ -236,12 +257,15 @@ def charts(data, output):
         ax.grid(axis="y", alpha=0.16)
         ax.set_axisbelow(True)
         ax.margins(y=0.25)
-    axes[0].set(title="CPU · one image · v2 with input adapter", ylabel="End-to-end latency (ms)")
-    axes[1].set(title="GPU · one image · lower is better", ylabel="End-to-end latency (ms)")
+    axes[0].set(title="CPU · one image · v2 with input adapter", ylabel="End-to-end images / second")
+    axes[1].set(title="GPU · one image · higher is better", ylabel="End-to-end images / second")
     axes[2].set(title="GPU · batch 8 · higher is better", ylabel="End-to-end images / second")
     axes[3].set(title="GPU · batch 32 · higher is better", ylabel="End-to-end images / second")
+    gpu_limit = max(r["batch"] * 1000 / r["trial_min_ms"] for r in data["speed"] if r["device"] == "cuda:0") * 1.2
+    for ax in axes[1:]:
+        ax.set_ylim(0, gpu_limit)
     fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=3, frameon=False)
-    fig.suptitle("Laptop inference speed", fontsize=16, fontweight="bold")
+    fig.suptitle("Laptop inference throughput · higher is better", fontsize=16, fontweight="bold")
     fig.tight_layout(rect=(0, 0.1, 1, 0.90))
     save(
         fig,
@@ -291,7 +315,7 @@ def charts(data, output):
         ax.barh(i, delta, height=0.5, color=COLORS[1])
         ax.text(0.02, i, f"{delta:+.2f} pp   ({old:.2f}% → {new:.2f}%)", va="center", fontsize=10)
     ax.axvline(0, color="#555555", linewidth=1)
-    ax.set(yticks=[0, 1], yticklabels=REGION_LABELS[:2], xlim=(-0.6, 0.45), xlabel="Species accuracy change (percentage points)")
+    ax.set(yticks=[0, 1], yticklabels=REGION_LABELS[:2], xlim=(-0.6, 0.45), xlabel="Micro species accuracy change (percentage points)")
     ax.invert_yaxis()
     ax.set_title("V3 updated lists: small accuracy trade-offs on Flemming", loc="left")
     fig.tight_layout(rect=(0, 0.15, 1, 1))
@@ -299,7 +323,7 @@ def charts(data, output):
         fig,
         "mambo-release-preset-delta",
         "Northern Europe adds 222 candidate species; Europe adds 72. No removals. Choose lists by geographic scope.\n"
-        "Both v3 backends agree; these broader occurrence filters were not tuned to Flemming.",
+        "All 58,640 images; threshold 0, no optimization. Both backends agree; filters were not tuned to Flemming.",
     )
 
 

@@ -146,3 +146,21 @@ All 18 additional timing processes completed. An interrupted final v2 GPU trial
 is retained separately and excluded; its successful replacement is
 `trial-2-v2-cuda-0-retry1`. Every reported timing cell contains exactly three
 successful trials. The original interrupted plan remains as `interrupted-plan.json`.
+
+The revised charts use images/second throughout, with a shared GPU vertical scale.
+Predictive scores come exclusively from mini_metrics (`micro_accuracy`, rather
+than its macro `accuracy` field). All/known populations and macro-F1 class support
+are defined in the report. Old metric JSON is retained beside its replacement as
+`metrics-before-mini-metrics-only.json`; all 13 full-data extractions preserve the
+previous accuracy and F1 values. Component timings are reaggregated from existing
+benchmark evidence; no inference rerun is needed for these reporting corrections.
+
+Run the metric integration regression with the pinned environment available:
+
+```sh
+MAMBO_METRICS_PYTHON=/path/to/metrics-env/bin/python \
+  bash dev/check.sh all tests/releases
+```
+
+It exercises imbalanced classes and excluded truth to distinguish micro accuracy,
+macro accuracy, all/known filtering and macro-F1 through the real mini_metrics API.

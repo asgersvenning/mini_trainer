@@ -41,14 +41,10 @@ def compare(left, right, presets=PRESETS):
         for rank in range(3):
             keys = [key for key in a if key[1] == rank]
             changes = sum(a[key]["prediction"] != b[key]["prediction"] for key in keys)
-            accuracies = [sum(rows[key]["prediction"] == rows[key]["label"] for key in keys) / len(keys) for rows in (a, b)]
             result["presets"][preset][str(rank)] = {
                 "images": len(keys),
                 "changed": changes,
                 "agreement": 1 - changes / len(keys),
-                "left_accuracy": accuracies[0],
-                "right_accuracy": accuracies[1],
-                "accuracy_delta": accuracies[1] - accuracies[0],
             }
     return result
 
