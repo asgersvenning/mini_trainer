@@ -48,8 +48,8 @@ changes score normalization; confidence is conditional on the selected list.
 | Preset | Species | Construction and evidence | Limits |
 | --- | ---: | --- | --- |
 | `full` | 12,632 | Every species in the pinned model mapping | Global training vocabulary, not every Lepidoptera species |
-| `europe` | 3,014 | MAMBO_v2 README: species with **more than 25** training records in Europe. Recovered from `classifier.active_indices` in the legacy Europe weights. | The precise geographic boundary/country set, occurrence query, deduplication and counting unit are not established by the tagged README. |
-| `north_europe` | 1,977 | Recovered from the northern legacy weights; exact membership equals `data/reduced.txt` at the pinned tag. A subset of `europe`. | The original geographic definition, source checklist/query and inclusion threshold have not been recovered. Do not describe it as a comprehensive northern-European checklist. |
+| `europe` | 3,014 | Filter the pinned metadata by `continent == "EUROPE"`, count rows per `speciesKey`, retain counts **> 25**. Exact membership and retained count-table match. | Uses the metadata's continent assignment, not a union of entire countries. The upstream method that assigned continents is not established here. |
+| `north_europe` | 1,977 | Filter `countryCode` to `DE DK EE FI LT LV NL NO PL SE`, count rows per `speciesKey`, retain counts **> 25**. Exact membership match to the weights and tagged `data/reduced.txt`. | This reconstructs the list but does not uniquely establish the original country expression: several additional countries leave membership unchanged. |
 
 The ordered files in `presets/` contain GBIF species IDs, one per line. Their
 source-weight paths and hashes are in `inventory.toml`. Extraction uses each
@@ -58,17 +58,57 @@ IDs or inferring a list from the new evaluation data. Keep these release-version
 memberships fixed for backwards compatibility. Custom lists should resolve IDs
 explicitly and report missing/duplicate IDs and excluded truth labels.
 
-Additional local corroboration: `tmp/europe_gbif_id_list.txt` matches the Europe
-membership exactly. Filtering `tmp/europe_training_data.csv` by
-`europeFrequency > 25` reproduces all 3,014 IDs from 3,132 table rows; the minimum
-included count is 26. Its SHA-256 is
-`47e817d3e5009f929df4a8bc7404e4434c98232806596bc1585dd8c2b88e37d5`.
-These unversioned local files corroborate the threshold but do not establish the
-missing original geographic query. They are not required by the release audit.
+### Reproduce construction from metadata
 
-Before claiming independently reproducible geographic construction, recover and
-publish the source dataset/checklist version, region geometry or country set,
-query/filter code, counting unit, threshold, taxonomy version and retrieval date.
+The user-identified Parquet is available locally even though the full image dataset
+is not. [construction.toml](construction.toml) pins its SHA-256, byte size, geography
+filters, counting rule and expected totals. Using the existing environment with
+PyArrow available, run from the repository root:
+
+```sh
+.venv/bin/python -m dev.releases.mambo_v3.reconstruct_presets \
+  examples/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
+```
+
+This reads only the geography/species columns after verifying the source hash and
+compares reconstructed membership to the frozen lists. It does not alter their
+model ordering. Count **metadata rows**, with no additional occurrence/image
+deduplication, across **all existing splits `0`–`9`**, including held-out records.
+Thus the historical README's phrase "training data" means the overall metadata
+corpus for this reconstruction, not just the training partition. Preserve that
+disclosure when reporting held-out metrics; the historical vocabulary selection
+used those rows too. The script neither changes nor regenerates splits.
+
+Europe selects 2,079,617 rows covering 3,132 species before the strict threshold.
+All 3,132 per-species counts exactly match `tmp/europe_training_data.csv`; the
+minimum included count is 26. That retained table's SHA-256 is
+`47e817d3e5009f929df4a8bc7404e4434c98232806596bc1585dd8c2b88e37d5`.
+The reconstruction no longer depends on those unversioned CSV/list files.
+The world count table also matches all 12,632 species' metadata row counts.
+
+The Europe filter includes records coded `TR` (743), `GE` (361), `AZ` (242),
+`RU` (110,277) and `KZ` (13) **only when their continent field is `EUROPE`**;
+it does not include all records from Turkey or the Caucasus. No Armenian records
+pass this filter. Country-only selection cannot reproduce the preset using the
+same >25-row rule: species `11470119` has 595 rows, all `ES`, and is included;
+species `5145842` has 194 `ES` rows and is excluded (192 are `AFRICA`, two have
+blank continent). Including all Spain would therefore force an unwanted species.
+
+The northern reconstruction uses **Germany, Denmark, Estonia, Finland, Lithuania,
+Latvia, Netherlands, Norway, Poland and Sweden**. These select 768,497 rows and
+2,291 species before thresholding. Removing any one of those ten countries
+changes membership. Adding the **UK (`GB`) adds 29 species** absent from the
+frozen list. Adding Ireland (`IE`), Iceland (`IS`), Åland (`AX`), Faroe Islands
+(`FO`), Guernsey (`GG`), Isle of Man (`IM`), Jersey (`JE`) and Svalbard/Jan Mayen
+(`SJ`), individually or all together, changes no selected species. Consequently
+the final list cannot tell us whether Ireland or Iceland was originally included.
+These are tested equivalent additions, not an exhaustive enumeration of all
+possible filters. No original generation script was recovered.
+
+The source Parquet hash identifies the exact taxonomy/metadata snapshot used for
+reproduction; it does not establish the original GBIF taxonomy retrieval date or
+the upstream continent-assignment geometry. Keep those remaining provenance
+limits explicit. Neither preset is a comprehensive regional checklist.
 A future regenerated list should have its own revision and added/removed-ID report;
 it must not silently replace these compatibility presets. Deployment documentation
 and API preset metadata should expose count, membership, rule and provenance gaps.

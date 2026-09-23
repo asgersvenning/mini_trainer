@@ -1,0 +1,31 @@
+schema_version = 1
+
+[source]
+path = "examples/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet"
+size = 1071961943
+sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
+rows = 6329994
+species_column = "speciesKey"
+counting_unit = "metadata row; no additional deduplication"
+splits = "all existing set values (0 through 9), including held-out rows"
+
+[europe]
+column = "continent"
+values = ["EUROPE"]
+exclusive_minimum_rows = 25
+selected_rows = 2079617
+species_before_threshold = 3132
+species_after_threshold = 3014
+status = "Exact membership and retained per-species count-table match"
+
+[north_europe]
+column = "countryCode"
+values = ["DE", "DK", "EE", "FI", "LT", "LV", "NL", "NO", "PL", "SE"]
+exclusive_minimum_rows = 25
+selected_rows = 768497
+species_before_threshold = 2291
+species_after_threshold = 1977
+status = "Exact membership reconstruction; original country expression is not uniquely identifiable"
+# Adding any subset of these codes, including all together, leaves membership unchanged.
+membership_neutral_additions = ["IE", "IS", "AX", "FO", "GG", "IM", "JE", "SJ"]
+# Adding GB to the reconstructed base introduces 29 species absent from the frozen preset.

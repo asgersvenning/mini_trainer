@@ -8,8 +8,10 @@ The [first input-audit increment](../dev/releases/mambo_v3/README.md) now pins a
 verifies 44 retrieved files, including candidate PyTorch/ONNX weights and historical
 MAMBO weights. It recovers both regional presets, confirms identical old/new class
 and parent mappings, and captures a small legacy output fixture. Its regional-scope
-table distinguishes the established Europe threshold from unresolved geographic
-provenance. Adapter compatibility and inference qualification remain outstanding.
+table now includes reproducible Parquet filters: Europe uses the metadata continent
+field; northern Europe has an exact country-filter reconstruction with documented
+ambiguity for membership-neutral additions such as Ireland. Adapter compatibility
+and inference qualification remain outstanding.
 Local evaluation will use Flemming; the large in-domain dataset remains on UCloud
 and must be evaluated there using the original supplied split.
 
