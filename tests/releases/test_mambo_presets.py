@@ -109,3 +109,15 @@ def test_northern_africa_intentionally_overlaps_subsaharan_transition():
     countries = ["MA", "EG", "SD", "MR", "ZA", "MG"]
     assert countries_selected("north_africa", countries) == ["MA", "EG", "SD", "MR"]
     assert countries_selected("subsaharan_africa", countries) == ["SD", "MR", "ZA", "MG"]
+
+
+@pytest.mark.parametrize("preset", ["asia", "east_asia"])
+def test_russian_contribution_requires_asian_continent(preset):
+    table = pa.table(
+        {
+            "countryCode": ["RU", "RU", "RU", "RU", "JP"],
+            "continent": ["ASIA", "EUROPE", "", None, ""],
+            "speciesKey": ["asian_russia", "european_russia", "blank", "null", "japan"],
+        }
+    )
+    assert select_region(table, RULES[preset])["speciesKey"].to_pylist() == ["asian_russia", "japan"]

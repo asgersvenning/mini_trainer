@@ -61,7 +61,8 @@ label = "Asia"
 continents = ["ASIA"]
 countries = ["AF", "AM", "AZ", "BH", "BD", "BT", "BN", "KH", "CN", "GE", "HK", "IN", "ID", "IR", "IQ", "IL", "JP", "JO", "KZ", "KP", "KR", "KW", "KG", "LA", "LB", "MO", "MY", "MV", "MN", "MM", "NP", "OM", "PK", "PS", "PH", "QA", "RU", "SA", "SG", "LK", "SY", "TW", "TJ", "TH", "TL", "TR", "TM", "AE", "UZ", "VN", "YE"]
 excluded_countries = ["CY"]
-scope = "All ASIA records plus all records from the listed Asian countries and territories, including Russia, Turkey, Georgia, Armenia, Azerbaijan in full. Includes their European-labelled records and records with blank continent. Cyprus is excluded even when its continent is ASIA."
+country_continent_restrictions = { RU = ["ASIA"] }
+scope = "All ASIA records plus all records from the listed Asian countries and territories, including Turkey, Georgia, Armenia and Azerbaijan in full. Russian records require continent ASIA; European or unassigned Russian records are excluded. Cyprus is excluded even when its continent is ASIA."
 
 [presets.japan]
 label = "Japan"
@@ -128,7 +129,8 @@ scope = "Brunei, Cambodia, Indonesia, Laos, Malaysia, Myanmar, Philippines, Sing
 [presets.east_asia]
 label = "East Asia"
 countries = ["CN", "HK", "MO", "TW", "JP", "KP", "KR", "MN", "RU"]
-scope = "China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russia. All Russia is included because this preset uses whole-country filters."
+country_continent_restrictions = { RU = ["ASIA"] }
+scope = "China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russian records assigned continent ASIA. This includes all Asian Russia, not only the Russian Far East; European or unassigned Russian records are excluded."
 
 [presets.middle_east]
 label = "Middle East"

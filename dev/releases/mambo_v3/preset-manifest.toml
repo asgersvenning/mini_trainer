@@ -2,7 +2,7 @@ schema_version = 2
 qualification_status = "provisional; pending final release decision"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "36ef5aeba81f01e42468cdfa830ea95658bce6818d72f267cf6354a694a527ed"
+definitions_sha256 = "148006ef5a5daca30bf6b770ba8aa63bcf7f146f3e4aac278400b7f24260fcfd"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 
@@ -98,13 +98,13 @@ sha256 = "5d838de414acb5a4ca14a5098972bbd36c3078c44525584860f6e2e7a94f3849"
 
 [presets.asia]
 path = "presets/asia.classes"
-count = 4981
+count = 4443
 minimum_regional_rows = 3
 minimum_global_rows = 25
 excluded_by_global_gate_after_regional = 0
-selected_rows = 1031247
-species_before_threshold = 5329
-sha256 = "cf8c84f68de3576731841c341c3a249163536fe9706420e9748834fbcd4d79d3"
+selected_rows = 920962
+species_before_threshold = 4937
+sha256 = "c54053282b739c7bfcfad6a69c9f9b2e613f4ff4986cf30e1cd0848fe5eb2daf"
 
 [presets.japan]
 path = "presets/japan.classes"
@@ -218,13 +218,13 @@ sha256 = "ad2f4d1ed1f78abd66594f59d9550383f37f96b9bdcda81138c11f64c3907ccd"
 
 [presets.east_asia]
 path = "presets/east_asia.classes"
-count = 4123
+count = 3430
 minimum_regional_rows = 3
 minimum_global_rows = 25
 excluded_by_global_gate_after_regional = 0
-selected_rows = 659767
-species_before_threshold = 4447
-sha256 = "f32e57e3e186d994712542c8d2221346cc15c1db4090c6c3f62e90e5ee7abb78"
+selected_rows = 549482
+species_before_threshold = 3912
+sha256 = "4a3e8635e06c7c86c0b08cfbc6acfa13ceb484d708f771312afc874e47ac0085"
 
 [presets.middle_east]
 path = "presets/middle_east.classes"

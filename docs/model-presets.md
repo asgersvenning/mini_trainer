@@ -26,7 +26,7 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `south_america` | 1,506 | 3 | 25 | 257,026 | All SOUTH_AMERICA records or records from Argentina, Bolivia, Brazil, Chile, Colombia, Ecuador, Falklands, French Guiana, Guyana, Paraguay, Peru, Suriname, Uruguay, Venezuela, Costa Rica or Panama. Costa Rica and Panama deliberately overlap Central America. |
 | `caribbean` | 876 | 3 | 25 | 28,652 | Caribbean islands and territories, Bahamas, Bermuda, Belize and the Guianas (Guyana, Suriname, French Guiana). Does not include every mainland country with a Caribbean coast. |
 | `south_asia` | 1,552 | 3 | 25 | 177,926 | Afghanistan, Bangladesh, Bhutan, India, Maldives, Nepal, Pakistan, Sri Lanka, Myanmar and Iran; deliberately broad western/eastern overlap. |
-| `asia` | 4,981 | 3 | 25 | 1,031,247 | All ASIA records plus all records from the listed Asian countries and territories, including Russia, Turkey, Georgia, Armenia, Azerbaijan in full. Includes their European-labelled records and records with blank continent. Cyprus is excluded even when its continent is ASIA. |
+| `asia` | 4,443 | 3 | 25 | 920,962 | All ASIA records plus all records from the listed Asian countries and territories, including Turkey, Georgia, Armenia and Azerbaijan in full. Russian records require continent ASIA; European or unassigned Russian records are excluded. Cyprus is excluded even when its continent is ASIA. |
 | `japan` | 697 | 3 | 25 | 30,076 | All records assigned countryCode JP, including islands. |
 | `africa` | 924 | 3 | 25 | 149,267 | All AFRICA records plus the listed African countries and island territories. AFRICA-labelled records from transcontinental/overseas countries remain included. |
 | `north_africa` | 236 | 3 | 25 | 4,393 | Algeria, Egypt, Libya, Morocco, Tunisia, Western Sahara, Sudan and Mauritania. Sudan and Mauritania deliberately overlap the broad sub-Saharan preset. |
@@ -38,7 +38,7 @@ Europe and northern Europe preserve MAMBO_v2 membership. Parenthesized countries
 | `new_zealand` | 425 | 3 | 25 | 110,030 | All records assigned countryCode NZ, including islands recorded under NZ. Separately coded Cook Islands, Niue and Tokelau remain in the other-Oceania preset. |
 | `oceania_excluding_australia_nz` | 352 | 3 | 25 | 8,721 | The Oceania metadata selection with all AU and NZ records excluded, even when continent is OCEANIA. Species shared with Australia or New Zealand remain eligible if they qualify from records elsewhere in Oceania; this is not subtraction of their species lists. |
 | `southeast_asia` | 1,672 | 3 | 25 | 172,424 | Brunei, Cambodia, Indonesia, Laos, Malaysia, Myanmar, Philippines, Singapore, Thailand, Timor-Leste, Vietnam and Papua New Guinea; whole-island-region overlap with Oceania is intentional. |
-| `east_asia` | 4,123 | 3 | 25 | 659,767 | China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russia. All Russia is included because this preset uses whole-country filters. |
+| `east_asia` | 3,430 | 3 | 25 | 549,482 | China, Hong Kong, Macao, Taiwan, Japan, North Korea, South Korea, Mongolia and Russian records assigned continent ASIA. This includes all Asian Russia, not only the Russian Far East; European or unassigned Russian records are excluded. |
 | `middle_east` | 846 | 3 | 25 | 24,805 | Turkey, Cyprus, Syria, Lebanon, Israel, Palestine, Jordan, Iraq, Iran, Kuwait, Saudi Arabia, Bahrain, Qatar, UAE, Oman, Yemen, Egypt, Armenia, Azerbaijan, Georgia, Afghanistan and Pakistan. Deliberate overlap with Mediterranean, Africa and South Asia. |
 
 ## Species overlap
@@ -60,7 +60,7 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 - **south_america** (South America): `continent` in `SOUTH_AMERICA` OR `countryCode` in `AR, BO, BR, CL, CO, EC, FK, GF, GY, PY, PE, SR, UY, VE, CR, PA`.
 - **caribbean** (Caribbean): `countryCode` in `AG, AI, AW, BB, BL, BQ, BS, CU, CW, DM, DO, GD, GP, HT, JM, KN, KY, LC, MF, MQ, MS, PR, SX, TC, TT, VC, VG, VI, BM, BZ, GY, SR, GF`.
 - **south_asia** (South Asia): `countryCode` in `AF, BD, BT, IN, MV, NP, PK, LK, MM, IR`.
-- **asia** (Asia): (`continent` in `ASIA` OR `countryCode` in `AF, AM, AZ, BH, BD, BT, BN, KH, CN, GE, HK, IN, ID, IR, IQ, IL, JP, JO, KZ, KP, KR, KW, KG, LA, LB, MO, MY, MV, MN, MM, NP, OM, PK, PS, PH, QA, RU, SA, SG, LK, SY, TW, TJ, TH, TL, TR, TM, AE, UZ, VN, YE`) AND country NOT in `CY`.
+- **asia** (Asia): (`continent` in `ASIA` OR `countryCode` in `AF, AM, AZ, BH, BD, BT, BN, KH, CN, GE, HK, IN, ID, IR, IQ, IL, JP, JO, KZ, KP, KR, KW, KG, LA, LB, MO, MY, MV, MN, MM, NP, OM, PK, PS, PH, QA, RU, SA, SG, LK, SY, TW, TJ, TH, TL, TR, TM, AE, UZ, VN, YE`) AND country NOT in `CY`; `RU` records additionally require `continent` in `ASIA`.
 - **japan** (Japan): `countryCode` in `JP`.
 - **africa** (Africa): `continent` in `AFRICA` OR `countryCode` in `DZ, AO, BJ, BW, BF, BI, CV, CM, CF, TD, KM, CG, CD, CI, DJ, EG, GQ, ER, SZ, ET, GA, GM, GH, GN, GW, KE, LS, LR, LY, MG, MW, ML, MR, MU, YT, MA, MZ, NA, NE, NG, RE, RW, SH, ST, SN, SC, SL, SO, ZA, SS, SD, TZ, TG, TN, UG, EH, ZM, ZW`.
 - **north_africa** (Northern Africa (broad)): `countryCode` in `DZ, EG, LY, MA, TN, EH, SD, MR`.
@@ -72,7 +72,7 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 - **new_zealand** (New Zealand): `countryCode` in `NZ`.
 - **oceania_excluding_australia_nz** (Oceania excluding Australia and New Zealand): (`continent` in `OCEANIA` OR `countryCode` in `AU, NZ, PG, FJ, SB, VU, NC, PF, WS, AS, TO, TV, KI, NR, FM, MH, PW, GU, MP, CK, NU, TK, WF, PN, NF`) AND country NOT in `AU, NZ`.
 - **southeast_asia** (Southeast Asia): `countryCode` in `BN, KH, ID, LA, MY, MM, PH, SG, TH, TL, VN, PG`.
-- **east_asia** (East Asia): `countryCode` in `CN, HK, MO, TW, JP, KP, KR, MN, RU`.
+- **east_asia** (East Asia): `countryCode` in `CN, HK, MO, TW, JP, KP, KR, MN, RU`; `RU` records additionally require `continent` in `ASIA`.
 - **middle_east** (Middle East): `countryCode` in `TR, CY, SY, LB, IL, PS, JO, IQ, IR, KW, SA, BH, QA, AE, OM, YE, EG, AM, AZ, GE, AF, PK`.
 
 ## Interpretation and reproducibility

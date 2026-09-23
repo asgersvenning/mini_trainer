@@ -24,6 +24,7 @@ def select_region(table, rule):
         "excluded_countries",
         "state_province",
         "country_state_restrictions",
+        "country_continent_restrictions",
         "minimum_regional_rows",
         "minimum_global_rows",
     }
@@ -44,6 +45,10 @@ def select_region(table, rule):
         is_country = pc.fill_null(pc.equal(table["countryCode"], country), False)
         in_state = pc.fill_null(pc.is_in(table["stateProvince"], value_set=pa.array(states)), False)
         mask = pc.and_(mask, pc.or_(pc.invert(is_country), in_state))
+    for country, continents in rule.get("country_continent_restrictions", {}).items():
+        is_country = pc.fill_null(pc.equal(table["countryCode"], country), False)
+        in_continent = pc.fill_null(pc.is_in(table["continent"], value_set=pa.array(continents)), False)
+        mask = pc.and_(mask, pc.or_(pc.invert(is_country), in_continent))
     return table.filter(mask)
 
 
@@ -72,6 +77,8 @@ def recipe(rule):
         result = f"({result}) AND `stateProvince` in `{', '.join(rule['state_province'])}`"
     for country, states in rule.get("country_state_restrictions", {}).items():
         result += f"; `{country}` records additionally require `stateProvince` in `{', '.join(states)}`"
+    for country, continents in rule.get("country_continent_restrictions", {}).items():
+        result += f"; `{country}` records additionally require `continent` in `{', '.join(continents)}`"
     return result
 
 
