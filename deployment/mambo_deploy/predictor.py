@@ -152,7 +152,7 @@ class Predictor:
                 if hasattr(ort, "preload_dlls"):
                     ort.preload_dlls()
                 providers = [
-                    ("CUDAExecutionProvider", {"device_id": int(self.device.split(":")[-1]) if ":" in self.device else 0}),
+                    ("CUDAExecutionProvider", {"device_id": int(self.device.split(":")[-1]) if ":" in self.device else 0, "use_tf32": 0}),
                     "CPUExecutionProvider",
                 ]
             session = ort.InferenceSession(str(path), sess_options=options, providers=providers)

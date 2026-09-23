@@ -144,3 +144,29 @@ def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeyp
     np.testing.assert_array_equal(native.confidence.numpy(), result.confidence)
     assert isinstance(native.indices, torch.Tensor)
     assert isinstance(facade.predict_with_embeddings("unused")[1], torch.Tensor)
+
+
+def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    predictor = Predictor(bundle, device="cuda:0")
+    monkeypatch.setattr(predictor.bundle, "profile", lambda key: bundle / "unused.onnx")
+    captured = {}
+
+    def session(path, sess_options, providers):
+        captured["providers"] = providers
+        return SimpleNamespace(disable_fallback=lambda: None, get_providers=lambda: ["CPUExecutionProvider"])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "onnxruntime",
+        SimpleNamespace(
+            SessionOptions=SimpleNamespace,
+            get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+            InferenceSession=session,
+        ),
+    )
+    with pytest.raises(RuntimeError, match="refusing CPU-only fallback"):
+        predictor._onnx(np.zeros((1, 3, 384, 384), dtype=np.float32), False)
+    assert captured["providers"][0][1]["use_tf32"] == 0
