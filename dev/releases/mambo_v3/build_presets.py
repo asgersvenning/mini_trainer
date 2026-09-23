@@ -23,6 +23,7 @@ def select_region(table, rule):
         "continents",
         "excluded_countries",
         "state_province",
+        "country_state_restrictions",
         "minimum_regional_rows",
         "minimum_global_rows",
     }
@@ -39,6 +40,10 @@ def select_region(table, rule):
         mask = pc.and_(mask, pc.invert(pc.is_in(table["countryCode"], value_set=pa.array(values))))
     if values := rule.get("state_province"):
         mask = pc.and_(mask, pc.fill_null(pc.is_in(table["stateProvince"], value_set=pa.array(values)), False))
+    for country, states in rule.get("country_state_restrictions", {}).items():
+        is_country = pc.fill_null(pc.equal(table["countryCode"], country), False)
+        in_state = pc.fill_null(pc.is_in(table["stateProvince"], value_set=pa.array(states)), False)
+        mask = pc.and_(mask, pc.or_(pc.invert(is_country), in_state))
     return table.filter(mask)
 
 
@@ -65,6 +70,8 @@ def recipe(rule):
         result = f"({result}) AND country NOT in `{', '.join(rule['excluded_countries'])}`"
     if rule.get("state_province"):
         result = f"({result}) AND `stateProvince` in `{', '.join(rule['state_province'])}`"
+    for country, states in rule.get("country_state_restrictions", {}).items():
+        result += f"; `{country}` records additionally require `stateProvince` in `{', '.join(states)}`"
     return result
 
 
@@ -135,9 +142,9 @@ def build(metadata, evidence_root, write=False):
         "",
         "## Presets",
         "",
-        "| ID | Species | Minimum regional / global rows | Selected rows | Geographic scope |",
-        "| --- | ---: | ---: | ---: | --- |",
-        f"| `full` | {len(vocabulary):,} | — | — | All species in the pinned model. |",
+        "| ID | Species | Minimum regional rows | Minimum global rows | Selected rows | Geographic scope |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
+        f"| `full` | {len(vocabulary):,} | None | None | — | All species in the pinned model. |",
     ]
     summaries = {}
     for name, rule in definitions["presets"].items():
@@ -168,10 +175,30 @@ def build(metadata, evidence_root, write=False):
                 f'sha256 = "{digest}"',
             ]
         )
-        gate = f"{region_minimum} / {world_minimum or 'none'}"
-        documentation.append(f"| `{name}` | {len(labels):,} | {gate} | {selected.num_rows:,} | {rule['scope']} |")
+        documentation.append(
+            f"| `{name}` | {len(labels):,} | {region_minimum} | {world_minimum or 'None'} | {selected.num_rows:,} | {rule['scope']} |"
+        )
         summaries[name] = len(labels)
-    documentation.extend(["", "## Exact metadata filters", ""])
+    documentation.extend(
+        [
+            "",
+            "## Species overlap",
+            "",
+            "![Pairwise species overlap and directional coverage](assets/preset-overlap.svg)",
+            "",
+            "Left: shared species divided by the union (Jaccard similarity). Right: the percentage of each row's species "
+            "also present in each column. Coverage reveals containment that Jaccard can hide for small lists. "
+            "These compare the qualified species lists, not geographic areas or prediction accuracy. Full is omitted because "
+            "it contains every preset. Labels show list sizes; both panels use percentages.",
+            "",
+            "Rebuild the figure and exact shared-count/percentage table with "
+            "`.venv/bin/python -m dev.releases.mambo_v3.plot_overlap`. "
+            "The companion [pairwise table](assets/preset-overlap.tsv) includes exact counts.",
+            "",
+            "## Exact metadata filters",
+            "",
+        ]
+    )
     for name, rule in definitions["presets"].items():
         documentation.extend([f"- **{name}** ({rule['label']}): {recipe(rule)}."])
     documentation.extend(
@@ -181,7 +208,7 @@ def build(metadata, evidence_root, write=False):
             "",
             "Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. "
             "Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. "
-            "Arctic is a broad northern-country proxy and includes southern records from those countries. "
+            "Arctic uses Alaska for US records; other selected countries remain broad proxies including southern records. "
             "Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.",
             "",
             "Blank geographic fields match no predicate unless another selected field matches. The Tasmania preset excludes "

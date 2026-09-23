@@ -65,3 +65,26 @@ def test_misspelled_or_empty_filter_fails_closed():
         select_region(table, {"countries": ["AU"], "state_provinc": ["Tasmania"]})
     with pytest.raises(ValueError, match="requires countries or continents"):
         select_region(table, {})
+
+
+def test_asia_excludes_cyprus_even_when_continent_matches():
+    table = pa.table({"countryCode": ["CY", "JP", "TR"], "continent": ["ASIA", "ASIA", "EUROPE"]})
+    assert select_region(table, RULES["asia"])["countryCode"].to_pylist() == ["JP", "TR"]
+
+
+def test_arctic_us_requires_alaska_without_restricting_other_countries():
+    table = pa.table(
+        {
+            "countryCode": ["US", "US", "US", "US", "CA", "NO", "AU"],
+            "stateProvince": ["Alaska", "Florida", "", None, "Ontario", None, "Alaska"],
+        }
+    )
+    assert select_region(table, RULES["arctic"])["countryCode"].to_pylist() == ["US", "CA", "NO"]
+
+
+def test_overlap_distinguishes_containment_from_similarity():
+    from dev.releases.mambo_v3.plot_overlap import overlap
+
+    assert overlap({"a"}, {"a", "b", "c", "d"}) == (1, 0.25, 1.0)
+    assert overlap({"a", "b", "c", "d"}, {"a"}) == (1, 0.25, 0.25)
+    assert overlap({"a"}, {"b"}) == (0, 0.0, 0.0)
