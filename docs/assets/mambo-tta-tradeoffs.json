@@ -1,0 +1,479 @@
+{
+  "quality": [
+    {
+      "backend": "torch",
+      "profile": "none",
+      "macro_accuracy": 0.7444257582219089
+    },
+    {
+      "backend": "torch",
+      "profile": "hflip",
+      "macro_accuracy": 0.7490054272359848
+    },
+    {
+      "backend": "torch",
+      "profile": "five_crop",
+      "macro_accuracy": 0.6996728719136418
+    },
+    {
+      "backend": "torch",
+      "profile": "ten_crop",
+      "macro_accuracy": 0.7314062084977246
+    },
+    {
+      "backend": "torch",
+      "profile": "d4",
+      "macro_accuracy": 0.7776770904913086
+    },
+    {
+      "backend": "onnx",
+      "profile": "none",
+      "macro_accuracy": 0.7392023947895904
+    },
+    {
+      "backend": "onnx",
+      "profile": "hflip",
+      "macro_accuracy": 0.7490054272359848
+    },
+    {
+      "backend": "onnx",
+      "profile": "five_crop",
+      "macro_accuracy": 0.6996728719136418
+    },
+    {
+      "backend": "onnx",
+      "profile": "ten_crop",
+      "macro_accuracy": 0.7325734492172041
+    },
+    {
+      "backend": "onnx",
+      "profile": "d4",
+      "macro_accuracy": 0.7776770904913086
+    },
+    {
+      "backend": "torch",
+      "profile": "light_noise",
+      "macro_accuracy": 0.7310275201968053
+    },
+    {
+      "backend": "onnx",
+      "profile": "light_noise",
+      "macro_accuracy": 0.7310275201968053
+    },
+    {
+      "backend": "torch",
+      "profile": "brightness",
+      "macro_accuracy": 0.7466012977108814
+    },
+    {
+      "backend": "torch",
+      "profile": "contrast",
+      "macro_accuracy": 0.752995488315598
+    },
+    {
+      "backend": "torch",
+      "profile": "gamma",
+      "macro_accuracy": 0.7475169287325611
+    },
+    {
+      "backend": "torch",
+      "profile": "gaussian_noise",
+      "macro_accuracy": 0.7539835338440992
+    },
+    {
+      "backend": "torch",
+      "profile": "padded_scale",
+      "macro_accuracy": 0.7868714438529836
+    },
+    {
+      "backend": "torch",
+      "profile": "mild_blur",
+      "macro_accuracy": 0.7528041989452045
+    },
+    {
+      "backend": "torch",
+      "profile": "padded_rotation",
+      "macro_accuracy": 0.7858937788827812
+    },
+    {
+      "backend": "onnx",
+      "profile": "brightness",
+      "macro_accuracy": 0.7466012977108814
+    },
+    {
+      "backend": "onnx",
+      "profile": "contrast",
+      "macro_accuracy": 0.7526127864403591
+    },
+    {
+      "backend": "onnx",
+      "profile": "gamma",
+      "macro_accuracy": 0.7483461161289127
+    },
+    {
+      "backend": "onnx",
+      "profile": "gaussian_noise",
+      "macro_accuracy": 0.7514959716550446
+    },
+    {
+      "backend": "onnx",
+      "profile": "padded_scale",
+      "macro_accuracy": 0.7861607117989678
+    },
+    {
+      "backend": "onnx",
+      "profile": "mild_blur",
+      "macro_accuracy": 0.7528041989452045
+    },
+    {
+      "backend": "onnx",
+      "profile": "padded_rotation",
+      "macro_accuracy": 0.7858937788827812
+    }
+  ],
+  "timing": [
+    {
+      "backend": "torch",
+      "profile": "none",
+      "batch": 32,
+      "images_per_second": 130.47672431460305,
+      "seconds": [
+        0.24525447100313613,
+        0.2421915090017137,
+        0.2553590109964716
+      ],
+      "median_seconds": 0.24525447100313613,
+      "p95_seconds": 0.2543485569971381
+    },
+    {
+      "backend": "torch",
+      "profile": "hflip",
+      "batch": 32,
+      "images_per_second": 72.44973327692519,
+      "seconds": [
+        0.44685296500392724,
+        0.4359808239969425,
+        0.4416855460003717
+      ],
+      "median_seconds": 0.4416855460003717,
+      "p95_seconds": 0.4463362231035717
+    },
+    {
+      "backend": "torch",
+      "profile": "five_crop",
+      "batch": 32,
+      "images_per_second": 31.012842672179232,
+      "seconds": [
+        0.9923711820010794,
+        1.0318305979963043,
+        1.068035869000596
+      ],
+      "median_seconds": 1.0318305979963043,
+      "p95_seconds": 1.0644153419001667
+    },
+    {
+      "backend": "torch",
+      "profile": "ten_crop",
+      "batch": 32,
+      "images_per_second": 16.371648930481197,
+      "seconds": [
+        1.951216731002205,
+        1.9545984729993506,
+        1.9937593849972473
+      ],
+      "median_seconds": 1.9545984729993506,
+      "p95_seconds": 1.9898432937974575
+    },
+    {
+      "backend": "torch",
+      "profile": "d4",
+      "batch": 32,
+      "images_per_second": 19.648783629371536,
+      "seconds": [
+        1.6410345309996046,
+        1.5830615619997843,
+        1.6285995409998577
+      ],
+      "median_seconds": 1.6285995409998577,
+      "p95_seconds": 1.6397910319996298
+    },
+    {
+      "backend": "torch",
+      "profile": "light_noise",
+      "batch": 32,
+      "images_per_second": 48.12195636430361,
+      "seconds": [
+        0.727293746000214,
+        0.6649771209995379,
+        0.6605985319984029
+      ],
+      "median_seconds": 0.6649771209995379,
+      "p95_seconds": 0.7210620835001464
+    },
+    {
+      "backend": "torch",
+      "profile": "brightness",
+      "batch": 32,
+      "images_per_second": 45.81318643614692,
+      "seconds": [
+        0.682609258001321,
+        0.720042809000006,
+        0.6984888519946253
+      ],
+      "median_seconds": 0.6984888519946253,
+      "p95_seconds": 0.7178874132994679
+    },
+    {
+      "backend": "torch",
+      "profile": "contrast",
+      "batch": 32,
+      "images_per_second": 46.13355564044557,
+      "seconds": [
+        0.6878478029975668,
+        0.6936382759959088,
+        0.757374400003755
+      ],
+      "median_seconds": 0.6936382759959088,
+      "p95_seconds": 0.7510007876029704
+    },
+    {
+      "backend": "torch",
+      "profile": "gamma",
+      "batch": 32,
+      "images_per_second": 47.904035785298944,
+      "seconds": [
+        0.6442106480026268,
+        0.6811978339974303,
+        0.6680021729989676
+      ],
+      "median_seconds": 0.6680021729989676,
+      "p95_seconds": 0.679878267897584
+    },
+    {
+      "backend": "torch",
+      "profile": "gaussian_noise",
+      "batch": 32,
+      "images_per_second": 45.67379719812919,
+      "seconds": [
+        0.7022767930029659,
+        0.6798076190025313,
+        0.7006205299985595
+      ],
+      "median_seconds": 0.7006205299985595,
+      "p95_seconds": 0.7021111667025253
+    },
+    {
+      "backend": "torch",
+      "profile": "padded_scale",
+      "batch": 32,
+      "images_per_second": 54.521301980119496,
+      "seconds": [
+        0.633180684002582,
+        0.5869265560031636,
+        0.5804513379989658
+      ],
+      "median_seconds": 0.5869265560031636,
+      "p95_seconds": 0.6285552712026401
+    },
+    {
+      "backend": "torch",
+      "profile": "mild_blur",
+      "batch": 32,
+      "images_per_second": 46.119469432999075,
+      "seconds": [
+        0.6938501330005238,
+        0.6882561009988422,
+        0.7521999730015523
+      ],
+      "median_seconds": 0.6938501330005238,
+      "p95_seconds": 0.7463649890014494
+    },
+    {
+      "backend": "torch",
+      "profile": "padded_rotation",
+      "batch": 32,
+      "images_per_second": 41.746439709954565,
+      "seconds": [
+        0.7837554289944819,
+        0.7665324330009753,
+        0.7130471830023453
+      ],
+      "median_seconds": 0.7665324330009753,
+      "p95_seconds": 0.7820331293951313
+    },
+    {
+      "backend": "onnx",
+      "profile": "none",
+      "batch": 32,
+      "images_per_second": 101.13692345485899,
+      "seconds": [
+        0.3329214420009521,
+        0.3164027430029819,
+        0.29256366500339936
+      ],
+      "median_seconds": 0.3164027430029819,
+      "p95_seconds": 0.33126957210115504
+    },
+    {
+      "backend": "onnx",
+      "profile": "hflip",
+      "batch": 32,
+      "images_per_second": 50.46836941544529,
+      "seconds": [
+        0.6613259239966283,
+        0.5843208910009707,
+        0.6340605090008467
+      ],
+      "median_seconds": 0.6340605090008467,
+      "p95_seconds": 0.6585993824970501
+    },
+    {
+      "backend": "onnx",
+      "profile": "five_crop",
+      "batch": 32,
+      "images_per_second": 23.1981994885199,
+      "seconds": [
+        1.3837044419997255,
+        1.3794173990027048,
+        1.2910776900025667
+      ],
+      "median_seconds": 1.3794173990027048,
+      "p95_seconds": 1.3832757377000235
+    },
+    {
+      "backend": "onnx",
+      "profile": "ten_crop",
+      "batch": 32,
+      "images_per_second": 11.938286229113231,
+      "seconds": [
+        2.704058483999688,
+        2.641091776000394,
+        2.6804517320051673
+      ],
+      "median_seconds": 2.6804517320051673,
+      "p95_seconds": 2.701697808800236
+    },
+    {
+      "backend": "onnx",
+      "profile": "d4",
+      "batch": 32,
+      "images_per_second": 14.328338720285078,
+      "seconds": [
+        2.1106114759968477,
+        2.272936913999729,
+        2.233336370998586
+      ],
+      "median_seconds": 2.233336370998586,
+      "p95_seconds": 2.2689768596996145
+    },
+    {
+      "backend": "onnx",
+      "profile": "light_noise",
+      "batch": 32,
+      "images_per_second": 37.46392826629067,
+      "seconds": [
+        0.8541549560031854,
+        0.8520317189977504,
+        0.8739216520043556
+      ],
+      "median_seconds": 0.8541549560031854,
+      "p95_seconds": 0.8719449824042386
+    },
+    {
+      "backend": "onnx",
+      "profile": "brightness",
+      "batch": 32,
+      "images_per_second": 36.6971756587782,
+      "seconds": [
+        0.8695674160044291,
+        0.911717947004945,
+        0.8720017119994736
+      ],
+      "median_seconds": 0.8720017119994736,
+      "p95_seconds": 0.9077463235043979
+    },
+    {
+      "backend": "onnx",
+      "profile": "contrast",
+      "batch": 32,
+      "images_per_second": 35.692965342059594,
+      "seconds": [
+        0.94651711100596,
+        0.8929979009990348,
+        0.8965352049999638
+      ],
+      "median_seconds": 0.8965352049999638,
+      "p95_seconds": 0.9415189204053604
+    },
+    {
+      "backend": "onnx",
+      "profile": "gamma",
+      "batch": 32,
+      "images_per_second": 37.54438552985212,
+      "seconds": [
+        0.8325451659984537,
+        0.8884012240014272,
+        0.8523245100004715
+      ],
+      "median_seconds": 0.8523245100004715,
+      "p95_seconds": 0.8847935526013316
+    },
+    {
+      "backend": "onnx",
+      "profile": "gaussian_noise",
+      "batch": 32,
+      "images_per_second": 36.57123727253824,
+      "seconds": [
+        0.8853307109966408,
+        0.8665030389965978,
+        0.8750045769993449
+      ],
+      "median_seconds": 0.8750045769993449,
+      "p95_seconds": 0.8842980975969112
+    },
+    {
+      "backend": "onnx",
+      "profile": "padded_scale",
+      "batch": 32,
+      "images_per_second": 38.11493135440417,
+      "seconds": [
+        0.8444289379986003,
+        0.8395659879970481,
+        0.8376789320027456
+      ],
+      "median_seconds": 0.8395659879970481,
+      "p95_seconds": 0.8439426429984451
+    },
+    {
+      "backend": "onnx",
+      "profile": "mild_blur",
+      "batch": 32,
+      "images_per_second": 36.05360949104674,
+      "seconds": [
+        0.9718045689951396,
+        0.8875671659989166,
+        0.8805470950028393
+      ],
+      "median_seconds": 0.8875671659989166,
+      "p95_seconds": 0.9633808286955172
+    },
+    {
+      "backend": "onnx",
+      "profile": "padded_rotation",
+      "batch": 32,
+      "images_per_second": 34.722319916310404,
+      "seconds": [
+        0.9328059729959932,
+        0.9215974070029915,
+        0.9118571529979818
+      ],
+      "median_seconds": 0.9215974070029915,
+      "p95_seconds": 0.931685116396693
+    }
+  ],
+  "sources_sha256": {
+    "local-evidence/mambo-tta-expanded-comparison.json": "5197e197bbca7d1f68e3e764835921c680937503eb4c4196fe69f40ebfff6d58",
+    "local-evidence/mambo-tta-timing-torch/report.json": "414fbc1345091cd21aac5edc532ea34a6d334259d7db5c73b69a31600310f1d6",
+    "local-evidence/mambo-tta-timing-onnx/report.json": "85ac6551f6c3be769492177a2e3d16f70905f2b6459e38dc272870efd6554037"
+  }
+}

@@ -1,0 +1,274 @@
+{
+  "cells": [
+    {
+      "backend": "torch",
+      "batch": 8,
+      "workers": 1,
+      "preparation": 91.33686295883051,
+      "prepared": 263.73442338507033,
+      "end_to_end": 58.129077562830254
+    },
+    {
+      "backend": "torch",
+      "batch": 8,
+      "workers": 2,
+      "preparation": 181.8251242418234,
+      "prepared": 278.558515371201,
+      "end_to_end": 88.47787181454896
+    },
+    {
+      "backend": "torch",
+      "batch": 8,
+      "workers": 4,
+      "preparation": 216.0854611598373,
+      "prepared": 235.09056376076117,
+      "end_to_end": 98.72933981308955
+    },
+    {
+      "backend": "torch",
+      "batch": 8,
+      "workers": 8,
+      "preparation": 236.82045335131505,
+      "prepared": 235.57030306622352,
+      "end_to_end": 102.50269819473858
+    },
+    {
+      "backend": "torch",
+      "batch": 32,
+      "workers": 1,
+      "preparation": 96.71097313648941,
+      "prepared": 341.39592804460614,
+      "end_to_end": 75.83913838049648
+    },
+    {
+      "backend": "torch",
+      "batch": 32,
+      "workers": 2,
+      "preparation": 157.30967653664388,
+      "prepared": 349.5188065385458,
+      "end_to_end": 107.27458998016668
+    },
+    {
+      "backend": "torch",
+      "batch": 32,
+      "workers": 4,
+      "preparation": 223.20751755525168,
+      "prepared": 343.69387788430276,
+      "end_to_end": 129.09418839659034
+    },
+    {
+      "backend": "torch",
+      "batch": 32,
+      "workers": 8,
+      "preparation": 228.9704897880299,
+      "prepared": 330.70546502134476,
+      "end_to_end": 134.94756144379662
+    },
+    {
+      "backend": "torch",
+      "batch": 64,
+      "workers": 1,
+      "preparation": 100.15343584591987,
+      "prepared": 322.6752212066644,
+      "end_to_end": 76.66900202435194
+    },
+    {
+      "backend": "torch",
+      "batch": 64,
+      "workers": 2,
+      "preparation": 162.37247620891006,
+      "prepared": 349.73708459547316,
+      "end_to_end": 98.14394209806231
+    },
+    {
+      "backend": "torch",
+      "batch": 64,
+      "workers": 4,
+      "preparation": 224.79508391398625,
+      "prepared": 344.2625245357193,
+      "end_to_end": 131.80535667045675
+    },
+    {
+      "backend": "torch",
+      "batch": 64,
+      "workers": 8,
+      "preparation": 252.84517589887423,
+      "prepared": 354.71692002322646,
+      "end_to_end": 137.14388503475107
+    },
+    {
+      "backend": "onnx",
+      "batch": 8,
+      "workers": 1,
+      "preparation": 102.76046860097613,
+      "prepared": 209.47796127843597,
+      "end_to_end": 70.98159021461862
+    },
+    {
+      "backend": "onnx",
+      "batch": 8,
+      "workers": 2,
+      "preparation": 161.8345401630534,
+      "prepared": 213.9945422338676,
+      "end_to_end": 91.17262122903752
+    },
+    {
+      "backend": "onnx",
+      "batch": 8,
+      "workers": 4,
+      "preparation": 210.83053312171324,
+      "prepared": 205.2858909988962,
+      "end_to_end": 107.06981449462224
+    },
+    {
+      "backend": "onnx",
+      "batch": 8,
+      "workers": 8,
+      "preparation": 260.595597089102,
+      "prepared": 208.69653597830774,
+      "end_to_end": 111.19488410570094
+    },
+    {
+      "backend": "onnx",
+      "batch": 32,
+      "workers": 1,
+      "preparation": 101.66988690727861,
+      "prepared": 211.4091981569424,
+      "end_to_end": 68.26051834172199
+    },
+    {
+      "backend": "onnx",
+      "batch": 32,
+      "workers": 2,
+      "preparation": 174.20073978469355,
+      "prepared": 207.20361095863493,
+      "end_to_end": 84.67745809845839
+    },
+    {
+      "backend": "onnx",
+      "batch": 32,
+      "workers": 4,
+      "preparation": 206.5486747862816,
+      "prepared": 203.25719270324169,
+      "end_to_end": 100.49962793328908
+    },
+    {
+      "backend": "onnx",
+      "batch": 32,
+      "workers": 8,
+      "preparation": 233.883229097214,
+      "prepared": 203.06915935556427,
+      "end_to_end": 103.97221966298999
+    },
+    {
+      "backend": "onnx",
+      "batch": 64,
+      "workers": 1,
+      "preparation": 99.38106111852477,
+      "prepared": 204.57713922660275,
+      "end_to_end": 61.02925607713586
+    },
+    {
+      "backend": "onnx",
+      "batch": 64,
+      "workers": 2,
+      "preparation": 116.9312446490858,
+      "prepared": 203.92716497990443,
+      "end_to_end": 77.52287720107746
+    },
+    {
+      "backend": "onnx",
+      "batch": 64,
+      "workers": 4,
+      "preparation": 170.29300158783053,
+      "prepared": 208.27633192812468,
+      "end_to_end": 90.78884134636633
+    },
+    {
+      "backend": "onnx",
+      "batch": 64,
+      "workers": 8,
+      "preparation": 210.7168454101736,
+      "prepared": 208.71386586142265,
+      "end_to_end": 88.16061887266062
+    }
+  ],
+  "streams": [
+    {
+      "backend": "torch",
+      "workers": 1,
+      "overlap": false,
+      "images_per_second": 74.38661931325872
+    },
+    {
+      "backend": "torch",
+      "workers": 1,
+      "overlap": true,
+      "images_per_second": 85.52164452534973
+    },
+    {
+      "backend": "torch",
+      "workers": 4,
+      "overlap": false,
+      "images_per_second": 128.17302987288383
+    },
+    {
+      "backend": "torch",
+      "workers": 4,
+      "overlap": true,
+      "images_per_second": 154.16087883868184
+    },
+    {
+      "backend": "torch",
+      "workers": 8,
+      "overlap": false,
+      "images_per_second": 133.91537642918294
+    },
+    {
+      "backend": "torch",
+      "workers": 8,
+      "overlap": true,
+      "images_per_second": 157.69016646575744
+    },
+    {
+      "backend": "onnx",
+      "workers": 1,
+      "overlap": false,
+      "images_per_second": 46.10735164453709
+    },
+    {
+      "backend": "onnx",
+      "workers": 1,
+      "overlap": true,
+      "images_per_second": 82.90015664523862
+    },
+    {
+      "backend": "onnx",
+      "workers": 4,
+      "overlap": false,
+      "images_per_second": 99.6408925107329
+    },
+    {
+      "backend": "onnx",
+      "workers": 4,
+      "overlap": true,
+      "images_per_second": 155.23328771967067
+    },
+    {
+      "backend": "onnx",
+      "workers": 8,
+      "overlap": false,
+      "images_per_second": 98.01451957072325
+    },
+    {
+      "backend": "onnx",
+      "workers": 8,
+      "overlap": true,
+      "images_per_second": 132.69168375969076
+    }
+  ],
+  "sources_sha256": {
+    "local-evidence/mambo-loading-scaling-torch/report.json": "466878e68b29ee811af5dc0cfb4ca7405622d76d0c8d60ed96fdecd6ef1b906b",
+    "local-evidence/mambo-loading-scaling-onnx/report.json": "fe45b77d423621d3ae102f0067b770a07a4e980f75e73ae60b165ac80aa10e74"
+  }
+}

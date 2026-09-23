@@ -238,3 +238,136 @@ def test_native_fp32_head_and_embeddings_override_outer_autocast(bundle):
     assert scores.dtype == embeddings.dtype == np.float32
     assert predictor._torch_model.classifier is original
     np.testing.assert_array_equal(scores, embeddings)
+
+
+@pytest.mark.parametrize("backend", ["torch", "onnx"])
+def test_tta_averages_leaf_logits_before_masking_and_normalizes_embeddings(bundle, monkeypatch, backend):
+    predictor = Predictor(bundle, backend=backend, tta="hflip", class_list=["a", "c"], batch_size=2, preprocess_workers=1)
+    seen = []
+
+    def runtime(images, embeddings):
+        seen.append(images.copy())
+        right = images[:, 0, 0, -1] > images[:, 0, 0, 0]
+        scores = np.array([[4, 9, 0] if x else [0, 1, 6] for x in right], dtype=np.float32)
+        vectors = np.array([[1, 0] if x else [0, 1] for x in right], dtype=np.float32)
+        return scores, vectors if embeddings else None
+
+    monkeypatch.setattr(predictor, "_" + backend, runtime)
+    image = np.tile(np.arange(8, dtype=np.uint8), (3, 8, 1))
+    result, embedding = predictor.predict_with_embeddings([image] * 3)
+    assert [len(x) for x in seen] == [2, 2, 1, 1]
+    np.testing.assert_array_equal(seen[1][0], preprocess(image[..., ::-1]))
+    np.testing.assert_array_equal(result.raw_logits[0], [[2, 3]] * 3)
+    np.testing.assert_allclose(embedding, np.full((3, 2), 1 / np.sqrt(2)), rtol=1e-6)
+    assert result.labels == predictor.predict([image] * 3).labels
+    assert result.metadata["tta"] == "hflip"
+    assert result[0].label == ("c", "g1", "f0")
+
+
+def test_tta_rejects_undefined_embedding_and_invalid_options(bundle, monkeypatch):
+    with pytest.raises(ValueError, match="tta"):
+        Predictor(bundle, tta="random")
+    with pytest.raises(ValueError, match="preprocess_workers"):
+        Predictor(bundle, preprocess_workers=0)
+    predictor = Predictor(bundle, tta="hflip", threads=2, preprocess_workers=1)
+    assert predictor.threads == 2 and predictor.preprocess_workers == 1
+    monkeypatch.setattr(predictor, "_onnx", lambda x, e: (np.ones((len(x), 3)), np.zeros((len(x), 2))))
+    with pytest.raises(RuntimeError, match="undefined mean embedding"):
+        predictor.predict_with_embeddings(np.zeros((3, 4, 4), dtype=np.uint8))
+
+
+def test_tta_views_apply_before_the_unchanged_recipe():
+    from deployment.mambo_deploy import TTA, View
+    from deployment.mambo_deploy.augmentation import resolve_tta
+
+    image = np.random.default_rng(31).integers(0, 256, (3, 157, 239), dtype=np.uint8)
+    views = resolve_tta("five_crop").transforms
+    np.testing.assert_array_equal(preprocess(views[0](image)), preprocess(image))
+    assert len({preprocess(view(image)).tobytes() for view in views}) == 5
+    crop = View(crop=(0, 0, 0.5, 1), quarter_turns=1)
+    assert crop(image).shape == (3, 239, 78)
+    assert TTA([crop]).transforms == (crop,)
+    with pytest.raises(ValueError, match="crop"):
+        View(crop=(0, 0, 0, 1))
+    with pytest.raises(ValueError, match="callable"):
+        TTA([])
+
+
+@pytest.mark.parametrize(("tta", "views"), [("five_crop", 5), ("ten_crop", 10), ("d4", 8)])
+def test_multicrop_tta_bounds_calls_and_shares_prediction_embedding_path(bundle, monkeypatch, tta, views):
+    p = Predictor(bundle, tta=tta, batch_size=2, preprocess_workers=2)
+    observed = []
+
+    def runtime(x, embeddings):
+        observed.append(x.copy())
+        signal = x.mean(axis=(1, 2, 3))
+        return np.stack([signal, signal * 2, -signal], axis=1), np.tile(np.array([1, 0], np.float32), (len(x), 1))
+
+    monkeypatch.setattr(p, "_onnx", runtime)
+    images = [np.full((3, 20, 30), 30 + i * 50, np.uint8) for i in range(3)]
+    result, vectors = p.predict_with_embeddings(images)
+    assert [len(x) for x in observed] == [2] * views + [1] * views
+    expected = np.mean([x.mean(axis=(1, 2, 3)) for x in observed[:views]], axis=0)
+    np.testing.assert_allclose(result.raw_logits[0][:2, 0], expected, rtol=1e-6)
+    assert result.labels == p.predict(images).labels
+    np.testing.assert_array_equal(vectors, [[1, 0]] * 3)
+
+
+def test_custom_tta_transforms_are_isolated_and_precede_preprocessing(bundle, monkeypatch):
+    from deployment.mambo_deploy import TTA, View
+
+    def darken(image):
+        image[:] = 0
+        return image
+
+    p = Predictor(bundle, tta=TTA((darken, View()), name="dark-and-original"))
+    seen = []
+
+    def runtime(images, embeddings):
+        seen.append(images.copy())
+        return np.zeros((len(images), 3), dtype=np.float32), None
+
+    monkeypatch.setattr(p, "_onnx", runtime)
+    source = np.full((3, 7, 11), 255, dtype=np.uint8)
+    result = p.predict(source)
+    np.testing.assert_array_equal(source, np.full_like(source, 255))
+    np.testing.assert_array_equal(seen[0][0], preprocess(np.zeros_like(source)))
+    np.testing.assert_array_equal(seen[1][0], preprocess(source))
+    assert result.metadata["tta"] == "dark-and-original"
+    assert result.metadata["tta_views"] == 2
+
+
+def test_noise_preserves_extent_channels_and_reproducibility():
+    from deployment.mambo_deploy import SaltAndPepper
+
+    source = np.full((3, 64, 96), 127, dtype=np.uint8)
+    noise = SaltAndPepper(proportion=0.2, seed=42)
+    first = noise(source)
+    np.testing.assert_array_equal(first, noise(source))
+    np.testing.assert_array_equal(first[0], first[1])
+    assert first.shape == source.shape and first.dtype == np.uint8
+    assert set(np.unique(first)) == {0, 127, 255}
+    np.testing.assert_array_equal(source, np.full_like(source, 127))
+    np.testing.assert_array_equal(SaltAndPepper(proportion=0)(source), source)
+    assert not np.array_equal(first, SaltAndPepper(proportion=0.2, seed=43)(source))
+    with pytest.raises(ValueError, match="proportion"):
+        SaltAndPepper(proportion=-0.1)
+
+
+def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
+    from dev.releases.mambo_v3.tta_candidates import CANDIDATES, candidate_policy, pad, rotate
+
+    image = np.random.default_rng(12).integers(0, 256, (3, 19, 31), dtype=np.uint8)
+    original = image.copy()
+    padded = pad(image, 0.08)
+    np.testing.assert_array_equal(padded[:, 2:21, 3:34], image)
+    rotated = rotate(image, 10)
+    assert rotated.shape[1] > image.shape[1] and rotated.shape[2] > image.shape[2]
+    for name in CANDIDATES:
+        policy = candidate_policy(name)
+        assert len(policy.transforms) == 3
+        for transform in policy.transforms:
+            actual = preprocess(transform(image.copy()))
+            assert actual.shape == (3, 384, 384) and np.isfinite(actual).all()
+            np.testing.assert_array_equal(actual, preprocess(transform(image.copy())))
+    np.testing.assert_array_equal(image, original)

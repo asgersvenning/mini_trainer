@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 
-def check(bundle, image):
+def check(bundle, image, tta="none"):
     if importlib.util.find_spec("torch") or importlib.util.find_spec("mini_trainer"):
         raise AssertionError("Run this check in an ONNX-only environment without torch or mini_trainer")
     from mambo_deploy import Predictor
@@ -38,16 +38,16 @@ def check(bundle, image):
             for path in [relocated, *[p for p in relocated.rglob("*") if p.is_dir()]]:
                 path.chmod(0o555)
             os.chdir(root)
-            predictor = Predictor(relocated, model="europe")
+            predictor = Predictor(relocated, model="europe", tta=tta)
             plain = predictor.predict(image)
             embedded, vectors = predictor.predict_with_embeddings(image)
             assert plain.labels == embedded.labels and vectors.shape == (1, 1280)
-            sys.argv = ["mambo_predict", "-i", str(image), "--bundle", str(relocated), "--embeddings"]
+            sys.argv = ["mambo_predict", "-i", str(image), "--bundle", str(relocated), "--embeddings", "--tta", tta]
             run()
             assert (root / "results/mini_metric.csv").is_file()
             assert (root / "results/embeddings.npy").is_file()
             assert before == {str(path.relative_to(relocated)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
-            return {"torch_absent": True, "relocated_read_only_bundle": True, "python_network_blocked": True, "cli": True}
+            return {"torch_absent": True, "relocated_read_only_bundle": True, "python_network_blocked": True, "cli": True, "tta": tta}
         finally:
             os.chdir(original_cwd)
             sys.argv = original_argv
@@ -59,7 +59,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
     parser.add_argument("image", type=Path)
+    parser.add_argument("--tta", default="none")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    report = check(args.bundle.resolve(), args.image.resolve())
+    report = check(args.bundle.resolve(), args.image.resolve(), args.tta)
     args.output.write_text(json.dumps(report, indent=2) + "\n")

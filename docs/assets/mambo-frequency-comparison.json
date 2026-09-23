@@ -1,0 +1,4657 @@
+{
+  "revision": "70cc69adc05362863439277048e06386c1f885e1",
+  "policy": "threshold=0; optimal=False; simple=True; hierarchical=False",
+  "training_definition": "V3 source metadata rows with set 2..9; 0=test, 1=validation; no extra deduplication. Common reference axis, not a claim about V2 effective training exposures.",
+  "metadata_sha256": "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe",
+  "training_rows": 5063857,
+  "bins": {
+    "training": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        25
+      ],
+      [
+        25,
+        100
+      ],
+      [
+        100,
+        500
+      ],
+      [
+        500,
+        2000
+      ],
+      [
+        2000,
+        10000
+      ],
+      [
+        10000,
+        null
+      ]
+    ],
+    "flemming": [
+      [
+        1,
+        5
+      ],
+      [
+        5,
+        20
+      ],
+      [
+        20,
+        100
+      ],
+      [
+        100,
+        500
+      ],
+      [
+        500,
+        null
+      ]
+    ]
+  },
+  "cells": [
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.37142857142857144
+        },
+        "micro_accuracy": {
+          "0": 0.4166666666666667
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.37142857142857144
+        },
+        "micro_accuracy": {
+          "0": 0.4166666666666667
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.5142850661750477
+        },
+        "micro_accuracy": {
+          "0": 0.5286565795506648
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5142850661750477
+        },
+        "micro_accuracy": {
+          "0": 0.5286565795506648
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7472193324343406
+        },
+        "micro_accuracy": {
+          "0": 0.8057148016070058
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7472193324343406
+        },
+        "micro_accuracy": {
+          "0": 0.8057148016070058
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.42302004168769275
+        },
+        "micro_accuracy": {
+          "0": 0.8384971944376677
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.42302004168769275
+        },
+        "micro_accuracy": {
+          "0": 0.8384971944376677
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5716783216783218
+        },
+        "micro_accuracy": {
+          "0": 0.592057761732852
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5923913043478262
+        },
+        "micro_accuracy": {
+          "0": 0.6119402985074627
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.7024792928888983
+        },
+        "micro_accuracy": {
+          "0": 0.7180805484147387
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7024792928888983
+        },
+        "micro_accuracy": {
+          "0": 0.7180805484147387
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.7423169463149213
+        },
+        "micro_accuracy": {
+          "0": 0.743941605839416
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7524164966049202
+        },
+        "micro_accuracy": {
+          "0": 0.7527326440177252
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.759559314485011
+        },
+        "micro_accuracy": {
+          "0": 0.7495298100432575
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7948876546936162
+        },
+        "micro_accuracy": {
+          "0": 0.7933213894694934
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.649212243873666
+        },
+        "micro_accuracy": {
+          "0": 0.6277598184194236
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8037865876531104
+        },
+        "micro_accuracy": {
+          "0": 0.8186017310193282
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.49142442644041084
+        },
+        "micro_accuracy": {
+          "0": 0.49931224209078406
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.49142442644041084
+        },
+        "micro_accuracy": {
+          "0": 0.49931224209078406
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7219435616502283
+        },
+        "micro_accuracy": {
+          "0": 0.7847469868640816
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7219435616502283
+        },
+        "micro_accuracy": {
+          "0": 0.7847469868640816
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.41658516519375216
+        },
+        "micro_accuracy": {
+          "0": 0.8306904122956819
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.41658516519375216
+        },
+        "micro_accuracy": {
+          "0": 0.8306904122956819
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5594405594405595
+        },
+        "micro_accuracy": {
+          "0": 0.5776173285198556
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5797101449275363
+        },
+        "micro_accuracy": {
+          "0": 0.5970149253731343
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.6636656428472464
+        },
+        "micro_accuracy": {
+          "0": 0.6846615252784919
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6636656428472464
+        },
+        "micro_accuracy": {
+          "0": 0.6846615252784919
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.714096583377111
+        },
+        "micro_accuracy": {
+          "0": 0.7096350364963504
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7238121831509492
+        },
+        "micro_accuracy": {
+          "0": 0.7180206794682422
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.735043508544543
+        },
+        "micro_accuracy": {
+          "0": 0.729687793868723
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7692315787094055
+        },
+        "micro_accuracy": {
+          "0": 0.7723200955509107
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.6357767582181892
+        },
+        "micro_accuracy": {
+          "0": 0.616479812916982
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7871521768415677
+        },
+        "micro_accuracy": {
+          "0": 0.8038925512354814
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.4221811243161066
+        },
+        "micro_accuracy": {
+          "0": 0.4442916093535076
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.4221811243161066
+        },
+        "micro_accuracy": {
+          "0": 0.4442916093535076
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.6255201934340949
+        },
+        "micro_accuracy": {
+          "0": 0.6952105809596895
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6255201934340949
+        },
+        "micro_accuracy": {
+          "0": 0.6952105809596895
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.343730230685024
+        },
+        "micro_accuracy": {
+          "0": 0.7406684557209076
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.343730230685024
+        },
+        "micro_accuracy": {
+          "0": 0.7406684557209076
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.48426573426573427
+        },
+        "micro_accuracy": {
+          "0": 0.5054151624548736
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5018115942028986
+        },
+        "micro_accuracy": {
+          "0": 0.5223880597014925
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.558859427910878
+        },
+        "micro_accuracy": {
+          "0": 0.5801199657240789
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.558859427910878
+        },
+        "micro_accuracy": {
+          "0": 0.5801199657240789
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.6198802522227109
+        },
+        "micro_accuracy": {
+          "0": 0.6169343065693431
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6283139971509111
+        },
+        "micro_accuracy": {
+          "0": 0.6242245199409158
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.6541954896565274
+        },
+        "micro_accuracy": {
+          "0": 0.6529057739326688
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6846231868498542
+        },
+        "micro_accuracy": {
+          "0": 0.6910520553399024
+        }
+      }
+    },
+    {
+      "model": "v2",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.5545020621147803
+        },
+        "micro_accuracy": {
+          "0": 0.546117339569434
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6865263626182994
+        },
+        "micro_accuracy": {
+          "0": 0.7121395578277053
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.4571428571428572
+        },
+        "micro_accuracy": {
+          "0": 0.3333333333333333
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.4571428571428572
+        },
+        "micro_accuracy": {
+          "0": 0.3333333333333333
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.5294764906586549
+        },
+        "micro_accuracy": {
+          "0": 0.5396607060981201
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5294764906586549
+        },
+        "micro_accuracy": {
+          "0": 0.5396607060981201
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7741614686935845
+        },
+        "micro_accuracy": {
+          "0": 0.8308355527468063
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7741614686935845
+        },
+        "micro_accuracy": {
+          "0": 0.8308355527468063
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.6148702492977822
+        },
+        "micro_accuracy": {
+          "0": 0.8575262259087583
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6148702492977822
+        },
+        "micro_accuracy": {
+          "0": 0.8575262259087583
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.618881118881119
+        },
+        "micro_accuracy": {
+          "0": 0.6064981949458483
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.641304347826087
+        },
+        "micro_accuracy": {
+          "0": 0.6268656716417911
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.7068550945852561
+        },
+        "micro_accuracy": {
+          "0": 0.7206512425021423
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7068550945852561
+        },
+        "micro_accuracy": {
+          "0": 0.7206512425021423
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.7712642164467741
+        },
+        "micro_accuracy": {
+          "0": 0.7662773722627737
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7817576071467303
+        },
+        "micro_accuracy": {
+          "0": 0.7753323485967504
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.7805686204738644
+        },
+        "micro_accuracy": {
+          "0": 0.7753902576640963
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8168741377052069
+        },
+        "micro_accuracy": {
+          "0": 0.8206927441027172
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.6792777761312336
+        },
+        "micro_accuracy": {
+          "0": 0.6450925098012243
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8410105799720036
+        },
+        "micro_accuracy": {
+          "0": 0.8412036414188977
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.42857142857142855
+        },
+        "micro_accuracy": {
+          "0": 0.25
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.42857142857142855
+        },
+        "micro_accuracy": {
+          "0": 0.25
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.5027782329312693
+        },
+        "micro_accuracy": {
+          "0": 0.5153599266391563
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5027782329312693
+        },
+        "micro_accuracy": {
+          "0": 0.5153599266391563
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7518730716685684
+        },
+        "micro_accuracy": {
+          "0": 0.8079266916444725
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7518730716685684
+        },
+        "micro_accuracy": {
+          "0": 0.8079266916444725
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.6139611166303579
+        },
+        "micro_accuracy": {
+          "0": 0.8550866064893876
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6139611166303579
+        },
+        "micro_accuracy": {
+          "0": 0.8550866064893876
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5996503496503498
+        },
+        "micro_accuracy": {
+          "0": 0.592057761732852
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.621376811594203
+        },
+        "micro_accuracy": {
+          "0": 0.6119402985074627
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.6857834978119727
+        },
+        "micro_accuracy": {
+          "0": 0.702656383890317
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6857834978119727
+        },
+        "micro_accuracy": {
+          "0": 0.702656383890317
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.7458012717335286
+        },
+        "micro_accuracy": {
+          "0": 0.7416058394160584
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7559482278115358
+        },
+        "micro_accuracy": {
+          "0": 0.7503692762186115
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.7576738641751809
+        },
+        "micro_accuracy": {
+          "0": 0.7546078615760767
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7929145090205382
+        },
+        "micro_accuracy": {
+          "0": 0.7986961281974719
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.6605533070624363
+        },
+        "micro_accuracy": {
+          "0": 0.6298576243207924
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8178279039820641
+        },
+        "micro_accuracy": {
+          "0": 0.8213372796986412
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.40810341985056175
+        },
+        "micro_accuracy": {
+          "0": 0.4039431453461715
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.40810341985056175
+        },
+        "micro_accuracy": {
+          "0": 0.4039431453461715
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.6347917204341529
+        },
+        "micro_accuracy": {
+          "0": 0.6878978016521464
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6347917204341529
+        },
+        "micro_accuracy": {
+          "0": 0.6878978016521464
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.5450344629694924
+        },
+        "micro_accuracy": {
+          "0": 0.7067577457916565
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5450344629694924
+        },
+        "micro_accuracy": {
+          "0": 0.7067577457916565
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5087412587412588
+        },
+        "micro_accuracy": {
+          "0": 0.5018050541516246
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5271739130434783
+        },
+        "micro_accuracy": {
+          "0": 0.5186567164179104
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.5648057090119578
+        },
+        "micro_accuracy": {
+          "0": 0.5895458440445587
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5648057090119578
+        },
+        "micro_accuracy": {
+          "0": 0.5895458440445587
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.617352684421439
+        },
+        "micro_accuracy": {
+          "0": 0.614014598540146
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6257520406720708
+        },
+        "micro_accuracy": {
+          "0": 0.6212703101920236
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.6556269093929604
+        },
+        "micro_accuracy": {
+          "0": 0.6509309761143502
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6861211842484469
+        },
+        "micro_accuracy": {
+          "0": 0.6889618791679109
+        }
+      }
+    },
+    {
+      "model": "v3-torch",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.564534533101768
+        },
+        "micro_accuracy": {
+          "0": 0.5289565994910241
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6989475171736176
+        },
+        "micro_accuracy": {
+          "0": 0.6897618727297188
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.4571428571428572
+        },
+        "micro_accuracy": {
+          "0": 0.3333333333333333
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.4571428571428572
+        },
+        "micro_accuracy": {
+          "0": 0.3333333333333333
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.5297053122217539
+        },
+        "micro_accuracy": {
+          "0": 0.5392022008253095
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5297053122217539
+        },
+        "micro_accuracy": {
+          "0": 0.5392022008253095
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7739755383195107
+        },
+        "micro_accuracy": {
+          "0": 0.8308355527468063
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7739755383195107
+        },
+        "micro_accuracy": {
+          "0": 0.8308355527468063
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.6149671203623952
+        },
+        "micro_accuracy": {
+          "0": 0.8580141497926324
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6149671203623952
+        },
+        "micro_accuracy": {
+          "0": 0.8580141497926324
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.618881118881119
+        },
+        "micro_accuracy": {
+          "0": 0.6064981949458483
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.641304347826087
+        },
+        "micro_accuracy": {
+          "0": 0.6268656716417911
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.7051007086203438
+        },
+        "micro_accuracy": {
+          "0": 0.7197943444730077
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7051007086203438
+        },
+        "micro_accuracy": {
+          "0": 0.7197943444730077
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.7721266730609904
+        },
+        "micro_accuracy": {
+          "0": 0.7668613138686131
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7826317978645413
+        },
+        "micro_accuracy": {
+          "0": 0.7759231905465288
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.7807117101111073
+        },
+        "micro_accuracy": {
+          "0": 0.775343238668422
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8170238826744146
+        },
+        "micro_accuracy": {
+          "0": 0.8206429780033841
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "north_europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.6791137984707333
+        },
+        "micro_accuracy": {
+          "0": 0.6450581195405461
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.840807560011384
+        },
+        "micro_accuracy": {
+          "0": 0.8411587963585812
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.42857142857142855
+        },
+        "micro_accuracy": {
+          "0": 0.25
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.42857142857142855
+        },
+        "micro_accuracy": {
+          "0": 0.25
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.5030070544943686
+        },
+        "micro_accuracy": {
+          "0": 0.5149014213663458
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5030070544943686
+        },
+        "micro_accuracy": {
+          "0": 0.5149014213663458
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.7520422244208899
+        },
+        "micro_accuracy": {
+          "0": 0.8079944025639868
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7520422244208899
+        },
+        "micro_accuracy": {
+          "0": 0.8079944025639868
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.6140579876949709
+        },
+        "micro_accuracy": {
+          "0": 0.8555745303732618
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6140579876949709
+        },
+        "micro_accuracy": {
+          "0": 0.8555745303732618
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5996503496503498
+        },
+        "micro_accuracy": {
+          "0": 0.592057761732852
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.621376811594203
+        },
+        "micro_accuracy": {
+          "0": 0.6119402985074627
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.6857834978119727
+        },
+        "micro_accuracy": {
+          "0": 0.702656383890317
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6857834978119727
+        },
+        "micro_accuracy": {
+          "0": 0.702656383890317
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.746151051241108
+        },
+        "micro_accuracy": {
+          "0": 0.7417518248175182
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.7563027662239802
+        },
+        "micro_accuracy": {
+          "0": 0.7505169867060562
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.7580992662369584
+        },
+        "micro_accuracy": {
+          "0": 0.7547489185630994
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.793359697224724
+        },
+        "micro_accuracy": {
+          "0": 0.7988454264954713
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "europe",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.6604620639941903
+        },
+        "micro_accuracy": {
+          "0": 0.6298576243207924
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.8177149363737594
+        },
+        "micro_accuracy": {
+          "0": 0.8213372796986412
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 0,
+      "upper": 1,
+      "images": 8042,
+      "species": 16,
+      "known_images": 0,
+      "all": {
+        "accuracy": {
+          "0": 0.0
+        },
+        "micro_accuracy": {
+          "0": 0.0
+        }
+      },
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 1,
+      "upper": 25,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 25,
+      "upper": 100,
+      "images": 12,
+      "species": 7,
+      "known_images": 12,
+      "all": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.2857142857142857
+        },
+        "micro_accuracy": {
+          "0": 0.16666666666666666
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 100,
+      "upper": 500,
+      "images": 2181,
+      "species": 68,
+      "known_images": 2181,
+      "all": {
+        "accuracy": {
+          "0": 0.40857535296735414
+        },
+        "micro_accuracy": {
+          "0": 0.4034846400733608
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.40857535296735414
+        },
+        "micro_accuracy": {
+          "0": 0.4034846400733608
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 500,
+      "upper": 2000,
+      "images": 44306,
+      "species": 425,
+      "known_images": 44306,
+      "all": {
+        "accuracy": {
+          "0": 0.6350041646477221
+        },
+        "micro_accuracy": {
+          "0": 0.6880106531846703
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6350041646477221
+        },
+        "micro_accuracy": {
+          "0": 0.6880106531846703
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 2000,
+      "upper": 10000,
+      "images": 4099,
+      "species": 6,
+      "known_images": 4099,
+      "all": {
+        "accuracy": {
+          "0": 0.5450344629694924
+        },
+        "micro_accuracy": {
+          "0": 0.7067577457916565
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5450344629694924
+        },
+        "micro_accuracy": {
+          "0": 0.7067577457916565
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "training",
+      "lower": 10000,
+      "upper": null,
+      "images": 0,
+      "species": 0,
+      "known_images": 0,
+      "all": null,
+      "known": null
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 1,
+      "upper": 5,
+      "images": 277,
+      "species": 143,
+      "known_images": 268,
+      "all": {
+        "accuracy": {
+          "0": 0.5087412587412588
+        },
+        "micro_accuracy": {
+          "0": 0.5018050541516246
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5271739130434783
+        },
+        "micro_accuracy": {
+          "0": 0.5186567164179104
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 5,
+      "upper": 20,
+      "images": 1167,
+      "species": 114,
+      "known_images": 1167,
+      "all": {
+        "accuracy": {
+          "0": 0.5648057090119578
+        },
+        "micro_accuracy": {
+          "0": 0.5895458440445587
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.5648057090119578
+        },
+        "micro_accuracy": {
+          "0": 0.5895458440445587
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 20,
+      "upper": 100,
+      "images": 6850,
+      "species": 149,
+      "known_images": 6770,
+      "all": {
+        "accuracy": {
+          "0": 0.6180226583330307
+        },
+        "micro_accuracy": {
+          "0": 0.6144525547445255
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6264311298749766
+        },
+        "micro_accuracy": {
+          "0": 0.6217134416543575
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 100,
+      "upper": 500,
+      "images": 21268,
+      "species": 90,
+      "known_images": 20094,
+      "all": {
+        "accuracy": {
+          "0": 0.6559409331536423
+        },
+        "micro_accuracy": {
+          "0": 0.6511190520970472
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6864498137654397
+        },
+        "micro_accuracy": {
+          "0": 0.6891609435652434
+        }
+      }
+    },
+    {
+      "model": "v3-onnx",
+      "preset": "full",
+      "axis": "flemming",
+      "lower": 500,
+      "upper": null,
+      "images": 29078,
+      "species": 26,
+      "known_images": 22299,
+      "all": {
+        "accuracy": {
+          "0": 0.5643149943102423
+        },
+        "micro_accuracy": {
+          "0": 0.5288534287089897
+        }
+      },
+      "known": {
+        "accuracy": {
+          "0": 0.6986757072412525
+        },
+        "micro_accuracy": {
+          "0": 0.689627337548769
+        }
+      }
+    }
+  ],
+  "source_sha256": {
+    "local-evidence/mambo-release-comparison-quality/v2-full/north_europe/mini_metric.csv": "1381e2b24fa5a36574b4e1a0d9dfcfa41a5daabce6516e7451757f6ed96a5414",
+    "local-evidence/mambo-release-comparison-quality/v2-full/europe/mini_metric.csv": "05d76b1f47e294e51378905c27694438eaeeaf11b724bfbb8995eae984a1b410",
+    "local-evidence/mambo-release-comparison-quality/v2-full/full/mini_metric.csv": "fd0f436cc4d2cd23c1ebf628783f23b06663b8aacc8263a04ddf078dfbddd21a",
+    "local-evidence/mambo-accelerated-quality/torch-cuda-0-prediction/north_europe/mini_metric.csv": "b6793f4f24ba092912a5d468a86f2f3402d1281a6e63190e623d1cadc13fc027",
+    "local-evidence/mambo-accelerated-quality/torch-cuda-0-prediction/europe/mini_metric.csv": "189de0dafdd98830f6ab8690937ea287c4acee82e6f09a4c7151a7d62904d67d",
+    "local-evidence/mambo-accelerated-quality/torch-cuda-0-prediction/full/mini_metric.csv": "9c9b44c7a44f550d3a2a78f489a97c283d251e4c9c14d2123d3494fe19f3888a",
+    "local-evidence/mambo-accelerated-quality/onnx-cuda-0-prediction/north_europe/mini_metric.csv": "b8624ec148e1d67d6685be4e79e35b990a7692e4109f306430ddfc015e3d543f",
+    "local-evidence/mambo-accelerated-quality/onnx-cuda-0-prediction/europe/mini_metric.csv": "a25befd30a3187e30baf62d01b267dfd5ed0adfe36b58cc6ee57595e22241dc4",
+    "local-evidence/mambo-accelerated-quality/onnx-cuda-0-prediction/full/mini_metric.csv": "24159c3f10dd63a7b53ba927530d04eb331d96329d5d8395a8295c9ee233507a"
+  },
+  "species_support": {
+    "11478679": {
+      "flemming": 1,
+      "training": 1236
+    },
+    "1732063": {
+      "flemming": 236,
+      "training": 1305
+    },
+    "1732416": {
+      "flemming": 95,
+      "training": 438
+    },
+    "1734453": {
+      "flemming": 201,
+      "training": 503
+    },
+    "1734704": {
+      "flemming": 27,
+      "training": 781
+    },
+    "1734826": {
+      "flemming": 8,
+      "training": 585
+    },
+    "1737491": {
+      "flemming": 12,
+      "training": 1201
+    },
+    "1737542": {
+      "flemming": 12,
+      "training": 1203
+    },
+    "1737650": {
+      "flemming": 1,
+      "training": 181
+    },
+    "1737775": {
+      "flemming": 9,
+      "training": 1451
+    },
+    "1737776": {
+      "flemming": 2,
+      "training": 1401
+    },
+    "1737847": {
+      "flemming": 1,
+      "training": 1440
+    },
+    "1738050": {
+      "flemming": 1,
+      "training": 59
+    },
+    "1739833": {
+      "flemming": 2,
+      "training": 1285
+    },
+    "1739922": {
+      "flemming": 14,
+      "training": 1462
+    },
+    "1740005": {
+      "flemming": 2,
+      "training": 236
+    },
+    "1740069": {
+      "flemming": 1,
+      "training": 849
+    },
+    "1740185": {
+      "flemming": 2,
+      "training": 937
+    },
+    "1741341": {
+      "flemming": 23,
+      "training": 1292
+    },
+    "1741752": {
+      "flemming": 1,
+      "training": 636
+    },
+    "1742142": {
+      "flemming": 41,
+      "training": 513
+    },
+    "1743532": {
+      "flemming": 36,
+      "training": 1357
+    },
+    "1743775": {
+      "flemming": 6,
+      "training": 1514
+    },
+    "1744071": {
+      "flemming": 1,
+      "training": 1127
+    },
+    "1744782": {
+      "flemming": 16,
+      "training": 391
+    },
+    "1745079": {
+      "flemming": 1,
+      "training": 153
+    },
+    "1746027": {
+      "flemming": 2,
+      "training": 230
+    },
+    "1746440": {
+      "flemming": 12,
+      "training": 1321
+    },
+    "1746775": {
+      "flemming": 25,
+      "training": 499
+    },
+    "1746832": {
+      "flemming": 35,
+      "training": 1482
+    },
+    "1746876": {
+      "flemming": 18,
+      "training": 1268
+    },
+    "1758878": {
+      "flemming": 24,
+      "training": 1317
+    },
+    "1759069": {
+      "flemming": 3,
+      "training": 1433
+    },
+    "1759083": {
+      "flemming": 12,
+      "training": 1338
+    },
+    "1759153": {
+      "flemming": 99,
+      "training": 1485
+    },
+    "1760104": {
+      "flemming": 23,
+      "training": 1556
+    },
+    "1760593": {
+      "flemming": 1,
+      "training": 1457
+    },
+    "1761041": {
+      "flemming": 12,
+      "training": 1500
+    },
+    "1762244": {
+      "flemming": 22,
+      "training": 484
+    },
+    "1763610": {
+      "flemming": 158,
+      "training": 1496
+    },
+    "1765011": {
+      "flemming": 8,
+      "training": 1455
+    },
+    "1766137": {
+      "flemming": 17,
+      "training": 1391
+    },
+    "1766210": {
+      "flemming": 26,
+      "training": 1534
+    },
+    "1766274": {
+      "flemming": 330,
+      "training": 1121
+    },
+    "1766510": {
+      "flemming": 2,
+      "training": 1317
+    },
+    "1767597": {
+      "flemming": 13,
+      "training": 1262
+    },
+    "1767625": {
+      "flemming": 3,
+      "training": 1418
+    },
+    "1768117": {
+      "flemming": 1,
+      "training": 1529
+    },
+    "1768341": {
+      "flemming": 5,
+      "training": 1282
+    },
+    "1769103": {
+      "flemming": 47,
+      "training": 1566
+    },
+    "1769505": {
+      "flemming": 3,
+      "training": 1053
+    },
+    "1769566": {
+      "flemming": 113,
+      "training": 1533
+    },
+    "1769897": {
+      "flemming": 607,
+      "training": 1548
+    },
+    "1769958": {
+      "flemming": 1,
+      "training": 1489
+    },
+    "1770150": {
+      "flemming": 2,
+      "training": 1318
+    },
+    "1770307": {
+      "flemming": 48,
+      "training": 1563
+    },
+    "1770477": {
+      "flemming": 83,
+      "training": 1460
+    },
+    "1770772": {
+      "flemming": 1,
+      "training": 1524
+    },
+    "1770880": {
+      "flemming": 103,
+      "training": 1231
+    },
+    "1771040": {
+      "flemming": 8,
+      "training": 1578
+    },
+    "1771214": {
+      "flemming": 21,
+      "training": 1543
+    },
+    "1771509": {
+      "flemming": 77,
+      "training": 1531
+    },
+    "1771698": {
+      "flemming": 53,
+      "training": 1311
+    },
+    "1772169": {
+      "flemming": 78,
+      "training": 945
+    },
+    "1772179": {
+      "flemming": 150,
+      "training": 1242
+    },
+    "1772940": {
+      "flemming": 4,
+      "training": 372
+    },
+    "1773309": {
+      "flemming": 1,
+      "training": 197
+    },
+    "1775152": {
+      "flemming": 1,
+      "training": 0
+    },
+    "1775891": {
+      "flemming": 2,
+      "training": 341
+    },
+    "1776330": {
+      "flemming": 4,
+      "training": 1187
+    },
+    "1776862": {
+      "flemming": 3,
+      "training": 1377
+    },
+    "1777253": {
+      "flemming": 19,
+      "training": 775
+    },
+    "1778074": {
+      "flemming": 23,
+      "training": 1566
+    },
+    "1779690": {
+      "flemming": 4,
+      "training": 1034
+    },
+    "1780150": {
+      "flemming": 10,
+      "training": 1227
+    },
+    "1781694": {
+      "flemming": 10,
+      "training": 142
+    },
+    "1782560": {
+      "flemming": 1,
+      "training": 1345
+    },
+    "1782615": {
+      "flemming": 1,
+      "training": 614
+    },
+    "1782627": {
+      "flemming": 1,
+      "training": 1211
+    },
+    "1782672": {
+      "flemming": 21,
+      "training": 947
+    },
+    "1782726": {
+      "flemming": 4,
+      "training": 940
+    },
+    "1782763": {
+      "flemming": 140,
+      "training": 734
+    },
+    "1782777": {
+      "flemming": 639,
+      "training": 2511
+    },
+    "1782841": {
+      "flemming": 2,
+      "training": 230
+    },
+    "1782927": {
+      "flemming": 61,
+      "training": 712
+    },
+    "1782948": {
+      "flemming": 51,
+      "training": 413
+    },
+    "1783037": {
+      "flemming": 1,
+      "training": 321
+    },
+    "1783043": {
+      "flemming": 16,
+      "training": 1181
+    },
+    "1785286": {
+      "flemming": 395,
+      "training": 1561
+    },
+    "1785888": {
+      "flemming": 68,
+      "training": 1218
+    },
+    "1785895": {
+      "flemming": 36,
+      "training": 813
+    },
+    "1786902": {
+      "flemming": 9,
+      "training": 735
+    },
+    "1787112": {
+      "flemming": 1,
+      "training": 89
+    },
+    "1787610": {
+      "flemming": 14,
+      "training": 473
+    },
+    "1789267": {
+      "flemming": 11,
+      "training": 1297
+    },
+    "1789580": {
+      "flemming": 1,
+      "training": 863
+    },
+    "1789694": {
+      "flemming": 4,
+      "training": 1304
+    },
+    "1789695": {
+      "flemming": 192,
+      "training": 1443
+    },
+    "1789730": {
+      "flemming": 17,
+      "training": 1486
+    },
+    "1789745": {
+      "flemming": 94,
+      "training": 1406
+    },
+    "1789783": {
+      "flemming": 21,
+      "training": 216
+    },
+    "1789785": {
+      "flemming": 32,
+      "training": 1199
+    },
+    "1789982": {
+      "flemming": 5,
+      "training": 1491
+    },
+    "1790002": {
+      "flemming": 9,
+      "training": 851
+    },
+    "1790072": {
+      "flemming": 2,
+      "training": 1325
+    },
+    "1790160": {
+      "flemming": 1,
+      "training": 53
+    },
+    "1791422": {
+      "flemming": 145,
+      "training": 1549
+    },
+    "1792383": {
+      "flemming": 367,
+      "training": 497
+    },
+    "1792411": {
+      "flemming": 22,
+      "training": 1389
+    },
+    "1792418": {
+      "flemming": 219,
+      "training": 1514
+    },
+    "1793877": {
+      "flemming": 3,
+      "training": 1274
+    },
+    "1794590": {
+      "flemming": 187,
+      "training": 1302
+    },
+    "1795215": {
+      "flemming": 46,
+      "training": 1555
+    },
+    "1795854": {
+      "flemming": 2,
+      "training": 958
+    },
+    "1796117": {
+      "flemming": 3,
+      "training": 1462
+    },
+    "1796145": {
+      "flemming": 38,
+      "training": 1534
+    },
+    "1796169": {
+      "flemming": 1,
+      "training": 1312
+    },
+    "1796668": {
+      "flemming": 1,
+      "training": 0
+    },
+    "1796678": {
+      "flemming": 15,
+      "training": 1508
+    },
+    "1797178": {
+      "flemming": 2,
+      "training": 878
+    },
+    "1797258": {
+      "flemming": 33,
+      "training": 1507
+    },
+    "1797367": {
+      "flemming": 1,
+      "training": 1120
+    },
+    "1797479": {
+      "flemming": 56,
+      "training": 1346
+    },
+    "1798346": {
+      "flemming": 1,
+      "training": 1155
+    },
+    "1798449": {
+      "flemming": 2,
+      "training": 1462
+    },
+    "1798807": {
+      "flemming": 1146,
+      "training": 1551
+    },
+    "1798974": {
+      "flemming": 19,
+      "training": 1541
+    },
+    "1799132": {
+      "flemming": 14,
+      "training": 787
+    },
+    "1799135": {
+      "flemming": 3,
+      "training": 1549
+    },
+    "1799701": {
+      "flemming": 4,
+      "training": 997
+    },
+    "1799708": {
+      "flemming": 5,
+      "training": 516
+    },
+    "1800004": {
+      "flemming": 16,
+      "training": 1256
+    },
+    "1800032": {
+      "flemming": 137,
+      "training": 1232
+    },
+    "1801896": {
+      "flemming": 33,
+      "training": 1139
+    },
+    "1802280": {
+      "flemming": 136,
+      "training": 1431
+    },
+    "1803012": {
+      "flemming": 1,
+      "training": 432
+    },
+    "1803073": {
+      "flemming": 37,
+      "training": 1253
+    },
+    "1804071": {
+      "flemming": 447,
+      "training": 1179
+    },
+    "1804906": {
+      "flemming": 460,
+      "training": 1236
+    },
+    "1807206": {
+      "flemming": 36,
+      "training": 0
+    },
+    "1810099": {
+      "flemming": 43,
+      "training": 1367
+    },
+    "1811789": {
+      "flemming": 325,
+      "training": 0
+    },
+    "1811896": {
+      "flemming": 2074,
+      "training": 0
+    },
+    "1812394": {
+      "flemming": 35,
+      "training": 637
+    },
+    "1813114": {
+      "flemming": 368,
+      "training": 1512
+    },
+    "1819145": {
+      "flemming": 1335,
+      "training": 912
+    },
+    "1819873": {
+      "flemming": 21,
+      "training": 553
+    },
+    "1820039": {
+      "flemming": 28,
+      "training": 1240
+    },
+    "1820372": {
+      "flemming": 198,
+      "training": 1492
+    },
+    "1821911": {
+      "flemming": 476,
+      "training": 529
+    },
+    "1822346": {
+      "flemming": 176,
+      "training": 1366
+    },
+    "1822587": {
+      "flemming": 9,
+      "training": 711
+    },
+    "1822610": {
+      "flemming": 24,
+      "training": 1235
+    },
+    "1822613": {
+      "flemming": 6,
+      "training": 894
+    },
+    "1822796": {
+      "flemming": 41,
+      "training": 1276
+    },
+    "1822819": {
+      "flemming": 24,
+      "training": 1204
+    },
+    "1822830": {
+      "flemming": 1,
+      "training": 465
+    },
+    "1823726": {
+      "flemming": 32,
+      "training": 1280
+    },
+    "1825064": {
+      "flemming": 36,
+      "training": 1450
+    },
+    "1825077": {
+      "flemming": 132,
+      "training": 1481
+    },
+    "1825156": {
+      "flemming": 54,
+      "training": 943
+    },
+    "1825971": {
+      "flemming": 567,
+      "training": 1253
+    },
+    "1825983": {
+      "flemming": 1068,
+      "training": 1412
+    },
+    "1826022": {
+      "flemming": 18,
+      "training": 482
+    },
+    "1827125": {
+      "flemming": 7,
+      "training": 1325
+    },
+    "1828162": {
+      "flemming": 223,
+      "training": 1331
+    },
+    "1828637": {
+      "flemming": 13,
+      "training": 1206
+    },
+    "1830410": {
+      "flemming": 14,
+      "training": 1284
+    },
+    "1830937": {
+      "flemming": 12,
+      "training": 1245
+    },
+    "1830962": {
+      "flemming": 2,
+      "training": 110
+    },
+    "1831136": {
+      "flemming": 1,
+      "training": 1480
+    },
+    "1831643": {
+      "flemming": 2,
+      "training": 750
+    },
+    "1835156": {
+      "flemming": 16,
+      "training": 1173
+    },
+    "1836899": {
+      "flemming": 5,
+      "training": 1470
+    },
+    "1839893": {
+      "flemming": 16,
+      "training": 718
+    },
+    "1841261": {
+      "flemming": 27,
+      "training": 1519
+    },
+    "1845270": {
+      "flemming": 10,
+      "training": 1422
+    },
+    "1847407": {
+      "flemming": 2,
+      "training": 396
+    },
+    "1862580": {
+      "flemming": 125,
+      "training": 1162
+    },
+    "1862837": {
+      "flemming": 3,
+      "training": 841
+    },
+    "1864377": {
+      "flemming": 164,
+      "training": 1079
+    },
+    "1870250": {
+      "flemming": 5,
+      "training": 1526
+    },
+    "1871252": {
+      "flemming": 1,
+      "training": 1566
+    },
+    "1871407": {
+      "flemming": 5,
+      "training": 1486
+    },
+    "1872368": {
+      "flemming": 32,
+      "training": 1492
+    },
+    "1872901": {
+      "flemming": 1,
+      "training": 1513
+    },
+    "1875008": {
+      "flemming": 147,
+      "training": 1301
+    },
+    "1875327": {
+      "flemming": 38,
+      "training": 1327
+    },
+    "1875869": {
+      "flemming": 20,
+      "training": 143
+    },
+    "1876329": {
+      "flemming": 20,
+      "training": 1216
+    },
+    "1876542": {
+      "flemming": 1,
+      "training": 1436
+    },
+    "1879252": {
+      "flemming": 617,
+      "training": 1173
+    },
+    "1879970": {
+      "flemming": 72,
+      "training": 1749
+    },
+    "1881151": {
+      "flemming": 53,
+      "training": 1544
+    },
+    "1882210": {
+      "flemming": 42,
+      "training": 1548
+    },
+    "1883161": {
+      "flemming": 42,
+      "training": 1248
+    },
+    "1884212": {
+      "flemming": 6,
+      "training": 365
+    },
+    "1884255": {
+      "flemming": 72,
+      "training": 1324
+    },
+    "1884273": {
+      "flemming": 5,
+      "training": 985
+    },
+    "1884370": {
+      "flemming": 262,
+      "training": 1220
+    },
+    "1884403": {
+      "flemming": 47,
+      "training": 1483
+    },
+    "1884465": {
+      "flemming": 728,
+      "training": 1552
+    },
+    "1884970": {
+      "flemming": 54,
+      "training": 1206
+    },
+    "1886579": {
+      "flemming": 2,
+      "training": 1519
+    },
+    "1886587": {
+      "flemming": 1,
+      "training": 1569
+    },
+    "1887108": {
+      "flemming": 28,
+      "training": 1305
+    },
+    "1887290": {
+      "flemming": 2067,
+      "training": 1469
+    },
+    "1888743": {
+      "flemming": 5,
+      "training": 185
+    },
+    "1888759": {
+      "flemming": 23,
+      "training": 1550
+    },
+    "1888826": {
+      "flemming": 90,
+      "training": 427
+    },
+    "1889942": {
+      "flemming": 10,
+      "training": 249
+    },
+    "1890187": {
+      "flemming": 121,
+      "training": 1351
+    },
+    "1890534": {
+      "flemming": 1,
+      "training": 1500
+    },
+    "1890576": {
+      "flemming": 168,
+      "training": 1563
+    },
+    "1890656": {
+      "flemming": 4,
+      "training": 324
+    },
+    "1891059": {
+      "flemming": 1,
+      "training": 257
+    },
+    "1891326": {
+      "flemming": 1,
+      "training": 592
+    },
+    "1891473": {
+      "flemming": 19,
+      "training": 1201
+    },
+    "1891493": {
+      "flemming": 12,
+      "training": 1494
+    },
+    "1951557": {
+      "flemming": 59,
+      "training": 1265
+    },
+    "1951649": {
+      "flemming": 13,
+      "training": 856
+    },
+    "1952014": {
+      "flemming": 254,
+      "training": 1188
+    },
+    "1952062": {
+      "flemming": 1,
+      "training": 1491
+    },
+    "1952532": {
+      "flemming": 483,
+      "training": 1302
+    },
+    "1952806": {
+      "flemming": 108,
+      "training": 1573
+    },
+    "1952812": {
+      "flemming": 98,
+      "training": 1378
+    },
+    "1956440": {
+      "flemming": 3,
+      "training": 2457
+    },
+    "1956524": {
+      "flemming": 1,
+      "training": 1432
+    },
+    "1956599": {
+      "flemming": 421,
+      "training": 941
+    },
+    "1957570": {
+      "flemming": 33,
+      "training": 1265
+    },
+    "1957572": {
+      "flemming": 118,
+      "training": 1525
+    },
+    "1957816": {
+      "flemming": 9,
+      "training": 1559
+    },
+    "1957845": {
+      "flemming": 303,
+      "training": 1359
+    },
+    "1957852": {
+      "flemming": 8,
+      "training": 874
+    },
+    "1958024": {
+      "flemming": 6,
+      "training": 1260
+    },
+    "1959383": {
+      "flemming": 10,
+      "training": 898
+    },
+    "1959395": {
+      "flemming": 8,
+      "training": 996
+    },
+    "1959914": {
+      "flemming": 55,
+      "training": 1226
+    },
+    "1960617": {
+      "flemming": 14,
+      "training": 1528
+    },
+    "1961040": {
+      "flemming": 4,
+      "training": 555
+    },
+    "1962204": {
+      "flemming": 17,
+      "training": 1472
+    },
+    "1962265": {
+      "flemming": 83,
+      "training": 1339
+    },
+    "1962434": {
+      "flemming": 220,
+      "training": 1899
+    },
+    "1962516": {
+      "flemming": 1,
+      "training": 1502
+    },
+    "1962636": {
+      "flemming": 18,
+      "training": 1449
+    },
+    "1962990": {
+      "flemming": 41,
+      "training": 829
+    },
+    "1963011": {
+      "flemming": 13,
+      "training": 439
+    },
+    "1963306": {
+      "flemming": 28,
+      "training": 1361
+    },
+    "1963446": {
+      "flemming": 117,
+      "training": 1561
+    },
+    "1964653": {
+      "flemming": 69,
+      "training": 1213
+    },
+    "1964657": {
+      "flemming": 59,
+      "training": 498
+    },
+    "1965166": {
+      "flemming": 36,
+      "training": 947
+    },
+    "1965208": {
+      "flemming": 41,
+      "training": 503
+    },
+    "1965763": {
+      "flemming": 75,
+      "training": 1380
+    },
+    "1965777": {
+      "flemming": 4,
+      "training": 763
+    },
+    "1965825": {
+      "flemming": 5,
+      "training": 1316
+    },
+    "1965841": {
+      "flemming": 21,
+      "training": 1343
+    },
+    "1965913": {
+      "flemming": 1,
+      "training": 1503
+    },
+    "1965996": {
+      "flemming": 20,
+      "training": 326
+    },
+    "1966017": {
+      "flemming": 95,
+      "training": 1450
+    },
+    "1966351": {
+      "flemming": 5,
+      "training": 1406
+    },
+    "1967245": {
+      "flemming": 6,
+      "training": 1165
+    },
+    "1967815": {
+      "flemming": 14,
+      "training": 1350
+    },
+    "1968678": {
+      "flemming": 170,
+      "training": 126
+    },
+    "1968867": {
+      "flemming": 280,
+      "training": 1421
+    },
+    "1970213": {
+      "flemming": 67,
+      "training": 1545
+    },
+    "1970284": {
+      "flemming": 31,
+      "training": 920
+    },
+    "1972120": {
+      "flemming": 3,
+      "training": 395
+    },
+    "1972187": {
+      "flemming": 181,
+      "training": 338
+    },
+    "1972234": {
+      "flemming": 1,
+      "training": 1293
+    },
+    "1972250": {
+      "flemming": 128,
+      "training": 1547
+    },
+    "1972342": {
+      "flemming": 10,
+      "training": 244
+    },
+    "1972434": {
+      "flemming": 6,
+      "training": 941
+    },
+    "1972449": {
+      "flemming": 6,
+      "training": 1475
+    },
+    "1973414": {
+      "flemming": 29,
+      "training": 1192
+    },
+    "1973467": {
+      "flemming": 88,
+      "training": 1559
+    },
+    "1975546": {
+      "flemming": 1,
+      "training": 1176
+    },
+    "1975553": {
+      "flemming": 10,
+      "training": 413
+    },
+    "1975571": {
+      "flemming": 8,
+      "training": 516
+    },
+    "1975897": {
+      "flemming": 688,
+      "training": 1552
+    },
+    "1975903": {
+      "flemming": 3,
+      "training": 1546
+    },
+    "1976163": {
+      "flemming": 70,
+      "training": 1306
+    },
+    "1977003": {
+      "flemming": 15,
+      "training": 1474
+    },
+    "1978114": {
+      "flemming": 347,
+      "training": 1287
+    },
+    "1978375": {
+      "flemming": 4,
+      "training": 320
+    },
+    "1978445": {
+      "flemming": 698,
+      "training": 1559
+    },
+    "1978776": {
+      "flemming": 229,
+      "training": 1524
+    },
+    "1978977": {
+      "flemming": 8,
+      "training": 397
+    },
+    "1979308": {
+      "flemming": 139,
+      "training": 1240
+    },
+    "1979430": {
+      "flemming": 4,
+      "training": 392
+    },
+    "1979473": {
+      "flemming": 320,
+      "training": 1400
+    },
+    "1979781": {
+      "flemming": 4,
+      "training": 621
+    },
+    "1982500": {
+      "flemming": 228,
+      "training": 1382
+    },
+    "1982525": {
+      "flemming": 50,
+      "training": 165
+    },
+    "1982529": {
+      "flemming": 2,
+      "training": 338
+    },
+    "1982541": {
+      "flemming": 229,
+      "training": 1463
+    },
+    "1982542": {
+      "flemming": 5,
+      "training": 1269
+    },
+    "1982592": {
+      "flemming": 1,
+      "training": 47
+    },
+    "1982636": {
+      "flemming": 35,
+      "training": 1238
+    },
+    "1982671": {
+      "flemming": 3,
+      "training": 669
+    },
+    "1982746": {
+      "flemming": 5,
+      "training": 525
+    },
+    "1982885": {
+      "flemming": 14,
+      "training": 1221
+    },
+    "1983170": {
+      "flemming": 4,
+      "training": 1152
+    },
+    "1983260": {
+      "flemming": 4,
+      "training": 544
+    },
+    "1983288": {
+      "flemming": 1,
+      "training": 1164
+    },
+    "1983387": {
+      "flemming": 3,
+      "training": 278
+    },
+    "1983441": {
+      "flemming": 23,
+      "training": 623
+    },
+    "1983442": {
+      "flemming": 35,
+      "training": 656
+    },
+    "1983525": {
+      "flemming": 318,
+      "training": 1398
+    },
+    "1983548": {
+      "flemming": 3,
+      "training": 233
+    },
+    "1983648": {
+      "flemming": 96,
+      "training": 865
+    },
+    "1983694": {
+      "flemming": 2,
+      "training": 0
+    },
+    "1983705": {
+      "flemming": 2,
+      "training": 889
+    },
+    "1983755": {
+      "flemming": 49,
+      "training": 444
+    },
+    "1983896": {
+      "flemming": 128,
+      "training": 1180
+    },
+    "1984117": {
+      "flemming": 19,
+      "training": 1256
+    },
+    "1984954": {
+      "flemming": 5,
+      "training": 648
+    },
+    "1985522": {
+      "flemming": 334,
+      "training": 909
+    },
+    "1986052": {
+      "flemming": 6,
+      "training": 1399
+    },
+    "1986056": {
+      "flemming": 1,
+      "training": 1499
+    },
+    "1986157": {
+      "flemming": 24,
+      "training": 1556
+    },
+    "1986166": {
+      "flemming": 118,
+      "training": 1338
+    },
+    "1986220": {
+      "flemming": 99,
+      "training": 1522
+    },
+    "1986522": {
+      "flemming": 18,
+      "training": 1361
+    },
+    "1986575": {
+      "flemming": 26,
+      "training": 1357
+    },
+    "1987527": {
+      "flemming": 4,
+      "training": 685
+    },
+    "1987744": {
+      "flemming": 2,
+      "training": 995
+    },
+    "1988593": {
+      "flemming": 114,
+      "training": 1537
+    },
+    "1988881": {
+      "flemming": 168,
+      "training": 1185
+    },
+    "1989428": {
+      "flemming": 157,
+      "training": 1530
+    },
+    "1990066": {
+      "flemming": 1,
+      "training": 1317
+    },
+    "1990150": {
+      "flemming": 79,
+      "training": 1198
+    },
+    "1990551": {
+      "flemming": 1,
+      "training": 1554
+    },
+    "1991371": {
+      "flemming": 52,
+      "training": 1525
+    },
+    "1992066": {
+      "flemming": 441,
+      "training": 1540
+    },
+    "1992504": {
+      "flemming": 1,
+      "training": 1447
+    },
+    "4522322": {
+      "flemming": 42,
+      "training": 134
+    },
+    "4523522": {
+      "flemming": 28,
+      "training": 1246
+    },
+    "4523885": {
+      "flemming": 70,
+      "training": 1482
+    },
+    "4524054": {
+      "flemming": 263,
+      "training": 1441
+    },
+    "4524072": {
+      "flemming": 5,
+      "training": 1013
+    },
+    "4524376": {
+      "flemming": 47,
+      "training": 1492
+    },
+    "4524393": {
+      "flemming": 2,
+      "training": 632
+    },
+    "4524421": {
+      "flemming": 272,
+      "training": 1441
+    },
+    "4524426": {
+      "flemming": 33,
+      "training": 1319
+    },
+    "4524636": {
+      "flemming": 282,
+      "training": 1512
+    },
+    "4524638": {
+      "flemming": 341,
+      "training": 1837
+    },
+    "4525078": {
+      "flemming": 377,
+      "training": 1524
+    },
+    "4525500": {
+      "flemming": 1,
+      "training": 156
+    },
+    "4525510": {
+      "flemming": 10,
+      "training": 996
+    },
+    "4525530": {
+      "flemming": 1,
+      "training": 468
+    },
+    "4525540": {
+      "flemming": 33,
+      "training": 1347
+    },
+    "4525547": {
+      "flemming": 6,
+      "training": 138
+    },
+    "4529566": {
+      "flemming": 43,
+      "training": 1242
+    },
+    "4530151": {
+      "flemming": 4,
+      "training": 1280
+    },
+    "4531284": {
+      "flemming": 27,
+      "training": 686
+    },
+    "4531402": {
+      "flemming": 1,
+      "training": 1335
+    },
+    "4531517": {
+      "flemming": 73,
+      "training": 320
+    },
+    "4531687": {
+      "flemming": 7,
+      "training": 1116
+    },
+    "4531690": {
+      "flemming": 133,
+      "training": 1286
+    },
+    "4532022": {
+      "flemming": 5,
+      "training": 1269
+    },
+    "4532095": {
+      "flemming": 5,
+      "training": 1466
+    },
+    "4532253": {
+      "flemming": 2,
+      "training": 68
+    },
+    "4532297": {
+      "flemming": 94,
+      "training": 495
+    },
+    "4532357": {
+      "flemming": 6,
+      "training": 1236
+    },
+    "4532544": {
+      "flemming": 163,
+      "training": 1515
+    },
+    "4532886": {
+      "flemming": 208,
+      "training": 644
+    },
+    "4532888": {
+      "flemming": 5,
+      "training": 1193
+    },
+    "4532890": {
+      "flemming": 3441,
+      "training": 2481
+    },
+    "4533115": {
+      "flemming": 3,
+      "training": 1583
+    },
+    "4533136": {
+      "flemming": 54,
+      "training": 1352
+    },
+    "4533202": {
+      "flemming": 17,
+      "training": 1149
+    },
+    "4533273": {
+      "flemming": 17,
+      "training": 1324
+    },
+    "4533360": {
+      "flemming": 3,
+      "training": 1248
+    },
+    "4533431": {
+      "flemming": 1,
+      "training": 1352
+    },
+    "4533433": {
+      "flemming": 2,
+      "training": 1460
+    },
+    "4533442": {
+      "flemming": 1,
+      "training": 65
+    },
+    "4533671": {
+      "flemming": 1,
+      "training": 1626
+    },
+    "4533952": {
+      "flemming": 5,
+      "training": 1313
+    },
+    "4534057": {
+      "flemming": 3,
+      "training": 1139
+    },
+    "4534166": {
+      "flemming": 20,
+      "training": 1550
+    },
+    "4534207": {
+      "flemming": 32,
+      "training": 740
+    },
+    "4534290": {
+      "flemming": 51,
+      "training": 1575
+    },
+    "4534299": {
+      "flemming": 7,
+      "training": 2571
+    },
+    "4534398": {
+      "flemming": 15,
+      "training": 144
+    },
+    "4534408": {
+      "flemming": 1,
+      "training": 743
+    },
+    "4534463": {
+      "flemming": 1,
+      "training": 480
+    },
+    "4534485": {
+      "flemming": 9,
+      "training": 418
+    },
+    "4534533": {
+      "flemming": 5,
+      "training": 1355
+    },
+    "4534538": {
+      "flemming": 10,
+      "training": 495
+    },
+    "4534540": {
+      "flemming": 114,
+      "training": 959
+    },
+    "4534719": {
+      "flemming": 38,
+      "training": 1449
+    },
+    "4534872": {
+      "flemming": 59,
+      "training": 1253
+    },
+    "4534909": {
+      "flemming": 116,
+      "training": 1350
+    },
+    "5101678": {
+      "flemming": 238,
+      "training": 270
+    },
+    "5101745": {
+      "flemming": 4,
+      "training": 728
+    },
+    "5102951": {
+      "flemming": 168,
+      "training": 1484
+    },
+    "5103451": {
+      "flemming": 27,
+      "training": 1212
+    },
+    "5104442": {
+      "flemming": 46,
+      "training": 1454
+    },
+    "5104558": {
+      "flemming": 14,
+      "training": 952
+    },
+    "5105339": {
+      "flemming": 486,
+      "training": 1316
+    },
+    "5109821": {
+      "flemming": 11,
+      "training": 465
+    },
+    "5110200": {
+      "flemming": 46,
+      "training": 979
+    },
+    "5110213": {
+      "flemming": 42,
+      "training": 1557
+    },
+    "5110670": {
+      "flemming": 33,
+      "training": 1256
+    },
+    "5110885": {
+      "flemming": 31,
+      "training": 1431
+    },
+    "5111574": {
+      "flemming": 14,
+      "training": 1269
+    },
+    "5112155": {
+      "flemming": 3,
+      "training": 1317
+    },
+    "5112283": {
+      "flemming": 64,
+      "training": 1554
+    },
+    "5112291": {
+      "flemming": 3,
+      "training": 1535
+    },
+    "5112362": {
+      "flemming": 4,
+      "training": 0
+    },
+    "5113036": {
+      "flemming": 4,
+      "training": 1410
+    },
+    "5113078": {
+      "flemming": 15,
+      "training": 1332
+    },
+    "5113234": {
+      "flemming": 7,
+      "training": 1382
+    },
+    "5114198": {
+      "flemming": 837,
+      "training": 1474
+    },
+    "5114327": {
+      "flemming": 6,
+      "training": 1237
+    },
+    "5115771": {
+      "flemming": 77,
+      "training": 1372
+    },
+    "5115777": {
+      "flemming": 33,
+      "training": 929
+    },
+    "5115874": {
+      "flemming": 518,
+      "training": 1009
+    },
+    "5116475": {
+      "flemming": 2,
+      "training": 376
+    },
+    "5116609": {
+      "flemming": 1901,
+      "training": 0
+    },
+    "5116669": {
+      "flemming": 1,
+      "training": 0
+    },
+    "5116850": {
+      "flemming": 213,
+      "training": 0
+    },
+    "5116941": {
+      "flemming": 878,
+      "training": 0
+    },
+    "5117049": {
+      "flemming": 1232,
+      "training": 0
+    },
+    "5117089": {
+      "flemming": 393,
+      "training": 0
+    },
+    "5117400": {
+      "flemming": 2843,
+      "training": 1546
+    },
+    "5118892": {
+      "flemming": 7,
+      "training": 1356
+    },
+    "5118996": {
+      "flemming": 712,
+      "training": 1417
+    },
+    "5119245": {
+      "flemming": 338,
+      "training": 605
+    },
+    "5124007": {
+      "flemming": 248,
+      "training": 1373
+    },
+    "5124143": {
+      "flemming": 27,
+      "training": 991
+    },
+    "5124233": {
+      "flemming": 682,
+      "training": 1223
+    },
+    "5125689": {
+      "flemming": 141,
+      "training": 1559
+    },
+    "5126212": {
+      "flemming": 8,
+      "training": 961
+    },
+    "5126680": {
+      "flemming": 1,
+      "training": 1353
+    },
+    "5142870": {
+      "flemming": 30,
+      "training": 1533
+    },
+    "5142971": {
+      "flemming": 243,
+      "training": 0
+    },
+    "5143048": {
+      "flemming": 9,
+      "training": 1351
+    },
+    "5143129": {
+      "flemming": 301,
+      "training": 1511
+    },
+    "5143147": {
+      "flemming": 182,
+      "training": 1280
+    },
+    "5143380": {
+      "flemming": 180,
+      "training": 1526
+    },
+    "5143651": {
+      "flemming": 63,
+      "training": 1322
+    },
+    "5143675": {
+      "flemming": 72,
+      "training": 1476
+    },
+    "5143697": {
+      "flemming": 247,
+      "training": 1479
+    },
+    "5144190": {
+      "flemming": 10,
+      "training": 1181
+    },
+    "5144426": {
+      "flemming": 23,
+      "training": 1320
+    },
+    "5144534": {
+      "flemming": 229,
+      "training": 1508
+    },
+    "5144543": {
+      "flemming": 23,
+      "training": 1549
+    },
+    "5145009": {
+      "flemming": 131,
+      "training": 1326
+    },
+    "5145136": {
+      "flemming": 1,
+      "training": 740
+    },
+    "5145409": {
+      "flemming": 4,
+      "training": 1302
+    },
+    "5146342": {
+      "flemming": 13,
+      "training": 439
+    },
+    "5146379": {
+      "flemming": 85,
+      "training": 1252
+    },
+    "5146412": {
+      "flemming": 24,
+      "training": 1100
+    },
+    "5146496": {
+      "flemming": 1,
+      "training": 307
+    },
+    "5146559": {
+      "flemming": 345,
+      "training": 1672
+    },
+    "5146677": {
+      "flemming": 1,
+      "training": 1505
+    },
+    "5146961": {
+      "flemming": 74,
+      "training": 1505
+    },
+    "5147039": {
+      "flemming": 1,
+      "training": 2449
+    },
+    "5147062": {
+      "flemming": 1,
+      "training": 1078
+    },
+    "5147193": {
+      "flemming": 2,
+      "training": 1503
+    },
+    "5147208": {
+      "flemming": 26,
+      "training": 1369
+    },
+    "5147245": {
+      "flemming": 5,
+      "training": 1197
+    },
+    "5147608": {
+      "flemming": 30,
+      "training": 1326
+    },
+    "5148286": {
+      "flemming": 1,
+      "training": 1387
+    },
+    "5148424": {
+      "flemming": 120,
+      "training": 1171
+    },
+    "5148436": {
+      "flemming": 263,
+      "training": 454
+    },
+    "5148462": {
+      "flemming": 34,
+      "training": 1380
+    },
+    "5148486": {
+      "flemming": 60,
+      "training": 900
+    },
+    "5148487": {
+      "flemming": 570,
+      "training": 1293
+    },
+    "5149438": {
+      "flemming": 398,
+      "training": 1497
+    },
+    "5149665": {
+      "flemming": 48,
+      "training": 1475
+    },
+    "5149746": {
+      "flemming": 40,
+      "training": 1176
+    },
+    "5714973": {
+      "flemming": 199,
+      "training": 1526
+    },
+    "5768880": {
+      "flemming": 22,
+      "training": 1268
+    },
+    "5769068": {
+      "flemming": 17,
+      "training": 1564
+    },
+    "5769072": {
+      "flemming": 313,
+      "training": 1202
+    },
+    "5769272": {
+      "flemming": 1,
+      "training": 210
+    },
+    "5771259": {
+      "flemming": 2,
+      "training": 567
+    },
+    "5771350": {
+      "flemming": 163,
+      "training": 1007
+    },
+    "5771982": {
+      "flemming": 12,
+      "training": 725
+    },
+    "5772063": {
+      "flemming": 8,
+      "training": 2371
+    },
+    "5772176": {
+      "flemming": 2,
+      "training": 1564
+    },
+    "5772196": {
+      "flemming": 76,
+      "training": 1501
+    },
+    "5772202": {
+      "flemming": 2,
+      "training": 481
+    },
+    "5772205": {
+      "flemming": 2,
+      "training": 563
+    },
+    "5772210": {
+      "flemming": 44,
+      "training": 1325
+    },
+    "5772351": {
+      "flemming": 26,
+      "training": 1551
+    },
+    "5880533": {
+      "flemming": 406,
+      "training": 1539
+    },
+    "5880545": {
+      "flemming": 6,
+      "training": 1657
+    },
+    "5880552": {
+      "flemming": 41,
+      "training": 1370
+    },
+    "5880559": {
+      "flemming": 67,
+      "training": 1306
+    },
+    "5880563": {
+      "flemming": 2,
+      "training": 973
+    },
+    "5884851": {
+      "flemming": 96,
+      "training": 1527
+    },
+    "6097214": {
+      "flemming": 86,
+      "training": 1483
+    },
+    "6097236": {
+      "flemming": 1,
+      "training": 1524
+    },
+    "7438067": {
+      "flemming": 1,
+      "training": 785
+    },
+    "7443518": {
+      "flemming": 28,
+      "training": 1535
+    },
+    "7446048": {
+      "flemming": 1,
+      "training": 312
+    },
+    "7681733": {
+      "flemming": 36,
+      "training": 1427
+    },
+    "7730078": {
+      "flemming": 694,
+      "training": 0
+    },
+    "7752082": {
+      "flemming": 8,
+      "training": 443
+    },
+    "7780930": {
+      "flemming": 22,
+      "training": 1213
+    },
+    "7825213": {
+      "flemming": 44,
+      "training": 0
+    },
+    "7895336": {
+      "flemming": 2,
+      "training": 1245
+    },
+    "7940536": {
+      "flemming": 5,
+      "training": 1536
+    },
+    "7960566": {
+      "flemming": 8,
+      "training": 1266
+    },
+    "7972792": {
+      "flemming": 1,
+      "training": 185
+    },
+    "8007222": {
+      "flemming": 2,
+      "training": 492
+    },
+    "8015895": {
+      "flemming": 953,
+      "training": 1159
+    },
+    "8105817": {
+      "flemming": 2,
+      "training": 1343
+    },
+    "8223165": {
+      "flemming": 27,
+      "training": 1567
+    },
+    "8262357": {
+      "flemming": 30,
+      "training": 694
+    },
+    "8361848": {
+      "flemming": 678,
+      "training": 1547
+    },
+    "8361973": {
+      "flemming": 5,
+      "training": 40
+    },
+    "8397564": {
+      "flemming": 41,
+      "training": 1433
+    },
+    "8407461": {
+      "flemming": 1,
+      "training": 1382
+    },
+    "8421569": {
+      "flemming": 905,
+      "training": 1487
+    },
+    "8537359": {
+      "flemming": 21,
+      "training": 1302
+    },
+    "8581601": {
+      "flemming": 3,
+      "training": 515
+    },
+    "9101339": {
+      "flemming": 86,
+      "training": 757
+    }
+  }
+}

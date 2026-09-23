@@ -97,7 +97,43 @@ configure PyTorch model threads separately. Use `--threads 1` for serial prepara
 wheel defaults to ONNX/CPU; the training-wheel entry point retains native/CUDA
 defaults, so explicit backend/device arguments are recommended in scripts.
 
+## Optional test-time augmentation
+
+TTA runs as an outer process: transform the decoded image, use the normal
+preprocessing and backend, then average species logits before preset filtering
+and hierarchical reduction. It is **off by default**.
+
+```python
+predictor = Predictor(bundle, backend="onnx", model="north_europe", tta="d4")
+result = predictor.predict(images)
+```
+
+Whole-image profiles are `hflip` (2 views), `d4` (8 rotations/reflections),
+and `light_noise` (original + two seeded 1% salt-and-pepper views). Experimental
+`five_crop` and `ten_crop` profiles are also available; these can remove diagnostic
+parts of a specimen and performed worse in the local subset comparison. Each model call stays within `batch_size`; images
+are decoded once per batch. More views cost more inference and preparation.
+Embeddings are the normalized mean of the view embeddings, not the single-view
+representation. TTA quality qualification and exact semantics are in the
+[TTA guide](../docs/mambo-tta.md).
+
+Custom policies use the same outer layer, independently of backend or preset:
+
+```python
+from mambo_deploy import TTA, SaltAndPepper, View
+
+policy = TTA((View(), View(quarter_turns=1), SaltAndPepper(seed=7)), name="orientation-noise")
+predictor = Predictor(bundle, backend="torch", tta=policy)
+```
+
+A policy can also contain your own callables: each receives a separate decoded
+uint8 CHW image and returns an image accepted by the normal preprocessing API.
+The CLI supports the named profiles through `--tta`.
+
 ## Qualification
+
+The release comparisons below use **TTA off**. Augmented results are reported
+separately in the [TTA guide](../docs/mambo-tta.md).
 
 In the strict FP32 reference evaluation on all 58,640 Flemming images, PyTorch and
 ONNX return identical top-1 species,
@@ -115,8 +151,9 @@ northern-Europe preset, the updated defaults deliver:
 
 | Runtime | CPU, batch 1 | GPU, batch 1 | GPU, batch 8 | GPU, batch 32 |
 |---|---:|---:|---:|---:|
-| ONNX auto | 10.1 | 46.7 | 114.1 | 111.3 |
-| PyTorch auto | 5.7 | 29.8 | 126.7 | 136.2 |
+| MAMBO v2 (CPU input adapter) | 1.3 | 45.2 | 44.8 | 83.5 |
+| V3 ONNX auto | 10.1 | 46.7 | 114.1 | 111.3 |
+| V3 PyTorch auto | 5.7 | 29.8 | 126.7 | 136.2 |
 
 All speeds are **images per second**, including decoding, preparation and result
 handling. GPU batch-32 throughput improves by **2.62× ONNX / 3.06× PyTorch** over
@@ -130,6 +167,22 @@ Europe macro species accuracy is **71.25% PyTorch / 71.24% ONNX**; macro-F1 is
 **0.2543** for both. The largest macro-accuracy change from FP32 across five presets,
 three ranks and both truth populations is under 0.094 percentage points. BF16 has
 4,096-image qualification only. Small cross-precision label differences are expected.
+
+The unthresholded, all-truth **species** comparison is:
+
+| Preset | V2 macro accuracy | V3 PyTorch / ONNX | V2 macro-F1 | V3 PyTorch / ONNX |
+|---|---:|---:|---:|---:|
+| Northern Europe | 68.52% | 71.25% / 71.24% | 0.2575 | 0.2543 / 0.2543 |
+| Europe | 66.04% | 69.05% / 69.06% | 0.2000 | 0.1997 / 0.1997 |
+| Global | 57.21% | 58.01% / 58.03% | 0.0899 | 0.0973 / 0.0973 |
+
+The [frequency curves](../docs/mambo-frequency-comparison.md) compare both training
+metadata counts and Flemming image counts. The [loading study](../docs/mambo-loading-scaling.md)
+separates preparation from prepared-input inference: the remaining plateau is partly
+loading/scheduling, not solely model throughput. `preprocess_workers` (CLI:
+`--preprocess-workers`) controls preparation separately from ONNX runtime `threads`;
+it defaults to the latter. Tune workers with batch size and CPU limits rather than
+assuming more threads always help.
 
 The [accelerated comparison and charts](../docs/mambo-accelerated-deployment.md)
 cover speed, memory, all/known-truth metrics and updated European lists. The

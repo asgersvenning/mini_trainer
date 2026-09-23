@@ -58,7 +58,13 @@ def collect(args):
         write_json(output / "samples.json", records)
         report["sample_ids_sha256"] = file_hash(output / "samples.json")
         predictor = Predictor(
-            args.bundle, backend=args.backend, device=args.device, model="full", threads=args.threads, precision=args.precision
+            args.bundle,
+            backend=args.backend,
+            device=args.device,
+            model="full",
+            threads=args.threads,
+            precision=args.precision,
+            tta=getattr(args, "tta", "none"),
         )
         report["effective_precision"] = predictor.effective_precision
         report["runtime"].update(
@@ -92,7 +98,12 @@ def collect(args):
             embeddings = None
             if args.embeddings:
                 embeddings = np.lib.format.open_memmap(output / "embeddings.npy", mode="w+", dtype=np.float32, shape=(len(records), 1280))
-            timings = {"decode_preprocess_seconds": 0.0, "runtime_seconds": 0.0, "reduce_write_seconds": 0.0}
+            timings = {
+                "decode_preprocess_seconds": 0.0,
+                "runtime_seconds": 0.0,
+                "reduce_write_seconds": 0.0,
+                "tta_prepare_infer_seconds": 0.0,
+            }
             for offset in range(0, len(records), args.batch_size):
                 batch = records[offset : offset + args.batch_size]
                 paths = [args.root / r["path"] for r in batch]
@@ -100,11 +111,15 @@ def collect(args):
                     if file_hash(path) != record["sha256"]:
                         raise ValueError(f"Image bytes changed: {path}")
                 t = time.perf_counter()
-                images = prepare_batch(paths, pool)
-                timings["decode_preprocess_seconds"] += time.perf_counter() - t
-                t = time.perf_counter()
-                leaf, vectors = (predictor._torch if args.backend == "torch" else predictor._onnx)(images, args.embeddings)
-                timings["runtime_seconds"] += time.perf_counter() - t
+                if predictor.tta is not None:
+                    leaf, vectors = predictor._infer_batch(paths, args.embeddings, pool)
+                    timings["tta_prepare_infer_seconds"] += time.perf_counter() - t
+                else:
+                    images = predictor._prepare(paths, pool)
+                    timings["decode_preprocess_seconds"] += time.perf_counter() - t
+                    t = time.perf_counter()
+                    leaf, vectors = predictor._infer(images, args.embeddings)
+                    timings["runtime_seconds"] += time.perf_counter() - t
                 if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
                     raise ValueError("Invalid leaf scores")
                 if embeddings is not None:
@@ -151,6 +166,7 @@ def main():
     run.add_argument("--backend", choices=["torch", "onnx"], required=True)
     run.add_argument("--device", default="cpu")
     run.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="fp32")
+    run.add_argument("--tta", choices=["none", "hflip", "five_crop", "ten_crop", "d4", "light_noise"], default="none")
     run.add_argument("--embeddings", action="store_true")
     run.add_argument("--count", type=int)
     run.add_argument("--seed", type=int, default=20260923)

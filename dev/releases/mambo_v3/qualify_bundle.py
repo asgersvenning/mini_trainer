@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 
-def qualify(bundle, dataset, device, backends):
+def qualify(bundle, dataset, device, backends, tta="none"):
     from mambo_deploy import Predictor
 
     if "torch" in backends:
@@ -24,14 +24,14 @@ def qualify(bundle, dataset, device, backends):
             break
     if len(images) != 4:
         raise ValueError("Need four species directories containing JPEGs")
-    report = {"device": device, "images": [], "variants": {}, "purpose": "bounded contract qualification; not a benchmark"}
+    report = {"device": device, "tta": tta, "images": [], "variants": {}, "purpose": "bounded contract qualification; not a benchmark"}
     for path in images:
         with path.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         report["images"].append({"path": str(path), "sha256": digest})
     custom = None
     for backend in backends:
-        predictor = Predictor(bundle, backend=backend, device=device, model="full", batch_size=2)
+        predictor = Predictor(bundle, backend=backend, device=device, model="full", batch_size=2, tta=tta)
         plain = predictor.predict(images)
         embedded, vectors = predictor.predict_with_embeddings(images)
         if plain.labels != embedded.labels:
@@ -80,8 +80,9 @@ if __name__ == "__main__":
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--backends", nargs="+", choices=["torch", "onnx"], default=["torch", "onnx"])
+    parser.add_argument("--tta", default="none")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    report = qualify(args.bundle, args.dataset, args.device, args.backends)
+    report = qualify(args.bundle, args.dataset, args.device, args.backends, args.tta)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(args.output)

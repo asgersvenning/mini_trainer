@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .augmentation import infer_augmented, resolve_tta
 from .bundle import Bundle
 from .preprocessing import RECIPE, image_items, preprocess
 from .results import Prediction, hierarchy
@@ -30,6 +31,8 @@ class Predictor:
         batch_size=8,
         threads=2,
         precision="auto",
+        tta="none",
+        preprocess_workers=None,
     ):
         if backend not in ("torch", "onnx"):
             raise ValueError("backend must be 'torch' or 'onnx'")
@@ -37,6 +40,10 @@ class Predictor:
             raise ValueError("device must be cpu, cuda or cuda:N")
         if not isinstance(batch_size, int) or batch_size < 1 or not isinstance(threads, int) or threads < 1:
             raise ValueError("batch_size and threads must be positive integers")
+        self.tta = resolve_tta(tta)
+        self.preprocess_workers = threads if preprocess_workers is None else preprocess_workers
+        if not isinstance(self.preprocess_workers, int) or self.preprocess_workers < 1:
+            raise ValueError("preprocess_workers must be a positive integer")
         if precision not in ("auto", "fp32", "fp16", "bf16", "tf32"):
             raise ValueError("precision must be auto, fp32, fp16, bf16 or tf32")
         self.precision = precision
@@ -224,16 +231,24 @@ class Predictor:
                 embedding = head.preclassification(features).cpu().numpy() if embeddings else None
                 return output[0].float().cpu().numpy(), embedding
 
+    def _prepare(self, batch, pool=None):
+        return np.stack(list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch])
+
+    def _infer(self, images, embeddings=False):
+        return (self._torch if self.backend == "torch" else self._onnx)(images, embeddings)
+
+    def _infer_batch(self, batch, embeddings=False, pool=None):
+        if self.tta is not None:
+            return infer_augmented(self._infer, batch, self.tta, embeddings, pool)
+        return self._infer(self._prepare(batch, pool), embeddings)
+
     def _predict(self, x, embeddings=False, topk=1):
         with self._lock:
             leaf_batches, embedding_batches = [], []
             items = image_items(x)
-            with ThreadPoolExecutor(max_workers=self.threads) if self.threads > 1 else nullcontext(None) as pool:
+            with ThreadPoolExecutor(max_workers=self.preprocess_workers) if self.preprocess_workers > 1 else nullcontext(None) as pool:
                 while batch := list(islice(items, self.batch_size)):
-                    images = np.stack(
-                        list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch]
-                    )
-                    leaves, vectors = self._torch(images, embeddings) if self.backend == "torch" else self._onnx(images, embeddings)
+                    leaves, vectors = self._infer_batch(batch, embeddings, pool)
                     if not np.isfinite(leaves).all():
                         raise RuntimeError("Model returned non-finite species scores")
                     leaf_batches.append(leaves)
@@ -252,6 +267,8 @@ class Predictor:
                 preset=self.preset,
                 class_list_sha256=self.class_list_sha256,
                 precision=self.effective_precision,
+                tta=self.tta.name if self.tta else "none",
+                tta_views=len(self.tta.transforms) if self.tta else 1,
             )
             return (result, np.concatenate(embedding_batches)) if embeddings else result
 

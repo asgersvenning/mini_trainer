@@ -612,3 +612,11 @@ Flemming evaluation; BF16 has subset qualification. No shared-core changes or
 new model artifacts were needed. The broader
 [metric baseline](mambo-release-comparison.md) now leads with macro scores and
 retains all/known-truth results at every rank.
+
+The release adapter now also supports [outer TTA](mambo-tta.md), with named
+profiles and custom decoded-image transforms, plus independent preparation workers.
+[Class-frequency curves](mambo-frequency-comparison.md) retain both training and
+Flemming support axes. The [worker-scaling study](mambo-loading-scaling.md) confirms
+remaining loading/scheduling limits; one-batch lookahead is experimental and needs
+production cancellation/error and CPU/TTA contention qualification before adoption.
+TTA is opt-in and has subset evidence; full-data TTA efficacy remains unmeasured.
