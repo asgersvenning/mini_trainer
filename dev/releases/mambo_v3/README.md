@@ -153,8 +153,9 @@ The tagged `mini_trainer/deploy.py`, `mini_trainer/classifier.py` and
 
 `compatibility.toml` contains a small captured top-1 fixture and archived evaluation
 CSV columns. The executable fixture checks the original container behavior only.
-Wrapper input/error, CLI, masking and both new backend integration tests remain to
-be implemented. The archived CSV schema alone is not proof of legacy CLI equivalence.
+Wrapper input/error, CLI, masking and both new backend integration checks are now
+implemented; see [deployment qualification](deployment-qualification.md). The
+archived CSV schema alone is not proof of complete legacy CLI equivalence.
 The legacy probability-detection heuristic uses a batch-wide sum; do not enshrine
 that defect as a new probability contract. Any shared core correction belongs on a
 feature/master branch before merge into the release branch.
@@ -177,10 +178,11 @@ names must not be treated as original image identities. Verify the supplied spli
 source membership and expected 632,913 predictions before a full run, with a small
 qualification first. Do not regenerate a random split from the training proportion.
 
-Next implementation: self-contained portable assets and aligned PyTorch/ONNX
-adapters, followed by a small Flemming qualification, then full local task metrics
+Portable assets, aligned PyTorch/ONNX adapters and small CPU/GPU Flemming checks
+are implemented; see [deployment qualification](deployment-qualification.md).
+Next implementation: full local task metrics
 and CPU/laptop-GPU timings. Use the same versioned runner/config on UCloud for
 in-domain results. Archived selected predictions support a historical baseline,
-not new-backend top-k or embedding quality claims. No fresh inference or speed
-benchmark was performed in this increment. Training-source revision and best-epoch
+not new-backend top-k or embedding quality claims. Small fresh inference checks
+are complete; no speed benchmark has been performed. Training-source revision and best-epoch
 provenance remain unresolved; packaging checkout is not training provenance.

@@ -1,0 +1,23 @@
+[project]
+name = "mambo-deploy"
+version = "0.3.0"
+description = "Portable local inference for MAMBO model bundles"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.4", "pillow>=11"]
+readme = "README.md"
+license = "MIT"
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.20"]
+onnx-cuda = ["onnxruntime-gpu>=1.20"]
+torch = ["mini_trainer>=0.3.0"]
+
+[project.scripts]
+mambo_predict = "mambo_deploy.cli:run"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""

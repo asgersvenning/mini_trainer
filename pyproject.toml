@@ -38,6 +38,7 @@ Repository = "https://github.com/asgersvenning/mini_trainer"
 "Bug Tracker" = "https://github.com/asgersvenning/mini_trainer/issues"
 
 [project.scripts]
+mambo_predict = "mini_trainer.deploy:run"
 mt_train = "mini_trainer.train:run"
 mt_predict = "mini_trainer.predict:run"
 mt_export = "mini_trainer.export:run"

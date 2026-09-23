@@ -585,6 +585,11 @@ has been exercised. Release notes distinguish model changes from package/API cha
 | E — broader portability | Additional OS/browser profiles and distribution channels | Core release preserved; qualify only new boundaries |
 
 Start with **A and B**, then use C to make the release recommendation concrete.
+The portable bundle and aligned inference implementation now have bounded
+CPU/GPU and installed-package evidence; see the
+[deployment qualification](../dev/releases/mambo_v3/deployment-qualification.md)
+and [consumer guide](../deployment/README.md). The next increment is C; unresolved
+training provenance and publication gates remain open.
 The next-training-run orchestration plan and experimental quantization are not on
 this release's critical path.
 

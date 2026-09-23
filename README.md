@@ -9,6 +9,9 @@
 
 This is an attempt to create a minimal extendable framework for development and research on classification models.
 
+For the MAMBO model release candidate, see the [local deployment guide](deployment/README.md)
+for PyTorch/ONNX inference, regional presets, custom class lists and embeddings.
+
 All code in `mini_trainer` should follow the following core principles:
 
 * Keep core dependencies minimal (see `pyproject.toml` for the current set); third-party integrations should remain optional.
