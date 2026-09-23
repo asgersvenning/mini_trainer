@@ -20,6 +20,7 @@ def run(default_backend="onnx", default_device="cpu"):
     parser.add_argument("--class-list")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="auto")
     parser.add_argument("--topk", type=int, default=1)
     parser.add_argument("--threshold", type=float, default=0)
     parser.add_argument("--embeddings", action="store_true")
@@ -49,6 +50,7 @@ def run(default_backend="onnx", default_device="cpu"):
         class_list=args.class_list,
         batch_size=args.batch_size,
         threads=args.threads,
+        precision=args.precision,
     )
     result = predictor.predict_with_embeddings(paths, args.topk) if args.embeddings else predictor.predict(paths, args.topk)
     if args.embeddings:

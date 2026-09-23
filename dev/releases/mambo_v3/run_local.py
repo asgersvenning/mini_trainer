@@ -13,6 +13,7 @@ from dev.releases.mambo_v3.evaluation_data import write_json
 
 def plan(args):
     shared = ["--bundle", str(args.bundle.resolve()), "--manifest", str(args.manifest.resolve()), "--root", str(args.root.resolve())]
+    shared += ["--precision", args.precision]
     jobs = []
     if args.phase in ("qualification", "full"):
         variants = (
@@ -78,6 +79,7 @@ def main():
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--count", type=int, default=256)
+    parser.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="fp32")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     jobs = plan(args)

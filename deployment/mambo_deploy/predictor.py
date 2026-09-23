@@ -4,6 +4,8 @@ import hashlib
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from itertools import islice
 from pathlib import Path
 
@@ -27,6 +29,7 @@ class Predictor:
         weights=None,
         batch_size=8,
         threads=2,
+        precision="auto",
     ):
         if backend not in ("torch", "onnx"):
             raise ValueError("backend must be 'torch' or 'onnx'")
@@ -34,6 +37,18 @@ class Predictor:
             raise ValueError("device must be cpu, cuda or cuda:N")
         if not isinstance(batch_size, int) or batch_size < 1 or not isinstance(threads, int) or threads < 1:
             raise ValueError("batch_size and threads must be positive integers")
+        if precision not in ("auto", "fp32", "fp16", "bf16", "tf32"):
+            raise ValueError("precision must be auto, fp32, fp16, bf16 or tf32")
+        self.precision = precision
+        self.effective_precision = precision
+        if precision == "auto":
+            self.effective_precision = ("fp16" if backend == "torch" else "tf32") if str(device).startswith("cuda") else "fp32"
+        if self.effective_precision != "fp32" and device == "cpu":
+            raise ValueError("CPU inference requires auto or fp32 precision")
+        if backend == "onnx" and self.effective_precision not in ("fp32", "tf32"):
+            raise ValueError("Standard ONNX supports fp32 or CUDA tf32; fp16/bf16 autocast requires the torch backend")
+        if backend == "torch" and self.effective_precision == "tf32":
+            raise ValueError("tf32 is an ONNX CUDA option; use fp16, bf16 or fp32 for torch")
         if class_list is not None and class_mask is not None:
             raise ValueError("class_list and class_mask are mutually exclusive")
         if weights is not None and model is not None:
@@ -152,7 +167,13 @@ class Predictor:
                 if hasattr(ort, "preload_dlls"):
                     ort.preload_dlls()
                 providers = [
-                    ("CUDAExecutionProvider", {"device_id": int(self.device.split(":")[-1]) if ":" in self.device else 0, "use_tf32": 0}),
+                    (
+                        "CUDAExecutionProvider",
+                        {
+                            "device_id": int(self.device.split(":")[-1]) if ":" in self.device else 0,
+                            "use_tf32": int(self.effective_precision == "tf32"),
+                        },
+                    ),
                     "CPUExecutionProvider",
                 ]
             session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
@@ -169,12 +190,17 @@ class Predictor:
             import torch
 
             from mini_trainer.builders import BaseBuilder
+            from mini_trainer.modeling.classifier import bypass_submodule
         except ImportError as error:
             raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
         if self._torch_model is None:
             path = self.weights or self.bundle.profile("torch")
             if self.device != "cpu" and not torch.cuda.is_available():
                 raise RuntimeError("PyTorch CUDA is unavailable; explicitly choose device='cpu' or install/configure CUDA")
+            if self.effective_precision == "bf16":
+                with torch.cuda.device(self.device):
+                    if not torch.cuda.is_bf16_supported(including_emulation=False):
+                        raise RuntimeError("BF16 requires native device support; choose fp16 or fp32")
             # Full local state and pretrained=False prevent constructor downloads.
             state = torch.load(str(path), map_location="cpu", weights_only=True)
             self._torch_model, _ = BaseBuilder.build_model(
@@ -182,30 +208,37 @@ class Predictor:
             )
             self._torch_model.to(self.device).eval()
         head = self._torch_model.classifier
-        captured = []
-        hook = head.register_forward_pre_hook(lambda module, args: captured.append(args[0])) if embeddings else None
-        try:
-            with torch.inference_mode():
-                output = self._torch_model(torch.from_numpy(images).to(self.device))
-                # Matches the existing embedding graph: one backbone pass, eval preclassification stage.
-                embedding = head.preclassification(captured[0]).cpu().numpy() if embeddings else None
-                return output[0].cpu().numpy(), embedding
-        finally:
-            if hook is not None:
-                hook.remove()
+        device_type = self.device.split(":")[0]
+        amp = self.effective_precision in ("fp16", "bf16")
+        dtype = torch.bfloat16 if self.effective_precision == "bf16" else torch.float16
+        with torch.inference_mode():
+            # Use the existing backbone boundary; keep the complete head in FP32.
+            with (
+                torch.autocast(device_type, dtype=dtype, enabled=amp),
+                bypass_submodule(self._torch_model, self._torch_model._backbone_output_name),
+            ):
+                features = self._torch_model(torch.from_numpy(images).to(self.device))
+            with torch.autocast(device_type, enabled=False):
+                features = features.float()
+                output = head(features)
+                embedding = head.preclassification(features).cpu().numpy() if embeddings else None
+                return output[0].float().cpu().numpy(), embedding
 
     def _predict(self, x, embeddings=False, topk=1):
         with self._lock:
             leaf_batches, embedding_batches = [], []
             items = image_items(x)
-            while batch := list(islice(items, self.batch_size)):
-                images = np.stack([preprocess(item) for item in batch])
-                leaves, vectors = self._torch(images, embeddings) if self.backend == "torch" else self._onnx(images, embeddings)
-                if not np.isfinite(leaves).all():
-                    raise RuntimeError("Model returned non-finite species scores")
-                leaf_batches.append(leaves)
-                if embeddings:
-                    embedding_batches.append(vectors)
+            with ThreadPoolExecutor(max_workers=self.threads) if self.threads > 1 else nullcontext(None) as pool:
+                while batch := list(islice(items, self.batch_size)):
+                    images = np.stack(
+                        list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch]
+                    )
+                    leaves, vectors = self._torch(images, embeddings) if self.backend == "torch" else self._onnx(images, embeddings)
+                    if not np.isfinite(leaves).all():
+                        raise RuntimeError("Model returned non-finite species scores")
+                    leaf_batches.append(leaves)
+                    if embeddings:
+                        embedding_batches.append(vectors)
             if not leaf_batches:
                 raise ValueError("No images supplied")
             raw, labels, mappings = hierarchy(np.concatenate(leaf_batches), self.selected, self.bundle.classes)
@@ -218,6 +251,7 @@ class Predictor:
                 backend=self.backend,
                 preset=self.preset,
                 class_list_sha256=self.class_list_sha256,
+                precision=self.effective_precision,
             )
             return (result, np.concatenate(embedding_batches)) if embeddings else result
 

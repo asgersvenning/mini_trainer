@@ -51,16 +51,18 @@ def preprocess(item):
     size, resized = 384, 438
     yy = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[1] / size)).astype(int), image.shape[1] - 1)
     xx = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[2] / size)).astype(int), image.shape[2] - 1)
-    image = image[:, yy][:, :, xx].astype(np.float32)
+    image = np.ascontiguousarray(image[:, yy][:, :, xx], dtype=np.float32)
     # Upsampling uses a bilinear support of one pixel (no downsampling antialias filter).
     coordinates = np.maximum((np.arange(resized, dtype=np.float32) + 0.5) * np.float32(size / resized) - 0.5, 0)
+    offset = (resized - size) // 2
+    coordinates = coordinates[offset : offset + size]
     lo = np.floor(coordinates).astype(int)
     hi = np.minimum(lo + 1, size - 1)
     fraction = coordinates - lo
     rows = image[:, lo] * (1 - fraction)[None, :, None] + image[:, hi] * fraction[None, :, None]
+    rows = np.ascontiguousarray(rows)
     pixels = rows[:, :, lo] * (1 - fraction)[None, None, :] + rows[:, :, hi] * fraction[None, None, :]
-    offset = (resized - size) // 2
-    pixels = np.rint(pixels[:, offset : offset + size, offset : offset + size]).astype(np.float32) / 255
+    pixels = np.ascontiguousarray(np.rint(pixels).astype(np.float32) / 255)
     return np.ascontiguousarray(
         (pixels - np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]) / np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
     )

@@ -146,11 +146,12 @@ def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeyp
     assert isinstance(facade.predict_with_embeddings("unused")[1], torch.Tensor)
 
 
-def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch):
+@pytest.mark.parametrize(("precision", "use_tf32"), [("fp32", 0), ("auto", 1)])
+def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32):
     import sys
     from types import SimpleNamespace
 
-    predictor = Predictor(bundle, device="cuda:0")
+    predictor = Predictor(bundle, device="cuda:0", precision=precision)
     monkeypatch.setattr(predictor.bundle, "profile", lambda key: bundle / "unused.onnx")
     captured = {}
 
@@ -169,4 +170,71 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch):
     )
     with pytest.raises(RuntimeError, match="refusing CPU-only fallback"):
         predictor._onnx(np.zeros((1, 3, 384, 384), dtype=np.float32), False)
-    assert captured["providers"][0][1]["use_tf32"] == 0
+    assert captured["providers"][0][1]["use_tf32"] == use_tf32
+
+
+@pytest.mark.parametrize(
+    ("shape", "digest"),
+    [
+        ((1, 1, 1), "8c0b08b2c1ddc4350fd94ea23ee0365375dae88f5cc5fa0af327ea2b35328931"),
+        ((3, 2, 17), "cb8727ae82ff291103261fd12beb8cf81febaf8b449e74a7e33218d59558cc71"),
+        ((3, 17, 2), "f5c44cb3c3481437b552831337baf880ac7b16017b567e199c5e219e488d23e7"),
+        ((3, 383, 385), "9f33596b74bd0cf7c284ae0ed4bbede8b206724c2d8ee72dbff735bf4e5fe49e"),
+        ((3, 440, 590), "37954851c9b8d10fcded680ec586885a8dcf8ffac5d7abc94d001b5245a0357a"),
+        ((4, 24, 15), "e4dfd0c4a4174cd6d4913b1bf4f88bfd8c82a21802ec0d006e12594995bb1d64"),
+    ],
+)
+def test_preprocessing_preserves_frozen_release_pixels(shape, digest):
+    array = np.random.default_rng(19).integers(0, 256, size=shape, dtype=np.uint8)
+    value = preprocess(array)
+    assert value.dtype == np.float32 and value.flags.c_contiguous
+    assert hashlib.sha256(value.tobytes()).hexdigest() == digest
+    np.testing.assert_array_equal(value, preprocess(array.astype(np.float32) / 255))
+
+
+def test_precision_defaults_and_unsupported_combinations(bundle):
+    assert Predictor(bundle).effective_precision == "fp32"
+    assert Predictor(bundle, backend="torch", device="cuda").effective_precision == "fp16"
+    assert Predictor(bundle, device="cuda").effective_precision == "tf32"
+    assert Predictor(bundle, device="cuda", precision="fp32").effective_precision == "fp32"
+    for kwargs in (
+        {"precision": "fp16"},
+        {"device": "cuda", "precision": "bf16"},
+        {"backend": "torch", "device": "cuda", "precision": "tf32"},
+    ):
+        with pytest.raises(ValueError):
+            Predictor(bundle, **kwargs)
+
+
+def test_native_fp32_head_and_embeddings_override_outer_autocast(bundle):
+    import torch
+
+    class Head(torch.nn.Module):
+        def preclassification(self, values):
+            assert values.dtype == torch.float32
+            assert not torch.is_autocast_enabled("cpu")
+            return torch.nn.functional.normalize(values, dim=-1)
+
+        def forward(self, values):
+            return [self.preclassification(values)]
+
+    class Model(torch.nn.Module):
+        _backbone_output_name = "classifier"
+
+        def __init__(self):
+            super().__init__()
+            self.backbone = torch.nn.Linear(4, 3)
+            self.classifier = Head()
+
+        def forward(self, x):
+            return self.classifier(self.backbone(x))
+
+    predictor = Predictor(bundle, backend="torch", precision="fp32")
+    predictor._torch_model = Model().eval()
+    original = predictor._torch_model.classifier
+    values = np.ones((2, 4), dtype=np.float32)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        scores, embeddings = predictor._torch(values, True)
+    assert scores.dtype == embeddings.dtype == np.float32
+    assert predictor._torch_model.classifier is original
+    np.testing.assert_array_equal(scores, embeddings)

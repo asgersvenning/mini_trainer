@@ -57,7 +57,15 @@ def collect(args):
         report.update(samples=len(records), species=len({r["labels"][0] for r in records}), dataset=manifest["dataset"])
         write_json(output / "samples.json", records)
         report["sample_ids_sha256"] = file_hash(output / "samples.json")
-        predictor = Predictor(args.bundle, backend=args.backend, device=args.device, model="full", threads=args.threads)
+        predictor = Predictor(
+            args.bundle, backend=args.backend, device=args.device, model="full", threads=args.threads, precision=args.precision
+        )
+        report["effective_precision"] = predictor.effective_precision
+        report["runtime"].update(
+            precision=predictor.effective_precision,
+            autocast=predictor.effective_precision in ("fp16", "bf16"),
+            tf32=predictor.effective_precision == "tf32",
+        )
         selectors = {name: Predictor(args.bundle, model=name).selected for name in args.presets}
         # A preset supplied as a custom list must produce the same mask/order.
         custom = Predictor(args.bundle, class_list=predictor.bundle.file(predictor.bundle.regions["europe_v3"]["path"]))
@@ -142,6 +150,7 @@ def main():
         run.add_argument(f"--{name}", type=Path, required=True)
     run.add_argument("--backend", choices=["torch", "onnx"], required=True)
     run.add_argument("--device", default="cpu")
+    run.add_argument("--precision", choices=["auto", "fp32", "fp16", "bf16", "tf32"], default="fp32")
     run.add_argument("--embeddings", action="store_true")
     run.add_argument("--count", type=int)
     run.add_argument("--seed", type=int, default=20260923)
