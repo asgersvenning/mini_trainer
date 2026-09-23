@@ -11,12 +11,24 @@ install, embed and operate without a GPU, internet access, administrator rights 
 a writable installation directory. Preserve a clear migration path for existing
 Python and CLI users. Add acceleration only through separately qualified profiles.
 
-The first release slice is an immutable FP32 ONNX deployment bundle, a small CPU
-inference interface, legacy-interface compatibility, and measured release evidence.
-Keep original PyTorch weights available for established workflows. Training resume
-state and the large research archive are separate optional downloads. Hosting on
-Hugging Face, browser integration and additional accelerators build on that same
-bundle; they must not each invent preprocessing or taxonomy conventions.
+The release targets **backwards compatibility with MAMBO_v2**, with native PyTorch
+and standard floating-point ONNX as equal supported paths. Use the existing raw
+PyTorch weights, standard prediction-only ONNX, and tested floating-point
+prediction-plus-embedding ONNX derivative. Preserve the original files and pipeline
+identities. PTQ, new FP16 graph conversions, TensorRT and new model formats are
+outside this release increment.
+
+Both backends must support `full`, `europe`, `north_europe`, custom class lists,
+and predictions with or without embeddings through aligned interfaces. Compare
+usefulness on the in-domain test set and out-of-domain **Flemming** expert dataset,
+plus speed and memory on this laptop's CPU and GPU. Small ONNX score variations are
+expected and acceptable: micro-numerical parity is not a release objective. Existing
+export checks remain intact; new release gates concern behavior, task quality and
+practical trade-offs.
+
+Training resume state and the research archive remain optional downloads. Additional
+OS/browser/accelerator qualification and Hub hosting follow the core comparison;
+they do not delay a release with an honestly scoped support matrix.
 
 This release work takes precedence over the next-training-run improvements in the
 [training post-mortem](training-workflow-postmortem.md). Retraining, loader redesign,
@@ -31,9 +43,9 @@ inspected alongside it; a local tag alone does not establish a published release
 
 | Published release | Established interface and behavior | Alignment required |
 | --- | --- | --- |
-| [MAMBO_v2](https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v2), 17 April 2026 | Latest published release; BioCLIP-2 model; `mambo_predict`; `mini_trainer.deploy.Predictor`; `full`, `europe`, `north_europe` aliases; default region Europe; weights downloaded from ERDA | Primary migration baseline. Preserve old version pins, document architecture and vocabulary changes, and explicitly decide the successor's default |
-| [MAMBO_v0](https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v0), 15 April 2026, prerelease | Earlier MAMBO deployment wrapper and northern-European model emphasis | Include older pinned consumers in the migration guide |
-| [UKCEH_v0](https://github.com/asgersvenning/mini_trainer/releases/tag/UKCEH_v0), 3 February 2026 | Northern-European EfficientNetV2-M model; `python predict.py`; automatic model download | Document migration from script invocation and its original regional vocabulary |
+| [MAMBO_v2](https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v2), 17 April 2026 | Latest published release; BioCLIP-2 model; `mambo_predict`; `mini_trainer.deploy.Predictor`; `full`, `europe`, `north_europe` aliases; default region Europe; weights downloaded from ERDA | Required backwards-compatibility baseline. Preserve old version pins, document architecture and vocabulary changes, and explicitly decide the successor's default |
+| [MAMBO_v0](https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v0), 15 April 2026, prerelease | Earlier MAMBO deployment wrapper and northern-European model emphasis | Historical context; no additional backwards-compatibility gate |
+| [UKCEH_v0](https://github.com/asgersvenning/mini_trainer/releases/tag/UKCEH_v0), 3 February 2026 | Northern-European EfficientNetV2-M model; `python predict.py`; automatic model download | Historical context; MAMBO_v2 is the compatibility target |
 
 None of these release records has attached binary assets. The MAMBO_v2 source
 resolves weights through an ERDA URL template and an implicit cache. Its README
@@ -158,7 +170,7 @@ Produce a compact release inventory before changing inference behavior:
   revision and manifest schema separate identities. An artifact repair may create
   a new revision; it must not replace bytes behind a published version.
 
-Retain Europe as the proposed default for the successor's MAMBO compatibility
+Retain Europe as the default for the successor's MAMBO compatibility
 interface, matching MAMBO_v2; make `full` and `north_europe` explicit choices.
 Version aliases within a release. Do not silently redirect old pinned consumers
 to new weights. For the new deployment API, prefer explicit model-bundle selection.
@@ -181,8 +193,10 @@ Proposed deployment contents:
 
 ```text
 release.json                 # identity, hashes, sizes, profiles, compatibility
-model/model.onnx             # plus ALL referenced external tensors
-model/manifest.json          # existing export metadata and numerical verification
+models/pytorch/best.pt       # original inference weights
+models/onnx/model.onnx       # original prediction graph + external tensors
+models/onnx-embedding/       # existing floating prediction+embedding derivative
+models/*/manifest.json       # source/export metadata for each artifact
 preprocessing.json           # complete machine-readable input recipe
 classes.json                 # ordered stable IDs, ranks and parent mappings
 regions/                     # versioned candidate lists with provenance
@@ -204,8 +218,8 @@ resize geometry, interpolation, antialiasing, crop, scaling and normalization.
 The current repository reader disables EXIF orientation; first recover the actual
 campaign pipeline. Any changed orientation policy is an explicit versioned behavior
 change, not an unnoticed browser/Python discrepancy. JPEG decoders and resize
-implementations may differ: retain intermediate tensors and justified tolerances
-rather than promising universal pixel identity.
+implementations may differ: preserve the recipe and inspect task-level effects
+rather than making universal pixel identity a release gate.
 
 Keep local IDs and taxonomy names sufficient for prediction. GBIF name/photo lookup
 is optional enrichment and must not be a hidden inference dependency. Record its
@@ -214,43 +228,85 @@ provenance separately from fixed model class identity.
 Use ONNX as the initial deployment path that does not require Python checkpoint
 unpickling or model constructor downloads. Keep weights-only PyTorch loading for
 compatible legacy workflows; do not enable unrestricted pickle loading as an
-automatic fallback. Evaluate safetensors plus explicit construction metadata only
-if consumers need a portable tensor checkpoint; that is not already implemented.
+automatic fallback. New tensor formats are deferred; this increment retains the
+tested raw PyTorch and standard ONNX artifacts.
 
 **Done when:** the complete directory can be copied, relocated, checked for integrity
-and used offline by a clean CPU process without the training repository, PyTorch,
-backend downloads or a live taxonomy service.
+and used offline without the training checkout, constructor downloads or live
+taxonomy. The ONNX path must work without PyTorch; the native path uses explicit
+PyTorch/backend dependencies. Each backend has its own clean-install check.
 
-## 3. Deliver small integration interfaces — P0
+## 3. Align the MAMBO_v2 API across backends — P0
 
-Build on existing prediction, class-filtering and result-collection boundaries.
-Keep deployment dependencies optional; do not force the training stack into an
-ONNX-only consumer. Decide the smallest package boundary after inspecting those
-imports, and validate its installed distribution outside the checkout.
+Restore `mini_trainer.deploy.Predictor` and `mambo_predict` with MAMBO_v2-compatible
+calls and results. Preserve `Predictor()`, `Predictor(model="europe")`, `predict`,
+`__call__`, `predict_with_embeddings`, local weight overrides, `class_mask`, top-k
+and the existing hierarchy/result accessors. In particular,
+`predict_with_embeddings` retains `(predictions, embeddings)`. Keep the native
+PyTorch route as the compatibility default; backend selection is additive. Do not
+silently change the legacy CUDA default or legacy output types. New portable usage
+examples should explicitly select CPU. Document compatibility exceptions before
+implementation if tagged fixtures expose a behavior that cannot be retained.
 
-- Provide a documented Python image-to-prediction example using ONNX Runtime and
-  an explicit decoder, plus a tensor-in/tensor-out example. Add one non-Python
-  consumer by reusing the existing JavaScript viewer inference, using identical
-  conformance data and an explicitly versioned image adapter. Additional language SDKs can follow demonstrated demand.
-- Restore a thin `mini_trainer.deploy.Predictor`/`mambo_predict` compatibility layer
-  or ship an explicitly versioned migration package. Preserve documented result
-  contracts, masking and embedding access where promised; embedding dimensions
-  and coordinates from different backbones are not interchangeable.
-- Bound batching and memory. Support explicit batch/thread limits, local bundle
-  paths and clear per-input error handling. Separate library results from logging;
-  expose model revision, active vocabulary and selected runtime in provenance.
-- Make device selection predictable: portable API defaults to CPU or a documented
-  capability-based mode; explicit accelerator requests fail clearly when unmet.
-  Allow CPU fallback only under a declared policy and report its use. Do not
-  silently mutate existing core CLI defaults during this release work.
-- Supply copy-pastable pinned installation and prediction commands for POSIX shells
-  and PowerShell. Test paths containing spaces and Unicode. Avoid requiring a
-  repository clone, shell bootstrap script or administrator install for inference.
+Proposed additive controls (API/CLI spellings to finalize against existing arguments):
+`backend="torch"|"onnx"`, `class_list=...`, explicit device, bounded batch size,
+thread budget, cache directory and offline mode. Presets continue to work through
+`model`/`-M`; keep model revision separate from vocabulary selection internally.
+ONNX-only installation must avoid a mandatory PyTorch dependency; reuse a small
+runtime-neutral result adapter while preserving the legacy public contract.
 
-**Done when:** an existing MAMBO consumer has a tested migration example and a new
-consumer can run one image, a bounded batch and an empty/error case from an installed
-package or standalone example. Core package imports remain independent of optional
-runtime integrations.
+| Backend / output mode | Artifact and behavior | Qualification target |
+| --- | --- | --- |
+| PyTorch, predictions | Original `best.pt`, actual evaluation head | CPU and local CUDA |
+| PyTorch, predictions + embeddings | Same weights and preclassification embedding, one backbone pass | CPU and local CUDA |
+| ONNX, predictions | Existing standard FP32 prediction graph | CPUExecutionProvider and local CUDAExecutionProvider |
+| ONNX, predictions + embeddings | Existing floating prediction+embedding graph from browser work | CPUExecutionProvider and local CUDAExecutionProvider |
+
+Every row supports the same presets and custom lists. The prediction-only ONNX graph
+has no embedding output: select the identified embedding-enabled graph explicitly
+when requested, without silent PyTorch fallback or synthetic embeddings. Exporting a
+replacement is necessary only if a recovered artifact cannot satisfy the contract.
+Do not assume that omitting an output fetch removes its computation; benchmark the
+actual graph chosen. Keep returned embedding stage, sample order, dimensions and
+normalization consistent; do not add a second backbone pass. Expose conversion/copy
+costs and output device/type policy while retaining legacy behavior.
+
+### One vocabulary and postprocessing contract
+
+Use stable species IDs and versioned preset files. Allow a custom UTF-8 class-list
+file and an equivalent Python sequence. Define `full` as all classes in this
+checkpoint; preserve old preset membership where available, report missing IDs and
+version deliberate additions separately. Species absent from the model cannot be
+added by a list. Deduplicate, preserve model order rather than caller order, report
+unknown entries, and reject an empty overlap before processing images.
+
+A custom list explicitly replaces a named preset for the new `class_list` option;
+record the resolved list and hash. Preserve legacy `class_mask` semantics separately,
+including reset behavior, and reject simultaneous `class_mask` and `class_list` as
+ambiguous. A pre-masked artifact cannot recover absent classes. Keep independent
+predictors isolated so changing one filter cannot affect another.
+
+Filtering must precede ranking and confidence normalization, with genus/family
+scores recomputed from retained leaves. In the current hierarchical head, parent
+scores use grouped log-sum-exp. For standard ONNX, gather the retained leaf scores
+and apply the same hierarchy aggregation and normalization in shared postprocessing;
+slicing the existing full-vocabulary parent outputs is incorrect. Cover priors,
+parent mappings, masks and ordering with small behavioral fixtures against native
+PyTorch. Unsupported head semantics fail explicitly. This avoids exporting one
+graph per custom list and keeps presets as metadata, without changing model weights.
+
+Use the tested campaign preprocessing for both Python backends. Browser EXIF/alpha
+improvements stay an explicitly separate adapter until deliberately aligned; they
+must not silently change this release's native/ONNX image pipeline. Share sample
+identity, hierarchy metadata, top-k and score conventions, thresholds, errors and
+collector schema. Different backends need not have bit-identical scores or ranking
+for near ties. Reuse the JavaScript work later as another consumer of this contract.
+
+**Done when:** tagged MAMBO_v2 compatibility fixtures and tiny backend × output-mode
+× class-list tests pass; all four rows run bounded batches and return aligned
+results. Include custom/preset equivalence, unknown/empty/duplicate lists, mask
+reset, prediction-only versus embedding-enabled behavior, and finite correctly
+shaped embeddings. No new micro-numerical ONNX validation study is required.
 
 ## 4. Qualify deployment profiles and restricted operation — P0/P1
 
@@ -260,17 +316,22 @@ for every claimed profile. “ONNX compatible” is not a qualification result.
 
 | Priority/profile | Initial target | Required evidence / fallback |
 | --- | --- | --- |
-| P0 portable CPU | Linux x86-64 and Windows x64, CPU FP32 | Clean install, real-image conformance, bounded threads/RAM, offline/read-only operation; record tested CPU instruction requirements |
-| P0 desktop ARM | macOS arm64, CPU FP32 | Native hardware check with the same fixtures and resource measurements; do not infer support from Linux x86 |
-| P1 edge ARM | Linux aarch64, CPU | Actual target RAM/latency and runtime wheel availability; reduced batch profile; exclude untested devices from support claims |
-| P1 NVIDIA | Linux/Windows CUDA on selected supported driver/runtime combinations | Operator placement and transfer profiling, quality parity, cold/warm latency and VRAM; explicit CPU fallback policy |
-| P1 browser | Existing static viewer, desktop Chromium first; then Safari/Firefox and physical phones | Self-hosted JS/WASM/model assets, fixed preprocessing, memory/startup, single-thread fallback; WebGPU separately qualified |
-| P2 specialized accelerators | TensorRT, CoreML, OpenVINO, DirectML/WebNN or other requested provider | Add one at a time only for a consumer need and measured benefit; retain the portable baseline |
+| P0 local CPU | Laptop Intel Core i7-12800H, x86-64; PyTorch and ONNX | Both output modes, task metrics, clean install, offline/read-only behavior, fixed thread budgets and RAM |
+| P0 local GPU | NVIDIA GeForce RTX 3080 Ti Laptop GPU, 16 GiB; PyTorch CUDA and ONNX CUDA provider | Both output modes, task metrics, latency/throughput/VRAM and actual provider placement |
+| P1 other desktops | Windows x64 and macOS arm64 CPU | Same contracts and install/restriction fixtures on actual OS/hardware; support claims only after checks |
+| P1 edge ARM | Linux aarch64 CPU | Target RAM/latency and runtime availability; reduced batch profile |
+| P1 browser | Existing Chromium WASM implementation, then other browsers/devices | Reuse existing evidence; new preprocessing/hosting claims separately qualified |
+| Deferred acceleration | PTQ, FP16 graph conversions, TensorRT and other providers | Outside this release's core variant matrix |
 
-The proposed first GA scope is the three P0 desktop/CPU targets. If hardware access
-is unavailable, either complete qualification before claiming that target or narrow
-the published support matrix explicitly. Experimental profiles do not hold up a
-correctly scoped portable release.
+The laptop GPU/CPU were queried on 2026-09-23; the GPU reports driver 610.47.
+The ordinary sandbox blocked NVML, while the permitted host query succeeded.
+This identifies the available hardware, not successful PyTorch/ONNX CUDA execution.
+Preflight actual runtime/provider availability before benchmarking, using the
+existing environment without implicit synchronization. Prepare an isolated GPU
+runtime environment if needed; do not replace the working CUDA wheels.
+Record actual OS/kernel/virtualization and effective CPU affinity in results; this
+host is not evidence for every Linux or Windows deployment. Other OS targets remain
+part of the portability roadmap, not prerequisites for this local comparison.
 
 ONNX Runtime offers multiple [execution providers](https://onnxruntime.ai/docs/execution-providers/),
 but availability and operator coverage must be checked against the pinned runtime.
@@ -309,50 +370,136 @@ trust material. Review model/runtime inputs and archive paths before extraction;
 keep ONNX external-data references inside the verified bundle. These are concrete
 release-loader requirements, not a claim that any model format is risk-free.
 
-## 5. Establish quality and efficiency gates — P0, then P1 variants
+## 5. Measure in-domain/Flemming quality and local inference cost — P0
 
-Use three distinct comparisons: previous public model versus the new model; the
-selected new PyTorch checkpoint versus portable FP32 ONNX; portable FP32 versus
-any optimized variant. Do not confuse export parity with model improvement.
+### Evaluation inputs and reusable machinery
 
-1. Retain supplied train/validation/test assignments and taxonomy. Freeze sample
-   identities and hashes. Recover the existing full test/expert predictions where
-   valid rather than rerunning expensive work without a question to answer.
-2. Compare old/new models on matching images using stable taxon IDs. Report the
-   common-vocabulary slice and the full consumer workload, with excluded/unseen
-   labels visible. Stratify by rank, region and rare classes. Use the pinned
-   [mini_metrics workflow](../dev/ucloud/evaluate-results.md); preserve metric
-   definitions and distinguish macro recall from other “macro accuracy” measures.
-3. Run raw-image conformance through decoding, preprocessing, graph and decoding of
-   outputs, including batches 1, 2, 4 and a declared upper bound, grayscale/alpha,
-   EXIF, unusual aspect ratios, and malformed/oversized inputs. Use redistributable
-   fixtures; keep private evaluation images outside the public bundle.
-4. Predeclare per-profile score tolerances, top-1/top-k agreement, per-rank quality
-   limits, coverage and resource budgets before accepting a candidate. Record
-   max/percentile errors, near-tie changes, nonfinite outputs and threshold crossings.
-   The campaign used `rtol=1e-4, atol=1e-4` for synthetic FP32 parity; do not silently
-   replace exporter defaults or treat that result as end-to-end qualification.
-5. Fit thresholds/calibration on suitable validation data, then freeze for test.
-   Previously optimized test thresholds remain exploratory. Regional filtering
-   changes scores, so global thresholds are not automatically transferable.
-6. Measure download/bundle size, session creation, first image, warm p50/p95 latency,
-   throughput at stated batch/concurrency, peak RSS/VRAM and thread count. Use a
-   bounded representative workload on each target; compare on the same device.
+Use the supplied in-domain test split (632,913 images in the campaign) and the
+Flemming camera-trap expert set (58,640 images, 522 species). Verify recovered
+manifests/counts and identity before associating local paths with those datasets.
+Preserve all labels and original splits; never drop excluded or unknown species
+when applying a regional/custom candidate list. No random re-splitting or test-based
+threshold selection. Existing archived PyTorch predictions are a reference only
+when their weights, preprocessing, precision, list and sample identities match.
 
-The expert-set result in the campaign record (57.59% species micro accuracy across
-all labels versus 66.74% known-only) must remain visible in the model card. Strong
-in-domain scores do not establish universal field accuracy or open-set rejection.
-Audit overlap/leakage and dataset provenance before claiming improvement over older
-releases; mark gaps explicitly when historical training identities are unavailable.
+Start with the published `evaluation/` reports/CSVs to establish the baseline and
+locate the original image/staging manifests. Archived predictions can reproduce
+metrics without image access, but cannot supply new ONNX predictions or end-to-end
+speed. Resolve local data roots or explicitly stage a bounded selection before the
+first run. Do not silently substitute a different dataset for missing Flemming data.
 
-FP16 and PTQ are optional named derivatives with their own hashes, recipe, quality
-report and qualified profiles. The existing 128-image PTQ artifact is a candidate,
-not the default. Quantization must earn inclusion through retained quality and a
-measured latency/memory benefit; no requirement to ship INT8 merely because it exists.
+Reuse [the inference benchmark modules](../dev/benchmarks/inference.md):
+`prepare_inputs` for ordered identity-bearing batches, `dataset_inference` for ONNX
+collection, and `quality_compare` for metric comparisons. The current collector
+supports ONNX/TensorRT, **not native PyTorch**: add the small native adapter using the
+release predictor and extend shared postprocessing for filters/embeddings. Preserve
+raw-image streaming for large datasets instead of requiring all decoded images or
+embeddings in RAM. Prepared tensors may isolate runtime costs but must not replace
+the image-to-result benchmark. `quality_compare` currently requires identical class
+mappings; use it for matched new-model variants, with separate ID-aligned reporting
+for MAMBO_v2 or different-vocabulary comparisons.
 
-**Done when:** a release report records pass/fail/untested per gate and profile,
-with thresholds and evidence attached. Numerical or resource failures are resolved
-or the affected profile is excluded; no silent widening of tolerances.
+Keep the existing canonical `mini_metric.csv` output for compatibility. If using
+benchmark modules' long-form tables, provide a tested conversion or their existing
+metric route; do not assume the two schemas are interchangeable. Run metrics in a
+separate prepared Python 3.13 environment at the campaign's mini_metrics revision
+`70cc69adc05362863439277048e06386c1f885e1`, with resolved dependencies recorded.
+The existing helper supports this concrete path once each variant has completed
+both canonical prediction files:
+
+```bash
+MT_TEST_CSV=/path/to/variant/indomain/mini_metric.csv \
+MT_EXPERT_CSV=/path/to/variant/flemming/mini_metric.csv \
+  bash dev/ucloud/evaluate-results.sh all /path/to/fresh/variant-metrics
+```
+
+The helper calls the Flemming dataset `expert` and records all-label, known-only and
+per-class reports, hashes and completion markers. Initial `uvx` dependency setup
+needs networking; pre-provision/pin the metric environment for offline runs. It does
+not change the training environment. Selected-prediction CSVs cannot establish top-5
+accuracy; retain top-k output explicitly if reporting that metric.
+
+### Bounded comparison matrix
+
+1. Run tiny contract checks across both backends, both output modes and all three
+   presets plus one representative custom list; include preset-as-custom-list
+   equivalence. Run on CPU and the laptop GPU. This is behavioral coverage, not
+   a full-dataset Cartesian product.
+2. Freeze a reproducible, bounded qualification subset from each original test
+   dataset for all eight backend × embedding × device configurations, using `full`
+   and `europe` first. Select by a recorded seed/ID list, preserve unknown labels,
+   record class coverage and label subset metrics as such. Choose the count after
+   a brief throughput probe so this first comparison is practical on the laptop.
+3. Collect full in-domain and full Flemming predictions for native PyTorch and
+   standard ONNX on one selected qualified device, initially `full` and `europe`.
+   Reuse matching completed native runs. Evaluate `north_europe` and the representative
+   custom list from retained full leaf scores through the shared reducer where
+   semantics permit; otherwise make explicit additional inference runs. Record
+   coverage, avoid choosing lists from test outcomes, and retain bounded score
+   shards only when their reuse justifies disk cost.
+4. Check embedding-enabled and CPU/GPU variants on the same qualification samples.
+   Extend their quality run only if task-level differences or a changed pipeline
+   require it. Do not claim separate full-dataset evidence for a variant tested
+   only on the subset. Report the embedding mode's measured time/memory overhead.
+5. Include MAMBO_v2 as the historical consumer/model reference, using matching images
+   and each model's own preprocessing. Report both common-vocabulary and all-label
+   results. A backbone change is not automatically an accuracy improvement.
+
+Report per-rank micro accuracy, Macro-F1, Macro-Recall, Macro-Precision, Coverage and
+Theil's U, plus all-label/known-only and per-class results. Keep sample counts,
+active-list coverage and abstention coverage separate. Preserve undefined metrics.
+Flemming's archived species accuracy (57.59% all-label, 66.74% known-only) is context,
+not an acceptance threshold for every list/variant. Keep raw/unthresholded results;
+any operational thresholds are fixed from separate validation/calibration data.
+
+Accept small numerical differences. Compare aggregate task metrics, prediction
+agreement and material threshold/coverage changes; investigate substantive regressions,
+not every score delta. Keep finite-value, shape, sample-order, class-ID and hierarchy
+checks. Do not demand identical scores or perfect top-1 agreement on near ties, and
+do not create new max-absolute-error release gates. Preserve existing exporter tests
+and record prior parity evidence without rerunning a micro-numerical study.
+
+### CPU/GPU speed and resource protocol
+
+Use the same laptop, inputs and declared list/output settings for paired measurements.
+Measure PyTorch CPU/CUDA and ONNX CPU/CUDA, with and without embeddings. Begin with
+FP32 for a matched baseline; additionally retain the MAMBO-compatible native CUDA
+autocast behavior as a clearly labelled practical mode. Record actual dtype,
+autocast/TF32 settings and runtime versions; do not compare mixed precision as if
+precision were matched. No new FP16 ONNX conversion is required.
+
+- Separate model/session load, first prediction and steady-state work. Measure both
+  complete image-to-consumer-result time (decode, resize, transfer, postprocess,
+  embedding copies included) and prepared-tensor runtime time with its boundary
+  stated. Do not present only kernel timing as application speed.
+- Start with batch 1 for interactive latency, then a small common batch sweep such
+  as 8 and 32, stopping at the memory budget. Report the best practical batch per
+  variant separately from matched-batch comparisons. OOM is a recorded capacity
+  result, not permission for a silent batch/provider change.
+- Use explicit CPU thread counts (one and a fixed practical allocation), identical
+  decode-worker budgets and bounded streaming. For GPU timing wait for completed
+  work through correct synchronization or completed host outputs; include transfer
+  in end-to-end measurements. Verify ONNX provider placement/fallback.
+- Use fresh processes for load and memory measurements. After explicit warmup,
+  collect repeated timings in at least three alternating-order trials; report
+  median/p95 latency, images/s, peak RSS, peak/observed VRAM with measurement method,
+  failures, and variance. Avoid concurrent heavy jobs; record power mode, plugged-in
+  status and thermal/throttling observations. These are laptop-specific results.
+- Measure `full` versus a preset and embeddings on/off. A class list applied after
+  ONNX execution does not reduce backbone/graph work; any native head speed benefit
+  or ONNX postprocessing overhead must be measured rather than inferred.
+
+Write one comparison table keyed by artifact hash, backend, device, precision,
+embedding mode, list hash and dataset/split hash. Include quality deltas, counts,
+latency/throughput, resource cost and evidence scope. Retain commands/configs,
+prediction files, metric reports, raw trial timings and completion/failure markers.
+Recommend defaults from the measured quality/speed/memory trade-off, allowing users
+to choose a slower compatible or more restricted-environment-friendly route.
+
+**Done when:** a reproducible runner and concise report cover in-domain and Flemming
+metrics, CPU/GPU costs, both backends and both output modes, with preset/custom-list
+behavior tested and subset/full-data evidence distinguished. Material quality or
+behavioral failures are resolved; small ONNX numerical variation is accepted.
 
 ## 6. Package, stage and promote — P0
 
@@ -364,7 +511,7 @@ must contain the same identified artifacts and must not become an inference-time
 requirement. Follow its [model-card metadata format](https://huggingface.co/docs/hub/model-cards)
 if using the Hub; hosting is separate from deploying an inference service.
 
-Publish separate portable runtime, optional PyTorch inference, evaluation evidence
+Publish standard ONNX and native PyTorch inference assets, evaluation evidence
 and training-resume archives. Include license and redistribution review for the
 weights, backbone, runtime, taxonomy and example images; do not infer a weight/data
 license from the repository's code license. Preserve evaluation provenance without
@@ -391,19 +538,18 @@ has been exercised. Release notes distinguish model changes from package/API cha
 
 | Increment | Concrete deliverable | Dependency / completion gate |
 | --- | --- | --- |
-| A — identity and migration | Complete known candidate inventory and baseline retrieval; vocabulary and API diff; release/default decisions | Archive and historical weight access; section 1 |
-| B — portable vertical slice | Reuse FP32/browser artifacts and integrate relevant branch code; reconcile preprocessing; tiny CPU client and real-image fixtures | A; relocated offline inference in a clean Linux environment |
-| C — consumer compatibility | MAMBO adapter, bounded batches, explicit cache/download policy, pinned installs | B; tagged-interface fixtures and clean installed-package checks |
-| D — release qualification | Windows/macOS CPU checks, restriction matrix, old/new quality report and frozen gates | B/C; publish only evidenced support and quality claims |
-| E — staged release | Versioned prerelease, readback, model card, migration and rollback; promotion review | A–D; concrete release checklist and evidence |
-| F — optional acceleration | One selected GPU/browser/quantized profile at a time | Portable baseline; demonstrated demand and quality/resource benefit |
+| A — identity and compatibility | Verify existing artifacts; recover MAMBO_v2 API/preset fixtures and data identities | Known public distribution, tagged code and evaluation manifests |
+| B — aligned inference | Native PyTorch + standard ONNX; presets/custom lists; predictions ± embeddings | A; shared preprocessing, hierarchy reduction and installed API checks |
+| C — quality and local cost | Reusable variant runner; in-domain/Flemming metrics; laptop CPU/GPU speed and memory | B; bounded matrix first, then needed full-dataset comparisons |
+| D — staged release | Consumer bundles, migration notes, measured trade-offs, offline checks and rollback | A–C; concrete reviewed candidate |
+| E — broader portability | Additional OS/browser profiles and distribution channels | Core release preserved; qualify only new boundaries |
 
-Start with **A and B**. Verify the identified model bytes, finish the migration
-contract and reuse the delivered export/browser work to produce a small, reviewable
-consumer bundle.
-The next-training-run orchestration plan is not on this release's critical path.
+Start with **A and B**, then use C to make the release recommendation concrete.
+The next-training-run orchestration plan and experimental quantization are not on
+this release's critical path.
 
-Open work during A: verify the identified candidate binaries; recover exact training
-revision and previous weight identities; choose target consumer examples, final
-release/package versions and successor artifact hosting; set numerical/quality/resource budgets; and access to Windows/macOS target
-machines. This roadmap proposes defaults where possible but does not invent evidence.
+Open work during A: verify candidate binaries and historical weights; locate local
+in-domain/Flemming images and manifests; recover training revision and actual preset
+memberships; pin the compatible runtime/metric environments. Final package/version
+and publication choices follow the measured candidate. CPU/GPU qualification uses
+the identified laptop; additional machines are needed only for later support claims.

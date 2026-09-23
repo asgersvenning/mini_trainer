@@ -6,10 +6,12 @@ fully quantized training performance is not established by that merge.
 
 The next delivery priority is releasing the already-trained September UCloud
 model. Follow the [model release roadmap](ucloud-model-release-roadmap.md): freeze
-candidate and prior-release identities, deliver an offline portable FP32 bundle,
-preserve MAMBO consumer compatibility, qualify deployment profiles, then stage and
-review publication. Start with its bounded increments A and B. This does not
-require another training run or completion of the optional accelerator matrix.
+candidate and prior-release identities, preserve MAMBO_v2 compatibility across
+native PyTorch and standard ONNX, support presets/custom class lists and predictions
+with/without embeddings, then compare in-domain/Flemming quality and laptop CPU/GPU
+speed before staging publication. Start with its bounded increments A and B.
+Small ONNX numerical differences are acceptable; task-level quality and aligned
+behavior matter. Retraining and experimental quantization are outside this release.
 
 The completed four-GPU production campaign is assessed in the
 [training workflow post-mortem and next-run plan](training-workflow-postmortem.md).
