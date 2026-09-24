@@ -590,8 +590,10 @@ the [measured release report](mambo-v3-evaluation.md),
 [real-world MAMBO_v2/v3 comparison](mambo-release-comparison.md),
 [deployment qualification](../dev/releases/mambo_v3/deployment-qualification.md)
 and [consumer guide](../deployment/README.md). The
-[evaluation workflow](../dev/releases/mambo_v3/evaluation.md) prepares the remaining
-in-domain work on UCloud using the original split. D remains preparation only:
+[UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md) now prepares the
+original in-domain split, public model downloads and five-pipeline CPU/GPU
+comparison with an isolated, locked `uv` environment. Remote qualification and
+full evaluation remain outstanding. D remains preparation only:
 training-source/best-epoch provenance, redistribution notices and final publication
 review are open. No model release has been published or tagged.
 

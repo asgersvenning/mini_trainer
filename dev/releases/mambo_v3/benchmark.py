@@ -118,7 +118,7 @@ def benchmark(args):
         },
     }
     try:
-        _, records = load_records(args.manifest, args.root, max(32, max(args.batches)), args.seed)
+        _, records = load_records(args.manifest, args.root, max(args.bank_size, max(args.batches)), args.seed)
         report["samples"] = records
         t = time.perf_counter()
         predictor = Predictor(
@@ -201,9 +201,10 @@ def main():
     parser.add_argument("--presets", nargs="+", default=["full", "europe_v3"])
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=7)
+    parser.add_argument("--bank-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=20260923)
     args = parser.parse_args()
-    if min(args.batches) < 1 or args.warmup < 1 or args.repeats < 3:
+    if args.bank_size < 1 or min(args.batches) < 1 or args.warmup < 1 or args.repeats < 3:
         parser.error("Positive batches/warmup and at least three repeats required")
     benchmark(args)
 

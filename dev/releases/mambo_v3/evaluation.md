@@ -123,30 +123,11 @@ locally against the pinned Parquet (`set == "0"`), archived staging map and arch
 prediction CSV. Staged numeric filenames are never used as original identities.
 This does not verify image availability or content on UCloud.
 
-Clone this release revision onto the manually allocated UCloud SSH node, or copy
-the checkout including `dev/releases/mambo_v3`, `deployment`, and the bundle.
-Prepare the runtime and pinned metric environments there. The scripts execute on
-that node; they do not submit or allocate a UCloud job automatically.
-
-```sh
-python -m dev.releases.mambo_v3.prepare_ucloud \
-  --metadata /work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet \
-  --staging /path/to/production/evaluation/in-domain/provenance/staging.json \
-  --reference /path/to/production/evaluation/in-domain/predictions/mini_metric.csv \
-  --root /work/global_lepi --output /work/global-lepi-test-manifest.json
-
-python -m dev.releases.mambo_v3.run_local qualification \
-  --python /path/to/runtime-env/bin/python \
-  --bundle /path/to/bundle --manifest /work/global-lepi-test-manifest.json \
-  --root /work/global_lepi --output /work/mambo-indomain-qualification
-```
-
-Confirm the actual metadata mount path first. Preparation requires the pinned
-metadata hash, exact original membership/taxonomy and readable images, then hashes
-all test images. Inspect the bounded results before running `full` with the same
-arguments and a fresh output directory. CPU qualification can be slow on a shared
-node; resource selection is explicit. Keep UCloud throughput separate from laptop
-benchmarks. No in-domain inference has been run locally.
+Use the [UCloud release workflow](ucloud-release.md) for isolated `uv` setup,
+automatic artifact downloads, five-pipeline qualification, full collection and
+CPU/GPU benchmarks. Only the original Parquet location is required as dataset
+input when images retain their original layout. No in-domain inference has been
+run locally.
 
 ## Publication preparation
 

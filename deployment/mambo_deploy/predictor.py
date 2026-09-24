@@ -13,6 +13,7 @@ import numpy as np
 
 from .augmentation import infer_augmented, resolve_tta
 from .bundle import Bundle
+from .download import default_bundle
 from .preprocessing import RECIPE, image_items, preprocess
 from .results import Prediction, hierarchy
 
@@ -63,9 +64,8 @@ class Predictor:
         if weights is not None and backend != "torch":
             raise ValueError("weights override is only supported by the PyTorch backend")
         bundle = bundle or os.environ.get("MAMBO_BUNDLE")
-        if not bundle:
-            raise ValueError("Pass bundle='/path/to/bundle' or set MAMBO_BUNDLE. Inference does not download files.")
-        self.bundle = Bundle(bundle)
+        automatic = not bundle
+        self.bundle = Bundle(default_bundle() if automatic else bundle, download=automatic)
         if self.bundle.preprocessing != RECIPE:
             raise ValueError("Unsupported preprocessing recipe; use the matching deployment runtime")
         self.backend, self.device, self.batch_size, self.threads = backend, str(device), batch_size, threads

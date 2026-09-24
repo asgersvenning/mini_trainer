@@ -111,7 +111,9 @@ def run(args):
             for name, mask in masks.items()
         }
         del states
-        manifest, records = load_records(args.manifest, args.root, 32 if args.phase == "benchmark" else args.count)
+        manifest, records = load_records(
+            args.manifest, args.root, max(args.bank_size, max(args.batches or [32])) if args.phase == "benchmark" else args.count
+        )
         write_json(args.output / "samples.json", records)
         report.update(
             samples=len(records),
@@ -149,8 +151,8 @@ def run(args):
             if any(file_hash(path) != r["sha256"] for path, r in zip(paths, records, strict=True)):
                 raise ValueError("Benchmark images changed")
             report["cells"] = []
-            for size in [1, 8] if args.device == "cpu" else [1, 8, 32]:
-                for preset in PRESETS:
+            for size in args.batches or ([1, 8] if args.device == "cpu" else [1, 8, 32]):
+                for preset in args.presets:
                     predictor._apply_class_mask(-1 if preset == "full" else masks[preset])
 
                     def call():
@@ -169,7 +171,7 @@ def run(args):
             with ExitStack() as stack:
                 pool = stack.enter_context(ThreadPoolExecutor(max_workers=4))
                 writers = {}
-                for preset in PRESETS:
+                for preset in args.presets:
                     directory = args.output / preset
                     directory.mkdir()
                     writer = csv.writer(stack.enter_context((directory / "mini_metric.csv").open("w", newline="")))
@@ -182,7 +184,7 @@ def run(args):
                         raise ValueError("Evaluation image changed")
                     encoded = features(paths, pool)
                     with torch.inference_mode(), torch.autocast(device_type=predictor.device.type, enabled=predictor.device.type == "cuda"):
-                        for preset in PRESETS:
+                        for preset in args.presets:
                             predictor._apply_class_mask(-1 if preset == "full" else masks[preset])
                             prediction = classifier.predict(encoded)
                             if args.phase == "qualification" or offset == 0:
@@ -193,7 +195,7 @@ def run(args):
                             writers[preset].writerows(canonical_rows(selected, prediction, offset))
                     if offset % (args.batch_size * 50) == 0:
                         print(offset + len(selected), len(records), flush=True)
-            report["csv_sha256"] = {name: file_hash(args.output / name / "mini_metric.csv") for name in PRESETS}
+            report["csv_sha256"] = {name: file_hash(args.output / name / "mini_metric.csv") for name in args.presets}
         if args.device != "cpu":
             report["torch_peak_allocated_bytes"] = torch.cuda.max_memory_allocated()
             report["torch_peak_reserved_bytes"] = torch.cuda.max_memory_reserved()
@@ -217,7 +219,12 @@ def main():
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--count", type=int)
     parser.add_argument("--cpu-float32", action="store_true", help="Ancillary CPU run: cast original preprocessor output to float32")
+    parser.add_argument("--presets", nargs="+", choices=PRESETS, default=list(PRESETS))
+    parser.add_argument("--batches", nargs="+", type=int)
+    parser.add_argument("--bank-size", type=int, default=32)
     args = parser.parse_args()
+    if min(args.batches or [1]) < 1 or args.bank_size < 1 or args.threads < 1 or args.batch_size < 1:
+        parser.error("Batch sizes, bank size and threads must be positive")
     if args.phase == "qualification" and args.count is None:
         args.count = 256
     run(args)

@@ -1,4 +1,4 @@
-"""Offline model-bundle inference; importing this package does not import PyTorch."""
+"""Portable model-bundle inference; importing this package does not import PyTorch."""
 
 from .augmentation import TTA, EdgePad, RotatePad, SaltAndPepper, View
 from .predictor import Predictor

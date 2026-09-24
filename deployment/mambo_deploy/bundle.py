@@ -1,12 +1,16 @@
-"""Validated, relocatable bundle paths. Inference never downloads or writes files."""
+"""Validated, relocatable bundle paths. Explicit local bundles stay offline; the default cache can fetch missing files."""
 
 import hashlib
 import json
+import os
 from pathlib import Path
+
+from .download import fetch_file
 
 
 class Bundle:
-    def __init__(self, root):
+    def __init__(self, root, *, download=False):
+        self.download = download
         self.root = Path(root).expanduser().resolve()
         with (self.root / "release.json").open() as stream:
             self.manifest = json.load(stream)
@@ -37,6 +41,8 @@ class Bundle:
         if item is None:
             raise ValueError(f"Unlisted bundle file: {relative}")
         if relative not in self._verified:
+            if not path.exists() and self.download and relative in self.manifest.get("origins", {}):
+                fetch_file(self.manifest["origins"][relative], path, **item, offline=os.environ.get("MAMBO_OFFLINE") == "1")
             if path.stat().st_size != item["size"]:
                 raise ValueError(f"Bundle size mismatch: {relative}")
             with path.open("rb") as stream:

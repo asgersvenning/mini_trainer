@@ -1,22 +1,23 @@
 # MAMBO deployment — release candidate
 
-Run a local model bundle with ONNX or PyTorch, on CPU or NVIDIA CUDA. Inference
-requires no network access or writable model directory. This candidate has not
-been publicly released. Keep each ONNX graph beside its `model.onnx.data` file.
+Run MAMBO with ONNX or PyTorch, on CPU or NVIDIA CUDA. Required model files
+download automatically from public ERDA storage on first use and are verified
+before caching. This candidate has not been publicly released; use the supplied wheel.
 
 ## Quick start
 
 Start with ONNX/CPU for the smallest installation: it needs no training package.
-Install the supplied wheel in your environment, then reuse one predictor across calls.
+Add the supplied wheel to your `uv` project, then run your script with `uv run python
+your_script.py`. Reuse one predictor across calls.
 
 ```sh
-pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
+uv add './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
 ```
 
 ```python
 from mambo_deploy import Predictor
 
-predictor = Predictor(bundle="/path/to/mambo-bundle", backend="onnx", device="cpu", model="europe")
+predictor = Predictor(backend="onnx", device="cpu", model="europe")
 result = predictor.predict(["moth.jpg"])
 print(result[0].label)       # species, genus, family IDs
 print(result[0].confidence)  # confidence at each rank
@@ -33,12 +34,18 @@ print(result[0].confidence)  # confidence at each rank
   `vectors` is a float32 NumPy array of shape `[N,1280]` with unit-length rows.
   ONNX requires the bundle's embedding graph.
 
-For ONNX/CUDA, install `onnxruntime-gpu` instead of `onnxruntime`, with matching
+For ONNX/CUDA, use the wheel’s `[onnx-cuda]` extra instead of `[onnx]`, with matching
 CUDA/cuDNN libraries, and select `device="cuda:0"`. For PyTorch, install the matching
 `mini_trainer` wheel and CPU/CUDA PyTorch build, then select `backend="torch"` and
 an explicit device. Requested but unavailable CUDA raises an error; individual
 ONNX operators may still execute on CPU. CPU and CUDA are the supported device
 choices; other OS/accelerator combinations remain unqualified.
+
+Models are cached in `~/.cache/mambo` (or `$XDG_CACHE_HOME/mambo`); set
+`MAMBO_CACHE` to choose another location. After the required model files are cached,
+`MAMBO_OFFLINE=1` prevents downloads. For an explicitly managed, offline bundle,
+pass `bundle="/path/to/mambo-bundle"`, `--bundle`, or set `MAMBO_BUNDLE`.
+Keep each ONNX graph beside its `model.onnx.data` file.
 
 ## Choose the configuration that matters
 
@@ -89,9 +96,14 @@ Unknown IDs and empty lists fail; duplicates are removed and model ordering reta
 
 ## Command line and migration
 
+Run once without adding a project dependency:
+
 ```sh
-mambo_predict -i moth.jpg --bundle /path/to/mambo-bundle --backend onnx --device cpu -M europe --tta -o . --name results
+uvx --from './mambo_deploy-0.3.0-py3-none-any.whl[onnx]' mambo_predict \
+  -i moth.jpg --backend onnx --device cpu -M europe --tta -o . --name results
 ```
+
+Inside a configured project, use `uv run mambo_predict` with the same arguments.
 
 Outputs go to a new `results/` directory: `predictions.json`, `mini_metric.csv`, and
 `embeddings.npy` when `--embeddings` is requested. Directory input is recursive.
@@ -100,7 +112,7 @@ The main controls above have corresponding CLI flags; use `mambo_predict --help`
 Existing callers can use `mini_trainer.deploy.Predictor` with both wheels installed.
 It preserves native/CUDA defaults, callable prediction and `class_mask` (`-1` resets
 it), with native result containers/device tensors. The portable API above defaults
-to ONNX/CPU. Pass `bundle=` or set `MAMBO_BUNDLE`; downloads are no longer implicit.
+to ONNX/CPU. Both interfaces download the default release when no bundle is supplied.
 Do not use `weights=` as a model-selection control: overrides must match the pinned
 release checkpoint. Legacy weights and already-preprocessed inputs need migration;
 embedding dimensions may differ from V2.
@@ -138,4 +150,4 @@ to your accuracy and processing-budget requirements.
 
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
-In-domain UCloud evaluation remains outstanding.
+In-domain UCloud results will be reported separately; the [UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md) is ready for qualification.
