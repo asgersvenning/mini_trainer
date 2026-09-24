@@ -108,6 +108,32 @@ all preset tables and all/known-truth charts. The [complete metric CSV](assets/m
 also retains precision, recall, Theil U and coverage. For legacy northern Europe,
 known truth contains 50,598 images at species, 58,639 at genus and 58,640 at family.
 
+## Confidence threshold optimization
+
+Thresholding changes the comparison. Using `mini_metrics` Macro-F1 calibration on
+5,852 images and reporting on the same remaining 52,788 images for every pipeline:
+
+| Pipeline | Species Macro-F1 / coverage | Genus Macro-F1 / coverage | Family Macro-F1 / coverage |
+|---|---:|---:|---:|
+| MAMBO v2 | 0.4467 / 69.73% | 0.5869 / 69.81% | 0.6545 / 77.44% |
+| V3 PyTorch | 0.5081 / 70.81% | 0.6019 / 75.75% | 0.5807 / 73.06% |
+| V3 ONNX | 0.5100 / 70.45% | 0.6043 / 75.37% | 0.5816 / 73.26% |
+| V3 PyTorch + TTA | 0.5239 / 78.32% | 0.6655 / 77.73% | 0.6073 / 78.74% |
+| V3 ONNX + TTA | 0.5431 / 74.05% | 0.6655 / 77.69% | 0.6065 / 78.47% |
+
+Ordinary V3 overtakes V2 on species Macro-F1 after calibration; TTA improves
+species and genus further. **V2 leads calibrated family Macro-F1**, while V3 + TTA
+retains more family recall. The different TTA species operating points largely
+explain the backend F1 gap: at a shared threshold, PyTorch and ONNX remain closely
+aligned. Higher accepted accuracy comes with abstention; coverage is the fraction
+of images accepted independently at each rank.
+
+The [threshold study](mambo-confidence-thresholds.md) shows matched-partition
+before/after metrics, exact thresholds, recall, coverage, and five-pipeline P–R and
+accuracy–coverage curves for all three ranks. These 90% reporting scores are not
+directly comparable with the full-data tables above. Deployment defaults remain
+threshold zero; these are dataset-specific candidate operating points.
+
 ## Inference speed and memory
 
 ![CPU and GPU throughput by batch size](assets/mambo-defaults-speed.svg)

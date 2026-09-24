@@ -170,6 +170,12 @@ training and Flemming support. The [loading study](../docs/mambo-loading-scaling
 explains remaining scheduling limits; `preprocess_workers` / `--preprocess-workers`
 tunes preparation separately from ONNX runtime `threads` and defaults to it.
 
+Confidence rejection is a separate trade-off. The [threshold study](../docs/mambo-confidence-thresholds.md)
+compares all five pipelines with Macro-F1-optimized thresholds, coverage and P–R
+curves at every rank. V3 + TTA leads calibrated species/genus Macro-F1, while V2
+leads family Macro-F1; selected operating points accept roughly 70–79% of images.
+Threshold-zero defaults remain unchanged.
+
 Use ordinary V3 for throughput and enable TTA when its accuracy/cost trade-off fits.
 The recipe was selected on a Flemming subset, so full-set results are descriptive,
 not independent validation. In-domain UCloud evaluation, other operating systems,
