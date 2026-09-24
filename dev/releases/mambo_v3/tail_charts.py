@@ -112,14 +112,17 @@ def render_paired(data, output):
             )
             ax.grid(axis="x", alpha=0.15)
             ax.spines[["top", "right"]].set_visible(False)
-    handles = []
-    for marker, setting in (("o", "No threshold"), ("s", "Calibrated")):
-        for fill, domain in (("white", "full support"), ("gray", "support >5")):
-            handles.append(
-                Line2D([], [], marker=marker, color="gray", markerfacecolor=fill, linestyle="none", label=f"{setting} · {domain}")
-            )
+    shape_handles = [
+        Line2D([], [], marker=marker, color="gray", markerfacecolor="white", linestyle="none", label=label)
+        for marker, label in (("o", "Unthresholded"), ("s", "Calibrated"))
+    ]
+    fill_handles = [
+        Line2D([], [], marker="o", color="gray", markerfacecolor=fill, linestyle="none", label=label)
+        for fill, label in (("white", "Full support"), ("gray", "Truncated (support >5)"))
+    ]
     fig.suptitle("V2 vs V3 vs V3 + TTA · matched reporting images · legacy northern Europe", fontsize=16)
-    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.955), ncol=4)
+    fig.legend(handles=shape_handles, title="Shape = confidence setting", loc="upper center", bbox_to_anchor=(0.30, 0.955), ncol=2)
+    fig.legend(handles=fill_handles, title="Fill = averaging domain", loc="upper center", bbox_to_anchor=(0.70, 0.955), ncol=2)
     fig.text(
         0.03,
         0.02,

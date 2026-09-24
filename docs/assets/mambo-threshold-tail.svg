@@ -2916,17 +2916,20 @@ L 1137.720313 676.28
   </g>
   <g id="legend_1">
    <g id="patch_29">
-    <path d="M 236.607813 49.678125
-L 908.432813 49.678125
-Q 910.432813 49.678125 910.432813 47.678125
-L 910.432813 34
-Q 910.432813 32 908.432813 32
-L 236.607813 32
-Q 234.607813 32 234.607813 34
-L 234.607813 47.678125
-Q 234.607813 49.678125 236.607813 49.678125
+    <path d="M 239.658594 64.35625
+L 444.582031 64.35625
+Q 446.582031 64.35625 446.582031 62.35625
+L 446.582031 34
+Q 446.582031 32 444.582031 32
+L 239.658594 32
+Q 237.658594 32 237.658594 34
+L 237.658594 62.35625
+Q 237.658594 64.35625 239.658594 64.35625
 z
 " style="fill: #ffffff; opacity: 0.8; stroke: #cccccc; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_111">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="272.8" y="43.598437" transform="rotate(-0 272.8 43.598437)">Shape = confidence setting</text>
    </g>
    <g id="line2d_214">
     <defs>
@@ -2943,13 +2946,55 @@ z
 " style="stroke: #808080"/>
     </defs>
     <g>
-     <use xlink:href="#md914946880" x="248.607813" y="40.098437" style="fill: #ffffff; stroke: #808080"/>
+     <use xlink:href="#md914946880" x="251.658594" y="54.776562" style="fill: #ffffff; stroke: #808080"/>
     </g>
    </g>
-   <g id="text_111">
-    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="266.607813" y="43.598437" transform="rotate(-0 266.607813 43.598437)">No threshold · full support</text>
+   <g id="text_112">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="269.658594" y="58.276562" transform="rotate(-0 269.658594 58.276562)">Unthresholded</text>
    </g>
    <g id="line2d_215">
+    <defs>
+     <path id="mc2c0bd3771" d="M -3 3
+L 3 3
+L 3 -3
+L -3 -3
+z
+" style="stroke: #808080; stroke-linejoin: miter"/>
+    </defs>
+    <g>
+     <use xlink:href="#mc2c0bd3771" x="372.905469" y="54.776562" style="fill: #ffffff; stroke: #808080; stroke-linejoin: miter"/>
+    </g>
+   </g>
+   <g id="text_113">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="390.905469" y="58.276562" transform="rotate(-0 390.905469 58.276562)">Calibrated</text>
+   </g>
+  </g>
+  <g id="legend_2">
+   <g id="patch_30">
+    <path d="M 675.205469 64.35625
+L 930.635156 64.35625
+Q 932.635156 64.35625 932.635156 62.35625
+L 932.635156 34
+Q 932.635156 32 930.635156 32
+L 675.205469 32
+Q 673.205469 32 673.205469 34
+L 673.205469 62.35625
+Q 673.205469 64.35625 675.205469 64.35625
+z
+" style="fill: #ffffff; opacity: 0.8; stroke: #cccccc; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_114">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="743.43125" y="43.598437" transform="rotate(-0 743.43125 43.598437)">Fill = averaging domain</text>
+   </g>
+   <g id="line2d_216">
+    <g>
+     <use xlink:href="#md914946880" x="687.205469" y="54.776562" style="fill: #ffffff; stroke: #808080"/>
+    </g>
+   </g>
+   <g id="text_115">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="705.205469" y="58.276562" transform="rotate(-0 705.205469 58.276562)">Full support</text>
+   </g>
+   <g id="line2d_217">
     <defs>
      <path id="me877e72ce5" d="M 0 3
 C 0.795609 3 1.55874 2.683901 2.12132 2.12132
@@ -2964,43 +3009,11 @@ z
 " style="stroke: #808080"/>
     </defs>
     <g>
-     <use xlink:href="#me877e72ce5" x="426.995313" y="40.098437" style="fill: #808080; stroke: #808080"/>
+     <use xlink:href="#me877e72ce5" x="793.872656" y="54.776562" style="fill: #808080; stroke: #808080"/>
     </g>
    </g>
-   <g id="text_112">
-    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="444.995313" y="43.598437" transform="rotate(-0 444.995313 43.598437)">No threshold · support &gt;5</text>
-   </g>
-   <g id="line2d_216">
-    <defs>
-     <path id="mc2c0bd3771" d="M -3 3
-L 3 3
-L 3 -3
-L -3 -3
-z
-" style="stroke: #808080; stroke-linejoin: miter"/>
-    </defs>
-    <g>
-     <use xlink:href="#mc2c0bd3771" x="604.710938" y="40.098437" style="fill: #ffffff; stroke: #808080; stroke-linejoin: miter"/>
-    </g>
-   </g>
-   <g id="text_113">
-    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="622.710938" y="43.598437" transform="rotate(-0 622.710938 43.598437)">Calibrated · full support</text>
-   </g>
-   <g id="line2d_217">
-    <defs>
-     <path id="m2a4e6f69fd" d="M -3 3
-L 3 3
-L 3 -3
-L -3 -3
-z
-" style="stroke: #808080; stroke-linejoin: miter"/>
-    </defs>
-    <g>
-     <use xlink:href="#m2a4e6f69fd" x="770.907813" y="40.098437" style="fill: #808080; stroke: #808080; stroke-linejoin: miter"/>
-    </g>
-   </g>
-   <g id="text_114">
-    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="788.907813" y="43.598437" transform="rotate(-0 788.907813 43.598437)">Calibrated · support &gt;5</text>
+   <g id="text_116">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="811.872656" y="58.276562" transform="rotate(-0 811.872656 58.276562)">Truncated (support &gt;5)</text>
    </g>
   </g>
  </g>
