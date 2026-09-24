@@ -136,6 +136,48 @@ verifies and reuses completed jobs; preserve/move partial job directories before
 retrying. Changed code, inputs or configuration require a new output campaign and
 qualification. A process starting is not completion: check `plan.json` status.
 
+## Watch an existing collection
+
+The standalone [monitor](../../monitor_mambo_release.py) reads only the phase's
+plan, reports and the last 64 KiB of each log. It needs no model packages and works
+with logs from runs started before the monitor was added:
+
+```sh
+python dev/monitor_mambo_release.py ~/.cache/mambo-ucloud/runs-ptx/full
+```
+
+It shows job completion, image counts, percentages, recent images/second and
+estimated time remaining for the current job at its last checkpoint. Leave it
+running: ETA requires two observed progress checkpoints (the collectors log every
+50 batches, normally 1,600 images). Initialization has no image ETA. Stale
+checkpoints suppress ETA; finalization is not complete until the report confirms
+it. Different variants have different throughput, so no whole-campaign ETA is
+inferred from the current model. This monitors collection/qualification, not metrics
+reduction or benchmark timing cells. Ctrl-C stops only the monitor.
+
+**For a campaign already running, keep its checkout and environments unchanged.**
+After the monitor commit has been pushed, fetch and extract just this standalone
+file on UCloud; do not pull the new revision into the running campaign checkout:
+
+```sh
+git fetch origin release/mambo-v3
+git show FETCH_HEAD:dev/monitor_mambo_release.py > /tmp/monitor_mambo_release.py
+python /tmp/monitor_mambo_release.py ~/.cache/mambo-ucloud/runs-ptx/full
+```
+
+Fetching leaves the checked-out revision unchanged. Subsequent full/benchmark
+phases can continue using the already qualified checkout. `--once` prints a single
+status snapshot; it cannot infer throughput from old logs without timestamps.
+
+For result transfer after completion, retain the campaign configuration, each
+phase's `plan.json`, per-job `report.json` and `samples.json`, generated
+`metrics.json` files, logs and summary outputs. Keep the prediction
+`mini_metric.csv` files too: compressed copies permit additional mini_metrics
+analyses and reproduction locally. Dataset images and downloaded model archives
+are not required for documentation integration. Package completed evidence only;
+transfer instructions and completeness checks will follow once collection and
+metrics/benchmark phases finish.
+
 ## Evidence scope
 
 Quality uses the **global vocabulary** and every original test image. All predictive
@@ -165,7 +207,7 @@ in-domain images; differences from Flemming laptop timings cannot be attributed
 solely to hardware. For a like-for-like hardware comparison, set `timing_manifest`
 and `timing_root` to the same Flemming inputs before qualification.
 
-No UCloud inference results are claimed yet. Preserve current laptop figures;
+Full UCloud quality and speed results are not yet available. Preserve current laptop figures;
 add UCloud quality and speed figures only after the completed evidence passes the
 summary checks. Cross-OS support and clean CUDA installation remain separate
 qualification tasks.
