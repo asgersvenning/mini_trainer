@@ -122,8 +122,8 @@ and custom image transforms through the same outer interface.
 Results below use all **58,640 Flemming images / 522 truth species**, including
 species outside the selected vocabulary. All predictive metrics use pinned
 `mini_metrics`, threshold zero and no threshold optimization. The main table uses
-the northern-Europe legacy list, shared by V2 and V3; charts also show Europe and
-global. TTA means the enabled padded-scale default. V3 quality uses automatic GPU precision;
+the recommended northern-Europe legacy list (`north_europe`), shared by V2 and V3.
+TTA means the enabled padded-scale default. V3 quality uses automatic GPU precision;
 CPU timings use FP32.
 
 | Pipeline | Species macro accuracy | Species macro-F1 | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
@@ -154,6 +154,12 @@ versus V2 (84.40% → about 81.05%). TTA raises these to about **83.04% genus /
 85.72–85.73% family**, exceeding V2 at both ranks.
 
 ![Species, genus and family macro metrics](../docs/assets/mambo-defaults-ranks-all.svg)
+
+Regional filtering improves results on Flemming. The [single regional-effect figure](../docs/mambo-deployment-defaults.md#regional-filtering-effect)
+summarizes global → Europe → northern Europe across pipelines and ranks.
+We recommend legacy `north_europe` here: the updated list adds 222 species but
+no Flemming species coverage, and lowers measured accuracy/F1. It remains available
+as `north_europe_v3` for broader eligibility; the API default stays `europe`.
 
 ![CPU and GPU throughput](../docs/assets/mambo-defaults-speed.svg)
 

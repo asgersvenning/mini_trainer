@@ -160,7 +160,8 @@ def build(metadata, evidence_root, write=False):
         "Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. "
         "Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; "
         "that equivalence does not establish equivalence at the lower threshold, so they are not silently added. "
-        "The deployment API discovers all lists from the bundle; preset-specific quality evaluation remains pending.",
+        "The deployment API discovers all lists from the bundle; Flemming evaluation favours legacy north_europe; "
+        "updated membership remains an explicit broader option.",
         "",
         "## Presets",
         "",

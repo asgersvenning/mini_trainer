@@ -133,24 +133,25 @@ def render(data, output):
             suffix = "" if rank == "species" else f"-{rank}"
             save(fig, f"mambo-defaults-quality{suffix}-{scope}")
 
-    fig, axes = plt.subplots(3, 2, figsize=(13, 11))
+    scores = {(r["model"], r["preset"]): r["scores"]["all"] for r in data["quality"]}
+    rank_metrics = (("accuracy", "Macro accuracy (%)", 100), ("f1", "Macro-F1", 1))
+    labels = ["V2", "V3\nPyTorch", "V3\nONNX", "V3 PyTorch\n+ TTA", "V3 ONNX\n+ TTA"]
+    fig, axes = plt.subplots(3, 2, figsize=(11, 10))
     for level, rank in enumerate(("species", "genus", "family")):
-        for col, (metric, title, factor) in enumerate((("accuracy", "Macro accuracy (%)", 100), ("f1", "Macro-F1", 1))):
+        for col, (metric, title, factor) in enumerate(rank_metrics):
             ax = axes[level, col]
-            for i, (model, label, color) in enumerate(SERIES):
-                values = [
-                    next(r for r in data["quality"] if (r["model"], r["preset"]) == (model, preset))["scores"]["all"][metric][str(level)]
-                    * factor
-                    for preset in REGIONS
-                ]
-                bars = ax.bar(np.arange(3) + (i - 2) * 0.16, values, 0.16, label=label, color=color)
-                ax.bar_label(bars, fmt="%.1f" if factor == 100 else "%.3f", rotation=60, fontsize=8, padding=3)
-            upper = 105 if factor == 100 else min(1, max(bar.get_height() for bar in ax.patches) * 1.35)
-            ax.set(title=f"{rank.title()} · {title}", xticks=np.arange(3), xticklabels=REGION_LABELS, ylim=(0, upper))
+            values = [scores[model, "north_europe"][metric][str(level)] * factor for model, _, _ in SERIES]
+            bars = ax.bar(range(5), values, color=[color for _, _, color in SERIES])
+            ax.bar_label(bars, fmt="%.2f" if factor == 100 else "%.4f", padding=3, fontsize=9)
+            ax.set(
+                title=f"{rank.title()} · {title}",
+                xticks=range(5),
+                xticklabels=labels,
+                ylim=(0, 100 if factor == 100 else max(values) * 1.2),
+            )
             ax.grid(axis="y", alpha=0.15)
             ax.set_axisbelow(True)
-    fig.suptitle("MAMBO release comparison · species, genus and family", fontsize=16)
-    fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.965), ncol=3, frameon=False)
+    fig.suptitle("V2 vs V3 vs V3 + TTA · legacy northern Europe", fontsize=16)
     fig.text(
         0.02,
         0.015,
@@ -159,8 +160,58 @@ def render(data, output):
         "TTA: original + two padded views; recipe selected on a subset of Flemming, not independently validated.",
         fontsize=9,
     )
-    fig.tight_layout(rect=(0, 0.08, 1, 0.925))
+    fig.tight_layout(rect=(0, 0.09, 1, 0.96))
     save(fig, "mambo-defaults-ranks-all")
+
+    fig, axes = plt.subplots(3, 2, figsize=(11, 9))
+    steps = (("full", "europe"), ("europe", "north_europe"))
+    for level, rank in enumerate(("species", "genus", "family")):
+        for col, (metric, _, factor) in enumerate(rank_metrics):
+            ax = axes[level, col]
+            for step, (source, target) in enumerate(steps):
+                changes = np.array(
+                    [
+                        (scores[model, target][metric][str(level)] - scores[model, source][metric][str(level)]) * factor
+                        for model, _, _ in SERIES
+                    ]
+                )
+                median = float(np.median(changes))
+                ax.hlines(step, changes.min(), changes.max(), color="0.55", linewidth=3)
+                for i, (_, label, color) in enumerate(SERIES):
+                    ax.scatter(changes[i], step + (i - 2) * 0.055, color=color, s=35, label=label if step == 0 else None)
+                ax.scatter(median, step, marker="|", s=200, color="black", zorder=5)
+                ax.annotate(
+                    f"median {median:+.2f}" if factor == 100 else f"median {median:+.4f}",
+                    (median, step),
+                    xytext=(0, 22),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=9,
+                )
+            ax.axvline(0, color="0.7", linewidth=1, linestyle=":")
+            ax.set(
+                title=rank.title(),
+                yticks=(0, 1),
+                yticklabels=("Global → Europe", "Europe → N. Europe"),
+                ylim=(1.35, -0.5),
+                xlabel="Macro accuracy change (percentage points)" if factor == 100 else "Macro-F1 change",
+            )
+            ax.margins(x=0.2)
+            ax.grid(axis="x", alpha=0.15)
+            ax.set_axisbelow(True)
+    fig.suptitle("Effect of regional filtering · paired changes within each pipeline", fontsize=15)
+    fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.96), ncol=3, frameon=False)
+    fig.text(
+        0.02,
+        0.015,
+        "Black mark: median of five pipeline changes; grey line: min–max; coloured dots: individual pipelines.\n"
+        "Descriptive spread, not confidence intervals or independent replicates. "
+        "Legacy lists; same 58,640 images, all truth, threshold 0.\n"
+        "Differences summarize retained mini_metrics outputs; ranks and metric scales are never pooled.",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.10, 1, 0.89))
+    save(fig, "mambo-defaults-regional-effect")
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
     for ax, device, batches in zip(axes, ("cpu", "cuda:0"), ((1, 8), (1, 8, 32)), strict=True):
