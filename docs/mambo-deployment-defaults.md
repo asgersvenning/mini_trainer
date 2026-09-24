@@ -90,6 +90,32 @@ falls from 84.40% to about 81.05%. TTA raises family macro accuracy to 85.72–8
 and improves species and genus results as well. Species macro-F1 is slightly
 lower than V2 without TTA and higher with TTA.
 
+### Tail-truncated comparison
+
+The [deployment README](../deployment/README.md#release-comparison) pairs these full-support
+results with support >5 metrics on the same 58,640 images at confidence threshold zero.
+The truncated average uses classes with more than five truth instances and predictions
+in every pipeline. No evaluation rows are removed; per-class false positives and false
+negatives remain intact. Predicted-only classes disappear from the average.
+
+![Full-support and support >5 macro metrics](assets/mambo-defaults-tail.svg)
+
+Support >5 excludes the following images’ **truth classes from the macro average**.
+No image rows are discarded: their false-positive/false-negative contributions to
+retained classes still count. Predicted-only classes are excluded, so keep the
+full-support baseline alongside the truncated results. Confidence coverage remains
+100% at threshold zero; these percentages are not rejection rates.
+
+| Rank | Shared classes retained | Images with truth outside retained classes | Images with predictions outside (range across pipelines) |
+|---|---:|---:|---:|
+| Species | 323 | 8,869 / 15.12% | 12,981–14,847 / 22.14%–25.32% |
+| Genus | 248 | 201 / 0.34% | 8,074–8,834 / 13.77%–15.06% |
+| Family | 20 | 5 / 0.01% | 605–1,015 / 1.03%–1.73% |
+
+The [full-data metric export](assets/mambo-defaults-tail.csv) also includes
+macro precision/recall and per-model class sets. The [tail-metric methodology](mambo-tail-metrics.md)
+explains the calculation; its threshold-study tables use a different reporting partition.
+
 ### Regional filtering effect
 
 ![Paired regional gains across pipelines](assets/mambo-defaults-regional-effect.svg)
@@ -223,3 +249,13 @@ is end-to-end; the benchmark's separately labelled prepared-input diagnostic is
 single-view even when TTA is enabled, and is not used in these comparisons.
 The [compact evidence](assets/mambo-defaults-comparison.json) includes source hashes
 and regenerates the figures with `defaults_report --data FILE --output DIRECTORY`.
+
+Regenerate the full-data tail comparison from retained predictions (no inference):
+
+```sh
+/path/to/pinned-metrics-env/bin/python -m dev.releases.mambo_v3.tail_report \
+  --full-dataset --study docs/assets/mambo-threshold-comparison.json \
+  --output /tmp/mambo-tail-full
+python -m dev.releases.mambo_v3.tail_charts \
+  --data /tmp/mambo-tail-full/mambo-tail-metrics.json --output /tmp/mambo-tail-full
+```
