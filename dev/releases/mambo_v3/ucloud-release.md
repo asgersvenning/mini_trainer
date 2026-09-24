@@ -399,3 +399,47 @@ and embeddings on a 256-image ONNX CUDA/default-TTA check. That short laptop run
 took about 10.8 seconds (the earlier smaller pool took 7.5 seconds); it does not
 establish a speed gain on B200. The UCloud run must establish the throughput benefit.
 No dependencies changed; release scripts import deployment code from the checkout.
+
+### Move batch assembly off the consumer thread
+
+The first streaming run on B200 showed 736 encoded and 256 prepared images queued,
+while the old `input_wait_seconds` increased by about 8.6 seconds over a 25-second
+interval. That counter included serial batch stacking on the inference thread;
+it did not isolate storage waiting. Assembly now runs in a separate worker,
+including release of per-image buffers. Ordered, contiguous batches are delivered
+to inference without stacking there. Reader and preparation settings stay unchanged.
+
+Logs now show **interval** images/s and separate interval seconds for input delivery,
+runtime calls and reduction/writing, plus background assembly. Background assembly
+overlaps consumer work and must not be added to its timings. The pipeline counter
+`queue_wait_seconds` (also exposed as `input_wait_seconds`) measures waiting for a
+complete batch, including initial fill. `prepared_batches` counts complete queued
+batches, and `assembling` counts images being assembled. Initial runtime loading
+is still included in the first runtime interval.
+
+Stop the old run and queued follow-ups before pulling. Reuse the same environments,
+concurrency settings and completed V2 evidence; no installation is needed:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-streaming/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-assembly
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-assembly/config.json
+```
+
+After inspecting roughly two minutes of steady V3 progress, continue with:
+
+```sh
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-assembly/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-assembly/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-assembly \
+  --output ~/.cache/mambo-ucloud/summary-assembly
+```
+
+The standalone monitor takes `~/.cache/mambo-ucloud/runs-assembly/full`. Both full
+collection and deployment streaming benchmarks use the corrected assembly path.

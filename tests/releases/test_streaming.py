@@ -70,3 +70,30 @@ def test_failure_close_and_empty(tmp_path):
         assert offset == 0
         np.testing.assert_array_equal(views[0][0], preprocess(items[0][0]))
     assert not any(t.name == "mambo-stream" for t in threading.enumerate())
+
+
+def test_assembly_runs_in_background_and_errors_propagate(tmp_path, monkeypatch):
+    items = inputs(tmp_path, 5)
+    original = streaming.assemble_batch
+    calls = []
+
+    def assemble(images):
+        calls.append(threading.current_thread().name)
+        result = original(images)
+        assert images == []  # Per-image buffers are released by the assembler.
+        return result
+
+    monkeypatch.setattr(streaming, "assemble_batch", assemble)
+    stats = {}
+    assert len(list(streaming.prepared_stream(items, 2, stats=stats))) == 3
+    assert len(calls) == 3 and all(name.startswith("mambo-assemble") for name in calls)
+    assert stats["batch_assembly_seconds"] > 0
+    assert stats["queue_wait_seconds"] == stats["input_wait_seconds"]
+
+    def fail(images):
+        raise ValueError("assembly failure")
+
+    monkeypatch.setattr(streaming, "assemble_batch", fail)
+    with pytest.raises(ValueError, match="assembly failure"):
+        list(streaming.prepared_stream(items, 2))
+    assert not any(t.name.startswith("mambo-assemble") for t in threading.enumerate())

@@ -191,6 +191,8 @@ An individual file larger than that budget fails explicitly. The defaults are
 32 readers, a 128-image window, the predictor's preparation worker count, two
 prefetched batches and 256 MiB encoded storage. These controls are API-only and
 independent of model batch size, which the read window must accommodate. A supplied
-`stats={}` receives queue counts, reserved bytes and cumulative input-wait time.
+`stats={}` receives queue counts, reserved bytes, actual batch-queue waiting and
+background batch-assembly time. Complete batches are assembled off the inference
+thread; background times overlap inference.
 The byte budget is not a total-process memory limit: decoding temporaries, prepared
 views, the model and yielded results also consume memory.

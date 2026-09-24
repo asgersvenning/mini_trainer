@@ -115,7 +115,10 @@ def collect(args):
             )
             stack.callback(batches.close)
             completed = 0
-            progress_start = last_progress = time.perf_counter()
+            last_progress = time.perf_counter()
+            previous_completed = 0
+            previous_timings = dict(timings)
+            previous_assembly = 0.0
             while True:
                 waiting = time.perf_counter()
                 try:
@@ -146,10 +149,18 @@ def collect(args):
                 completed += len(batch)
                 now = time.perf_counter()
                 if now - last_progress >= 5 or completed == len(records):
-                    rate = completed / (now - progress_start)
+                    interval = now - last_progress
+                    rate = (completed - previous_completed) / interval
+                    phase_seconds = {name: round(value - previous_timings[name], 3) for name, value in timings.items()}
+                    assembly = stream_stats.get("batch_assembly_seconds", 0.0)
+                    phase_seconds["background_assembly_seconds"] = round(assembly - previous_assembly, 3)
                     # Retain the existing machine-readable count line for live monitors.
                     print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
                     print(f"{rate:.1f} images/s; ETA {(len(records) - completed) / rate / 60:.1f} min; pipeline={stream_stats}", flush=True)
+                    print(f"interval={interval:.3f}s; phases={phase_seconds}", flush=True)
+                    previous_timings = dict(timings)
+                    previous_completed = completed
+                    previous_assembly = assembly
                     last_progress = now
             if embeddings is not None:
                 embeddings.flush()

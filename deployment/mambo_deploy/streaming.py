@@ -30,6 +30,14 @@ def prepare_image(data, tta):
     return (preprocess(decoded),) if tta is None else tuple(_prepare_view(decoded, view) for view in tta.transforms)
 
 
+def assemble_batch(images):
+    """Stack and release per-image arrays on the assembler thread."""
+    start = time.perf_counter()
+    views = tuple(np.stack(view) for view in zip(*images, strict=True))
+    images.clear()
+    return views, time.perf_counter() - start
+
+
 def prepared_stream(
     items,
     batch_size,
@@ -56,17 +64,21 @@ def prepared_stream(
     stats = {} if stats is None else stats
     condition = threading.Condition()
     state = dict(stop=False, consumed=0, end=None, error=None)
-    ready = {}
+    batches = {}
     source = iter(items)
     capacity = batch_size * (prefetch_batches + 1)
 
     def produce():
         reads, decoding, buffers, sizes = {}, {}, {}, {}
-        next_index, reserved = 0, 0
+        ready = {}
+        next_index, reserved, assemble_offset = 0, 0, 0
+        assembling = None
+        assembling_count = 0
         pending = None
         exhausted = False
         readers = ThreadPoolExecutor(max_workers=read_workers)
         preparers = ThreadPoolExecutor(max_workers=prepare_workers)
+        assembler = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mambo-assemble")
         try:
             while True:
                 with condition:
@@ -82,9 +94,8 @@ def prepared_stream(
                         result = future.result()
                         del decoding[index]
                         reserved -= sizes.pop(index)
-                        with condition:
-                            ready[index] = result
-                            condition.notify_all()
+                        ready[index] = result
+                        del result
                 for index in sorted(buffers):
                     if index < consumed + capacity and len(decoding) < prepare_workers:
                         decoding[index] = preparers.submit(prepare_image, buffers.pop(index), tta)
@@ -111,17 +122,34 @@ def prepared_stream(
                     reads[next_index] = readers.submit(read_image, path, size, digest)
                     next_index += 1
                     pending = None
+                if assembling is not None and assembling.done():
+                    views, elapsed = assembling.result()
+                    with condition:
+                        batches[assemble_offset] = views
+                        stats["batch_assembly_seconds"] = stats.get("batch_assembly_seconds", 0.0) + elapsed
+                        condition.notify_all()
+                    del views
+                    assembling = None
+                    assemble_offset += assembling_count
+                    assembling_count = 0
+                end = min(assemble_offset + batch_size, next_index) if exhausted else assemble_offset + batch_size
+                if assembling is None and end > assemble_offset and all(i in ready for i in range(assemble_offset, end)):
+                    assembling_count = end - assemble_offset
+                    assembling = assembler.submit(assemble_batch, [ready.pop(i) for i in range(assemble_offset, end)])
                 with condition:
+                    prepared_count = len(ready) + sum(len(views[0]) for views in batches.values()) + assembling_count
                     stats.update(
                         reading=len(reads),
                         encoded_ready=len(buffers),
                         preparing=len(decoding),
-                        prepared_images=len(ready),
+                        prepared_images=prepared_count,
+                        prepared_batches=len(batches),
+                        assembling=assembling_count,
                         encoded_bytes=reserved,
                     )
                     stats["peak_encoded_bytes"] = max(stats.get("peak_encoded_bytes", 0), reserved)
-                    stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), len(ready) + len(decoding))
-                    if exhausted and not reads and not decoding and not buffers:
+                    stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), prepared_count + len(decoding))
+                    if exhausted and not reads and not decoding and not buffers and not ready and assembling is None:
                         break
                     condition.wait(timeout=0.005)
         except BaseException as error:
@@ -133,6 +161,7 @@ def prepared_stream(
                 future.cancel()
             readers.shutdown(wait=True, cancel_futures=True)
             preparers.shutdown(wait=True, cancel_futures=True)
+            assembler.shutdown(wait=True, cancel_futures=True)
 
     producer = threading.Thread(target=produce, name="mambo-stream")
     producer.start()
@@ -147,15 +176,15 @@ def prepared_stream(
                     end = min(offset + batch_size, state["end"]) if state["end"] is not None else offset + batch_size
                     if end == offset:
                         return
-                    if all(index in ready for index in range(offset, end)):
-                        images = [ready.pop(index) for index in range(offset, end)]
+                    if offset in batches:
+                        views = batches.pop(offset)
+                        stats["prepared_batches"] = len(batches)
+                        stats["prepared_images"] = max(0, stats.get("prepared_images", 0) - len(views[0]))
                         break
                     condition.wait()
-            views = tuple(np.stack(view) for view in zip(*images, strict=True))
-            del images
             with condition:
-                stats["prepared_images"] = len(ready)
-                stats["input_wait_seconds"] = stats.get("input_wait_seconds", 0.0) + time.perf_counter() - start
+                stats["queue_wait_seconds"] = stats.get("queue_wait_seconds", 0.0) + time.perf_counter() - start
+                stats["input_wait_seconds"] = stats["queue_wait_seconds"]
                 condition.notify_all()
             yield offset, views
             del views
