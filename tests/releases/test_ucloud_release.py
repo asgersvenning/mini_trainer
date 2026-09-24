@@ -133,3 +133,17 @@ def test_setup_rejects_wrong_metadata_before_downloads(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_ucloud_release, "default_bundle", lambda: pytest.fail("Downloaded before metadata validation"))
     with pytest.raises(ValueError, match="metadata snapshot"):
         setup_ucloud_release.setup(SimpleNamespace(metadata=path))
+
+
+def test_legacy_archive_uses_repository_root_from_any_working_directory(tmp_path, monkeypatch):
+    import subprocess
+
+    from dev.releases.mambo_v3.setup_ucloud_release import COMMIT, HERE, prepare_legacy_source
+
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "legacy" / COMMIT
+    prepare_legacy_source(source)
+    expected = subprocess.check_output(["git", "show", f"{COMMIT}:mini_trainer/__init__.py"], cwd=HERE.parents[2])
+    assert (source / "mini_trainer/__init__.py").read_bytes() == expected
+    assert (source / "mini_trainer/deploy.py").is_file()
+    prepare_legacy_source(source)  # Reuse the completed extraction on setup retries.

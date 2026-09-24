@@ -20,6 +20,16 @@ from dev.releases.mambo_v3.legacy_evaluation import COMMIT
 from dev.releases.mambo_v3.prepare_ucloud import recover
 
 
+def prepare_legacy_source(source):
+    """Extract the pinned package with paths relative to the repository root."""
+    if not source.exists():
+        source.parent.mkdir(parents=True, exist_ok=True)
+        archive = subprocess.check_output(["git", "archive", COMMIT, "mini_trainer"], cwd=HERE.parents[2])
+        source.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(archive)) as stream:
+            stream.extractall(source, filter="data")
+
+
 def setup(args):
     metadata = args.metadata.resolve()
     expected = tomllib.loads((HERE / "construction.toml").read_text())["source"]["sha256"]
@@ -42,12 +52,7 @@ def setup(args):
     for item in needed:
         fetch_file(item["url"], cache / "archives" / item["path"], size=item["size"], sha256=item["sha256"], offline=args.offline)
     source = cache / "legacy-source" / COMMIT
-    if not source.exists():
-        source.parent.mkdir(parents=True, exist_ok=True)
-        archive = subprocess.check_output(["git", "archive", COMMIT, "mini_trainer"], cwd=HERE)
-        source.mkdir()
-        with tarfile.open(fileobj=io.BytesIO(archive)) as stream:
-            stream.extractall(source, filter="data")
+    prepare_legacy_source(source)
     from huggingface_hub import hf_hub_download
 
     hf_cache = cache / "huggingface/hub"
