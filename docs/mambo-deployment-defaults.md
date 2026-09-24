@@ -90,31 +90,20 @@ falls from 84.40% to about 81.05%. TTA raises family macro accuracy to 85.72–8
 and improves species and genus results as well. Species macro-F1 is slightly
 lower than V2 without TTA and higher with TTA.
 
-### Tail-truncated comparison
+### Matched threshold and tail comparison
 
-The [deployment README](../deployment/README.md#release-comparison) pairs these full-support
-results with support >5 metrics on the same 58,640 images at confidence threshold zero.
-The truncated average uses classes with more than five truth instances and predictions
-in every pipeline. No evaluation rows are removed; per-class false positives and false
-negatives remain intact. Predicted-only classes disappear from the average.
+The [main deployment comparison](../deployment/README.md#release-comparison) now
+shows both confidence settings, full support and support >5, with coverage and
+excluded-support counts on the same **52,788 reporting images**. Thresholds use
+5,852 separate calibration images. Its figures differ from the historical
+58,640-image full-data tables above; do not mix their populations.
 
-![Full-support and support >5 macro metrics](assets/mambo-defaults-tail.svg)
+![Both confidence settings and averaging domains, with coverage](assets/mambo-threshold-tail.svg)
 
-Support >5 excludes the following images’ **truth classes from the macro average**.
-No image rows are discarded: their false-positive/false-negative contributions to
-retained classes still count. Predicted-only classes are excluded, so keep the
-full-support baseline alongside the truncated results. Confidence coverage remains
-100% at threshold zero; these percentages are not rejection rates.
-
-| Rank | Shared classes retained | Images with truth outside retained classes | Images with predictions outside (range across pipelines) |
-|---|---:|---:|---:|
-| Species | 323 | 8,869 / 15.12% | 12,981–14,847 / 22.14%–25.32% |
-| Genus | 248 | 201 / 0.34% | 8,074–8,834 / 13.77%–15.06% |
-| Family | 20 | 5 / 0.01% | 605–1,015 / 1.03%–1.73% |
-
-The [full-data metric export](assets/mambo-defaults-tail.csv) also includes
-macro precision/recall and per-model class sets. The [tail-metric methodology](mambo-tail-metrics.md)
-explains the calculation; its threshold-study tables use a different reporting partition.
+The [tail-metric tables](mambo-tail-metrics.md) and [CSV](assets/mambo-tail-metrics.csv)
+provide the same reporting-partition evidence. Support >5 class sets are shared
+across pipelines within each confidence setting, but can differ between settings.
+Truncation changes only the macro averaging domain; all per-class FP/FN remain.
 
 ### Regional filtering effect
 
@@ -258,4 +247,11 @@ Regenerate the full-data tail comparison from retained predictions (no inference
   --output /tmp/mambo-tail-full
 python -m dev.releases.mambo_v3.tail_charts \
   --data /tmp/mambo-tail-full/mambo-tail-metrics.json --output /tmp/mambo-tail-full
+```
+
+Regenerate the main matched-population figure from retained mini_metrics results:
+
+```sh
+python -m dev.releases.mambo_v3.tail_charts --paired \
+  --data docs/assets/mambo-tail-metrics.json --output /tmp/mambo-paired
 ```

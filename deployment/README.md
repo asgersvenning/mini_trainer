@@ -119,65 +119,108 @@ and custom image transforms through the same outer interface.
 
 ## Release comparison
 
-Results below use all **58,640 Flemming images / 522 truth species**, including
-species outside the selected vocabulary. All predictive metrics use pinned
-`mini_metrics`, threshold zero and no threshold optimization. The main table uses
-the recommended northern-Europe legacy list (`north_europe`), shared by V2 and V3.
-TTA means the enabled padded-scale default. V3 quality uses automatic GPU precision;
-CPU timings use FP32. Quality cells show **full support → support >5**, retaining
-classes with more than five truth instances and predictions in **every pipeline**.
-Full-support metrics retain each model’s complete class domain.
+Results use the **same 52,788 Flemming reporting images** for both confidence
+settings, including out-of-vocabulary truth. Calibrated thresholds were fitted on
+5,852 separate images using pinned `mini_metrics` Macro-F1, independently for each
+pipeline and rank. No-threshold results use threshold zero. All comparisons use
+the shared legacy `north_europe` preset; TTA is the enabled padded-scale recipe.
+V3 uses automatic GPU precision. Deployment defaults remain threshold zero.
 
-| Pipeline | Species macro accuracy (full → >5) | Species macro-F1 (full → >5) | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
-|---|---:|---:|---:|---:|---:|---:|
-| MAMBO v2 | 68.52% → 78.93% | 0.2575 → 0.7762 | 1.26 | 45.2 | 44.8 | 83.5 |
-| V3 PyTorch | 71.25% → 80.76% | 0.2543 → 0.7935 | 5.70 | 29.8 | 126.7 | 136.2 |
-| V3 ONNX | 71.24% → 80.80% | 0.2543 → 0.7937 | 10.08 | 46.7 | 114.1 | 111.3 |
-| V3 PyTorch + TTA | 73.95% → 83.63% | 0.2935 → 0.8213 | 2.29 | 8.5 | 42.7 | 50.4 |
-| V3 ONNX + TTA | 73.98% → 83.65% | 0.2944 → 0.8213 | 3.56 | 16.8 | 41.7 | 39.4 |
+In each metric cell, values are **full support / support >5**. Full support retains
+each model’s complete class domain, including predicted-only classes. Support >5
+retains classes with more than five truth instances and **accepted predictions in
+every pipeline**, separately for each confidence setting. These class sets can differ
+between settings; truncation is a change in averaging domain, not improved predictions.
+Coverage is the percentage of reporting images accepted, and is identical for both
+averaging domains. No evaluation rows are dropped; per-class FP/FN remain intact.
 
-Speed is **images per second**, including decoding through completed CPU results,
-on an i7-12800H / RTX 3080 Ti Laptop. Three fresh-process trials use the same image
-bank and four preparation/runtime CPU threads; V2 and ordinary V3 reuse retained
-measurements. V2 CPU uses its documented float32 input adapter.
+### Species
 
-Northern Europe, **genus and family**, on the same images at threshold zero:
+| Pipeline | Confidence | Macro accuracy (full / >5) | Macro-F1 (full / >5) | Coverage |
+|---|---|---:|---:|---:|
+| MAMBO v2 | None | 68.56% / 78.85% | 0.2620 / 0.7815 | 100.00% |
+| MAMBO v2 | Calibrated | 84.65% / 95.21% | 0.4467 / 0.7799 | 69.73% |
+| V3 PyTorch | None | 71.36% / 81.12% | 0.2593 / 0.8013 | 100.00% |
+| V3 PyTorch | Calibrated | 86.69% / 96.35% | 0.5081 / 0.8016 | 70.81% |
+| V3 ONNX | None | 71.34% / 81.17% | 0.2594 / 0.8016 | 100.00% |
+| V3 ONNX | Calibrated | 86.95% / 96.43% | 0.5100 / 0.8001 | 70.45% |
+| V3 PyTorch + TTA | None | 74.06% / 83.91% | 0.3001 / 0.8288 | 100.00% |
+| V3 PyTorch + TTA | Calibrated | 86.59% / 95.86% | 0.5239 / 0.8413 | 78.32% |
+| V3 ONNX + TTA | None | 74.09% / 83.93% | 0.3011 / 0.8287 | 100.00% |
+| V3 ONNX + TTA | Calibrated | 87.55% / 96.50% | 0.5431 / 0.8224 | 74.05% |
 
-| Pipeline | Genus macro accuracy (full → >5) | Genus macro-F1 (full → >5) | Family macro accuracy (full → >5) | Family macro-F1 (full → >5) |
-|---|---:|---:|---:|---:|
-| MAMBO v2 | 78.90% → 82.27% | 0.3169 → 0.7920 | 84.40% → 87.06% | 0.2691 → 0.8222 |
-| V3 PyTorch | 80.53% → 83.85% | 0.3204 → 0.8001 | 81.05% → 85.71% | 0.2804 → 0.7830 |
-| V3 ONNX | 80.50% → 83.81% | 0.3212 → 0.7997 | 81.06% → 85.72% | 0.2808 → 0.7840 |
-| V3 PyTorch + TTA | 83.04% → 86.48% | 0.3532 → 0.8303 | 85.72% → 88.58% | 0.2967 → 0.8202 |
-| V3 ONNX + TTA | 83.04% → 86.48% | 0.3536 → 0.8301 | 85.73% → 88.59% | 0.2967 → 0.8202 |
+### Genus
 
-Ordinary V3 improves genus macro accuracy but reduces family macro accuracy
-versus V2 (84.40% → about 81.05%). TTA raises these to about **83.04% genus /
-85.72–85.73% family**, exceeding V2 at both ranks.
+| Pipeline | Confidence | Macro accuracy (full / >5) | Macro-F1 (full / >5) | Coverage |
+|---|---|---:|---:|---:|
+| MAMBO v2 | None | 78.94% / 82.07% | 0.3213 / 0.7942 | 100.00% |
+| MAMBO v2 | Calibrated | 95.34% / 97.55% | 0.5869 / 0.7875 | 69.81% |
+| V3 PyTorch | None | 80.53% / 83.83% | 0.3230 / 0.8057 | 100.00% |
+| V3 PyTorch | Calibrated | 95.48% / 97.31% | 0.6019 / 0.8311 | 75.75% |
+| V3 ONNX | None | 80.54% / 83.84% | 0.3245 / 0.8055 | 100.00% |
+| V3 ONNX | Calibrated | 95.52% / 97.39% | 0.6043 / 0.8290 | 75.37% |
+| V3 PyTorch + TTA | None | 83.13% / 86.42% | 0.3601 / 0.8342 | 100.00% |
+| V3 PyTorch + TTA | Calibrated | 96.28% / 97.71% | 0.6655 / 0.8477 | 77.73% |
+| V3 ONNX + TTA | None | 83.13% / 86.43% | 0.3605 / 0.8340 | 100.00% |
+| V3 ONNX + TTA | Calibrated | 96.30% / 97.74% | 0.6655 / 0.8477 | 77.69% |
 
-Support >5 excludes the following images’ **truth classes from the macro average**.
-No image rows are discarded: their false-positive/false-negative contributions to
-retained classes still count. Predicted-only classes are excluded, so keep the
-full-support baseline alongside the truncated results. Confidence coverage remains
-100% at threshold zero; these percentages are not rejection rates.
+### Family
 
-| Rank | Shared classes retained | Images with truth outside retained classes | Images with predictions outside (range across pipelines) |
-|---|---:|---:|---:|
-| Species | 323 | 8,869 / 15.12% | 12,981–14,847 / 22.14%–25.32% |
-| Genus | 248 | 201 / 0.34% | 8,074–8,834 / 13.77%–15.06% |
-| Family | 20 | 5 / 0.01% | 605–1,015 / 1.03%–1.73% |
+| Pipeline | Confidence | Macro accuracy (full / >5) | Macro-F1 (full / >5) | Coverage |
+|---|---|---:|---:|---:|
+| MAMBO v2 | None | 84.35% / 87.00% | 0.2697 / 0.8238 | 100.00% |
+| MAMBO v2 | Calibrated | 99.64% / 99.58% | 0.6545 / 0.8021 | 77.44% |
+| V3 PyTorch | None | 81.05% / 85.70% | 0.2805 / 0.7831 | 100.00% |
+| V3 PyTorch | Calibrated | 99.33% / 99.22% | 0.5807 / 0.8161 | 73.06% |
+| V3 ONNX | None | 81.06% / 85.72% | 0.2809 / 0.7843 | 100.00% |
+| V3 ONNX | Calibrated | 99.33% / 99.22% | 0.5816 / 0.8174 | 73.26% |
+| V3 PyTorch + TTA | None | 85.79% / 88.66% | 0.2970 / 0.8211 | 100.00% |
+| V3 PyTorch + TTA | Calibrated | 99.56% / 99.49% | 0.6073 / 0.8536 | 78.74% |
+| V3 ONNX + TTA | None | 85.81% / 88.68% | 0.2971 / 0.8212 | 100.00% |
+| V3 ONNX + TTA | Calibrated | 99.56% / 99.49% | 0.6065 / 0.8524 | 78.47% |
 
-The [full-data metric export](../docs/assets/mambo-defaults-tail.csv) also includes
-macro precision/recall and per-model class sets. The [tail-metric methodology](../docs/mambo-tail-metrics.md)
-explains the calculation; its threshold-study tables use a different reporting partition.
+### Support retained and comparison figure
 
-![Full-support and support >5 macro metrics at all three ranks](../docs/assets/mambo-defaults-tail.svg)
+Images whose **truth classes fall outside the truncated average** are counted below.
+Predicted-only classes have zero truth images, so these counts alone do not describe
+the effect on macro-F1. The final column counts accepted predictions into excluded
+classes as a percentage of **all 52,788 reporting images**, not of accepted images.
+These are not rejection rates, and the truth/prediction counts must not be added.
+
+| Confidence | Rank | Shared classes | Truth outside: images / % | Accepted predictions outside: images / % (pipeline range) |
+|---|---|---:|---:|---:|
+| None | Species | 313 | 8,058 / 15.26% | 11,778–13,482 / 22.31%–25.54% |
+| None | Genus | 242 | 221 / 0.42% | 7,310–8,015 / 13.85%–15.18% |
+| None | Family | 20 | 5 / 0.01% | 547–897 / 1.04%–1.70% |
+| Calibrated | Species | 272 | 10,010 / 18.96% | 5,786–7,490 / 10.96%–14.19% |
+| Calibrated | Genus | 215 | 5,920 / 11.21% | 2,693–4,083 / 5.10%–7.73% |
+| Calibrated | Family | 19 | 18 / 0.03% | 12–36 / 0.02%–0.07% |
+
+![Both confidence settings, full and truncated macro metrics, and coverage](../docs/assets/mambo-threshold-tail.svg)
+
+The [metric export](../docs/assets/mambo-tail-metrics.csv) retains precision, recall,
+all support cutoffs and per-model class sets. The [tail-metric tables](../docs/mambo-tail-metrics.md)
+use this same reporting partition. The [threshold study](../docs/mambo-confidence-thresholds.md)
+provides exact thresholds and P–R curves. Thresholding and truncation can change model
+rankings; neither should be confused with an improvement in the underlying predictions.
 
 Regional filtering improves results on Flemming. The [single regional-effect figure](../docs/mambo-deployment-defaults.md#regional-filtering-effect)
 summarizes global → Europe → northern Europe across pipelines and ranks.
 We recommend legacy `north_europe` here: the updated list adds 222 species but
 no Flemming species coverage, and lowers measured accuracy/F1. It remains available
 as `north_europe_v3` for broader eligibility; the API default stays `europe`.
+
+Speed remains **images per second**, measured end to end on an i7-12800H / RTX
+3080 Ti Laptop, with four preparation/runtime CPU threads. Quality postprocessing
+above does not alter these retained inference measurements; CPU uses FP32.
+
+| Pipeline | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
+|---|---:|---:|---:|---:|
+| MAMBO v2 | 1.26 | 45.2 | 44.8 | 83.5 |
+| V3 PyTorch | 5.70 | 29.8 | 126.7 | 136.2 |
+| V3 ONNX | 10.08 | 46.7 | 114.1 | 111.3 |
+| V3 PyTorch + TTA | 2.29 | 8.5 | 42.7 | 50.4 |
+| V3 ONNX + TTA | 3.56 | 16.8 | 41.7 | 39.4 |
 
 ![CPU and GPU throughput](../docs/assets/mambo-defaults-speed.svg)
 
@@ -188,13 +231,7 @@ training and Flemming support. The [loading study](../docs/mambo-loading-scaling
 explains remaining scheduling limits; `preprocess_workers` / `--preprocess-workers`
 tunes preparation separately from ONNX runtime `threads` and defaults to it.
 
-Confidence rejection is a separate trade-off. The [threshold study](../docs/mambo-confidence-thresholds.md)
-compares all five pipelines with Macro-F1-optimized thresholds, coverage and P–R
-curves at every rank. V3 + TTA leads calibrated species/genus Macro-F1, while V2
-leads family Macro-F1; selected operating points accept roughly 70–79% of images.
-Threshold-zero defaults remain unchanged.
-
 Use ordinary V3 for throughput and enable TTA when its accuracy/cost trade-off fits.
-The recipe was selected on a Flemming subset, so full-set results are descriptive,
+The recipe was selected on a Flemming subset, so these results are descriptive,
 not independent validation. In-domain UCloud evaluation, other operating systems,
 and publication/license review remain open. See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).

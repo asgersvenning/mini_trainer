@@ -1,4 +1,4 @@
-"""Plot full-data macro metrics beside common-class support >5 metrics."""
+"""Plot full and truncated macro metrics, optionally comparing confidence settings."""
 
 import argparse
 import json
@@ -72,9 +72,78 @@ def render(data, output):
     plt.close(fig)
 
 
+def render_paired(data, output):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    rows = {(r["model"], r["scope"], r["rank"], r["cutoff"], r["domain"]): r for r in data["rows"]}
+    if {r["report_images"] for r in data["rows"]} != {52788} or {r["scope"] for r in data["rows"]} != {"zero", "optimized"}:
+        raise ValueError("Expected both confidence settings on the 52,788-image reporting partition")
+    plt.rcParams.update({"svg.fonttype": "none", "svg.hashsalt": "mambo-paired-tail-v1"})
+    fig, axes = plt.subplots(3, 3, figsize=(16, 11), gridspec_kw={"width_ratios": [1, 1, 0.75]})
+    for level, rank in enumerate(("species", "genus", "family")):
+        for col, metric in enumerate(("accuracy", "f1", "coverage")):
+            ax = axes[level, col]
+            for i, (model, _, color) in enumerate(SERIES):
+                for scope, marker, offset in (("zero", "o", -0.16), ("optimized", "s", 0.16)):
+                    full = rows[model, scope, rank, -1, "per_model"]
+                    tail = rows[model, scope, rank, 5, "common"]
+                    y = i + offset
+                    if metric == "coverage":
+                        value = full["overall_coverage"] * 100
+                        ax.scatter(value, y, color=color, marker=marker, s=35)
+                        ax.annotate(f"{value:.1f}%", (value, y), xytext=(-7, -3), textcoords="offset points", ha="right", fontsize=8)
+                    else:
+                        factor = 100 if metric == "accuracy" else 1
+                        a, b = full["metrics"][metric] * factor, tail["metrics"][metric] * factor
+                        ax.plot([a, b], [y, y], color=color, alpha=0.4)
+                        ax.scatter(a, y, facecolors="white", edgecolors=color, marker=marker, s=45, zorder=3)
+                        ax.scatter(b, y, color=color, marker=marker, s=45, zorder=3)
+            title = {"accuracy": "Macro accuracy (%)", "f1": "Macro-F1", "coverage": "Acceptance coverage (%)"}[metric]
+            ax.set(
+                title=f"{rank.title()} · {title}",
+                yticks=range(5),
+                yticklabels=[label for _, label, _ in SERIES] if col == 0 else [],
+                xlim=(0, 1) if metric == "f1" else (0, 105),
+                ylim=(4.6, -0.6),
+            )
+            ax.grid(axis="x", alpha=0.15)
+            ax.spines[["top", "right"]].set_visible(False)
+    handles = []
+    for marker, setting in (("o", "No threshold"), ("s", "Calibrated")):
+        for fill, domain in (("white", "full support"), ("gray", "support >5")):
+            handles.append(
+                Line2D([], [], marker=marker, color="gray", markerfacecolor=fill, linestyle="none", label=f"{setting} · {domain}")
+            )
+    fig.suptitle("V2 vs V3 vs V3 + TTA · matched reporting images · legacy northern Europe", fontsize=16)
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.955), ncol=4)
+    fig.text(
+        0.03,
+        0.02,
+        "Same 52,788 reporting images throughout; thresholds fitted on 5,852 separate images using mini_metrics Macro-F1.\n"
+        "Hollow → filled changes the averaging domain, not predictions. "
+        ">5 requires truth AND accepted-prediction support in every pipeline.\n"
+        "Retained classes differ between confidence settings. No evaluation rows removed; per-class FP/FN remain intact.\n"
+        "Coverage is unchanged by class truncation. TTA: padded scale; "
+        "recipe selection used the same dataset, so results remain descriptive.",
+        fontsize=10,
+    )
+    fig.tight_layout(rect=(0, 0.10, 1, 0.91))
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / "mambo-threshold-tail.svg"
+    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
+    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
+    fig.savefig(output / "mambo-threshold-tail.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--paired", action="store_true", help="Compare both confidence settings on the reporting partition")
     args = parser.parse_args()
-    render(json.loads(args.data.read_text()), args.output)
+    (render_paired if args.paired else render)(json.loads(args.data.read_text()), args.output)
