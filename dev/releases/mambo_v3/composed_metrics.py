@@ -112,6 +112,23 @@ def collect(args):
                     "predicted": Counter(map(str, part.prediction[part.prediction_made])),
                     "metrics": {name: values[level] for name, values in per_class.items()},
                 }
+        if model.startswith("onnx:"):
+            native = model.replace("onnx:", "torch:", 1)
+            if native in result["models"]:
+                vector = result["models"][native]["thresholds"]
+                row["native_threshold_alignment"] = {
+                    "thresholds": vector,
+                    "scores": finite_json(
+                        evaluate_file(
+                            reporting,
+                            threshold=vector,
+                            simple=True,
+                            hierarchical=False,
+                            pattern=r"^(accuracy|micro_accuracy|precision|recall|f1|coverage|theilU)$",
+                            verbose=0,
+                        )
+                    ),
+                }
         result["models"][model] = row
         write_json(args.output / f"{model.replace(':', '-')}.json", row)
         print(model, thresholds, flush=True)

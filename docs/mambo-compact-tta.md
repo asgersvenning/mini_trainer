@@ -1,5 +1,8 @@
 # Compact padding-and-rotation TTA qualification
 
+The completed [full composed-TTA comparison](mambo-composed-tta.md) evaluates the
+three shortlisted recipes on both backends, with calibration and matched coverage.
+
 **Composing stronger padding into existing rotation views improves the preliminary
 five-view recipe without adding passes.** The leading five-view candidate uses
 original, ±10° with 15% padding, and ±30° with 25% padding. Three-view candidates

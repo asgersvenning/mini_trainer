@@ -1,5 +1,8 @@
 # Optional outer test-time augmentation
 
+The completed [full composed-TTA comparison](mambo-composed-tta.md) evaluates the
+three shortlisted recipes on both backends, with calibration and matched coverage.
+
 TTA is an opt-in deployment feature shared by PyTorch and ONNX. View generation
 operates on decoded images **before** the ordinary, unchanged preprocessing recipe.
 It does not depend on backbone internals, ONNX graph changes, an intermediate crop

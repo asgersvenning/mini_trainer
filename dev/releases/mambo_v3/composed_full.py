@@ -47,6 +47,11 @@ def collect(args):
     }
     predictor = Predictor(args.bundle, backend=args.backend, device="cuda:0", model="north_europe", threads=4, batch_size=args.batch_size)
     report["effective_precision"] = predictor.effective_precision
+    report["runtime"].update(
+        precision=predictor.effective_precision,
+        autocast=predictor.effective_precision in ("fp16", "bf16"),
+        tf32=predictor.effective_precision == "tf32",
+    )
     start = time.perf_counter()
     write_json(args.output / "report.json", report)
     try:
