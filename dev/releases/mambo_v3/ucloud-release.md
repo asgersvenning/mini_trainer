@@ -20,7 +20,14 @@ The Parquet path is the only required dataset argument. Images are expected at
 `images/<species>/<filename>` below its parent; use `--root` if mounted elsewhere.
 Preparation verifies the metadata snapshot, recovers original `set == "0"`
 membership and species/genus/family labels, and hashes all 632,913 test images.
-It does not resplit the data. This first preparation pass reads the entire test set.
+It does not resplit the data. Concurrent readers overlap cold WEKA reads to warm
+the cache while hashing: by default twice the available CPU affinity (96 readers
+for 48 CPUs), bounded to 8–256 readers. Override with `--hash-workers` if needed.
+Progress prints every five seconds, including while reads are waiting. Completed
+hashes are checkpointed to `image-hashes.sqlite3` and reused on retry when the
+input identity and file size/modification time match; changed files are rehashed.
+The final manifest is published only after every image completes. This first
+preparation pass reads the entire test set; run only one preparation process per cache.
 
 The isolated uv project pins the metric implementation and runtime dependencies,
 with an [explicit CUDA PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/).

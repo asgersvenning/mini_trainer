@@ -16,6 +16,7 @@ from deployment.mambo_deploy.download import default_bundle, fetch_file
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.audit import HERE
 from dev.releases.mambo_v3.evaluation_data import write_json
+from dev.releases.mambo_v3.hash_images import hash_images
 from dev.releases.mambo_v3.legacy_evaluation import COMMIT
 from dev.releases.mambo_v3.prepare_ucloud import recover
 
@@ -85,13 +86,7 @@ def setup(args):
         records = recover(metadata, staging, reference)
         if len(records) != 632913:
             raise ValueError("Expected original 632,913-image test split")
-        for i, record in enumerate(records):
-            path = (root / record["path"]).resolve()
-            if not path.is_relative_to(root):
-                raise ValueError("Unsafe image path")
-            record["sha256"] = file_hash(path)
-            if i % 10000 == 0:
-                print(f"Hashed {i}/{len(records)} test images", flush=True)
+        hash_images(records, root, cache / "image-hashes.sqlite3", provenance, workers=args.hash_workers)
         temporary = manifest.with_suffix(".partial.json")
         write_json(temporary, {"schema_version": 1, "dataset": "global-lepi-test", "provenance": provenance, "records": records})
         temporary.replace(manifest)
@@ -123,5 +118,6 @@ if __name__ == "__main__":
     parser.add_argument("--cache", type=Path, default=Path.home() / ".cache/mambo-ucloud")
     parser.add_argument("--v2-python", type=Path)
     parser.add_argument("--metrics-python", type=Path)
+    parser.add_argument("--hash-workers", type=int, help="Concurrent image readers; default twice CPU affinity, minimum 8, maximum 256")
     parser.add_argument("--offline", action="store_true")
     setup(parser.parse_args())
