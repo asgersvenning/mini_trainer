@@ -27,6 +27,10 @@
 
 ## Priorities
 
+Prioritize the user's intended outcome and recurring integration effort when
+choosing fixes. For diagnosis and experiment selection, follow
+[the contribution guidance](.agents/rules/code-contribution.md#choosing-fixes-and-experiments).
+
 ### Release branch scope
 
 On `release/mambo-v3`, restrict direct work to the MAMBO release: deployment
