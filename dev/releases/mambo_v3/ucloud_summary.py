@@ -23,6 +23,7 @@ def summarize(root, output):
         "fingerprint": plans["full"]["fingerprint"],
         "quality": [],
         "speed": [],
+        "streaming_speed": [],
         "runtime_reports": {},
         "metric_revision": REVISION,
         "policy": "Original full test split; no threshold selection on test; all and known truth; timings isolated from collection",
@@ -63,6 +64,23 @@ def summarize(root, output):
             else:
                 banks.add(bank_identity(directory, r))
                 for c in r["cells"]:
+                    if "streaming" in c:
+                        stream = c["streaming"]
+                        if len(stream["seconds"]) != 3 or any(v <= 0 for v in stream["seconds"]):
+                            raise ValueError("Require three positive streaming observations")
+                        data["streaming_speed"].append(
+                            {
+                                "environment_id": data["environment_id"],
+                                "variant": job["variant"],
+                                "device": job["device"],
+                                "trial": job["name"],
+                                "preset": c["preset"],
+                                "batch_size": c["batch_size"],
+                                "images": stream["images"],
+                                "images_per_second": stream["images"] / statistics.median(stream["seconds"]),
+                                "seconds": stream["seconds"],
+                            }
+                        )
                     seconds = c["end_to_end"]["seconds"]
                     if len(seconds) != 7 or any(v <= 0 for v in seconds):
                         raise ValueError("Require seven positive completed observations")
@@ -85,7 +103,9 @@ def summarize(root, output):
     data["timing_bank_sha256"] = next(iter(banks))
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "ucloud-summary.json", data)
-    for name in ("quality", "speed"):
+    for name in ("quality", "speed", "streaming_speed"):
+        if not data[name]:
+            continue
         with (output / f"{name}.csv").open("w", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=list(data[name][0]), lineterminator="\n")
             writer.writeheader()

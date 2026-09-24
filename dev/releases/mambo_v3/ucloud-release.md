@@ -329,7 +329,8 @@ separate `input_wait_seconds`, `runtime_seconds` and `reduce_write_seconds`;
 `prepare_worker_seconds` overlaps these and must not be added to them as elapsed
 time. Runtime time includes first-use initialization. These counters help assess
 whether preparation keeps inference supplied before changing worker or queue sizes.
-Set `--prefetch-batches 0` when creating a campaign to disable overlap.
+In the continuous scheduler below, `--prefetch-batches 0` minimizes decoded
+lookahead; encoded read-ahead remains active.
 
 A 256-image laptop ONNX check (batch 32; four workers before, sixteen afterward)
 produced byte-identical prediction CSVs, and byte-identical TTA embeddings.
@@ -339,3 +340,62 @@ local benefit and output preservation, not B200 throughput. B200 full collection
 remains to be measured. The dedicated speed benchmarks still measure the deployment
 API unchanged, not this prefetched evaluation collector; all benchmark variants
 run afresh, including V2.
+
+## Continuous IO and preparation campaign
+
+This supersedes the batch-at-a-time collector above. The shared deployment
+`prepared_stream` scheduler reads ahead independently of decoding, prepares ready
+images across batch boundaries, and emits ordered batches. Collection and
+`Predictor.predict_stream` use the same scheduler. Start aggressively on the
+48-vCPU B200/WEKA allocation: **256 readers, 48 preparation workers, 1,024 outstanding
+images, eight prefetched batches, 2 GiB encoded-byte budget**. These are explicit
+campaign settings, not portable deployment defaults. They follow the
+[prior storage evidence](../../../docs/training-workflow-postmortem.md#1-storage-behavior-invalidated-small-subset-extrapolation).
+Prepared views have a separate count bound; TTA multiplies their memory cost.
+
+Stop collection and pending shell follow-ups, push/pull the implementation, then
+reuse the existing environments and original completed V2 evidence:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-prefetch/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-streaming \
+  --reuse-v2-from ~/.cache/mambo-ucloud/runs-ptx \
+  --read-workers 256 --decode-workers 48 --read-window 1024 \
+  --prefetch-batches 8 --encoded-budget-mib 2048
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-streaming/config.json
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-streaming/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-streaming/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-streaming \
+  --output ~/.cache/mambo-ucloud/summary-streaming
+```
+
+Monitor with `python dev/monitor_mambo_release.py
+~/.cache/mambo-ucloud/runs-streaming/full`. Inspect the first roughly two minutes
+of steady V3 collection before queuing the later phases. Logs report reading,
+encoded-ready, preparing and prepared-image counts, reserved encoded bytes and
+cumulative input-wait time. Compare changes in wait time over that interval; model
+initialization and the initial fill are not steady-state evidence. If preparation
+still starves inference with spare CPU capacity, the next bounded candidate is
+512 readers, keeping the window and byte budget unchanged. A different setting
+requires a new campaign; do not edit a qualified config mid-run.
+
+The old single-request timing cells remain unchanged. Additional streaming cells
+use 1,024 images, the largest requested batch per device and preset, and three
+observations per fresh-process trial. They include stream startup, IO, preparation,
+inference, reduction and drain; integrity verification occurs before timing.
+They use repeated inputs and describe warm storage, not cold WEKA throughput.
+`streaming_speed.csv` exports these separately; V2 retains its original API timings
+and has no new streaming cell. Keep sample-bank and execution-mode differences
+visible when presenting results. Peak process memory includes both benchmark modes.
+
+Local validation: the aggressive settings retained byte-identical prediction CSVs
+and embeddings on a 256-image ONNX CUDA/default-TTA check. That short laptop run
+took about 10.8 seconds (the earlier smaller pool took 7.5 seconds); it does not
+establish a speed gain on B200. The UCloud run must establish the throughput benefit.
+No dependencies changed; release scripts import deployment code from the checkout.

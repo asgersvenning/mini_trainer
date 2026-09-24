@@ -5,18 +5,19 @@ import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 from itertools import islice
 from pathlib import Path
 
 import numpy as np
 
-from .augmentation import infer_augmented, resolve_tta
+from .augmentation import infer_augmented, infer_prepared, resolve_tta
 from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
 from .preprocessing import RECIPE, image_items, preprocess
 from .results import Prediction, hierarchy
+from .streaming import prepared_stream
 
 
 class Predictor:
@@ -276,3 +277,55 @@ class Predictor:
 
     def predict_with_embeddings(self, x, topk=1):
         return self._predict(x, embeddings=True, topk=topk)
+
+    def predict_stream(
+        self,
+        paths,
+        *,
+        embeddings=False,
+        topk=1,
+        read_workers=32,
+        prepare_workers=None,
+        read_window=128,
+        prefetch_batches=2,
+        encoded_budget=256 * 1024**2,
+        stats=None,
+    ):
+        """Yield one Prediction (or Prediction/embedding pair) per batch of paths.
+
+        Use contextlib.closing when stopping before exhaustion. Input paths are lazy;
+        outputs are not accumulated. Loading settings are explicit per stream.
+        """
+        batches = prepared_stream(
+            ((path, None) for path in paths),
+            self.batch_size,
+            tta=self.tta,
+            read_workers=read_workers,
+            prepare_workers=self.preprocess_workers if prepare_workers is None else prepare_workers,
+            read_window=read_window,
+            prefetch_batches=prefetch_batches,
+            encoded_budget=encoded_budget,
+            stats=stats,
+        )
+        with closing(batches):
+            for _, views in batches:
+                with self._lock:
+                    leaves, vectors = (
+                        infer_prepared(self._infer, views, len(views), embeddings)
+                        if self.tta is not None
+                        else self._infer(views[0], embeddings)
+                    )
+                    if not np.isfinite(leaves).all():
+                        raise RuntimeError("Model returned non-finite species scores")
+                    result = Prediction(
+                        *hierarchy(leaves, self.selected, self.bundle.classes),
+                        topk,
+                        model_id=self.bundle.manifest["model_id"],
+                        backend=self.backend,
+                        preset=self.preset,
+                        class_list_sha256=self.class_list_sha256,
+                        precision=self.effective_precision,
+                        tta=self.tta.name if self.tta else "none",
+                        tta_views=len(views),
+                    )
+                yield (result, vectors) if embeddings else result

@@ -14,9 +14,9 @@ from deployment.mambo_deploy import Predictor
 from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES, infer_prepared
 from deployment.mambo_deploy.preprocessing import preprocess
 from deployment.mambo_deploy.results import Prediction, hierarchy
+from deployment.mambo_deploy.streaming import prepared_stream
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, PRESETS, canonical_rows, load_records, prepare_flemming, write_json
-from dev.releases.mambo_v3.prefetch import prepared_batches
 
 
 def runtime_settings(threads, backend="torch"):
@@ -98,20 +98,32 @@ def collect(args):
             embeddings = None
             if args.embeddings:
                 embeddings = np.lib.format.open_memmap(output / "embeddings.npy", mode="w+", dtype=np.float32, shape=(len(records), 1280))
-            timings = {"prepare_worker_seconds": 0.0, "input_wait_seconds": 0.0, "runtime_seconds": 0.0, "reduce_write_seconds": 0.0}
+            timings = {"input_wait_seconds": 0.0, "runtime_seconds": 0.0, "reduce_write_seconds": 0.0}
             report["pipeline"] = {"decode_workers": args.decode_workers, "prefetch_batches": args.prefetch_batches, "read_once": True}
-            batches = prepared_batches(records, args.root, args.batch_size, args.decode_workers, args.prefetch_batches, predictor.tta)
+            stream_stats = {}
+            report["streaming"] = stream_stats
+            batches = prepared_stream(
+                ((args.root / record["path"], record["sha256"]) for record in records),
+                args.batch_size,
+                tta=predictor.tta,
+                read_workers=args.read_workers,
+                prepare_workers=max(1, args.decode_workers),
+                read_window=args.read_window,
+                prefetch_batches=args.prefetch_batches,
+                encoded_budget=args.encoded_budget_mib * 1024**2,
+                stats=stream_stats,
+            )
             stack.callback(batches.close)
             completed = 0
             progress_start = last_progress = time.perf_counter()
             while True:
                 waiting = time.perf_counter()
                 try:
-                    offset, batch, views, prepare_seconds = next(batches)
+                    offset, views = next(batches)
+                    batch = records[offset : offset + len(views[0])]
                 except StopIteration:
                     break
                 timings["input_wait_seconds"] += time.perf_counter() - waiting
-                timings["prepare_worker_seconds"] += prepare_seconds
                 t = time.perf_counter()
                 if predictor.tta is not None:
                     leaf, vectors = infer_prepared(predictor._infer, views, len(views), args.embeddings)
@@ -137,7 +149,7 @@ def collect(args):
                     rate = completed / (now - progress_start)
                     # Retain the existing machine-readable count line for live monitors.
                     print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
-                    print(f"{rate:.1f} images/s; ETA {(len(records) - completed) / rate / 60:.1f} min", flush=True)
+                    print(f"{rate:.1f} images/s; ETA {(len(records) - completed) / rate / 60:.1f} min; pipeline={stream_stats}", flush=True)
                     last_progress = now
             if embeddings is not None:
                 embeddings.flush()
@@ -180,6 +192,9 @@ def main():
     run.add_argument("--threads", type=int, default=4)
     run.add_argument("--decode-workers", type=int, default=4)
     run.add_argument("--prefetch-batches", type=int, default=2, help="Prepared batches queued ahead; 0 disables overlap")
+    run.add_argument("--read-workers", type=int, default=32)
+    run.add_argument("--read-window", type=int, default=128)
+    run.add_argument("--encoded-budget-mib", type=int, default=256)
     run.add_argument("--presets", nargs="+", default=list(PRESETS))
     args = parser.parse_args()
     if args.command == "prepare":

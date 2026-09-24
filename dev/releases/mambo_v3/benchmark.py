@@ -142,6 +142,12 @@ def benchmark(args):
         for path, record in zip(paths, records, strict=True):
             if file_hash(path) != record["sha256"]:
                 raise ValueError("Benchmark image bytes changed")
+        _, stream_records = load_records(args.manifest, args.root, args.stream_images, args.seed)
+        stream_paths = [args.root / record["path"] for record in stream_records]
+        for path, record in zip(stream_paths, stream_records, strict=True):
+            if file_hash(path) != record["sha256"]:
+                raise ValueError("Streaming benchmark image bytes changed")
+        report["stream_samples"] = stream_records
         predict = predictor.predict_with_embeddings if args.embeddings else predictor.predict
         report["load_components_seconds"] = {}
         cold_start = time.perf_counter()
@@ -162,6 +168,28 @@ def benchmark(args):
                 cell["end_to_end"] = timing(lambda: predict(paths[:size]), args.repeats)
                 cell["prepared"] = timing(lambda: runtime(prepared, args.embeddings), args.repeats)
                 cell["images_per_second"] = size / cell["end_to_end"]["median_seconds"]
+                if size == max(args.batches):
+                    predictor.batch_size = size
+                    stream_stats = {}
+
+                    def stream_call():
+                        for _ in predictor.predict_stream(
+                            stream_paths,
+                            embeddings=args.embeddings,
+                            read_workers=args.read_workers,
+                            prepare_workers=args.stream_workers,
+                            read_window=max(size, args.read_window),
+                            prefetch_batches=args.prefetch_batches,
+                            encoded_budget=args.encoded_budget_mib * 1024**2,
+                            stats=stream_stats,
+                        ):
+                            pass
+
+                    cell["streaming"] = timing(stream_call, 3)
+                    cell["streaming"]["images"] = len(stream_paths)
+                    cell["streaming"]["images_per_second"] = cell["streaming"]["images"] / cell["streaming"]["median_seconds"]
+                    cell["streaming"]["pipeline"] = stream_stats
+                    predictor.batch_size = max(args.batches)
                 cell["resources"] = snapshot()
                 report["cells"].append(cell)
                 print(args.backend, args.device, args.embeddings, size, preset, round(cell["images_per_second"], 2), flush=True)
@@ -204,6 +232,12 @@ def main():
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--bank-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=20260923)
+    parser.add_argument("--stream-images", type=int, default=1024)
+    parser.add_argument("--stream-workers", type=int, default=4)
+    parser.add_argument("--read-workers", type=int, default=32)
+    parser.add_argument("--read-window", type=int, default=128)
+    parser.add_argument("--prefetch-batches", type=int, default=2)
+    parser.add_argument("--encoded-budget-mib", type=int, default=256)
     args = parser.parse_args()
     if args.bank_size < 1 or min(args.batches) < 1 or args.warmup < 1 or args.repeats < 3:
         parser.error("Positive batches/warmup and at least three repeats required")

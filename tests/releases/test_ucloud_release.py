@@ -108,6 +108,8 @@ def test_summary_preserves_ranks_scopes_and_rejects_changed_evidence(tmp_path):
             else:
                 records = [{"path": "image.jpg"}]
                 report.update(samples=records, cells=[dict(preset="full", batch_size=8, end_to_end={"seconds": [2] * 7})])
+                if variant != "v2":
+                    report["cells"][0]["streaming"] = {"images": 1024, "seconds": [4, 4, 4]}
                 if variant == "v2":
                     write_json(directory / "samples.json", records)
                     report.update(samples=1, sample_ids_sha256=file_hash(directory / "samples.json"))
@@ -118,6 +120,9 @@ def test_summary_preserves_ranks_scopes_and_rejects_changed_evidence(tmp_path):
     assert len(result["quality"]) == 30 and len(result["speed"]) == 5
     assert {r["f1"] for r in result["quality"]} == {0.4, 0.5}
     assert all(r["images_per_second"] == 4 for r in result["speed"])
+    assert len(result["streaming_speed"]) == 4
+    assert all(r["images_per_second"] == 256 for r in result["streaming_speed"])
+    assert (tmp_path / "summary/streaming_speed.csv").is_file()
     (tmp_path / "full/v2/full/mini_metric.csv").write_text("changed")
     with pytest.raises(ValueError, match="Changed predictions"):
         summarize(tmp_path, tmp_path / "changed-summary")
@@ -282,5 +287,5 @@ def test_loading_controls_apply_only_to_v3_collection():
             if phase != "benchmark" and not job["legacy"]:
                 assert command[command.index("--decode-workers") + 1] == "16"
                 assert command[command.index("--prefetch-batches") + 1] == "2"
-            else:
+            elif job["legacy"]:
                 assert "--prefetch-batches" not in command

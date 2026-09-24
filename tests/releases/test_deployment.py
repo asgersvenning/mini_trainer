@@ -516,3 +516,26 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
         assert len(sessions) == 2
         assert "onnx-embedding" in p.onnx_session_info
         assert [n for _, _, n in calls[-2:]] == [1, 2]
+
+
+@pytest.mark.parametrize("tta", ["none", "rotation30_pad25_3"])
+def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
+    from PIL import Image
+
+    predictor = Predictor(bundle, batch_size=2, tta=tta)
+
+    def infer(images, embeddings=False):
+        values = images.mean(axis=(2, 3))
+        return values, values.copy() if embeddings else None
+
+    monkeypatch.setattr(predictor, "_infer", infer)
+    paths = []
+    for i in range(5):
+        path = tmp_path / f"stream-{i}.png"
+        Image.fromarray(np.random.default_rng(i).integers(0, 256, (23, 29, 3), dtype=np.uint8)).save(path)
+        paths.append(path)
+    expected, vectors = predictor.predict_with_embeddings(paths)
+    observed = list(predictor.predict_stream(iter(paths), embeddings=True, read_workers=8, prepare_workers=3))
+    np.testing.assert_array_equal(np.concatenate([v for _, v in observed]), vectors)
+    np.testing.assert_array_equal(np.concatenate([r.indices for r, _ in observed]), expected.indices)
+    np.testing.assert_array_equal(np.concatenate([r.confidence for r, _ in observed]), expected.confidence)

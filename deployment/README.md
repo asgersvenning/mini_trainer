@@ -166,3 +166,31 @@ to your accuracy and processing-budget requirements.
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
 In-domain UCloud results will be reported separately; the [UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md) is ready for qualification.
+
+### Streaming image collections
+
+For large path collections, `predict_stream` overlaps reading and preparation with
+inference and yields one prediction batch at a time, without accumulating outputs:
+
+```python
+from contextlib import closing
+
+with closing(predictor.predict_stream(image_paths)) as batches:
+    for prediction in batches:
+        consume(prediction)
+```
+
+Use `embeddings=True` to yield `(prediction, embeddings)` pairs. Input order,
+class selection and TTA semantics match `predict`. `closing` also releases workers
+when you stop early; shutdown waits for filesystem calls already in progress.
+
+Tune `read_workers` and `read_window` to hide storage latency; tune
+`prepare_workers` for decoding/TTA CPU capacity. `prefetch_batches` bounds prepared
+images and `encoded_budget` bounds reserved encoded bytes (including active reads).
+An individual file larger than that budget fails explicitly. The defaults are
+32 readers, a 128-image window, the predictor's preparation worker count, two
+prefetched batches and 256 MiB encoded storage. These controls are API-only and
+independent of model batch size, which the read window must accommodate. A supplied
+`stats={}` receives queue counts, reserved bytes and cumulative input-wait time.
+The byte budget is not a total-process memory limit: decoding temporaries, prepared
+views, the model and yielded results also consume memory.

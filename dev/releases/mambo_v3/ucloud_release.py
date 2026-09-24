@@ -29,7 +29,13 @@ def configuration(path):
     for key in ("quality_batch_size", "qualification_count", "threads"):
         if not isinstance(data[key], int) or data[key] < 1:
             raise ValueError(f"Positive integer required: {key}")
-    for key, minimum in (("decode_workers", 0), ("prefetch_batches", 0)):
+    for key, minimum in (
+        ("decode_workers", 0),
+        ("prefetch_batches", 0),
+        ("read_workers", 1),
+        ("read_window", 1),
+        ("encoded_budget_mib", 1),
+    ):
         if key in data and (not isinstance(data[key], int) or data[key] < minimum):
             raise ValueError(f"Nonnegative integer required: {key}")
     for key in ("cpu_batches", "gpu_batches"):
@@ -97,6 +103,15 @@ def jobs(config, phase):
                         command += [
                             "collect",
                             "--decode-workers",
+                            str(config.get("decode_workers", config["threads"])),
+                            "--prefetch-batches",
+                            str(config.get("prefetch_batches", 2)),
+                        ]
+                    for key, default in (("read_workers", 32), ("read_window", 128), ("encoded_budget_mib", 256)):
+                        command += ["--" + key.replace("_", "-"), str(config.get(key, default))]
+                    if timing:
+                        command += [
+                            "--stream-workers",
                             str(config.get("decode_workers", config["threads"])),
                             "--prefetch-batches",
                             str(config.get("prefetch_batches", 2)),
@@ -209,6 +224,10 @@ def reuse_v2(config, phase, job, frozen):
         "dev/releases/mambo_v3/prefetch.py",
         "dev/releases/mambo_v3/ucloud_release.py",
         "deployment/mambo_deploy/augmentation.py",
+        "deployment/mambo_deploy/streaming.py",
+        "deployment/mambo_deploy/predictor.py",
+        "dev/releases/mambo_v3/benchmark.py",
+        "dev/releases/mambo_v3/ucloud_summary.py",
     }
     changed = {name for name in old["scripts"].keys() | new["scripts"].keys() if old["scripts"].get(name) != new["scripts"].get(name)}
     if changed - allowed:
@@ -320,9 +339,17 @@ if __name__ == "__main__":
     )
     parser.add_argument("--onnx-python", type=Path, help="With --new-campaign: use a separate interpreter for ONNX jobs")
     parser.add_argument("--decode-workers", type=int, help="With --new-campaign: V3 image preparation workers")
-    parser.add_argument("--prefetch-batches", type=int, help="With --new-campaign: bounded V3 preparation queue (0 disables)")
+    parser.add_argument(
+        "--prefetch-batches", type=int, help="With --new-campaign: bounded V3 preparation queue (0 minimizes decoded lookahead)"
+    )
     parser.add_argument("--reuse-v2-from", type=Path, help="With --new-campaign: verified completed V2 qualification/full evidence")
+    for key in ("read-workers", "read-window", "encoded-budget-mib"):
+        parser.add_argument("--" + key, type=int, help="With --new-campaign: streaming input control")
     args = parser.parse_args()
+    for key in ("read_workers", "read_window", "encoded_budget_mib"):
+        value = getattr(args, key)
+        if value is not None and (not args.new_campaign or value < 1):
+            parser.error("Positive streaming controls require --new-campaign")
     if any(value is not None for value in (args.decode_workers, args.prefetch_batches, args.reuse_v2_from)) and not args.new_campaign:
         parser.error("Collection overrides require --new-campaign")
     if any(value is not None and value < 0 for value in (args.decode_workers, args.prefetch_batches)):
@@ -334,7 +361,7 @@ if __name__ == "__main__":
     config = configuration(args.config.resolve())
     if args.onnx_python:
         config["onnx_python"] = os.path.abspath(args.onnx_python.expanduser())
-    for key in ("decode_workers", "prefetch_batches"):
+    for key in ("decode_workers", "prefetch_batches", "read_workers", "read_window", "encoded_budget_mib"):
         if (value := getattr(args, key)) is not None:
             config[key] = value
     if args.reuse_v2_from:
