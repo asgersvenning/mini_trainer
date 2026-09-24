@@ -211,3 +211,34 @@ def test_tail_support_requires_both_domains_and_strict_cutoff():
     assert eligible_classes(truth, accepted, 0) == {"kept", "at_truth_cutoff", "at_prediction_cutoff"}
     assert eligible_classes(truth, accepted, 5) == {"kept"}
     assert eligible_classes(truth, accepted, 20) == set()
+
+
+def test_matched_coverage_keeps_ties_and_does_not_use_truth(tmp_path):
+    import os
+    import subprocess
+
+    executable = os.environ.get("MAMBO_METRICS_PYTHON")
+    if not executable:
+        pytest.skip("Set MAMBO_METRICS_PYTHON to the pinned metric environment")
+    source = tmp_path / "ties.csv"
+    with source.open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(CSV_COLUMNS)
+        for i, confidence in enumerate((0.1, 0.5, 0.5, 0.9)):
+            for rank in range(3):
+                writer.writerow([i, f"{i}.jpg", rank, "truth", "prediction", confidence, 0, 0, 1, -1])
+    script = """
+import json,sys
+from mini_metrics.data import MetricDF
+from mini_metrics.metrics import evaluate_file
+from dev.releases.mambo_v3.composed_metrics import matched_thresholds
+from dev.releases.mambo_v3.metrics import finite_json
+d = MetricDF.from_source(sys.argv[1])
+t = matched_thresholds(d, .5)
+r = evaluate_file(d, threshold=t, simple=True, hierarchical=False, pattern='^coverage$', verbose=0)
+print(json.dumps({'thresholds':t, 'coverage':finite_json(r)['coverage']}))
+"""
+    result = json.loads(subprocess.check_output([executable, "-c", script, str(source)], text=True))
+    assert result["thresholds"] == [0.5, 0.5, 0.5]
+    # A shared score must not be arbitrarily split to manufacture exact target coverage.
+    assert result["coverage"] == {"0": 0.75, "1": 0.75, "2": 0.75}
