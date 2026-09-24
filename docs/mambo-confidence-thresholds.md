@@ -128,6 +128,13 @@ in threshold order without smoothing or a monotonic envelope; class membership
 changes can make macro precision irregular. The optimizer itself uses the exact
 calibration F1 curve, not this plotting grid. Undefined package results remain null.
 
+## Tail-truncated supplementary metrics
+
+The [tail-truncated comparison](mambo-tail-metrics.md) averages classes with more
+than 0, 5, 10 or 20 truth instances and accepted predictions, using a common class set
+across all five pipelines. It retains coverage/support counts and the full-support
+comparison: excluding rare and predicted-only families changes the interpretation.
+
 ## Evidence and reproduction
 
 The [metric table](assets/mambo-threshold-metrics.csv) contains all/known-truth

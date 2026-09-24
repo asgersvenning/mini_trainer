@@ -200,3 +200,13 @@ def test_family_audit_export_keeps_predicted_only_groups_without_recall(tmp_path
     assert rows["absent"]["recall"] == ""
     assert rows["absent"]["recall_weight"] == "0"
     assert rows["absent"]["f1_weight"] == "1"
+
+
+def test_tail_support_requires_both_domains_and_strict_cutoff():
+    from dev.releases.mambo_v3.tail_report import eligible_classes
+
+    truth = {"kept": 6, "at_truth_cutoff": 5, "at_prediction_cutoff": 20, "unpredicted": 30}
+    accepted = {"kept": 6, "at_truth_cutoff": 30, "at_prediction_cutoff": 5, "predicted_only": 100}
+    assert eligible_classes(truth, accepted, 0) == {"kept", "at_truth_cutoff", "at_prediction_cutoff"}
+    assert eligible_classes(truth, accepted, 5) == {"kept"}
+    assert eligible_classes(truth, accepted, 20) == set()
