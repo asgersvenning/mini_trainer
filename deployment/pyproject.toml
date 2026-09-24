@@ -10,7 +10,7 @@ license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 onnx = ["onnxruntime>=1.20"]
-onnx-cuda = ["onnxruntime-gpu>=1.20"]
+onnx-cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.21,<2"]
 torch = ["mini_trainer>=0.3.0"]
 
 [project.scripts]

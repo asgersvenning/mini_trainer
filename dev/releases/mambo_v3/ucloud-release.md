@@ -29,11 +29,32 @@ input identity and file size/modification time match; changed files are rehashed
 The final manifest is published only after every image completes. This first
 preparation pass reads the entire test set; run only one preparation process per cache.
 
-The isolated uv project pins the metric implementation and runtime dependencies,
+The isolated uv project pins the metric implementation and records exact runtime
+dependencies in its lockfile,
 with an [explicit CUDA PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/).
 It creates its own environment without changing the checkout's `.venv`. The current
 lock targets Python 3.13 and CUDA 13.0; qualify the node's driver/runtime before a
-full run. This environment has resolved locally but has not been GPU-qualified on UCloud.
+full run. ONNX Runtime requests its own matching CUDA/cuDNN dependencies. The
+CUDA-13 evaluation project allows ORT 1.27 or newer within major version 1; the
+consumer package also allows older CUDA runtime families. These are dependency
+ranges, not a claim that every allowed version/device combination has been tested.
+The locked ORT 1.30.0 build failed CUDA qualification on the allocated B200; this
+dependency-policy change does not establish a fix for that failure.
+
+Use uv’s normal targeted resolution to select another runtime version without
+editing the dependency declaration by hand:
+
+```sh
+uv lock --project dev/releases/mambo_v3/ucloud_env \
+  --upgrade-package onnxruntime-gpu==1.29.0
+uv sync --project dev/releases/mambo_v3/ucloud_env --locked
+```
+
+Here 1.29.0 illustrates version selection, not a B200-qualified recommendation.
+Omit `==1.29.0` to request the newest version allowed by the project. Keep the
+resulting lockfile with the campaign, and start fresh qualification after changing
+it; reports retain the runtime actually used. The resolver retains other locked
+versions where constraints permit. Existing models and image hashes are reusable.
 
 Models, V2 heads and archived split provenance download automatically from public
 ERDA storage with size/SHA-256 verification. The V2 BioCLIP backbone comes from its

@@ -34,8 +34,11 @@ print(result[0].confidence)  # confidence at each rank
   `vectors` is a float32 NumPy array of shape `[N,1280]` with unit-length rows.
   ONNX requires the bundle's embedding graph.
 
-For ONNX/CUDA, use the wheel’s `[onnx-cuda]` extra instead of `[onnx]`, with matching
-CUDA/cuDNN libraries, and select `device="cuda:0"`. For PyTorch, install the matching
+For ONNX/CUDA, use `[onnx-cuda]` instead of `[onnx]` and select `device="cuda:0"`.
+This requests ONNX Runtime’s matching CUDA/cuDNN packages; a compatible NVIDIA
+driver is still required. To reuse an already provisioned ONNX/CUDA environment,
+add the base wheel without extras. Runtime versions are selected by your package
+manager, not replaced during inference. For PyTorch, install the matching
 `mini_trainer` wheel and CPU/CUDA PyTorch build, then select `backend="torch"` and
 an explicit device. Requested but unavailable CUDA raises an error; individual
 ONNX operators may still execute on CPU. CPU and CUDA are the supported device
