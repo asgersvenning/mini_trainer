@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ PATHS = ("v2_python", "v3_python", "metrics_python", "legacy_source", "legacy_we
 
 def configuration(path):
     data = json.loads(path.read_text())
-    for key in (*PATHS, "onnx_python", "timing_manifest", "timing_root"):
+    for key in (*PATHS, "onnx_python", "reuse_v2_from", "timing_manifest", "timing_root"):
         if key in data:
             value = path.parent / Path(data[key]).expanduser()
             # Resolving a venv Python symlink selects the base interpreter and loses its packages.
@@ -28,6 +29,9 @@ def configuration(path):
     for key in ("quality_batch_size", "qualification_count", "threads"):
         if not isinstance(data[key], int) or data[key] < 1:
             raise ValueError(f"Positive integer required: {key}")
+    for key, minimum in (("decode_workers", 0), ("prefetch_batches", 0)):
+        if key in data and (not isinstance(data[key], int) or data[key] < minimum):
+            raise ValueError(f"Nonnegative integer required: {key}")
     for key in ("cpu_batches", "gpu_batches"):
         if not data[key] or any(not isinstance(b, int) or b < 1 for b in data[key]):
             raise ValueError(f"Positive batches required: {key}")
@@ -90,7 +94,13 @@ def jobs(config, phase):
                     interpreter = config.get("onnx_python", config["v3_python"]) if variant.startswith("onnx") else config["v3_python"]
                     command = [interpreter, "-m", f"dev.releases.mambo_v3.{module}"]
                     if not timing:
-                        command += ["collect", "--decode-workers", str(config["threads"])]
+                        command += [
+                            "collect",
+                            "--decode-workers",
+                            str(config.get("decode_workers", config["threads"])),
+                            "--prefetch-batches",
+                            str(config.get("prefetch_batches", 2)),
+                        ]
                     command += [
                         "--bundle",
                         config["bundle"],
@@ -170,6 +180,51 @@ def bank_identity(directory, report):
     return hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()
 
 
+def reuse_v2(config, phase, job, frozen):
+    """Copy completed V2 evidence only when its inputs, runtime and implementation still match."""
+    source = Path(config["reuse_v2_from"]) / phase
+    plan_path = source / "plan.json"
+    prior = json.loads(plan_path.read_text())
+    if "v2" not in prior["completed"]:
+        raise ValueError(f"No completed V2 evidence in {source}")
+    previous = next(item for item in prior["jobs"] if item["name"] == "v2")
+
+    def invocation(command):
+        command = list(command)
+        command[command.index("--output") + 1] = "<output>"
+        return command
+
+    if invocation(previous["command"]) != invocation(job["command"]):
+        raise ValueError("Cannot reuse V2 with changed invocation")
+    old, new = prior["fingerprint"]["inputs"], frozen["inputs"]
+    for key in ("manifest", "bundle"):
+        if old[key] != new[key]:
+            raise ValueError(f"Cannot reuse V2 with changed {key}")
+    interpreter = config["v2_python"]
+    if old["environments"][interpreter] != new["environments"][interpreter]:
+        raise ValueError("Cannot reuse V2 with changed environment")
+    # These changes implement V3 collection/prefetch and campaign orchestration only.
+    allowed = {
+        "dev/releases/mambo_v3/evaluate.py",
+        "dev/releases/mambo_v3/prefetch.py",
+        "dev/releases/mambo_v3/ucloud_release.py",
+        "deployment/mambo_deploy/augmentation.py",
+    }
+    changed = {name for name in old["scripts"].keys() | new["scripts"].keys() if old["scripts"].get(name) != new["scripts"].get(name)}
+    if changed - allowed:
+        raise ValueError(f"Cannot reuse V2 with changed scripts: {sorted(changed - allowed)}")
+    report = validated_report(source / "v2")
+    if file_hash(source / "v2/samples.json") != report["sample_ids_sha256"]:
+        raise ValueError("Changed source V2 sample identities")
+    digest = file_hash(source / "v2/report.json")
+    if digest != prior["reports_sha256"]["v2"]:
+        raise ValueError("Changed source V2 report")
+    destination = Path(config["output"]) / phase / "v2"
+    shutil.copytree(source / "v2", destination)
+    print(f"Reused completed V2 {phase} from {source}", flush=True)
+    return {"source": str(source), "plan_sha256": file_hash(plan_path), "report_sha256": digest}
+
+
 def run(config, phase, resume=False):
     frozen = fingerprint(config)
     output = Path(config["output"]) / phase
@@ -208,6 +263,8 @@ def run(config, phase, resume=False):
             directory = output / job["name"]
             if directory.exists() and not (directory / "report.json").exists():
                 raise ValueError(f"Partial job {directory}; preserve it elsewhere before resuming")
+            if not directory.exists() and job["legacy"] and phase != "benchmark" and config.get("reuse_v2_from"):
+                plan.setdefault("reused", {})[job["name"]] = reuse_v2(config, phase, job, frozen)
             if not directory.exists():
                 env = dict(
                     os.environ,
@@ -262,7 +319,14 @@ if __name__ == "__main__":
         help="Qualification only: reuse prepared assets with the active Python; save config.json in a new results directory",
     )
     parser.add_argument("--onnx-python", type=Path, help="With --new-campaign: use a separate interpreter for ONNX jobs")
+    parser.add_argument("--decode-workers", type=int, help="With --new-campaign: V3 image preparation workers")
+    parser.add_argument("--prefetch-batches", type=int, help="With --new-campaign: bounded V3 preparation queue (0 disables)")
+    parser.add_argument("--reuse-v2-from", type=Path, help="With --new-campaign: verified completed V2 qualification/full evidence")
     args = parser.parse_args()
+    if any(value is not None for value in (args.decode_workers, args.prefetch_batches, args.reuse_v2_from)) and not args.new_campaign:
+        parser.error("Collection overrides require --new-campaign")
+    if any(value is not None and value < 0 for value in (args.decode_workers, args.prefetch_batches)):
+        parser.error("Workers and prefetch must be nonnegative")
     if args.onnx_python and not args.new_campaign:
         parser.error("--onnx-python requires --new-campaign; subsequent phases use the saved config")
     if args.new_campaign and (args.phase != "qualification" or args.resume or args.dry_run):
@@ -270,6 +334,11 @@ if __name__ == "__main__":
     config = configuration(args.config.resolve())
     if args.onnx_python:
         config["onnx_python"] = os.path.abspath(args.onnx_python.expanduser())
+    for key in ("decode_workers", "prefetch_batches"):
+        if (value := getattr(args, key)) is not None:
+            config[key] = value
+    if args.reuse_v2_from:
+        config["reuse_v2_from"] = str(args.reuse_v2_from.expanduser().resolve())
     if args.new_campaign:
         config = new_campaign(config, args.new_campaign)
     if args.dry_run:

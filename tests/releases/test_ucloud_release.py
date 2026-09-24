@@ -221,3 +221,66 @@ def test_separate_onnx_interpreter_only_routes_onnx_jobs(phase):
     for job in jobs(config, phase):
         expected = config["onnx_python"] if job["variant"].startswith("onnx") else config["v2_python" if job["legacy"] else "v3_python"]
         assert job["command"][0] == expected
+
+
+@pytest.mark.parametrize("tamper", [None, "manifest", "environment", "script", "csv", "samples"])
+def test_reuse_completed_v2_only_when_evidence_matches(tmp_path, tamper):
+    import copy
+
+    from dev.benchmarks.inference.onnx_inference import file_hash
+    from dev.releases.mambo_v3.evaluation_data import write_json
+    from dev.releases.mambo_v3.ucloud_release import reuse_v2
+
+    source = tmp_path / "old/full"
+    (source / "v2/full").mkdir(parents=True)
+    (source / "v2/full/mini_metric.csv").write_text("original predictions")
+    (source / "v2/samples.json").write_text("[]")
+    report = dict(
+        status="complete",
+        csv_sha256={"full": file_hash(source / "v2/full/mini_metric.csv")},
+        sample_ids_sha256=file_hash(source / "v2/samples.json"),
+    )
+    write_json(source / "v2/report.json", report)
+    inputs = dict(
+        manifest="manifest",
+        bundle="bundle",
+        environments={"python": {"version": "same"}},
+        scripts={"legacy.py": "same", "dev/releases/mambo_v3/evaluate.py": "old"},
+    )
+    job = dict(name="v2", command=["python", "--output", "old-output"])
+    plan = dict(completed=["v2"], jobs=[job], fingerprint={"inputs": inputs}, reports_sha256={"v2": file_hash(source / "v2/report.json")})
+    write_json(source / "plan.json", plan)
+    frozen = {"inputs": copy.deepcopy(inputs)}
+    frozen["inputs"]["scripts"]["dev/releases/mambo_v3/evaluate.py"] = "updated-v3-only"
+    config = dict(reuse_v2_from=str(source.parent), output=str(tmp_path / "new"), v2_python="python")
+    if tamper == "manifest":
+        frozen["inputs"]["manifest"] = "different"
+    elif tamper == "environment":
+        frozen["inputs"]["environments"]["python"] = {"version": "different"}
+    elif tamper == "script":
+        frozen["inputs"]["scripts"]["legacy.py"] = "different"
+    elif tamper == "csv":
+        (source / "v2/full/mini_metric.csv").write_text("changed")
+    elif tamper == "samples":
+        (source / "v2/samples.json").write_text("changed")
+    if tamper:
+        with pytest.raises(ValueError):
+            reuse_v2(config, "full", job, frozen)
+        assert not (tmp_path / "new/full/v2").exists()
+    else:
+        result = reuse_v2(config, "full", job, frozen)
+        assert result["source"] == str(source)
+        assert (tmp_path / "new/full/v2/full/mini_metric.csv").read_text() == "original predictions"
+
+
+def test_loading_controls_apply_only_to_v3_collection():
+    config = configuration(CONFIG.resolve())
+    config.update(decode_workers=16, prefetch_batches=2)
+    for phase in ("qualification", "full", "benchmark"):
+        for job in jobs(config, phase):
+            command = job["command"]
+            if phase != "benchmark" and not job["legacy"]:
+                assert command[command.index("--decode-workers") + 1] == "16"
+                assert command[command.index("--prefetch-batches") + 1] == "2"
+            else:
+                assert "--prefetch-batches" not in command

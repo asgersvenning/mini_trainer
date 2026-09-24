@@ -5,18 +5,18 @@ import csv
 import hashlib
 import platform
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from pathlib import Path
 
 import numpy as np
 
 from deployment.mambo_deploy import Predictor
-from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
+from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES, infer_prepared
 from deployment.mambo_deploy.preprocessing import preprocess
 from deployment.mambo_deploy.results import Prediction, hierarchy
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, PRESETS, canonical_rows, load_records, prepare_flemming, write_json
+from dev.releases.mambo_v3.prefetch import prepared_batches
 
 
 def runtime_settings(threads, backend="torch"):
@@ -88,7 +88,6 @@ def collect(args):
             for name, selected in selectors.items()
         }
         with ExitStack() as stack:
-            pool = stack.enter_context(ThreadPoolExecutor(max_workers=args.decode_workers)) if args.decode_workers else None
             writers = {}
             for name in selectors:
                 directory = output / name
@@ -99,28 +98,26 @@ def collect(args):
             embeddings = None
             if args.embeddings:
                 embeddings = np.lib.format.open_memmap(output / "embeddings.npy", mode="w+", dtype=np.float32, shape=(len(records), 1280))
-            timings = {
-                "decode_preprocess_seconds": 0.0,
-                "runtime_seconds": 0.0,
-                "reduce_write_seconds": 0.0,
-                "tta_prepare_infer_seconds": 0.0,
-            }
-            for offset in range(0, len(records), args.batch_size):
-                batch = records[offset : offset + args.batch_size]
-                paths = [args.root / r["path"] for r in batch]
-                for path, record in zip(paths, batch, strict=True):
-                    if file_hash(path) != record["sha256"]:
-                        raise ValueError(f"Image bytes changed: {path}")
+            timings = {"prepare_worker_seconds": 0.0, "input_wait_seconds": 0.0, "runtime_seconds": 0.0, "reduce_write_seconds": 0.0}
+            report["pipeline"] = {"decode_workers": args.decode_workers, "prefetch_batches": args.prefetch_batches, "read_once": True}
+            batches = prepared_batches(records, args.root, args.batch_size, args.decode_workers, args.prefetch_batches, predictor.tta)
+            stack.callback(batches.close)
+            completed = 0
+            progress_start = last_progress = time.perf_counter()
+            while True:
+                waiting = time.perf_counter()
+                try:
+                    offset, batch, views, prepare_seconds = next(batches)
+                except StopIteration:
+                    break
+                timings["input_wait_seconds"] += time.perf_counter() - waiting
+                timings["prepare_worker_seconds"] += prepare_seconds
                 t = time.perf_counter()
                 if predictor.tta is not None:
-                    leaf, vectors = predictor._infer_batch(paths, args.embeddings, pool)
-                    timings["tta_prepare_infer_seconds"] += time.perf_counter() - t
+                    leaf, vectors = infer_prepared(predictor._infer, views, len(views), args.embeddings)
                 else:
-                    images = predictor._prepare(paths, pool)
-                    timings["decode_preprocess_seconds"] += time.perf_counter() - t
-                    t = time.perf_counter()
-                    leaf, vectors = predictor._infer(images, args.embeddings)
-                    timings["runtime_seconds"] += time.perf_counter() - t
+                    leaf, vectors = predictor._infer(views[0], args.embeddings)
+                timings["runtime_seconds"] += time.perf_counter() - t
                 if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
                     raise ValueError("Invalid leaf scores")
                 if embeddings is not None:
@@ -133,8 +130,15 @@ def collect(args):
                     result = Prediction(*hierarchy(leaf, selected, predictor.bundle.classes))
                     writers[name].writerows(canonical_rows(batch, result, offset))
                 timings["reduce_write_seconds"] += time.perf_counter() - t
-                if offset % (args.batch_size * 50) == 0:
-                    print(f"{args.backend} {args.device}: {offset + len(batch)}/{len(records)}", flush=True)
+                del views
+                completed += len(batch)
+                now = time.perf_counter()
+                if now - last_progress >= 5 or completed == len(records):
+                    rate = completed / (now - progress_start)
+                    # Retain the existing machine-readable count line for live monitors.
+                    print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
+                    print(f"{rate:.1f} images/s; ETA {(len(records) - completed) / rate / 60:.1f} min", flush=True)
+                    last_progress = now
             if embeddings is not None:
                 embeddings.flush()
         if args.backend == "onnx":
@@ -175,13 +179,14 @@ def main():
     run.add_argument("--batch-size", type=int, default=32)
     run.add_argument("--threads", type=int, default=4)
     run.add_argument("--decode-workers", type=int, default=4)
+    run.add_argument("--prefetch-batches", type=int, default=2, help="Prepared batches queued ahead; 0 disables overlap")
     run.add_argument("--presets", nargs="+", default=list(PRESETS))
     args = parser.parse_args()
     if args.command == "prepare":
         prepare_flemming(args.root, args.reference, args.output)
     else:
-        if args.batch_size < 1 or args.decode_workers < 0:
-            parser.error("batch-size must be positive and decode-workers nonnegative")
+        if args.batch_size < 1 or args.decode_workers < 0 or args.prefetch_batches < 0:
+            parser.error("batch-size must be positive; decode-workers and prefetch-batches must be nonnegative")
         collect(args)
 
 

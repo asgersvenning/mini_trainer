@@ -163,14 +163,19 @@ def infer_augmented(runtime, items, tta, embeddings=False, pool=None):
         return list(pool.map(fn, values)) if pool and len(values) > 1 else [fn(item) for item in values]
 
     decoded = mapped(_rgb, items)
+    views = (np.stack(mapped(partial(_prepare_view, transform=transform), decoded)) for transform in tta.transforms)
+    return infer_prepared(runtime, views, len(tta.transforms), embeddings)
+
+
+def infer_prepared(runtime, views, view_count, embeddings=False):
+    """Aggregate prepared views in recipe order, identically for streaming and prefetched inputs."""
     leaves, vectors = None, None
-    for transform in tta.transforms:
-        prepared = np.stack(mapped(partial(_prepare_view, transform=transform), decoded))
+    for prepared in views:
         scores, embedding = runtime(prepared, embeddings)
-        scores = scores.astype(np.float32) / np.float32(len(tta.transforms))
+        scores = scores.astype(np.float32) / np.float32(view_count)
         leaves = scores if leaves is None else leaves + scores
         if embeddings:
-            embedding = embedding.astype(np.float32) / np.float32(len(tta.transforms))
+            embedding = embedding.astype(np.float32) / np.float32(view_count)
             vectors = embedding if vectors is None else vectors + embedding
     if embeddings:
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)

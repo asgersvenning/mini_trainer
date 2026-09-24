@@ -49,7 +49,7 @@ passed PyTorch and ONNX inference on CPU and CUDA with default TTA, both
 prediction/embedding modes, regional and custom lists. Both CUDA ONNX graphs used
 full optimization without fallback. This is a four-image contract check, not a
 quality or speed comparison. The original V2 pipeline also passed a four-image
-CUDA qualification in the same environment. B200 qualification remains pending.
+CUDA qualification in the same environment. B200 qualification subsequently passed with the separate ONNX runtime described below.
 
 | Dependency | Previous evaluation lock | Fresh laptop resolution |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ python dev/monitor_mambo_release.py ~/.cache/mambo-ucloud/runs-ptx/full
 It shows job completion, image counts, percentages, recent images/second and
 estimated time remaining for the current job at its last checkpoint. Leave it
 running: ETA requires two observed progress checkpoints (the collectors log every
-50 batches, normally 1,600 images). Initialization has no image ETA. Stale
+50 batches in older collectors; the concurrent V3 collector logs approximately every five seconds). Initialization has no image ETA. Stale
 checkpoints suppress ETA; finalization is not complete until the report confirms
 it. Different variants have different throughput, so no whole-campaign ETA is
 inferred from the current model. This monitors collection/qualification, not metrics
@@ -228,7 +228,7 @@ On 25 September 2026 it passed standalone Sigmoid and the four-image MAMBO
 contract check on the RTX 3080 Ti Laptop GPU: both ONNX graphs, default TTA,
 embeddings and regional/custom masks, with full optimization and no retry.
 The user also confirmed the standalone CUDA Sigmoid probe passes on B200.
-Full-model B200 qualification and quality/speed results remain outstanding.
+The user subsequently confirmed full-model B200 qualification passed for all five variants. Full quality/speed results remain outstanding.
 
 After pulling the helper, test on B200 from the checkout root in an isolated
 environment; this leaves the CUDA 13 PyTorch campaign environment intact:
@@ -277,3 +277,65 @@ python -m dev.releases.mambo_v3.ucloud_summary \
 
 The ONNX environment is in `/tmp` for this experiment; retain it for the campaign's
 lifetime. Recreate and requalify it if the node's temporary storage is discarded.
+
+## Restart V3 collection with concurrent preparation
+
+For the 48-vCPU B200 allocation, start with **16 preparation workers and two
+prefetched batches**. V3 collection now reads each image once for both SHA-256
+verification and decoding, and prepares subsequent batches (including all TTA
+views) while the main thread runs inference and writes predictions. Ordering,
+preprocessing and prediction aggregation are unchanged. The queue bounds prepared
+image memory; it does not cache the dataset. This targets IO latency and idle GPU
+time without changing model precision, batch size or postprocessing.
+
+Stop the old collection and cancel any queued shell follow-up commands **before
+pulling this change**. Keep its results and both runtime environments. No package
+installation or dataset preparation is needed. From the updated checkout:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-ptx/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-prefetch \
+  --decode-workers 16 --prefetch-batches 2 \
+  --reuse-v2-from ~/.cache/mambo-ucloud/runs-ptx
+```
+
+This inherits the separate ONNX interpreter. Completed V2 qualification/full
+results are copied only after checking the invocation, inputs, environment,
+relevant code and output hashes. V3 variants are requalified and recollected;
+partial old V3 results remain untouched. After qualification succeeds:
+
+```sh
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-prefetch/config.json
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-prefetch/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-prefetch/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-prefetch \
+  --output ~/.cache/mambo-ucloud/summary-prefetch
+```
+
+Monitor from another terminal:
+
+```sh
+python dev/monitor_mambo_release.py ~/.cache/mambo-ucloud/runs-prefetch/full
+```
+
+V3 logs counts and throughput/ETA approximately every five seconds. Reports
+separate `input_wait_seconds`, `runtime_seconds` and `reduce_write_seconds`;
+`prepare_worker_seconds` overlaps these and must not be added to them as elapsed
+time. Runtime time includes first-use initialization. These counters help assess
+whether preparation keeps inference supplied before changing worker or queue sizes.
+Set `--prefetch-batches 0` when creating a campaign to disable overlap.
+
+A 256-image laptop ONNX check (batch 32; four workers before, sixteen afterward)
+produced byte-identical prediction CSVs, and byte-identical TTA embeddings.
+Collection elapsed time decreased from 5.49 to 4.64 seconds without TTA and from
+9.41 to 7.48 seconds with default TTA and embeddings. These short checks establish
+local benefit and output preservation, not B200 throughput. B200 full collection
+remains to be measured. The dedicated speed benchmarks still measure the deployment
+API unchanged, not this prefetched evaluation collector; all benchmark variants
+run afresh, including V2.
