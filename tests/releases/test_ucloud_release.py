@@ -166,3 +166,26 @@ def test_configuration_preserves_virtual_environment_interpreter(tmp_path):
         assert loaded[key] == str(interpreter)
     prefix = subprocess.check_output([loaded["v2_python"], "-c", "import sys; print(sys.prefix)"], text=True).strip()
     assert Path(prefix) == environment
+
+
+def test_runtime_evidence_detects_installed_package_changes(tmp_path):
+    import subprocess
+    import venv
+
+    from dev.releases.mambo_v3.ucloud_release import runtime_environments
+
+    environment = tmp_path / "runtime"
+    venv.EnvBuilder(with_pip=False).create(environment)
+    interpreter = str(environment / "bin/python")
+    config = {key: interpreter for key in ("v2_python", "v3_python", "metrics_python")}
+    before = runtime_environments(config)
+    site = Path(subprocess.check_output([interpreter, "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"], text=True).strip())
+    dist = site / "example-1.0.dist-info"
+    dist.mkdir()
+    metadata = dist / "METADATA"
+    metadata.write_text("Metadata-Version: 2.1\nName: example\nVersion: 1.0\n")
+    installed = runtime_environments(config)
+    assert before != installed
+    assert installed[interpreter]["packages"] == [["example", "1.0", None]]
+    metadata.write_text("Metadata-Version: 2.1\nName: example\nVersion: 2.0\n")
+    assert runtime_environments(config) != installed

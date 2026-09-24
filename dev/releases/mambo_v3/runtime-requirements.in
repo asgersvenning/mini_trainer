@@ -1,0 +1,5 @@
+# Install from the repository root. Runtime ranges come from the packages;
+# only the metric implementation is fixed to preserve comparison semantics.
+./deployment[onnx-cuda]
+.[recommended,bioclip,timm]
+mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@70cc69adc05362863439277048e06386c1f885e1

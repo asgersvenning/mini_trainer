@@ -7,14 +7,24 @@ wheel. No allocation or remote submission is performed by these commands.
 
 ## Setup with uv
 
-From the checkout root:
+From the checkout root, resolve runtime dependencies afresh for this machine.
+If already prepared, run only the first two commands, then follow
+[the existing-campaign instructions](#existing-prepared-campaign-reuse-models-and-image-hashes):
 
 ```sh
-uv sync --project dev/releases/mambo_v3/ucloud_env --locked
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.setup_ucloud_release \
-  --metadata /work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
+uv venv --python 3.13 .venv-mambo-runtime
+uv pip install --python .venv-mambo-runtime/bin/python --torch-backend=auto \
+  -r dev/releases/mambo_v3/runtime-requirements.in
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.setup_ucloud_release \
+  --metadata /work/datasets/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
 ```
+
+This uses the deployment/training packages' dependency ranges, without reading
+repository lockfiles or the evaluation project's exact runtime pins. Only the
+`mini_metrics` revision remains fixed, to preserve metric semantics. uv selects the
+PyTorch backend from the driver; ONNX Runtime's upstream CUDA/cuDNN extras supply
+its runtime dependencies. GPU execution still needs the qualification below.
+The separate environment preserves the checkout's existing `.venv`.
 
 The Parquet path is the only required dataset argument. Images are expected at
 `images/<species>/<filename>` below its parent; use `--root` if mounted elsewhere.
@@ -29,32 +39,59 @@ input identity and file size/modification time match; changed files are rehashed
 The final manifest is published only after every image completes. This first
 preparation pass reads the entire test set; run only one preparation process per cache.
 
-The isolated uv project pins the metric implementation and records exact runtime
-dependencies in its lockfile,
-with an [explicit CUDA PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/).
-It creates its own environment without changing the checkout's `.venv`. The current
-lock targets Python 3.13 and CUDA 13.0; qualify the node's driver/runtime before a
-full run. ONNX Runtime requests its own matching CUDA/cuDNN dependencies. The
-CUDA-13 evaluation project allows ORT 1.27 or newer within major version 1; the
-consumer package also allows older CUDA runtime families. These are dependency
-ranges, not a claim that every allowed version/device combination has been tested.
-The locked ORT 1.30.0 build failed CUDA qualification on the allocated B200; this
-dependency-policy change does not establish a fix for that failure.
+The old `ucloud_env/uv.lock` remains available for reproducing earlier installs;
+it is not the default installation path. Record the resolved environment after
+qualification (`uv pip freeze --python .venv-mambo-runtime/bin/python`), and keep
+it unchanged during the campaign. Each phase records installed package versions
+and source metadata and refuses to continue from qualification if they change.
+The first fresh local resolution (24 September 2026, RTX 3080 Ti Laptop GPU)
+passed PyTorch and ONNX inference on CPU and CUDA with default TTA, both
+prediction/embedding modes, regional and custom lists. Both CUDA ONNX graphs used
+full optimization without fallback. This is a four-image contract check, not a
+quality or speed comparison. The original V2 pipeline also passed a four-image
+CUDA qualification in the same environment. B200 qualification remains pending.
 
-Use uv’s normal targeted resolution to select another runtime version without
-editing the dependency declaration by hand:
+| Dependency | Previous evaluation lock | Fresh laptop resolution |
+| --- | --- | --- |
+| PyTorch | 2.12.0+cu130 | 2.14.0+cu130 |
+| torchvision | 0.27.0+cu130 | 0.29.0+cu130 |
+| ONNX Runtime GPU | 1.30.0 | 1.30.0 |
+| cuDNN | 9.20.0.48 | 9.24.0.43 |
+| timm | 1.0.25 | 1.0.30 |
+
+These are recorded results, not new installation pins. A fresh resolution on
+UCloud may differ; retain its qualification evidence before drawing conclusions.
+
+### Existing prepared campaign: reuse models and image hashes
+
+After installing the environment above, **skip preparation** if you already have
+`~/.cache/mambo-ucloud/ucloud-release.json`. Copy that configuration to use the new
+interpreter and a new results directory; retain the old failure evidence:
 
 ```sh
-uv lock --project dev/releases/mambo_v3/ucloud_env \
-  --upgrade-package onnxruntime-gpu==1.29.0
-uv sync --project dev/releases/mambo_v3/ucloud_env --locked
+.venv-mambo-runtime/bin/python - <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import sys
+
+cache = Path.home() / ".cache/mambo-ucloud"
+config = json.loads((cache / "ucloud-release.json").read_text())
+for key in ("v2_python", "v3_python", "metrics_python"):
+    config[key] = os.path.abspath(sys.executable)
+config["output"] = str(cache / "runs-fresh-runtime")
+path = cache / "ucloud-release-fresh.json"
+with path.open("x") as stream:
+    json.dump(config, stream, indent=2)
+print(path)
+PYTHON
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/ucloud-release-fresh.json
 ```
 
-Here 1.29.0 illustrates version selection, not a B200-qualified recommendation.
-Omit `==1.29.0` to request the newest version allowed by the project. Keep the
-resulting lockfile with the campaign, and start fresh qualification after changing
-it; reports retain the runtime actually used. The resolver retains other locked
-versions where constraints permit. Existing models and image hashes are reusable.
+For subsequent phases below, use `ucloud-release-fresh.json`, `runs-fresh-runtime`
+and a separate summary directory. No model downloads or image rehashing are needed.
+Do not reinstall packages between qualification and full collection/benchmarking.
 
 Models, V2 heads and archived split provenance download automatically from public
 ERDA storage with size/SHA-256 verification. The V2 BioCLIP backbone comes from its
@@ -74,8 +111,7 @@ its environment label, visible GPU, threads and batch sizes **before qualificati
 A MIG slice is one visible CUDA device; the default selects device `0`.
 
 ```sh
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.ucloud_release qualification \
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release qualification \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
 ```
 
@@ -94,17 +130,13 @@ CPU allocation and storage mount alongside the generated environment label.
 After qualification:
 
 ```sh
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.ucloud_release full \
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release full \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.metrics \
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.metrics \
   --collection ~/.cache/mambo-ucloud/runs/full
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.ucloud_release benchmark \
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release benchmark \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
-uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
-  -m dev.releases.mambo_v3.ucloud_summary \
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_summary \
   --root ~/.cache/mambo-ucloud/runs \
   --output ~/.cache/mambo-ucloud/summary
 ```

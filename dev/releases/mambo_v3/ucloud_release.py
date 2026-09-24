@@ -105,6 +105,20 @@ def jobs(config, phase):
     return planned
 
 
+def runtime_environments(config):
+    """Record installed environments, independently of how they were resolved."""
+    script = (
+        "import importlib.metadata as m, json, sys; "
+        "print(json.dumps({'python': sys.version, 'packages': sorted("
+        "[d.metadata['Name'], d.version, d.read_text('direct_url.json')] "
+        "for d in m.distributions())}))"
+    )
+    return {
+        interpreter: json.loads(subprocess.check_output([interpreter, "-I", "-c", script], text=True))
+        for interpreter in sorted({config[key] for key in ("v2_python", "v3_python", "metrics_python")})
+    }
+
+
 def fingerprint(config):
     manifest = json.loads(Path(config["manifest"]).read_text())
     if manifest.get("dataset") != "global-lepi-test" or len(manifest["records"]) != 632913:
@@ -118,7 +132,7 @@ def fingerprint(config):
         for folder in (ROOT / "dev/releases/mambo_v3", ROOT / "deployment/mambo_deploy")
         for p in sorted(folder.glob("*.py"))
     }
-    hashes["environment_lock"] = file_hash(Path(__file__).with_name("ucloud_env") / "uv.lock")
+    hashes["environments"] = runtime_environments(config)
     hashes["revision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     return {"config": config, "inputs": hashes}
 

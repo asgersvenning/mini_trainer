@@ -32,3 +32,4 @@ examples/test.ipynb
 /local-evidence/
 /.worktrees/
 /.venv
+/.venv-mambo-runtime/
