@@ -147,3 +147,22 @@ def test_legacy_archive_uses_repository_root_from_any_working_directory(tmp_path
     assert (source / "mini_trainer/__init__.py").read_bytes() == expected
     assert (source / "mini_trainer/deploy.py").is_file()
     prepare_legacy_source(source)  # Reuse the completed extraction on setup retries.
+
+
+def test_configuration_preserves_virtual_environment_interpreter(tmp_path):
+    import subprocess
+    import venv
+
+    environment = tmp_path / "runtime"
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
+    interpreter = environment / "bin/python"
+    config = json.loads(CONFIG.read_text())
+    for key in ("v2_python", "v3_python", "metrics_python"):
+        config[key] = "runtime/bin/python"
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    loaded = configuration(path)
+    for key in ("v2_python", "v3_python", "metrics_python"):
+        assert loaded[key] == str(interpreter)
+    prefix = subprocess.check_output([loaded["v2_python"], "-c", "import sys; print(sys.prefix)"], text=True).strip()
+    assert Path(prefix) == environment

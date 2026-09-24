@@ -21,7 +21,9 @@ def configuration(path):
     data = json.loads(path.read_text())
     for key in (*PATHS, "timing_manifest", "timing_root"):
         if key in data:
-            data[key] = str((path.parent / data[key]).resolve())
+            value = path.parent / Path(data[key]).expanduser()
+            # Resolving a venv Python symlink selects the base interpreter and loses its packages.
+            data[key] = os.path.abspath(value) if key.endswith("_python") else str(value.resolve())
     for key in ("quality_batch_size", "qualification_count", "threads"):
         if not isinstance(data[key], int) or data[key] < 1:
             raise ValueError(f"Positive integer required: {key}")
@@ -192,7 +194,12 @@ def run(config, phase, resume=False):
                 )
                 print(job["name"], flush=True)
                 with (output / f"{job['name']}.log").open("w") as stream:
-                    subprocess.run(job["command"], cwd=ROOT, env=env, check=True, stdout=stream, stderr=subprocess.STDOUT)
+                    try:
+                        subprocess.run(job["command"], cwd=ROOT, env=env, check=True, stdout=stream, stderr=subprocess.STDOUT)
+                    except subprocess.CalledProcessError:
+                        log = output / f"{job['name']}.log"
+                        print(f"Job failed; log: {log}\n" + "\n".join(log.read_text(errors="replace").splitlines()[-25:]), flush=True)
+                        raise
             report = validated_report(directory)
             digest = file_hash(directory / "report.json")
             if job["name"] in plan["reports_sha256"] and plan["reports_sha256"][job["name"]] != digest:
