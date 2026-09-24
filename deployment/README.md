@@ -125,40 +125,29 @@ images, including out-of-vocabulary truth. `mini_metrics` selects calibrated
 thresholds per pipeline/rank on 5,852 separate images. Recipe exploration used
 Flemming too, so this is descriptive evidence, not independent validation.
 
-The compact table shows **macro-F1 for common classes with support >5 in truth and
-accepted predictions**. Coverage is over all reporting images. The averaging domain
-excludes truth classes accounting for 15.30% / 0.42% / 0.01% of images at
-species/genus/family without thresholds, and 18.95% / 11.21% / 0.03% after calibration.
-No evaluation rows are discarded; the class sets differ between confidence settings.
+The quality figure compares **unthresholded and calibrated predictions**, with
+full-support and support >5 macro metrics alongside acceptance coverage. TTA uses
+`rotation30_pad25_3`; its quality gain comes at the throughput cost shown below.
 
-| Pipeline | Confidence | Species F1 | Genus F1 | Family F1 | Coverage: species / genus / family |
-|---|---|---:|---:|---:|---:|
-| V2 | None | 0.784 | 0.794 | 0.824 | 100% / 100% / 100% |
-| V2 | Calibrated | 0.780 | 0.787 | 0.802 | 69.7% / 69.8% / 77.4% |
-| V3 PyTorch | None | 0.807 | 0.806 | 0.783 | 100% / 100% / 100% |
-| V3 PyTorch | Calibrated | 0.802 | 0.831 | 0.816 | 70.8% / 75.8% / 73.1% |
-| V3 ONNX | None | 0.807 | 0.806 | 0.784 | 100% / 100% / 100% |
-| V3 ONNX | Calibrated | 0.800 | 0.829 | 0.817 | 70.5% / 75.4% / 73.3% |
-| V3 PyTorch + TTA | None | 0.857 | 0.855 | 0.851 | 100% / 100% / 100% |
-| V3 PyTorch + TTA | Calibrated | 0.862 | 0.886 | 0.880 | 81.2% / 84.3% / 82.1% |
-| V3 ONNX + TTA | None | 0.857 | 0.855 | 0.850 | 100% / 100% / 100% |
-| V3 ONNX + TTA | Calibrated | 0.863 | 0.886 | 0.881 | 81.3% / 84.3% / 82.1% |
+![Species, genus and family quality: full and truncated support, both confidence settings, and coverage](../docs/assets/mambo-promoted-quality.svg)
 
-Full-support metrics can give different rankings, especially for rare or predicted-only
-families. The [complete comparison and quality figure](../docs/mambo-deployment-evidence.md)
-retain both support domains, macro accuracy/precision/recall/F1, coverage and exact thresholds.
+Support >5 requires more than five truth instances and accepted predictions in
+every compared pipeline. Truth classes outside that average account for
+15.30% / 0.42% / 0.01% of images at species/genus/family without thresholds,
+and 18.95% / 11.21% / 0.03% after calibration. No evaluation rows are discarded;
+the averaging class sets differ between confidence settings. Full-support metrics
+retain rare and predicted-only classes, which can change model rankings.
 
 Measured **images/second**, end to end, on an i7-12800H / RTX 3080 Ti Laptop with
 four preparation/runtime threads. V3 uses automatic precision; compare on your own
 hardware before choosing a batch size. V2 and single-view V3 reuse earlier runs.
 
-| Pipeline | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
-|---|---:|---:|---:|---:|
-| MAMBO v2 | 1.26 | 45.19 | 44.85 | 83.49 |
-| V3 PyTorch | 5.70 | 29.84 | 126.73 | 136.24 |
-| V3 ONNX | 10.08 | 46.71 | 114.11 | 111.27 |
-| V3 PyTorch + TTA | 2.04 | 10.10 | 41.74 | 50.89 |
-| V3 ONNX + TTA | 3.39 | 16.50 | 39.40 | 38.27 |
+![CPU and GPU throughput by batch size, including the new TTA default](../docs/assets/mambo-promoted-speed.svg)
 
-The [evidence reference](../docs/mambo-deployment-evidence.md) includes timing ranges,
-plots and limitations. In-domain UCloud evaluation remains outstanding.
+On this laptop, ONNX is faster on CPU; native PyTorch benefits more from larger
+GPU batches. TTA improves quality but reduces throughput, so enable it according
+to your accuracy and processing-budget requirements.
+
+The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
+exact metric tables, calibrated thresholds, timing ranges and limitations.
+In-domain UCloud evaluation remains outstanding.
