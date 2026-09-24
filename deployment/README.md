@@ -22,6 +22,17 @@ print(result[0].label)       # species, genus, family IDs
 print(result[0].confidence)  # confidence at each rank
 ```
 
+**Input/output contract**
+
+- **Inputs:** paths, PIL images, or CHW/BCHW arrays/tensors containing uint8 pixels
+  or floats in [0,1]. Pass original pixels, not normalized model inputs; transpose
+  HWC arrays first. Images become RGB, alpha is discarded, and EXIF rotation is not applied.
+- **Predictions:** CPU results with taxon IDs and confidence in species/genus/family
+  order, one result per image. Each rank is predicted independently.
+- **Embeddings:** `result, vectors = predictor.predict_with_embeddings(images)`;
+  `vectors` is a float32 NumPy array of shape `[N,1280]` with unit-length rows.
+  ONNX requires the bundle's embedding graph.
+
 For ONNX/CUDA, install `onnxruntime-gpu` instead of `onnxruntime`, with matching
 CUDA/cuDNN libraries, and select `device="cuda:0"`. For PyTorch, install the matching
 `mini_trainer` wheel and CPU/CUDA PyTorch build, then select `backend="torch"` and
@@ -42,8 +53,12 @@ three-view recipe; the exact cost depends on the workload. Start with the defaul
 batch size and worker counts. Tune these on the target machine if speed or memory
 becomes limiting. Request embeddings or extra candidates only when needed.
 
-API settings below are `Predictor(...)` keyword arguments, except the prediction
-methods shown in the last two rows. CLI equivalents are listed alongside them.
+For large collections, call `predict()` on smaller groups and save or discard each
+result before the next call; lowering `batch_size` alone does not limit the memory
+used to retain results for the whole collection.
+
+Pass API option values to `Predictor(...)`; prediction-method calls and CLI-only
+options are shown explicitly.
 
 | Python API | CLI | Default | Role / main trade-off |
 |---|---|---|---|
@@ -55,7 +70,8 @@ methods shown in the last two rows. CLI equivalents are listed alongside them.
 | `preprocess_workers=` | `--preprocess-workers` | Follows `threads` | CPU preparation concurrency: decoding and transforms can compete with other application work. |
 | `precision=` | `--precision` | `auto` | Compute speed and numerical precision: selects the backend/device's default mode. |
 | `predict_with_embeddings(images)` | `--embeddings` | Off | Additional output for similarity/search or downstream features. |
-| `predict(images, topk=k)` | `--topk k` | `1` | Number of returned candidates at each taxonomic rank. |
+| `predict(images, topk=k)` | `--topk k` | `1` | Number of candidates ranked independently at each taxonomic level; tuples need not form an ancestral path. |
+| CLI only | `--threshold` | `0` | Acceptance cutoff for `mini_metric.csv`, shared across ranks; JSON predictions remain unfiltered. |
 
 ### Geographic scope
 
@@ -70,34 +86,6 @@ more accurate. Legacy `north_europe` performed better on Flemming. Choose it for
 comparable northern-European use, not as a universal default for other locations.
 A custom `class_list=["GBIF_SPECIES_ID", ...]` or UTF-8 list file overrides the preset.
 Unknown IDs and empty lists fail; duplicates are removed and model ordering retained.
-
-## Inputs, outputs and acceptance
-
-Supply paths, PIL images, or CHW/BCHW arrays/tensors: uint8, or floats in [0,1].
-Transpose HWC arrays explicitly. Supply original pixels, **not normalized model
-inputs**. The runtime converts to RGB, discards alpha and ignores EXIF orientation;
-apply any required orientation correction before passing a PIL image or array.
-Keep the supplied preprocessing recipe unchanged.
-
-Results are on CPU. `label` contains taxon IDs in species/genus/family order;
-`topk` ranks each level independently, so a returned tuple need not be an ancestral
-path. `indices` refer to the filtered vocabulary; `global_indices` to the full one.
-`predict_with_embeddings(images)` returns `(result, vectors)`, with float32
-`[N,1280]` unit-length vectors; the ONNX bundle must include the embedding graph.
-With TTA, embeddings are the normalized mean across views.
-
-`batch_size` bounds model calls, **not total request memory**: outputs and logits
-accumulate for the whole request. Submit large collections in bounded chunks.
-Calls on one predictor are serialized; increasing caller threads alone will not
-parallelize its inference.
-
-Confidence is conditional on the selected vocabulary, not a guarantee of correctness.
-If your workflow can reject uncertain predictions, choose thresholds on representative
-labelled data and report acceptance coverage alongside quality. Recalibrate when
-changing the preset, TTA or pipeline. The study thresholds below are not universal
-production defaults. In Python, apply your acceptance rule to `result.confidence`.
-CLI `--threshold` defaults to zero and marks acceptance in `mini_metric.csv`; it
-uses one scalar for all ranks and does not remove predictions from JSON output.
 
 ## Command line and migration
 
