@@ -8,14 +8,15 @@ wheel. No allocation or remote submission is performed by these commands.
 ## Setup with uv
 
 From the checkout root, resolve runtime dependencies afresh for this machine.
-If already prepared, run only the first two commands, then follow
+If already prepared, run the environment creation, activation and installation commands, then follow
 [the existing-campaign instructions](#existing-prepared-campaign-reuse-models-and-image-hashes):
 
 ```sh
 uv venv --python 3.13 .venv-mambo-runtime
-uv pip install --python .venv-mambo-runtime/bin/python --torch-backend=auto \
+source .venv-mambo-runtime/bin/activate
+uv pip install --torch-backend=auto \
   -r dev/releases/mambo_v3/runtime-requirements.in
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.setup_ucloud_release \
+python -m dev.releases.mambo_v3.setup_ucloud_release \
   --metadata /work/datasets/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
 ```
 
@@ -41,8 +42,7 @@ preparation pass reads the entire test set; run only one preparation process per
 
 The old `ucloud_env/uv.lock` remains available for reproducing earlier installs;
 it is not the default installation path. Record the resolved environment after
-qualification (`uv pip freeze --python .venv-mambo-runtime/bin/python`), and keep
-it unchanged during the campaign. Each phase records installed package versions
+qualification (`uv pip freeze`), and keep it unchanged during the campaign. Each phase records installed package versions
 and source metadata and refuses to continue from qualification if they change.
 The first fresh local resolution (24 September 2026, RTX 3080 Ti Laptop GPU)
 passed PyTorch and ONNX inference on CPU and CUDA with default TTA, both
@@ -64,34 +64,24 @@ UCloud may differ; retain its qualification evidence before drawing conclusions.
 
 ### Existing prepared campaign: reuse models and image hashes
 
-After installing the environment above, **skip preparation** if you already have
-`~/.cache/mambo-ucloud/ucloud-release.json`. Copy that configuration to use the new
-interpreter and a new results directory; retain the old failure evidence:
+With the new environment activated, **skip preparation** and run:
 
 ```sh
-.venv-mambo-runtime/bin/python - <<'PYTHON'
-import json
-import os
-from pathlib import Path
-import sys
-
-cache = Path.home() / ".cache/mambo-ucloud"
-config = json.loads((cache / "ucloud-release.json").read_text())
-for key in ("v2_python", "v3_python", "metrics_python"):
-    config[key] = os.path.abspath(sys.executable)
-config["output"] = str(cache / "runs-fresh-runtime")
-path = cache / "ucloud-release-fresh.json"
-with path.open("x") as stream:
-    json.dump(config, stream, indent=2)
-print(path)
-PYTHON
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release qualification \
-  --config ~/.cache/mambo-ucloud/ucloud-release-fresh.json
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/ucloud-release.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-fresh-runtime
 ```
 
-For subsequent phases below, use `ucloud-release-fresh.json`, `runs-fresh-runtime`
-and a separate summary directory. No model downloads or image rehashing are needed.
-Do not reinstall packages between qualification and full collection/benchmarking.
+`--new-campaign` uses the active Python for all five variants and metrics, reuses
+prepared assets, and writes `runs-fresh-runtime/config.json`. It requires a new
+results directory, preserving previous evidence. For subsequent phases below,
+use that config, `runs-fresh-runtime` and a separate summary directory. To retry,
+use the saved config without `--new-campaign` and follow the resume rules below.
+No model downloads or image rehashing are needed.
+
+Keep this environment activated and unchanged throughout the campaign. Run
+`python` directly; if using `uv run`, always add `--no-sync` to avoid an implicit
+synchronization with the checkout's project environment.
 
 Models, V2 heads and archived split provenance download automatically from public
 ERDA storage with size/SHA-256 verification. The V2 BioCLIP backbone comes from its
@@ -111,7 +101,7 @@ its environment label, visible GPU, threads and batch sizes **before qualificati
 A MIG slice is one visible CUDA device; the default selects device `0`.
 
 ```sh
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release qualification \
+python -m dev.releases.mambo_v3.ucloud_release qualification \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
 ```
 
@@ -130,13 +120,13 @@ CPU allocation and storage mount alongside the generated environment label.
 After qualification:
 
 ```sh
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release full \
+python -m dev.releases.mambo_v3.ucloud_release full \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.metrics \
+python -m dev.releases.mambo_v3.metrics \
   --collection ~/.cache/mambo-ucloud/runs/full
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_release benchmark \
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
   --config ~/.cache/mambo-ucloud/ucloud-release.json
-.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.ucloud_summary \
+python -m dev.releases.mambo_v3.ucloud_summary \
   --root ~/.cache/mambo-ucloud/runs \
   --output ~/.cache/mambo-ucloud/summary
 ```

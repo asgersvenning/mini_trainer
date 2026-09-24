@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 from dev.benchmarks.inference.onnx_inference import file_hash
@@ -40,6 +41,18 @@ def configuration(path):
     if data["quality_device"] not in ("cpu", "cuda:0"):
         raise ValueError("Unsupported quality device")
     return data
+
+
+def new_campaign(config, output):
+    """Reuse prepared assets with the active interpreter and a fresh results directory."""
+    updated = dict(config)
+    for key in ("v2_python", "v3_python", "metrics_python"):
+        updated[key] = os.path.abspath(sys.executable)
+    output = output.expanduser().resolve()
+    updated["output"] = str(output)
+    output.mkdir(parents=True, exist_ok=False)
+    write_json(output / "config.json", updated)
+    return updated
 
 
 def jobs(config, phase):
@@ -242,8 +255,17 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true", help="Print jobs without accessing data or starting processes")
     parser.add_argument("--resume", action="store_true", help="Verify/reuse complete jobs; never overwrite partial results")
+    parser.add_argument(
+        "--new-campaign",
+        type=Path,
+        help="Qualification only: reuse prepared assets with the active Python; save config.json in a new results directory",
+    )
     args = parser.parse_args()
+    if args.new_campaign and (args.phase != "qualification" or args.resume or args.dry_run):
+        parser.error("--new-campaign requires qualification without --resume or --dry-run")
     config = configuration(args.config.resolve())
+    if args.new_campaign:
+        config = new_campaign(config, args.new_campaign)
     if args.dry_run:
         print(json.dumps(jobs(config, args.phase), indent=2))
     else:

@@ -189,3 +189,24 @@ def test_runtime_evidence_detects_installed_package_changes(tmp_path):
     assert installed[interpreter]["packages"] == [["example", "1.0", None]]
     metadata.write_text("Metadata-Version: 2.1\nName: example\nVersion: 2.0\n")
     assert runtime_environments(config) != installed
+
+
+def test_new_campaign_reuses_assets_and_preserves_existing_evidence(tmp_path, monkeypatch):
+    from dev.releases.mambo_v3 import ucloud_release
+
+    original = configuration(CONFIG.resolve())
+    interpreter = str(tmp_path / "venv/bin/python")
+    monkeypatch.setattr(ucloud_release.sys, "executable", interpreter)
+    output = tmp_path / "new-campaign"
+    updated = ucloud_release.new_campaign(original, output)
+    assert configuration(output / "config.json") == updated
+    for key in ("v2_python", "v3_python", "metrics_python"):
+        assert updated[key] == interpreter
+        assert original[key] != interpreter
+    for key in ("manifest", "root", "bundle", "legacy_source", "legacy_weights", "hf_cache"):
+        assert updated[key] == original[key]
+    assert updated["output"] == str(output)
+    before = (output / "config.json").read_bytes()
+    with pytest.raises(FileExistsError):
+        ucloud_release.new_campaign(original, output)
+    assert (output / "config.json").read_bytes() == before

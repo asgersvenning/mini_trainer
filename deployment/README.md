@@ -7,11 +7,14 @@ before caching. This candidate has not been publicly released; use the supplied 
 ## Quick start
 
 Start with ONNX/CPU for the smallest installation: it needs no training package.
-Add the supplied wheel to your `uv` project, then run your script with `uv run python
-your_script.py`. Reuse one predictor across calls.
+Create and activate an environment (or activate an existing one), then install
+the supplied wheel. Run your script with `python your_script.py` and reuse one
+predictor across calls.
 
 ```sh
-uv add './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
+uv venv --python 3.13 .venv
+source .venv/bin/activate
+uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
 ```
 
 ```python
@@ -39,8 +42,8 @@ This requests ONNX Runtime’s matching CUDA/cuDNN packages; a compatible NVIDIA
 driver is still required. To reuse an already provisioned ONNX/CUDA environment,
 add the base wheel without extras. Runtime versions are selected by your package
 manager, not replaced during inference. For PyTorch, install the matching
-`mini_trainer` wheel and CPU/CUDA PyTorch build, then select `backend="torch"` and
-an explicit device. Requested but unavailable CUDA raises an error; individual
+`mini_trainer` wheel with `uv pip install --torch-backend=auto`, then select
+`backend="torch"` and an explicit device. Requested but unavailable CUDA raises an error; individual
 ONNX operators may still execute on CPU. CPU and CUDA are the supported device
 choices; other OS/accelerator combinations remain unqualified.
 
@@ -114,7 +117,8 @@ uvx --from './mambo_deploy-0.3.0-py3-none-any.whl[onnx]' mambo_predict \
   -i moth.jpg --backend onnx --device cpu -M europe --tta -o . --name results
 ```
 
-Inside a configured project, use `uv run mambo_predict` with the same arguments.
+Inside the activated environment, use `mambo_predict` directly. If using
+`uv run`, add `--no-sync` to preserve the installed runtime dependencies.
 
 Outputs go to a new `results/` directory: `predictions.json`, `mini_metric.csv`, and
 `embeddings.npy` when `--embeddings` is requested. Directory input is recursive.
