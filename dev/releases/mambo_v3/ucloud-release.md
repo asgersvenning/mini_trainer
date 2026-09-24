@@ -185,7 +185,8 @@ Sigmoid and QuickGelu. Generic PTX provides a path to newer architectures throug
 On 25 September 2026 it passed standalone Sigmoid and the four-image MAMBO
 contract check on the RTX 3080 Ti Laptop GPU: both ONNX graphs, default TTA,
 embeddings and regional/custom masks, with full optimization and no retry.
-This does not establish B200 execution or new quality/speed results.
+The user also confirmed the standalone CUDA Sigmoid probe passes on B200.
+Full-model B200 qualification and quality/speed results remain outstanding.
 
 After pulling the helper, test on B200 from the checkout root in an isolated
 environment; this leaves the CUDA 13 PyTorch campaign environment intact:
@@ -198,6 +199,39 @@ python dev/releases/mambo_v3/probe_onnx_cuda.py
 ```
 
 These extras install the candidate's CUDA 12 libraries. The exact version selects
-the inspected upstream wheel; it is not a general deployment pin. Do not replace
-the campaign runtime or repeat full qualification until this probe passes. Restore
-the campaign environment with `source .venv-mambo-runtime/bin/activate`.
+the inspected upstream wheel; it is not a general deployment pin. Keep it separate from the CUDA 13 PyTorch environment.
+
+### Continue after the B200 probe passes
+
+Install only the deployment package into the existing ONNX environment, then run
+qualification from the PyTorch environment. The optional `onnx_python` setting
+routes both ONNX variants to the isolated interpreter, including full collection
+and CPU/GPU benchmarks. Its installed dependencies are included in the campaign
+fingerprint. Existing configurations without it continue to use `v3_python`.
+
+```sh
+uv pip install --python /tmp/mambo-ort-ptx/bin/python ./deployment
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-fresh-runtime/config.json \
+  --onnx-python /tmp/mambo-ort-ptx/bin/python \
+  --new-campaign ~/.cache/mambo-ucloud/runs-ptx
+```
+
+This preserves models, manifests and previous results. After successful
+qualification, keep the PyTorch environment activated and run:
+
+```sh
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-ptx/config.json
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-ptx/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-ptx/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-ptx \
+  --output ~/.cache/mambo-ucloud/summary-ptx
+```
+
+The ONNX environment is in `/tmp` for this experiment; retain it for the campaign's
+lifetime. Recreate and requalify it if the node's temporary storage is discarded.

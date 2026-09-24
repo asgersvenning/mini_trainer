@@ -195,6 +195,7 @@ def test_new_campaign_reuses_assets_and_preserves_existing_evidence(tmp_path, mo
     from dev.releases.mambo_v3 import ucloud_release
 
     original = configuration(CONFIG.resolve())
+    original["onnx_python"] = str(tmp_path / "onnx/bin/python")
     interpreter = str(tmp_path / "venv/bin/python")
     monkeypatch.setattr(ucloud_release.sys, "executable", interpreter)
     output = tmp_path / "new-campaign"
@@ -205,8 +206,18 @@ def test_new_campaign_reuses_assets_and_preserves_existing_evidence(tmp_path, mo
         assert original[key] != interpreter
     for key in ("manifest", "root", "bundle", "legacy_source", "legacy_weights", "hf_cache"):
         assert updated[key] == original[key]
+    assert updated["onnx_python"] == original["onnx_python"]
     assert updated["output"] == str(output)
     before = (output / "config.json").read_bytes()
     with pytest.raises(FileExistsError):
         ucloud_release.new_campaign(original, output)
     assert (output / "config.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("phase", ["qualification", "full", "benchmark"])
+def test_separate_onnx_interpreter_only_routes_onnx_jobs(phase):
+    config = configuration(CONFIG.resolve())
+    config["onnx_python"] = "/isolated/onnx/bin/python"
+    for job in jobs(config, phase):
+        expected = config["onnx_python"] if job["variant"].startswith("onnx") else config["v2_python" if job["legacy"] else "v3_python"]
+        assert job["command"][0] == expected

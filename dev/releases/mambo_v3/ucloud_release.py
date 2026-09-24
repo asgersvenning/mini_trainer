@@ -20,7 +20,7 @@ PATHS = ("v2_python", "v3_python", "metrics_python", "legacy_source", "legacy_we
 
 def configuration(path):
     data = json.loads(path.read_text())
-    for key in (*PATHS, "timing_manifest", "timing_root"):
+    for key in (*PATHS, "onnx_python", "timing_manifest", "timing_root"):
         if key in data:
             value = path.parent / Path(data[key]).expanduser()
             # Resolving a venv Python symlink selects the base interpreter and loses its packages.
@@ -87,7 +87,8 @@ def jobs(config, phase):
                         command += ["--cpu-float32"]
                 else:
                     module = "benchmark" if timing else "evaluate"
-                    command = [config["v3_python"], "-m", f"dev.releases.mambo_v3.{module}"]
+                    interpreter = config.get("onnx_python", config["v3_python"]) if variant.startswith("onnx") else config["v3_python"]
+                    command = [interpreter, "-m", f"dev.releases.mambo_v3.{module}"]
                     if not timing:
                         command += ["collect", "--decode-workers", str(config["threads"])]
                     command += [
@@ -128,7 +129,7 @@ def runtime_environments(config):
     )
     return {
         interpreter: json.loads(subprocess.check_output([interpreter, "-I", "-c", script], text=True))
-        for interpreter in sorted({config[key] for key in ("v2_python", "v3_python", "metrics_python")})
+        for interpreter in sorted({config[key] for key in ("v2_python", "v3_python", "metrics_python", "onnx_python") if key in config})
     }
 
 
@@ -260,10 +261,15 @@ if __name__ == "__main__":
         type=Path,
         help="Qualification only: reuse prepared assets with the active Python; save config.json in a new results directory",
     )
+    parser.add_argument("--onnx-python", type=Path, help="With --new-campaign: use a separate interpreter for ONNX jobs")
     args = parser.parse_args()
+    if args.onnx_python and not args.new_campaign:
+        parser.error("--onnx-python requires --new-campaign; subsequent phases use the saved config")
     if args.new_campaign and (args.phase != "qualification" or args.resume or args.dry_run):
         parser.error("--new-campaign requires qualification without --resume or --dry-run")
     config = configuration(args.config.resolve())
+    if args.onnx_python:
+        config["onnx_python"] = os.path.abspath(args.onnx_python.expanduser())
     if args.new_campaign:
         config = new_campaign(config, args.new_campaign)
     if args.dry_run:
