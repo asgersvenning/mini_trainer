@@ -169,3 +169,35 @@ No UCloud inference results are claimed yet. Preserve current laptop figures;
 add UCloud quality and speed figures only after the completed evidence passes the
 summary checks. Cross-OS support and clean CUDA installation remain separate
 qualification tasks.
+
+## B200 runtime candidate: PTX-enabled upstream wheel
+
+The tested Linux CPython 3.13 ORT 1.30.0 CUDA provider has no SM 100 kernels
+and no PTX; its SHA-256 is
+`afd77f8d1e05544456476e244601ff08d444ff90921d6d73b2066c124f109bd2`.
+The same binary failed standalone CUDA Sigmoid on B200, independently of MAMBO.
+Fresh dependency resolution retained that binary and did not fix the failure.
+
+The upstream ORT 1.22.0 wheel is a bounded compatibility candidate: inspection
+with CUDA 12.9 cuobjdump found 158 generic SM 90 PTX units, including FP32
+Sigmoid and QuickGelu. Generic PTX provides a path to newer architectures through
+[driver compilation](https://docs.nvidia.com/cuda/blackwell-compatibility-guide/index.html#application-compatibility-on-blackwell-architecture).
+On 25 September 2026 it passed standalone Sigmoid and the four-image MAMBO
+contract check on the RTX 3080 Ti Laptop GPU: both ONNX graphs, default TTA,
+embeddings and regional/custom masks, with full optimization and no retry.
+This does not establish B200 execution or new quality/speed results.
+
+After pulling the helper, test on B200 from the checkout root in an isolated
+environment; this leaves the CUDA 13 PyTorch campaign environment intact:
+
+```sh
+uv venv --python 3.13 /tmp/mambo-ort-ptx
+source /tmp/mambo-ort-ptx/bin/activate
+uv pip install 'onnxruntime-gpu[cuda,cudnn]==1.22.0' numpy
+python dev/releases/mambo_v3/probe_onnx_cuda.py
+```
+
+These extras install the candidate's CUDA 12 libraries. The exact version selects
+the inspected upstream wheel; it is not a general deployment pin. Do not replace
+the campaign runtime or repeat full qualification until this probe passes. Restore
+the campaign environment with `source .venv-mambo-runtime/bin/activate`.
