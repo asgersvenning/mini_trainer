@@ -52,6 +52,14 @@ averaged in FP32 and normalized to unit length; a nonfinite or near-zero mean
 raises an error. Averaged embeddings have not been qualified for downstream
 retrieval/clustering. The default single-view representation is unchanged.
 
+## Compact composition follow-up
+
+The [padding-and-rotation study](mambo-compact-tta.md) tests compositions within three and five views
+against the current default and earlier five-view wide rotation on flagged cases and a separate random sample.
+It identifies promising compositions at both three- and five-view budgets,
+with confidence/coverage trade-offs. These remain experimental; `tta=True` still
+selects the qualified padded-scale default.
+
 ## Qualification
 
 Both automatic GPU backends passed a fixed, seeded **1,024-image / 201-species**

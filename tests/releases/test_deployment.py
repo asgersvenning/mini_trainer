@@ -413,3 +413,14 @@ def test_cli_tta_optional_recipe(bundle, monkeypatch, options, recipe):
     monkeypatch.setattr("sys.argv", ["mambo_predict", "-i", "example.jpg", "--bundle", str(bundle), *options])
     with pytest.raises(Parsed):
         cli.run()
+
+
+@pytest.mark.parametrize("degrees", [-30, -10, 10, 30])
+def test_composed_rotation_reproduces_existing_padded_rotation(degrees):
+    from dev.releases.mambo_v3.compact_tta import rotate_pad
+    from dev.releases.mambo_v3.tta_candidates import rotate
+
+    image = np.random.default_rng(42).integers(0, 256, (3, 47, 83), dtype=np.uint8)
+    original = image.copy()
+    np.testing.assert_array_equal(rotate_pad(image, degrees, 0.08), rotate(image, degrees))
+    np.testing.assert_array_equal(image, original)
