@@ -15,7 +15,11 @@ from dev.releases.mambo_v3.threshold_report import identity
 
 def eligible_classes(truth, accepted_predictions, cutoff):
     """Use strict support cutoffs in both domains, without dropping evaluation rows."""
-    return {label for label, count in truth.items() if count > cutoff and accepted_predictions.get(label, 0) > cutoff}
+    return {
+        label
+        for label in truth.keys() | accepted_predictions.keys()
+        if truth.get(label, 0) > cutoff and accepted_predictions.get(label, 0) > cutoff
+    }
 
 
 def collect(study):
@@ -52,7 +56,7 @@ def collect(study):
     }
     for scope in ("zero", "optimized"):
         for level, rank in enumerate(("species", "genus", "family")):
-            for cutoff in (0, 5, 10, 20):
+            for cutoff in (-1, 5, 10, 20):
                 eligible = {
                     model: eligible_classes(scopes[scope][level]["truth"], scopes[scope][level]["predictions"], cutoff)
                     for model, scopes in work.items()
@@ -60,7 +64,10 @@ def collect(study):
                 shared = set.intersection(*eligible.values())
                 for model, scopes in work.items():
                     row = scopes[scope][level]
-                    for domain, selected in (("per_model", eligible[model]), ("common", shared)):
+                    domains = [("per_model", eligible[model])]
+                    if cutoff >= 0:
+                        domains.append(("common", shared))
+                    for domain, selected in domains:
                         reference = study["models"][model]["report_zero" if scope == "zero" else "report_optimized"]
                         result["rows"].append(
                             {

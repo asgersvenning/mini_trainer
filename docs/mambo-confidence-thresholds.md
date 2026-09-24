@@ -131,8 +131,9 @@ calibration F1 curve, not this plotting grid. Undefined package results remain n
 ## Tail-truncated supplementary metrics
 
 The [tail-truncated comparison](mambo-tail-metrics.md) averages classes with more
-than 0, 5, 10 or 20 truth instances and accepted predictions, using a common class set
-across all five pipelines. It retains coverage/support counts and the full-support
+than 5, 10 or 20 truth instances and accepted predictions, using a common class set
+across all five pipelines, alongside an untruncated support >−1 baseline that retains
+each model’s full class domain. It retains coverage/support counts and the full-support
 comparison: excluding rare and predicted-only families changes the interpretation.
 
 ## Evidence and reproduction

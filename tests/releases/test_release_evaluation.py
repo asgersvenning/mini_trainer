@@ -207,6 +207,7 @@ def test_tail_support_requires_both_domains_and_strict_cutoff():
 
     truth = {"kept": 6, "at_truth_cutoff": 5, "at_prediction_cutoff": 20, "unpredicted": 30}
     accepted = {"kept": 6, "at_truth_cutoff": 30, "at_prediction_cutoff": 5, "predicted_only": 100}
+    assert eligible_classes(truth, accepted, -1) == set(truth) | set(accepted)
     assert eligible_classes(truth, accepted, 0) == {"kept", "at_truth_cutoff", "at_prediction_cutoff"}
     assert eligible_classes(truth, accepted, 5) == {"kept"}
     assert eligible_classes(truth, accepted, 20) == set()
