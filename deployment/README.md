@@ -31,15 +31,10 @@ choices; other OS/accelerator combinations remain unqualified.
 
 ## Choose the configuration that matters
 
-| Setting | Starting point | When to change it |
-|---|---|---|
-| `model` / `class_list` | Set the region explicitly; default is `europe` | Match your sampling location. Use `full` when geography is unknown, or a custom list for your project's eligible species. This changes predictions and confidence. |
-| `backend`, `device` | ONNX/CPU for portable integration | Use CUDA for throughput. On this laptop, ONNX was faster on CPU; PyTorch scaled better at GPU batch 32. Choose by dependencies and measurements on your hardware. |
-| `tta` | Off | Enable `tta=True` when improved quality justifies three model passes. Keep the recommended recipe unless you validate an alternative on your own data. |
-| `batch_size` | `8` | For GPU bulk processing, try 8 then 32; reduce for memory limits or interactive requests. Larger batches do not guarantee higher throughput. |
-| `threads`, `preprocess_workers` | `threads=2`; preparation workers follow it | Tune under the real application's CPU budget. Preparation workers handle decoding/transforms; `threads` also controls ONNX runtime threads, but does **not** set PyTorch model threads. Avoid multiplying workers across competing processes. |
-| `precision` | `"auto"` | Usually leave it alone. Use `"fp32"` to investigate runtime/numerical issues. BF16 is a native CUDA option requiring hardware support, not an established improvement over the default. |
-| Embeddings / `topk` | Predictions only; `topk=1` | Request embeddings for similarity/search or downstream features; request more candidates with `predict(images, topk=k)`. Neither improves the classifier itself. |
+Choose the region and runtime for your application, then decide whether TTA is worth
+the processing cost. Leave precision on `auto`; tune batching and workers against
+your hardware and memory budget. See the [configuration reference](#configuration-reference)
+at the end for defaults and when to change each option.
 
 `precision="auto"` means FP32 on CPU, FP16 backbone with FP32 head for native
 CUDA, and TF32 execution of the standard floating ONNX graph on CUDA. It does not
@@ -151,3 +146,15 @@ to your accuracy and processing-budget requirements.
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
 In-domain UCloud evaluation remains outstanding.
+
+## Configuration reference
+
+| Setting | Starting point | When to change it |
+|---|---|---|
+| `model` / `class_list` | Set the region explicitly; default is `europe` | Match your sampling location. Use `full` when geography is unknown, or a custom list for your project's eligible species. This changes predictions and confidence. |
+| `backend`, `device` | ONNX/CPU for portable integration | Use CUDA for throughput. On this laptop, ONNX was faster on CPU; PyTorch scaled better at GPU batch 32. Choose by dependencies and measurements on your hardware. |
+| `tta` | Off | Enable `tta=True` when improved quality justifies three model passes. Keep the recommended recipe unless you validate an alternative on your own data. |
+| `batch_size` | `8` | For GPU bulk processing, try 8 then 32; reduce for memory limits or interactive requests. Larger batches do not guarantee higher throughput. |
+| `threads`, `preprocess_workers` | `threads=2`; preparation workers follow it | Tune under the real application's CPU budget. Preparation workers handle decoding/transforms; `threads` also controls ONNX runtime threads, but does **not** set PyTorch model threads. Avoid multiplying workers across competing processes. |
+| `precision` | `"auto"` | Usually leave it alone. Use `"fp32"` to investigate runtime/numerical issues. BF16 is a native CUDA option requiring hardware support, not an established improvement over the default. |
+| Embeddings / `topk` | Predictions only; `topk=1` | Request embeddings for similarity/search or downstream features; request more candidates with `predict(images, topk=k)`. Neither improves the classifier itself. |
