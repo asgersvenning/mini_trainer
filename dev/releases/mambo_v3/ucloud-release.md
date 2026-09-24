@@ -60,7 +60,12 @@ uv run --project dev/releases/mambo_v3/ucloud_env --no-sync python \
 
 This runs 256 identical test images through V2, V3 PyTorch, V3 ONNX, and each V3
 backend with `rotation30_pad25_3` TTA. Inspect each log/report for successful
-inference, runtime versions, placement and memory use. This is a compatibility
+inference, runtime versions, placement and memory use. ONNX reports include
+`onnx_session_info`: the graph optimization profile, initialization time and any
+failed compatibility-probe attempts. A CUDA kernel-image/device-function failure
+retries once with graph optimizations disabled; unrelated failures are not retried.
+Both profiles retain CUDA, with individual CPU operators still allowed. A failure
+of the unoptimized graph is reported as baseline incompatibility. This is a compatibility
 qualification, not a reliable quality estimate or a requirement for numerical
 identity between backends. Confirm the assigned GPU/MIG profile (`nvidia-smi -L`),
 CPU allocation and storage mount alongside the generated environment label.
@@ -101,7 +106,9 @@ but is ancillary because geographic restriction excludes part of this global set
 Speed uses CPU and GPU, global and northern-Europe lists, three isolated process
 trials, two warmups and seven observations per cell. CPU batches default to 1/8;
 GPU batches to 1/8/32. Each uses the same deterministic image bank (at least 32
-images, expanded to the largest requested batch). Timings include image loading,
+images, expanded to the largest requested batch). The one-time ONNX synthetic probe is included in cold first-use timing and excluded
+from warmed timing cells. Do not combine throughput from different selected
+optimization profiles without labelling them. Timings include image loading,
 preparation, transfer and completed CPU predictions; they describe warm repeated
 inference, not cold storage throughput. Do not run competing collections during
 benchmarking. V2 CPU includes the documented float32 input adapter required for

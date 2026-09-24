@@ -14,6 +14,7 @@ import numpy as np
 from .augmentation import infer_augmented, resolve_tta
 from .bundle import Bundle
 from .download import default_bundle
+from .onnx_session import create_session
 from .preprocessing import RECIPE, image_items, preprocess
 from .results import Prediction, hierarchy
 
@@ -70,6 +71,7 @@ class Predictor:
             raise ValueError("Unsupported preprocessing recipe; use the matching deployment runtime")
         self.backend, self.device, self.batch_size, self.threads = backend, str(device), batch_size, threads
         self._sessions, self._torch_model = {}, None
+        self.onnx_session_info = {}
         self._lock = threading.RLock()
         self.weights = weights
         if weights is not None:
@@ -162,10 +164,6 @@ class Predictor:
         key = "onnx-embedding" if embeddings else "onnx"
         if key not in self._sessions:
             path = self.bundle.profile(key)
-            options = ort.SessionOptions()
-            options.intra_op_num_threads = self.threads
-            options.inter_op_num_threads = 1
-            options.enable_profiling = False
             if self.device == "cpu":
                 providers = ["CPUExecutionProvider"]
             else:
@@ -183,10 +181,8 @@ class Predictor:
                     ),
                     "CPUExecutionProvider",
                 ]
-            session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
-            session.disable_fallback()
-            if self.device != "cpu" and session.get_providers()[0] != "CUDAExecutionProvider":
-                raise RuntimeError("Requested ONNX CUDA provider failed to initialize; refusing CPU-only fallback")
+            session, info = create_session(ort, path, providers, self.threads, cuda=self.device != "cpu", embeddings=embeddings)
+            self.onnx_session_info[key] = info
             self._sessions[key] = session
         outputs = ["output_0", "embedding"] if embeddings else ["output_0"]
         values = self._sessions[key].run(outputs, {"images": images})

@@ -60,6 +60,7 @@ def qualify(bundle, dataset, device, backends, tta="none"):
             "prediction_modes_agree": True,
         }
         if backend == "onnx":
+            report["variants"][backend]["onnx_session_info"] = predictor.onnx_session_info
             report["variants"][backend]["providers"] = {name: session.get_providers() for name, session in predictor._sessions.items()}
     if len(backends) == 2:
         for mode in ("full", "europe", "custom"):

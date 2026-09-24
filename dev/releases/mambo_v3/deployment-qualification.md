@@ -159,3 +159,20 @@ Python socket connections blocked and model hashes unchanged. Evidence:
 GPU batch-32 throughput was 50.89 images/s native and 38.27 ONNX. CPU batch-1 was
 2.04 and 3.39 images/s. Trial ranges and input hashes are in
 `docs/assets/mambo-promoted-speed.json`.
+
+## CUDA optimization compatibility probe — 2026-09-24
+
+Each CUDA session now executes a synthetic batch-one input before its first user
+prediction. Kernel-image/device-function incompatibility retries with ORT graph
+optimizations disabled; no CPU-only fallback or retry of unrelated errors occurs.
+The selected profile and initialization/probe timings are retained in reports.
+A batch-one check does not establish every batch-dependent execution path.
+
+On the RTX 3080 Ti laptop with ORT GPU 1.30.0, both optimized graphs executed,
+including default TTA and embedding output. Injecting the initial compatibility
+error exercised recovery into real unoptimized CUDA execution for both graphs.
+This validates local recovery mechanics, not resolution of the reported B200
+failure. The installed ONNX-only wheel also passed CPU prediction, embeddings and
+TTA without importing torch. Focused deployment/download/evaluation checks passed
+(64 tests); nine UCloud harness tests passed separately. Static/import checks and
+the standalone deployment lint/format checks passed. No full suite was run.

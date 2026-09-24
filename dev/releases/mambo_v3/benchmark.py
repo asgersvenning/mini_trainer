@@ -169,6 +169,7 @@ def benchmark(args):
             import onnxruntime as ort
 
             report["runtime"]["onnxruntime"] = ort.__version__
+            report["onnx_session_info"] = predictor.onnx_session_info
             report["providers"] = {name: session.get_providers() for name, session in predictor._sessions.items()}
             report["provider_options"] = {key: session.get_provider_options() for key, session in predictor._sessions.items()}
         if args.device != "cpu" and args.backend == "torch":

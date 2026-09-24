@@ -41,6 +41,14 @@ an explicit device. Requested but unavailable CUDA raises an error; individual
 ONNX operators may still execute on CPU. CPU and CUDA are the supported device
 choices; other OS/accelerator combinations remain unqualified.
 
+
+ONNX/CUDA checks each graph once with a synthetic batch-one input when its session
+first loads. A GPU-kernel compatibility failure triggers a checked retry with graph
+optimizations disabled, with a warning about potentially lower throughput. It does
+not switch to CPU. Sessions are reused, so this adds first-use work, not a probe to
+every prediction. `predictor.onnx_session_info` reports the selected profiles; the
+probe does not guarantee every later batch-dependent execution path.
+
 Models are cached in `~/.cache/mambo` (or `$XDG_CACHE_HOME/mambo`); set
 `MAMBO_CACHE` to choose another location. After the required model files are cached,
 `MAMBO_OFFLINE=1` prevents downloads. For an explicitly managed, offline bundle,

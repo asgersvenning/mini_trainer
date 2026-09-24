@@ -164,6 +164,7 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         "onnxruntime",
         SimpleNamespace(
             SessionOptions=SimpleNamespace,
+            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
             get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
             InferenceSession=session,
         ),
@@ -452,3 +453,66 @@ def test_promoted_tta_matches_full_evaluation_views(bundle, monkeypatch, recipe)
         assert result.metadata["tta"] == recipe
         assert result.metadata["tta_views"] == len(expected)
     np.testing.assert_array_equal(source, original)
+
+
+@pytest.mark.parametrize(
+    "failure", [None, "cudaErrorNoKernelImageForDevice", "cudaErrorInvalidDeviceFunction", "CUDA out of memory", "baseline"]
+)
+def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
+    import sys
+    from types import SimpleNamespace
+
+    p = Predictor(bundle, device="cuda:0")
+    monkeypatch.setattr(p.bundle, "profile", lambda key: bundle / key)
+    sessions, calls = [], []
+
+    def create(path, sess_options, providers):
+        level = sess_options.graph_optimization_level
+        sessions.append((path, level))
+
+        def run(outputs, feed):
+            calls.append((path, level, len(feed["images"])))
+            assert feed["images"].dtype == np.float32
+            if failure == "baseline":
+                raise RuntimeError("cudaErrorNoKernelImageForDevice")
+            if failure and level == 99:
+                raise RuntimeError(failure)
+            return [np.zeros((len(feed["images"]), 3)) for _ in outputs]
+
+        return SimpleNamespace(
+            run=run, disable_fallback=lambda: None, get_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "onnxruntime",
+        SimpleNamespace(
+            SessionOptions=SimpleNamespace,
+            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
+            get_available_providers=lambda: ["CUDAExecutionProvider"],
+            InferenceSession=create,
+        ),
+    )
+    batch = np.zeros((2, 3, 384, 384), dtype=np.float32)
+    if failure in ("CUDA out of memory", "baseline"):
+        with pytest.raises(RuntimeError, match="out of memory" if failure != "baseline" else "baseline compatibility"):
+            p._onnx(batch, False)
+        assert not p._sessions
+        assert len(sessions) == (2 if failure == "baseline" else 1)
+        return
+    if failure:
+        with pytest.warns(RuntimeWarning, match="graph optimizations disabled"):
+            p._onnx(batch, False)
+    else:
+        p._onnx(batch, False)
+    before = len(calls)
+    p._onnx(batch, False)
+    assert len(calls) == before + 1  # No second probe on a reused session.
+    assert [level for _, level in sessions] == ([99, 0] if failure else [99])
+    assert p.onnx_session_info["onnx"]["profile"] == ("unoptimized" if failure else "optimized")
+    assert calls[-1][2] == 2 and calls[0][2] == 1
+    if not failure:
+        p._onnx(batch, True)
+        assert len(sessions) == 2
+        assert "onnx-embedding" in p.onnx_session_info
+        assert [n for _, _, n in calls[-2:]] == [1, 2]
