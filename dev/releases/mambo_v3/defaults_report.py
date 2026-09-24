@@ -91,42 +91,76 @@ def render(data, output):
         fig.savefig(output / f"{name}.png", dpi=160, bbox_inches="tight")
         plt.close(fig)
 
-    for scope in ("all", "known"):
-        fig, axes = plt.subplots(2, 2, figsize=(13, 8))
-        for ax, (metric, title) in zip(
-            axes.flat,
-            (
-                ("accuracy", "Macro accuracy (%)"),
-                ("f1", "Macro-F1"),
-                ("precision", "Macro precision"),
-                ("micro_accuracy", "Micro accuracy (%)"),
-            ),
-            strict=True,
-        ):
-            factor = 100 if "accuracy" in metric else 1
+    for level, rank in enumerate(("species", "genus", "family")):
+        for scope in ("all", "known"):
+            fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+            for ax, (metric, title) in zip(
+                axes.flat,
+                (
+                    ("accuracy", "Macro accuracy (%)"),
+                    ("f1", "Macro-F1"),
+                    ("precision", "Macro precision"),
+                    ("micro_accuracy", "Micro accuracy (%)"),
+                ),
+                strict=True,
+            ):
+                factor = 100 if "accuracy" in metric else 1
+                for i, (model, label, color) in enumerate(SERIES):
+                    values = [
+                        next(r for r in data["quality"] if (r["model"], r["preset"]) == (model, preset))["scores"][scope][metric][
+                            str(level)
+                        ]
+                        * factor
+                        for preset in REGIONS
+                    ]
+                    bars = ax.bar(np.arange(3) + (i - 2) * 0.16, values, 0.16, label=label, color=color)
+                    ax.bar_label(bars, fmt="%.1f" if factor == 100 else "%.3f", rotation=60, fontsize=8, padding=3)
+                upper = 105 if factor == 100 else min(1, max(bar.get_height() for bar in ax.patches) * 1.35)
+                ax.set(title=title, xticks=np.arange(3), xticklabels=REGION_LABELS, ylim=(0, upper))
+                ax.grid(axis="y", alpha=0.15)
+                ax.set_axisbelow(True)
+            fig.suptitle(f"MAMBO release comparison · {rank} metrics · {scope} truth", fontsize=16)
+            fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=3, frameon=False)
+            fig.text(
+                0.02,
+                0.015,
+                "All: 58,640 images. Known: species 50,598; genus 58,639–58,640 by preset; family 58,640.\n"
+                "TTA: original + two padded views; selected on a Flemming subset, not independently validated.\n"
+                "Same legacy vocabularies across releases; tables also retain updated European lists and both truth populations.",
+                fontsize=9,
+            )
+            fig.tight_layout(rect=(0, 0.10, 1, 0.88))
+            suffix = "" if rank == "species" else f"-{rank}"
+            save(fig, f"mambo-defaults-quality{suffix}-{scope}")
+
+    fig, axes = plt.subplots(3, 2, figsize=(13, 11))
+    for level, rank in enumerate(("species", "genus", "family")):
+        for col, (metric, title, factor) in enumerate((("accuracy", "Macro accuracy (%)", 100), ("f1", "Macro-F1", 1))):
+            ax = axes[level, col]
             for i, (model, label, color) in enumerate(SERIES):
                 values = [
-                    next(r for r in data["quality"] if (r["model"], r["preset"]) == (model, preset))["scores"][scope][metric]["0"] * factor
+                    next(r for r in data["quality"] if (r["model"], r["preset"]) == (model, preset))["scores"]["all"][metric][str(level)]
+                    * factor
                     for preset in REGIONS
                 ]
                 bars = ax.bar(np.arange(3) + (i - 2) * 0.16, values, 0.16, label=label, color=color)
                 ax.bar_label(bars, fmt="%.1f" if factor == 100 else "%.3f", rotation=60, fontsize=8, padding=3)
             upper = 105 if factor == 100 else min(1, max(bar.get_height() for bar in ax.patches) * 1.35)
-            ax.set(title=title, xticks=np.arange(3), xticklabels=REGION_LABELS, ylim=(0, upper))
+            ax.set(title=f"{rank.title()} · {title}", xticks=np.arange(3), xticklabels=REGION_LABELS, ylim=(0, upper))
             ax.grid(axis="y", alpha=0.15)
             ax.set_axisbelow(True)
-        fig.suptitle(f"MAMBO release comparison · species metrics · {scope} truth", fontsize=16)
-        fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=3, frameon=False)
-        fig.text(
-            0.02,
-            0.015,
-            "Full Flemming: 58,640 images / 522 truth species; known species: 50,598 images. Pinned mini_metrics; threshold 0.\n"
-            "TTA: original + two edge-padded views. Selected using a subset of this dataset; full results are not independent validation.\n"
-            "Same legacy vocabularies across releases; tables also retain updated European lists, all ranks and both truth populations.",
-            fontsize=9,
-        )
-        fig.tight_layout(rect=(0, 0.10, 1, 0.88))
-        save(fig, f"mambo-defaults-quality-{scope}")
+    fig.suptitle("MAMBO release comparison · species, genus and family", fontsize=16)
+    fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.965), ncol=3, frameon=False)
+    fig.text(
+        0.02,
+        0.015,
+        "All truth: 58,640 images; 522 species / 322 genera / 23 families. Pinned mini_metrics; threshold 0.\n"
+        "Macro accuracy weights truth taxa equally; macro-F1 also includes predicted-only taxa. V3 uses automatic GPU precision.\n"
+        "TTA: original + two padded views; recipe selected on a subset of Flemming, not independently validated.",
+        fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.08, 1, 0.925))
+    save(fig, "mambo-defaults-ranks-all")
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
     for ax, device, batches in zip(axes, ("cpu", "cuda:0"), ((1, 8), (1, 8, 32)), strict=True):

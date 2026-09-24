@@ -126,7 +126,7 @@ the northern-Europe legacy list, shared by V2 and V3; charts also show Europe an
 global. TTA means the enabled padded-scale default. V3 quality uses automatic GPU precision;
 CPU timings use FP32.
 
-| Pipeline | Macro accuracy | Macro-F1 | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
+| Pipeline | Species macro accuracy | Species macro-F1 | CPU B1 | GPU B1 | GPU B8 | GPU B32 |
 |---|---:|---:|---:|---:|---:|---:|
 | MAMBO v2 | 68.52% | 0.2575 | 1.26 | 45.2 | 44.8 | 83.5 |
 | V3 PyTorch | 71.25% | 0.2543 | 5.70 | 29.8 | 126.7 | 136.2 |
@@ -139,7 +139,21 @@ on an i7-12800H / RTX 3080 Ti Laptop. Three fresh-process trials use the same im
 bank and four preparation/runtime CPU threads; V2 and ordinary V3 reuse retained
 measurements. V2 CPU uses its documented float32 input adapter.
 
-![Full Flemming species metrics](../docs/assets/mambo-defaults-quality-all.svg)
+Northern Europe, **genus and family**, also all truth and threshold zero:
+
+| Pipeline | Genus macro accuracy / F1 | Family macro accuracy / F1 |
+|---|---:|---:|
+| MAMBO v2 | 78.90% / 0.3169 | 84.40% / 0.2691 |
+| V3 PyTorch | 80.53% / 0.3204 | 81.05% / 0.2804 |
+| V3 ONNX | 80.50% / 0.3212 | 81.06% / 0.2808 |
+| V3 PyTorch + TTA | 83.04% / 0.3532 | 85.72% / 0.2967 |
+| V3 ONNX + TTA | 83.04% / 0.3536 | 85.73% / 0.2967 |
+
+Ordinary V3 improves genus macro accuracy but reduces family macro accuracy
+versus V2 (84.40% → about 81.05%). TTA raises these to about **83.04% genus /
+85.72–85.73% family**, exceeding V2 at both ranks.
+
+![Species, genus and family macro metrics](../docs/assets/mambo-defaults-ranks-all.svg)
 
 ![CPU and GPU throughput](../docs/assets/mambo-defaults-speed.svg)
 
