@@ -32,27 +32,30 @@ choices; other OS/accelerator combinations remain unqualified.
 ## Choose the configuration that matters
 
 **Choose your geographic scope and runtime explicitly.** Start with ONNX/CPU for
-simple integration, or use your existing PyTorch/CUDA environment. Keep
-`precision="auto"` and the default TTA recipe; these are better starting points
-across machines than copying benchmark-specific settings.
+simple integration, or use your existing PyTorch/CUDA environment. Leave
+`precision="auto"` to select the backend/device's default precision, and keep the
+recommended recipe when enabling TTA.
 
-Leave TTA off for throughput, or enable `tta=True` when quality matters more.
-Start with the default batch size and worker counts. Tune those only when speed
-or memory becomes limiting, using representative inputs on the target machine;
-the laptop's best batch size need not be yours. Request embeddings or extra
-candidates only when your application needs them.
+Leave TTA off for throughput, or enable `tta=True` when quality matters more:
+expect roughly **one-third the throughput (about 3× slower)** with the default
+three-view recipe; the exact cost depends on the workload. Start with the default
+batch size and worker counts. Tune these on the target machine if speed or memory
+becomes limiting. Request embeddings or extra candidates only when needed.
 
-| Setting | Default | Role / main trade-off |
-|---|---|---|
-| `model` / `class_list` | `europe` / no override | Prediction scope: selects eligible species and changes confidence. |
-| `backend`, `device` | `onnx`, `cpu` | Runtime dependencies, hardware compatibility and throughput. |
-| `tta` | Off; `True` selects `rotation30_pad25_3` | Quality versus compute: the recommended recipe uses three views. [Recipe details](../docs/mambo-tta.md). |
-| `batch_size` | `8` | Throughput and working memory: images per model call, not a total-request memory limit. |
-| `threads` | `2` | CPU allocation: ONNX runtime threads and the default preparation-worker count; does not set PyTorch model threads. |
-| `preprocess_workers` | Follows `threads` | CPU preparation concurrency: decoding and transforms can compete with other application work. |
-| `precision` | `auto` | Compute speed and numerical precision: selects the backend/device's default mode. |
-| Embeddings | Off | Additional output for similarity/search or downstream features. |
-| `topk` | `1` | Number of returned candidates at each taxonomic rank. |
+API settings below are `Predictor(...)` keyword arguments, except the prediction
+methods shown in the last two rows. CLI equivalents are listed alongside them.
+
+| Python API | CLI | Default | Role / main trade-off |
+|---|---|---|---|
+| `model=`, `class_list=` | `--model`, `--class-list` | `europe` / no override | Prediction scope: selects eligible species and changes confidence. |
+| `backend=`, `device=` | `--backend`, `--device` | `onnx`, `cpu` | Runtime dependencies, hardware compatibility and throughput. |
+| `tta=True` | `--tta` | Off; enabling selects `rotation30_pad25_3` | Quality versus compute: three views. [Recipe details](../docs/mambo-tta.md). |
+| `batch_size=` | `--batch-size` | `8` | Throughput and working memory: images per model call, not a total-request memory limit. |
+| `threads=` | `--threads` | `2` | CPU allocation: ONNX runtime threads and the default preparation-worker count; does not set PyTorch model threads. |
+| `preprocess_workers=` | `--preprocess-workers` | Follows `threads` | CPU preparation concurrency: decoding and transforms can compete with other application work. |
+| `precision=` | `--precision` | `auto` | Compute speed and numerical precision: selects the backend/device's default mode. |
+| `predict_with_embeddings(images)` | `--embeddings` | Off | Additional output for similarity/search or downstream features. |
+| `predict(images, topk=k)` | `--topk k` | `1` | Number of returned candidates at each taxonomic rank. |
 
 ### Geographic scope
 
