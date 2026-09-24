@@ -31,16 +31,28 @@ choices; other OS/accelerator combinations remain unqualified.
 
 ## Choose the configuration that matters
 
-Choose the region and runtime for your application, then decide whether TTA is worth
-the processing cost. Leave precision on `auto`; tune batching and workers against
-your hardware and memory budget. See the [configuration reference](#configuration-reference)
-at the end for defaults and when to change each option.
+**Choose your geographic scope and runtime explicitly.** Start with ONNX/CPU for
+simple integration, or use your existing PyTorch/CUDA environment. Keep
+`precision="auto"` and the default TTA recipe; these are better starting points
+across machines than copying benchmark-specific settings.
 
-`precision="auto"` means FP32 on CPU, FP16 backbone with FP32 head for native
-CUDA, and TF32 execution of the standard floating ONNX graph on CUDA. It does not
-select quantized weights or an FP16 ONNX export. Results record the resolved
-precision, preset, class-list hash and TTA recipe; retain these with the bundle
-version when comparing runs.
+Leave TTA off for throughput, or enable `tta=True` when quality matters more.
+Start with the default batch size and worker counts. Tune those only when speed
+or memory becomes limiting, using representative inputs on the target machine;
+the laptop's best batch size need not be yours. Request embeddings or extra
+candidates only when your application needs them.
+
+| Setting | Default | Role / main trade-off |
+|---|---|---|
+| `model` / `class_list` | `europe` / no override | Prediction scope: selects eligible species and changes confidence. |
+| `backend`, `device` | `onnx`, `cpu` | Runtime dependencies, hardware compatibility and throughput. |
+| `tta` | Off; `True` selects `rotation30_pad25_3` | Quality versus compute: the recommended recipe uses three views. [Recipe details](../docs/mambo-tta.md). |
+| `batch_size` | `8` | Throughput and working memory: images per model call, not a total-request memory limit. |
+| `threads` | `2` | CPU allocation: ONNX runtime threads and the default preparation-worker count; does not set PyTorch model threads. |
+| `preprocess_workers` | Follows `threads` | CPU preparation concurrency: decoding and transforms can compete with other application work. |
+| `precision` | `auto` | Compute speed and numerical precision: selects the backend/device's default mode. |
+| Embeddings | Off | Additional output for similarity/search or downstream features. |
+| `topk` | `1` | Number of returned candidates at each taxonomic rank. |
 
 ### Geographic scope
 
@@ -55,16 +67,6 @@ more accurate. Legacy `north_europe` performed better on Flemming. Choose it for
 comparable northern-European use, not as a universal default for other locations.
 A custom `class_list=["GBIF_SPECIES_ID", ...]` or UTF-8 list file overrides the preset.
 Unknown IDs and empty lists fail; duplicates are removed and model ordering retained.
-
-### Optional test-time augmentation
-
-`tta=True` or bare `--tta` selects `rotation30_pad25_3`: original, −30° and +30°
-views, with 25% edge padding on each rotated view. Rotation expands the canvas;
-ordinary model preprocessing follows. Pin that name explicitly for reproducibility.
-TTA remains off when omitted. `padded_scale` preserves the previous recipe;
-`wide_rotation_mixed_padding_5` is an optional higher-cost alternative with no
-consistent family-level advantage. See the [TTA reference](../docs/mambo-tta.md)
-for custom transforms and aggregation details.
 
 ## Inputs, outputs and acceptance
 
@@ -146,15 +148,3 @@ to your accuracy and processing-budget requirements.
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
 In-domain UCloud evaluation remains outstanding.
-
-## Configuration reference
-
-| Setting | Starting point | When to change it |
-|---|---|---|
-| `model` / `class_list` | Set the region explicitly; default is `europe` | Match your sampling location. Use `full` when geography is unknown, or a custom list for your project's eligible species. This changes predictions and confidence. |
-| `backend`, `device` | ONNX/CPU for portable integration | Use CUDA for throughput. On this laptop, ONNX was faster on CPU; PyTorch scaled better at GPU batch 32. Choose by dependencies and measurements on your hardware. |
-| `tta` | Off | Enable `tta=True` when improved quality justifies three model passes. Keep the recommended recipe unless you validate an alternative on your own data. |
-| `batch_size` | `8` | For GPU bulk processing, try 8 then 32; reduce for memory limits or interactive requests. Larger batches do not guarantee higher throughput. |
-| `threads`, `preprocess_workers` | `threads=2`; preparation workers follow it | Tune under the real application's CPU budget. Preparation workers handle decoding/transforms; `threads` also controls ONNX runtime threads, but does **not** set PyTorch model threads. Avoid multiplying workers across competing processes. |
-| `precision` | `"auto"` | Usually leave it alone. Use `"fp32"` to investigate runtime/numerical issues. BF16 is a native CUDA option requiring hardware support, not an established improvement over the default. |
-| Embeddings / `topk` | Predictions only; `topk=1` | Request embeddings for similarity/search or downstream features; request more candidates with `predict(images, topk=k)`. Neither improves the classifier itself. |
