@@ -123,7 +123,9 @@ Thresholding changes the comparison. Using `mini_metrics` Macro-F1 calibration o
 
 Ordinary V3 overtakes V2 on species Macro-F1 after calibration; TTA improves
 species and genus further. **V2 leads calibrated family Macro-F1**, while V3 + TTA
-retains more family recall. The different TTA species operating points largely
+retains more family recall. A [per-family audit](mambo-family-precision.md) shows
+that V3 retains more rare predictions into families absent from Flemming truth,
+which lowers its macro precision and F1. The different TTA species operating points largely
 explain the backend F1 gap: at a shared threshold, PyTorch and ONNX remain closely
 aligned. Higher accepted accuracy comes with abstention; coverage is the fraction
 of images accepted independently at each rank.

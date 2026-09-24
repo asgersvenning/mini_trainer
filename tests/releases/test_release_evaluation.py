@@ -174,3 +174,29 @@ def test_pinned_metrics_distinguish_micro_macro_and_known_truth(tmp_path):
     metrics = json.loads((tmp_path / "metrics.json").read_text())
     assert metrics["all"]["f1"]["0"] == pytest.approx(3 / 7)
     assert metrics["known"]["f1"]["0"] == pytest.approx(1)
+
+
+def test_family_audit_export_keeps_predicted_only_groups_without_recall(tmp_path):
+    from dev.releases.mambo_v3.family_precision_report import export
+
+    # mini_metrics emits no recall group for a family that occurs only in predictions.
+    row = {
+        "threshold": 0.95,
+        "truth_counts": {"present": 2},
+        "predicted_counts": {"present": 1, "absent": 1},
+        "groups": {
+            "precision": {"present": [1, 1], "absent": [0, 1]},
+            "recall": {"present": [0.5, 1]},
+            "f1": {"present": [2 / 3, 1], "absent": [0, 1]},
+        },
+    }
+    data = {"taxonomy": {"names": {"absent": "Absent family"}}, "models": {"v3": {"optimized": row}}}
+    export(data, tmp_path)
+    with (tmp_path / "mambo-family-precision.csv").open() as stream:
+        rows = {r["family_id"]: r for r in csv.DictReader(stream)}
+    assert rows["absent"]["truth_images"] == "0"
+    assert rows["absent"]["accepted_predictions"] == "1"
+    assert rows["absent"]["precision"] == "0"
+    assert rows["absent"]["recall"] == ""
+    assert rows["absent"]["recall_weight"] == "0"
+    assert rows["absent"]["f1_weight"] == "1"

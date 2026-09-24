@@ -48,6 +48,9 @@ Macro-F1 further. **Family reverses the unthresholded F1 ranking: V2 leads all V
 variants after calibration** (0.6545 versus about 0.581 without TTA and 0.607 with
 TTA). V3 + TTA retains more family recall than V2, so this is a trade-off rather
 than uniform dominance. These operating points need not have equal coverage.
+The [family-level audit](mambo-family-precision.md) traces the reversal to 7
+predicted-only families surviving V3 thresholds versus 3 for V2. Precision within
+the same 22 truth-present predicted families is actually higher for V3.
 
 ![Macro-F1 and coverage before and after calibration](assets/mambo-threshold-comparison.svg)
 
