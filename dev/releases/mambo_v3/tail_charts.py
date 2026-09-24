@@ -130,7 +130,7 @@ def render_paired(data, output):
         "Hollow → filled changes the averaging domain, not predictions. "
         ">5 requires truth AND accepted-prediction support in every pipeline.\n"
         "Retained classes differ between confidence settings. No evaluation rows removed; per-class FP/FN remain intact.\n"
-        "Coverage is unchanged by class truncation. TTA: padded scale; "
+        f"Coverage is unchanged by class truncation. TTA: {data.get('tta', 'padded_scale')}; "
         "recipe selection used the same dataset, so results remain descriptive.",
         fontsize=10,
     )

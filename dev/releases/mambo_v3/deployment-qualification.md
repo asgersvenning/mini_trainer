@@ -90,3 +90,72 @@ Four deterministic images establish execution contracts, not representative
 accuracy, embedding quality or speed. Windows/macOS, clean CUDA installations,
 additional architectures, training revision/best-epoch provenance and redistribution
 notices remain unqualified. Nothing has been uploaded, tagged or promoted.
+
+## Enabled-TTA promotion — 2026-09-24
+
+The deployment default when TTA is requested is now `rotation30_pad25_3`: original,
+−30° with 25% edge padding, +30° with 25% edge padding. Rotation expands the canvas
+and uses bilinear interpolation and RGB (124,116,104) corner fill, exactly as in
+the full-data study. TTA stays off when omitted. Explicit `padded_scale` is retained;
+`wide_rotation_mixed_padding_5` is also available as an opt-in named profile.
+
+The [current deployment comparison](../../../deployment/README.md#release-comparison)
+uses the full-study predictions, with macro metrics computed by pinned mini_metrics.
+Support intersections are recomputed across the five displayed pipelines; do not
+copy the eleven-pipeline exploratory tail scores into that table. Both threshold
+settings use the same 52,788 reporting images, with 5,852 calibration images.
+
+Reproduce the current quality tables and figure:
+
+```sh
+/tmp/mambo-release-metrics/bin/python -m dev.releases.mambo_v3.promoted_report \
+  --quality docs/assets/mambo-composed-tta.json --output /tmp/promoted-report
+.venv/bin/python -m dev.releases.mambo_v3.tail_charts --paired \
+  --data /tmp/promoted-report/mambo-promoted-tail.json --output /tmp/promoted-report
+```
+
+The figure command writes `mambo-threshold-tail.svg`; publish it under the distinct
+name `mambo-promoted-quality.svg` to preserve earlier studies. JSON/CSV outputs use
+`mambo-promoted-*`. `quality-tables.md` supplies the README metric and support rows.
+The JSON threshold artifact retains full macro/micro scores, coverage, recipe,
+source hashes and exact reporting/calibration identities; thresholds are not
+silently installed as runtime defaults.
+
+Measure the selected recipe independently, on the same bank as earlier timings:
+
+```sh
+CUDA_VISIBLE_DEVICES=0 /tmp/mambo-deploy-qualification-gpu/bin/python \
+  -m dev.releases.mambo_v3.benchmark_acceleration \
+  --python /tmp/mambo-deploy-qualification-gpu/bin/python \
+  --bundle local-evidence/mambo-bundle-presets-v2 \
+  --manifest local-evidence/mambo-v3/flemming-manifest.json \
+  --root /home/asger/data/flemming --output /tmp/promoted-speed \
+  --presets north_europe --tta rotation30_pad25_3
+.venv/bin/python -m dev.releases.mambo_v3.promoted_report \
+  --performance /tmp/promoted-speed --output /tmp/promoted-report
+.venv/bin/python -m dev.releases.mambo_v3.promoted_report \
+  --render-speed /tmp/promoted-report/mambo-promoted-speed.json --output /tmp/promoted-report
+```
+
+These commands use three fresh processes per backend/device, seven observations,
+CPU batches 1/8 and GPU batches 1/8/32, without concurrent model workloads. They
+reuse earlier V2 and single-view V3 timings; temperature/power differences between
+campaigns remain a limitation. Timing does not reuse full-evaluation wall time.
+Resource records retain host peak RSS. New runs cover northern Europe only;
+earlier resource sweeps also covered other presets, so RSS is descriptive.
+
+Promotion checks: 53 focused release checks passed (including the two pinned-metric
+checks run separately), static/import checks passed, and preset transforms match
+the full-study transforms byte-for-byte. The standalone wheel builds offline and
+its enabled default imports without torch or mini_trainer in a clean Python 3.13
+environment. Python 3.14 installation was not qualified: its wheels were absent
+from the offline cache. Older regional/frequency/threshold studies are preserved
+and labelled historical rather than relabelled as new-recipe evidence.
+
+The installed ONNX-only wheel also passed prediction-only/embedding API and CLI
+inference with the selected recipe against a relocated read-only bundle, with
+Python socket connections blocked and model hashes unchanged. Evidence:
+`local-evidence/mambo-promoted-portable.json`. The twelve timing trials completed;
+GPU batch-32 throughput was 50.89 images/s native and 38.27 ONNX. CPU batch-1 was
+2.04 and 3.39 images/s. Trial ranges and input hashes are in
+`docs/assets/mambo-promoted-speed.json`.

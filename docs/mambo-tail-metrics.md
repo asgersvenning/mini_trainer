@@ -1,5 +1,8 @@
 # Tail-truncated release metrics
 
+**Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
+contains the current rotation-and-padding default comparison.
+
 These supplementary metrics summarize classes with **more than 5, 10 or 20**
 truth instances **and accepted predictions**, at each taxonomic rank. Main results
 use the intersection of qualifying classes across all five pipelines, so each

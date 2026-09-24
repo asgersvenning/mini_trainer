@@ -4,8 +4,9 @@
 (three views).** The full Flemming comparison confirms the preliminary improvement
 over `padded_scale` on both native PyTorch and standard ONNX. The composed five-view
 recipe gives smaller additional species/genus gains, but is not consistently better
-at family level. The release TTA default remains `padded_scale` pending integration
-and standalone runtime qualification of the selected candidate.
+at family level. The selected three-view recipe is now the enabled-TTA default; see the
+[deployment README](../deployment/README.md) for the current five-pipeline comparison
+and standalone runtime measurements. Explicit `padded_scale` retains the prior behavior.
 
 ## Findings
 
@@ -197,4 +198,5 @@ All five retained baseline models reproduced their previous unthresholded and
 calibrated full-support metrics within 1e-12. The support >5 domain here intersects
 **all eleven pipelines**, so it need not equal the five-pipeline domain in earlier
 reports. Source hashes and exact reporting/calibration identities are checked
-before evaluation. No core-module behavior or deployment defaults changed.
+before evaluation. This study did not change core-module behavior. The subsequent deployment promotion
+changes only the enabled-TTA preset, while TTA remains off by default.

@@ -28,7 +28,7 @@ def run(default_backend="onnx", default_device="cpu"):
         const=DEFAULT_TTA,
         choices=PROFILES,
         default="none",
-        help="Enable TTA (default recipe: padded_scale), or choose a recipe",
+        help=f"Enable TTA (default recipe: {DEFAULT_TTA}), or choose a recipe",
     )
     parser.add_argument("--preprocess-workers", type=int, help="Preparation threads; defaults to --threads")
     parser.add_argument("--topk", type=int, default=1)

@@ -1,5 +1,8 @@
 # Accuracy versus class frequency
 
+**Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
+contains the current rotation-and-padding default comparison.
+
 ![Macro accuracy by training and evaluation frequency](assets/mambo-frequency-accuracy.svg)
 
 These curves compare MAMBO v2 with the single-view automatic v3 PyTorch/ONNX paths on the same

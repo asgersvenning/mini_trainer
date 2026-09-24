@@ -1,5 +1,8 @@
 # MAMBO deployment defaults and release comparison
 
+**Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
+contains the current rotation-and-padding default comparison.
+
 Ordinary inference stays single-view. Enabling TTA with `tta=True` or bare `--tta`
 selects **padded scale**: the original image plus views with 8% and 15% edge padding.
 Each view uses unchanged preprocessing; FP32 leaf logits are averaged before

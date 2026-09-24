@@ -11,7 +11,9 @@ size or the selected class list.
 | Profile | Views | Spatial policy |
 |---|---:|---|
 | `none` | 1 | Ordinary single-view path; default |
-| `padded_scale` | 3 | Original plus 8% / 15% edge padding; default when TTA is enabled |
+| `rotation30_pad25_3` | 3 | Original plus ±30° rotations, each with 25% edge padding; default when TTA is enabled |
+| `wide_rotation_mixed_padding_5` | 5 | Original, ±10° with 15% padding, ±30° with 25% padding |
+| `padded_scale` | 3 | Original plus 8% / 15% edge padding; previous default, available explicitly |
 | `hflip` | 2 | Original and horizontal reflection |
 | `five_crop` | 5 | Original and four corner crops, each 90% of original height/width |
 | `ten_crop` | 10 | Five-crop views and their horizontal reflections |
@@ -19,12 +21,17 @@ size or the selected class list.
 | `light_noise` | 3 | Original plus two independently seeded 1% salt-and-pepper views |
 
 Enable the recommended recipe with `Predictor(..., tta=True)` or bare `--tta`.
-Both resolve to `padded_scale`, which is also available explicitly. Omitting TTA
+Both resolve to `rotation30_pad25_3`, also available explicitly. Omitting TTA
 keeps single-view inference; `tta=False` and `--tta none` explicitly disable it.
-The padded-scale policy was promoted from the exploratory candidates because it
-had the highest subset macro accuracy and was faster than D4 or padded rotations.
-It did not maximize every metric: padded rotations had higher subset macro-F1.
-The public `EdgePad(fraction)` transform exposes the same source-preserving padding.
+Expanded-canvas rotations preserve the source extent, fill corners with RGB
+(124,116,104), then edge-pad each axis by 25% per side before ordinary preprocessing.
+The full-data comparison supports this promotion on both backends. Explicit
+`padded_scale` retains the former behavior. `RotatePad(degrees, padding)` and
+`EdgePad(fraction)` expose these transforms for custom policies.
+
+**Historical study below:** exploratory measurements and earlier promotion notes
+refer to padded-scale TTA unless explicitly stated. For current quality, thresholds
+and speed, use the [deployment README](../deployment/README.md#release-comparison).
 
 `SaltAndPepper(proportion=0.01, seed=0)` is also available as a public transform.
 It uses one RGB-shared black/white pixel mask and an image-keyed seed, so built-in
@@ -60,7 +67,7 @@ retrieval/clustering. The default single-view representation is unchanged.
 The [padding-and-rotation study](mambo-compact-tta.md) tests compositions within three and five views
 against the current default and earlier five-view wide rotation on flagged cases and a separate random sample.
 It identifies promising compositions at both three- and five-view budgets,
-with confidence/coverage trade-offs. These remain experimental; `tta=True` still
+with confidence/coverage trade-offs. At the time of that preliminary study these remained experimental; `tta=True` then
 selects the qualified padded-scale default.
 
 ## Qualification

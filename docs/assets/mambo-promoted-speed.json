@@ -1,0 +1,319 @@
+{
+  "tta": "rotation30_pad25_3",
+  "sources_sha256": {
+    "docs/assets/mambo-defaults-comparison.json": "99224200e66e3d0d44195ab684f8f71580ed829a4ac8fd1c8c1681ed3e6dae52",
+    "local-evidence/mambo-promoted-tta-speed/trial-0-torch-cuda-0/report.json": "25891a868390b8bbabf491966e90fa8f5c6624c3c66be2c874ac9f6c16878aab",
+    "local-evidence/mambo-promoted-tta-speed/trial-0-onnx-cuda-0/report.json": "5ef51afe133be77309bbd3fab303fb61869080e328cd8de30e4639c3715907f6",
+    "local-evidence/mambo-promoted-tta-speed/trial-0-torch-cpu/report.json": "b3392bee4e0d81c29df653a412f777b35a580b2b22fe308a8eb81a7399c83625",
+    "local-evidence/mambo-promoted-tta-speed/trial-0-onnx-cpu/report.json": "7a9c3b52b8a072d9cbc27462433cb6c235bb9c7207d365334a6ef84535f25faa",
+    "local-evidence/mambo-promoted-tta-speed/trial-1-onnx-cpu/report.json": "f7def2387215747e68b5b3e7036e94c70d78da9cb4e06b19123b29d38e243665",
+    "local-evidence/mambo-promoted-tta-speed/trial-1-torch-cpu/report.json": "6212e23be3e73cf0bae031ff98c72715c443e78ffb18566440657e73215974c4",
+    "local-evidence/mambo-promoted-tta-speed/trial-1-onnx-cuda-0/report.json": "7d8c3d953e5ba5711af8e4f4746a73a2cfef9f96c9ec51cb51fd941633c96ec3",
+    "local-evidence/mambo-promoted-tta-speed/trial-1-torch-cuda-0/report.json": "a5106112a7127df413139f2369a02bdd5ca592be700de30996c9fffda7006ebe",
+    "local-evidence/mambo-promoted-tta-speed/trial-2-torch-cuda-0/report.json": "8ac283bbc8e0273ccd9da170fefb1050006a61302761fb9612188e9360000966",
+    "local-evidence/mambo-promoted-tta-speed/trial-2-onnx-cuda-0/report.json": "70418cb3a4c4162782525acf2cf6eea19a82863decd64dcd070bb7b3de816dbd",
+    "local-evidence/mambo-promoted-tta-speed/trial-2-torch-cpu/report.json": "1609821796674aec8d0abedbecd9bfb1877da212b9aed3bcf67c50032f141119",
+    "local-evidence/mambo-promoted-tta-speed/trial-2-onnx-cpu/report.json": "eaa507bdc4d39d172a3e4f1eca05083546b91674ae3899e2bfc5387df5f15768"
+  },
+  "speed": [
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 796.1964119967888,
+      "p95_ms": 855.2797960001044,
+      "trial_min_ms": 780.1338070021302,
+      "trial_max_ms": 827.1140280012332,
+      "images_per_second": 1.255971497651051,
+      "trial_min_ips": 1.2090231408800491,
+      "trial_max_ips": 1.2818313871600613
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 5765.8902689981915,
+      "p95_ms": 5890.259110001352,
+      "trial_min_ms": 5732.572058997903,
+      "trial_max_ms": 5802.123346998997,
+      "images_per_second": 1.387470039624944,
+      "trial_min_ips": 1.3788055719528611,
+      "trial_max_ips": 1.395534136800447
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "median_ms": 22.129188000690192,
+      "p95_ms": 28.487998999480624,
+      "trial_min_ms": 21.078697001939872,
+      "trial_max_ms": 23.72169799855328,
+      "images_per_second": 45.18918633475439,
+      "trial_min_ips": 42.155498314706946,
+      "trial_max_ips": 47.44126261257847
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "median_ms": 178.38607100202353,
+      "p95_ms": 190.12071899851435,
+      "trial_min_ms": 173.67241900137742,
+      "trial_max_ms": 178.83818200061796,
+      "images_per_second": 44.84655082688184,
+      "trial_min_ips": 44.73317672158151,
+      "trial_max_ips": 46.063733355015636
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "median_ms": 383.29957200039644,
+      "p95_ms": 395.5446789987036,
+      "trial_min_ms": 365.05659100293997,
+      "trial_max_ms": 387.3802570014959,
+      "images_per_second": 83.48561370156422,
+      "trial_min_ips": 82.60617164048303,
+      "trial_max_ips": 87.65764209895416
+    },
+    {
+      "model": "onnx",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "images_per_second": 10.076177412511877,
+      "trial_min_ips": 9.60250986545771,
+      "trial_max_ips": 11.353111385069457
+    },
+    {
+      "model": "onnx",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "images_per_second": 10.80969808387532,
+      "trial_min_ips": 10.570796505012908,
+      "trial_max_ips": 11.102500782573706
+    },
+    {
+      "model": "onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "images_per_second": 46.70691057432178,
+      "trial_min_ips": 41.11976015977681,
+      "trial_max_ips": 49.97505245293308
+    },
+    {
+      "model": "onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "images_per_second": 114.11464013589269,
+      "trial_min_ips": 107.34320509031689,
+      "trial_max_ips": 115.69758682083888
+    },
+    {
+      "model": "onnx",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "images_per_second": 111.27186960045317,
+      "trial_min_ips": 104.95228749163802,
+      "trial_max_ips": 118.23092267562323
+    },
+    {
+      "model": "torch",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 1,
+      "images_per_second": 5.695199765540664,
+      "trial_min_ips": 5.453077416494641,
+      "trial_max_ips": 6.445979740616736
+    },
+    {
+      "model": "torch",
+      "device": "cpu",
+      "preset": "north_europe",
+      "batch": 8,
+      "images_per_second": 7.839122148750051,
+      "trial_min_ips": 6.663612338884881,
+      "trial_max_ips": 9.242605998110642
+    },
+    {
+      "model": "torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 1,
+      "images_per_second": 29.838347764184938,
+      "trial_min_ips": 28.22843215050167,
+      "trial_max_ips": 32.58000010949372
+    },
+    {
+      "model": "torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 8,
+      "images_per_second": 126.73135226080092,
+      "trial_min_ips": 125.63045484784077,
+      "trial_max_ips": 134.262307658797
+    },
+    {
+      "model": "torch",
+      "device": "cuda:0",
+      "preset": "north_europe",
+      "batch": 32,
+      "images_per_second": 136.24360110822388,
+      "trial_min_ips": 134.1900518259908,
+      "trial_max_ips": 142.79165057586877
+    },
+    {
+      "model": "torch-tta",
+      "device": "cuda:0",
+      "batch": 1,
+      "images_per_second": 10.095289640929265,
+      "trial_min_ips": 9.08992225583603,
+      "trial_max_ips": 11.395943605042223
+    },
+    {
+      "model": "torch-tta",
+      "device": "cuda:0",
+      "batch": 8,
+      "images_per_second": 41.74452237473382,
+      "trial_min_ips": 40.17425321046774,
+      "trial_max_ips": 43.20922520587249
+    },
+    {
+      "model": "torch-tta",
+      "device": "cuda:0",
+      "batch": 32,
+      "images_per_second": 50.89189233994259,
+      "trial_min_ips": 49.60486323902889,
+      "trial_max_ips": 51.93386894396018
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cuda:0",
+      "batch": 1,
+      "images_per_second": 16.501620755811338,
+      "trial_min_ips": 10.600381997176049,
+      "trial_max_ips": 17.32238535488025
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cuda:0",
+      "batch": 8,
+      "images_per_second": 39.403995458090144,
+      "trial_min_ips": 36.333391293363185,
+      "trial_max_ips": 40.734567059530676
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cuda:0",
+      "batch": 32,
+      "images_per_second": 38.26903509578927,
+      "trial_min_ips": 36.8244774584263,
+      "trial_max_ips": 42.60271935994335
+    },
+    {
+      "model": "torch-tta",
+      "device": "cpu",
+      "batch": 1,
+      "images_per_second": 2.0418394631211805,
+      "trial_min_ips": 1.8675565638482772,
+      "trial_max_ips": 2.199971756725526
+    },
+    {
+      "model": "torch-tta",
+      "device": "cpu",
+      "batch": 8,
+      "images_per_second": 2.725476601953184,
+      "trial_min_ips": 2.604504798702578,
+      "trial_max_ips": 2.9239933313665523
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cpu",
+      "batch": 1,
+      "images_per_second": 3.392641317598269,
+      "trial_min_ips": 2.8475503305697205,
+      "trial_max_ips": 3.7037390675348525
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cpu",
+      "batch": 8,
+      "images_per_second": 3.577990190138483,
+      "trial_min_ips": 3.523486466759631,
+      "trial_max_ips": 3.7463472031954144
+    }
+  ],
+  "resources": [
+    {
+      "model": "torch",
+      "device": "cuda:0",
+      "rss_mib": 2511.96484375,
+      "load_first_seconds": 42.957718928999384,
+      "allocated_mib": 597.53125
+    },
+    {
+      "model": "onnx",
+      "device": "cuda:0",
+      "rss_mib": 1618.86328125,
+      "load_first_seconds": 1.4639206969950465,
+      "allocated_mib": null
+    },
+    {
+      "model": "torch",
+      "device": "cpu",
+      "rss_mib": 1618.265625,
+      "load_first_seconds": 42.038206298006116,
+      "allocated_mib": null
+    },
+    {
+      "model": "onnx",
+      "device": "cpu",
+      "rss_mib": 688.5390625,
+      "load_first_seconds": 0.3738440049928613,
+      "allocated_mib": null
+    },
+    {
+      "model": "v2",
+      "device": "cpu",
+      "rss_mib": 4122.8125,
+      "load_first_seconds": 209.39651592600057,
+      "allocated_mib": null
+    },
+    {
+      "model": "v2",
+      "device": "cuda:0",
+      "rss_mib": 4122.58203125,
+      "load_first_seconds": 209.60287212600088,
+      "allocated_mib": 1935.630859375
+    },
+    {
+      "model": "torch-tta",
+      "device": "cuda:0",
+      "rss_mib": 2538.8203125
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cuda:0",
+      "rss_mib": 1670.91796875
+    },
+    {
+      "model": "torch-tta",
+      "device": "cpu",
+      "rss_mib": 1742.23828125
+    },
+    {
+      "model": "onnx-tta",
+      "device": "cpu",
+      "rss_mib": 687.20703125
+    }
+  ]
+}

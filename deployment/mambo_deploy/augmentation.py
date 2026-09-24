@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from functools import partial
 
 import numpy as np
+from PIL import Image
 
 from .preprocessing import _rgb, preprocess
 
@@ -50,6 +51,25 @@ class EdgePad:
 
 
 @dataclass(frozen=True)
+class RotatePad:
+    """Rotate on an expanded canvas, then edge-pad before ordinary preprocessing."""
+
+    degrees: float
+    padding: float = 0.25
+
+    def __post_init__(self):
+        if not np.isfinite(self.degrees):
+            raise ValueError("Rotation must be finite")
+        EdgePad(self.padding)
+
+    def __call__(self, image):
+        rotated = Image.fromarray(image.transpose(1, 2, 0)).rotate(
+            self.degrees, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104)
+        )
+        return EdgePad(self.padding)(np.asarray(rotated).transpose(2, 0, 1))
+
+
+@dataclass(frozen=True)
 class SaltAndPepper:
     """Deterministic image-keyed noise; one black/white pixel mask shared by RGB."""
 
@@ -88,8 +108,18 @@ class TTA:
             raise ValueError("TTA name must be a nonempty string")
 
 
-DEFAULT_TTA = "padded_scale"
-PROFILES = ("none", "padded_scale", "hflip", "five_crop", "ten_crop", "d4", "light_noise")
+DEFAULT_TTA = "rotation30_pad25_3"
+PROFILES = (
+    "none",
+    "rotation30_pad25_3",
+    "wide_rotation_mixed_padding_5",
+    "padded_scale",
+    "hflip",
+    "five_crop",
+    "ten_crop",
+    "d4",
+    "light_noise",
+)
 
 
 def resolve_tta(value):
@@ -103,7 +133,11 @@ def resolve_tta(value):
         raise ValueError(f"tta must be a TTA object or one of {PROFILES}")
     if value == "none":
         return None
-    if value == "padded_scale":
+    if value == "rotation30_pad25_3":
+        views = (View(), RotatePad(-30), RotatePad(30))
+    elif value == "wide_rotation_mixed_padding_5":
+        views = (View(), RotatePad(-10, 0.15), RotatePad(10, 0.15), RotatePad(-30), RotatePad(30))
+    elif value == "padded_scale":
         views = (View(), EdgePad(0.08), EdgePad(0.15))
     elif value == "hflip":
         views = (View(), View(hflip=True))

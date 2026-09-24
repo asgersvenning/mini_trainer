@@ -1,5 +1,8 @@
 # Confidence thresholds and the MAMBO comparison
 
+**Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
+contains the current rotation-and-padding default comparison.
+
 Thresholding substantially changes the quality comparison, at the cost of rejecting
 images. These results use **legacy northern Europe** for V2, V3 PyTorch/ONNX and
 both V3 backends with padded-scale TTA. Deployment defaults remain threshold zero.

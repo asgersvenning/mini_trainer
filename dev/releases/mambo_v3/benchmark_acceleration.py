@@ -35,9 +35,7 @@ def run(args):
                     "--threads",
                     "4",
                     "--presets",
-                    "north_europe",
-                    "europe",
-                    "full",
+                    *args.presets,
                     "--batches",
                     "1",
                     "8",
@@ -67,4 +65,5 @@ if __name__ == "__main__":
     for name in ("python", "bundle", "manifest", "root", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--tta", nargs="?", const=DEFAULT_TTA, choices=PROFILES, default="none")
+    parser.add_argument("--presets", nargs="+", default=["north_europe", "europe", "full"])
     run(parser.parse_args())

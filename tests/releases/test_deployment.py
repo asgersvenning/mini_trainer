@@ -293,7 +293,7 @@ def test_tta_views_apply_before_the_unchanged_recipe():
         TTA([])
 
 
-@pytest.mark.parametrize(("tta", "views"), [("five_crop", 5), ("ten_crop", 10), ("d4", 8)])
+@pytest.mark.parametrize(("tta", "views"), [("five_crop", 5), ("ten_crop", 10), ("d4", 8), (True, 3), ("wide_rotation_mixed_padding_5", 5)])
 def test_multicrop_tta_bounds_calls_and_shares_prediction_embedding_path(bundle, monkeypatch, tta, views):
     p = Predictor(bundle, tta=tta, batch_size=2, preprocess_workers=2)
     observed = []
@@ -373,7 +373,7 @@ def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
     np.testing.assert_array_equal(image, original)
 
 
-@pytest.mark.parametrize("option", [True, "padded_scale"])
+@pytest.mark.parametrize("option", ["padded_scale"])
 def test_enabled_tta_uses_qualified_padded_recipe(bundle, monkeypatch, option):
     from dev.releases.mambo_v3.tta_candidates import candidate_policy
 
@@ -396,7 +396,7 @@ def test_enabled_tta_uses_qualified_padded_recipe(bundle, monkeypatch, option):
 
 
 @pytest.mark.parametrize(
-    ("options", "recipe"), [([], None), (["--tta"], "padded_scale"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
+    ("options", "recipe"), [([], None), (["--tta"], "rotation30_pad25_3"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
 )
 def test_cli_tta_optional_recipe(bundle, monkeypatch, options, recipe):
     from deployment.mambo_deploy import cli
@@ -424,3 +424,31 @@ def test_composed_rotation_reproduces_existing_padded_rotation(degrees):
     original = image.copy()
     np.testing.assert_array_equal(rotate_pad(image, degrees, 0.08), rotate(image, degrees))
     np.testing.assert_array_equal(image, original)
+
+
+@pytest.mark.parametrize("recipe", ["rotation30_pad25_3", "wide_rotation_mixed_padding_5"])
+def test_promoted_tta_matches_full_evaluation_views(bundle, monkeypatch, recipe):
+    from deployment.mambo_deploy.augmentation import resolve_tta
+    from dev.releases.mambo_v3.compact_tta import policies
+
+    views, _, recipes = policies()
+    source = np.random.default_rng(19).integers(0, 256, (3, 47, 83), dtype=np.uint8)
+    original = source.copy()
+    expected = [preprocess(views[key](source)) for key in recipes[recipe]]
+    for option in [True, recipe] if recipe == "rotation30_pad25_3" else [recipe]:
+        policy = resolve_tta(option)
+        for transform, key in zip(policy.transforms, recipes[recipe], strict=True):
+            np.testing.assert_array_equal(transform(source), views[key](source))
+        predictor = Predictor(bundle, tta=option, preprocess_workers=1)
+        observed = []
+
+        def runtime(images, embeddings):
+            observed.append(images[0].copy())
+            return np.ones((len(images), 3), np.float32), None
+
+        monkeypatch.setattr(predictor, "_onnx", runtime)
+        result = predictor.predict(source)
+        np.testing.assert_array_equal(observed, expected)
+        assert result.metadata["tta"] == recipe
+        assert result.metadata["tta_views"] == len(expected)
+    np.testing.assert_array_equal(source, original)
