@@ -170,7 +170,9 @@ In-domain UCloud results will be reported separately; the [UCloud workflow](../d
 ### Streaming image collections
 
 For large path collections, `predict_stream` overlaps reading and preparation with
-inference and yields one prediction batch at a time, without accumulating outputs:
+inference and yields one prediction batch at a time, without accumulating outputs.
+Ordered result processing also overlaps inference, with at most two result batches
+outstanding:
 
 ```python
 from contextlib import closing

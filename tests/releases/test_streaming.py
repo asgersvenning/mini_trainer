@@ -97,3 +97,30 @@ def test_assembly_runs_in_background_and_errors_propagate(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="assembly failure"):
         list(streaming.prepared_stream(items, 2))
     assert not any(t.name.startswith("mambo-assemble") for t in threading.enumerate())
+
+
+def test_result_worker_order_bounds_overlap_and_failure():
+    from deployment.mambo_deploy.result_worker import ResultWorker
+
+    release = threading.Event()
+    started = threading.Event()
+
+    def process(value):
+        started.set()
+        assert release.wait(3)
+        if value < 0:
+            raise ValueError("result failed")
+        return value
+
+    with ResultWorker(process) as worker:
+        worker.submit(1)
+        assert started.wait(3)
+        worker.submit(2)  # Caller can advance while first result is still blocked.
+        with pytest.raises(RuntimeError, match="Drain"):
+            worker.submit(3)
+        release.set()
+        assert worker.pop() == 1
+        assert worker.pop() == 2
+        worker.submit(-1)
+        with pytest.raises(ValueError, match="result failed"):
+            worker.pop()

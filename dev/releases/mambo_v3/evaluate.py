@@ -13,6 +13,7 @@ import numpy as np
 from deployment.mambo_deploy import Predictor
 from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES, infer_prepared
 from deployment.mambo_deploy.preprocessing import preprocess
+from deployment.mambo_deploy.result_worker import ResultWorker
 from deployment.mambo_deploy.results import Prediction, hierarchy
 from deployment.mambo_deploy.streaming import prepared_stream
 from dev.benchmarks.inference.onnx_inference import file_hash
@@ -98,7 +99,42 @@ def collect(args):
             embeddings = None
             if args.embeddings:
                 embeddings = np.lib.format.open_memmap(output / "embeddings.npy", mode="w+", dtype=np.float32, shape=(len(records), 1280))
-            timings = {"input_wait_seconds": 0.0, "runtime_seconds": 0.0, "reduce_write_seconds": 0.0}
+            timings = {
+                name: 0.0
+                for name in (
+                    "input_wait_seconds",
+                    "runtime_seconds",
+                    "output_wait_seconds",
+                    "hierarchy_seconds",
+                    "prediction_seconds",
+                    "write_seconds",
+                )
+            }
+
+            def process(batch, leaf, offset):
+                phase = {name: 0.0 for name in ("hierarchy_seconds", "prediction_seconds", "write_seconds")}
+                for name, selected in selectors.items():
+                    t = time.perf_counter()
+                    reduced = hierarchy(leaf, selected, predictor.bundle.classes)
+                    phase["hierarchy_seconds"] += time.perf_counter() - t
+                    t = time.perf_counter()
+                    result = Prediction(*reduced)
+                    phase["prediction_seconds"] += time.perf_counter() - t
+                    t = time.perf_counter()
+                    writers[name].writerows(canonical_rows(batch, result, offset))
+                    phase["write_seconds"] += time.perf_counter() - t
+                return len(batch), phase
+
+            worker = stack.enter_context(ResultWorker(process))
+
+            def finish_one():
+                t = time.perf_counter()
+                count, phase = worker.pop()
+                timings["output_wait_seconds"] += time.perf_counter() - t
+                for name, value in phase.items():
+                    timings[name] += value
+                return count
+
             report["pipeline"] = {"decode_workers": args.decode_workers, "prefetch_batches": args.prefetch_batches, "read_once": True}
             stream_stats = {}
             report["streaming"] = stream_stats
@@ -125,6 +161,9 @@ def collect(args):
                     offset, views = next(batches)
                     batch = records[offset : offset + len(views[0])]
                 except StopIteration:
+                    while worker.pending:
+                        completed += finish_one()
+                    print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
                     break
                 timings["input_wait_seconds"] += time.perf_counter() - waiting
                 t = time.perf_counter()
@@ -140,13 +179,10 @@ def collect(args):
                         raise ValueError("Invalid embeddings")
                     np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-4)
                     embeddings[offset : offset + len(batch)] = vectors
-                t = time.perf_counter()
-                for name, selected in selectors.items():
-                    result = Prediction(*hierarchy(leaf, selected, predictor.bundle.classes))
-                    writers[name].writerows(canonical_rows(batch, result, offset))
-                timings["reduce_write_seconds"] += time.perf_counter() - t
+                worker.submit(batch, leaf, offset)
                 del views
-                completed += len(batch)
+                if len(worker.pending) == 2:
+                    completed += finish_one()
                 now = time.perf_counter()
                 if now - last_progress >= 5 or completed == len(records):
                     interval = now - last_progress
@@ -156,7 +192,8 @@ def collect(args):
                     phase_seconds["background_assembly_seconds"] = round(assembly - previous_assembly, 3)
                     # Retain the existing machine-readable count line for live monitors.
                     print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
-                    print(f"{rate:.1f} images/s; ETA {(len(records) - completed) / rate / 60:.1f} min; pipeline={stream_stats}", flush=True)
+                    eta = f"{(len(records) - completed) / rate / 60:.1f} min" if rate else "waiting for first written batch"
+                    print(f"{rate:.1f} images/s; ETA {eta}; pipeline={stream_stats}", flush=True)
                     print(f"interval={interval:.3f}s; phases={phase_seconds}", flush=True)
                     previous_timings = dict(timings)
                     previous_completed = completed

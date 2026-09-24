@@ -16,6 +16,7 @@ from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
 from .preprocessing import RECIPE, image_items, preprocess
+from .result_worker import ResultWorker
 from .results import Prediction, hierarchy
 from .streaming import prepared_stream
 
@@ -307,7 +308,12 @@ class Predictor:
             encoded_budget=encoded_budget,
             stats=stats,
         )
-        with closing(batches):
+
+        def process(leaves, vectors, selected, metadata):
+            result = Prediction(*hierarchy(leaves, selected, self.bundle.classes), topk, **metadata)
+            return (result, vectors) if embeddings else result
+
+        with closing(batches), ResultWorker(process) as worker:
             for _, views in batches:
                 with self._lock:
                     leaves, vectors = (
@@ -317,15 +323,21 @@ class Predictor:
                     )
                     if not np.isfinite(leaves).all():
                         raise RuntimeError("Model returned non-finite species scores")
-                    result = Prediction(
-                        *hierarchy(leaves, self.selected, self.bundle.classes),
-                        topk,
-                        model_id=self.bundle.manifest["model_id"],
-                        backend=self.backend,
-                        preset=self.preset,
-                        class_list_sha256=self.class_list_sha256,
-                        precision=self.effective_precision,
-                        tta=self.tta.name if self.tta else "none",
-                        tta_views=len(views),
+                    worker.submit(
+                        leaves,
+                        vectors,
+                        self.selected.copy(),
+                        dict(
+                            model_id=self.bundle.manifest["model_id"],
+                            backend=self.backend,
+                            preset=self.preset,
+                            class_list_sha256=self.class_list_sha256,
+                            precision=self.effective_precision,
+                            tta=self.tta.name if self.tta else "none",
+                            tta_views=len(views),
+                        ),
                     )
-                yield (result, vectors) if embeddings else result
+                if len(worker.pending) == 2:
+                    yield worker.pop()
+            while worker.pending:
+                yield worker.pop()

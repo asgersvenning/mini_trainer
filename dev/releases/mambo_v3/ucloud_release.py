@@ -38,6 +38,8 @@ def configuration(path):
     ):
         if key in data and (not isinstance(data[key], int) or data[key] < minimum):
             raise ValueError(f"Nonnegative integer required: {key}")
+    if "v3_batch_size" in data and (not isinstance(data["v3_batch_size"], int) or data["v3_batch_size"] < 1):
+        raise ValueError("Positive v3_batch_size required")
     for key in ("cpu_batches", "gpu_batches"):
         if not data[key] or any(not isinstance(b, int) or b < 1 for b in data[key]):
             raise ValueError(f"Positive batches required: {key}")
@@ -71,7 +73,7 @@ def jobs(config, phase):
     manifest = config.get("timing_manifest", config["manifest"]) if timing else config["manifest"]
     root = config.get("timing_root", config["root"]) if timing else config["root"]
     shared = ["--manifest", manifest, "--root", root, "--threads", str(config["threads"])]
-    bank_size = max(32, *config["cpu_batches"], *config["gpu_batches"])
+    bank_size = max(32, *config["cpu_batches"], *config["gpu_batches"], config.get("v3_batch_size", 1))
     planned = []
     for trial in range(3 if timing else 1):
         variants = list(VARIANTS)
@@ -128,14 +130,20 @@ def jobs(config, phase):
                     ]
                 command += [*shared, "--device", device, "--presets", *config["timing_presets" if timing else "quality_presets"]]
                 if timing:
+                    sizes = list(config["cpu_batches"] if device == "cpu" else config["gpu_batches"])
+                    if not legacy and device != "cpu" and "v3_batch_size" in config:
+                        sizes = sorted(set([*sizes, config["v3_batch_size"]]))
                     command += [
                         "--batches",
-                        *map(str, config["cpu_batches"] if device == "cpu" else config["gpu_batches"]),
+                        *map(str, sizes),
                         "--bank-size",
                         str(bank_size),
                     ]
                 else:
-                    command += ["--batch-size", str(config["quality_batch_size"])]
+                    command += [
+                        "--batch-size",
+                        str(config["quality_batch_size"] if legacy else config.get("v3_batch_size", config["quality_batch_size"])),
+                    ]
                     if phase == "qualification":
                         command += ["--count", str(config["qualification_count"])]
                 name = f"trial-{trial}-{variant}-{device.replace(':', '-')}" if timing else variant
@@ -225,6 +233,8 @@ def reuse_v2(config, phase, job, frozen):
         "dev/releases/mambo_v3/ucloud_release.py",
         "deployment/mambo_deploy/augmentation.py",
         "deployment/mambo_deploy/streaming.py",
+        "deployment/mambo_deploy/result_worker.py",
+        "deployment/mambo_deploy/results.py",
         "deployment/mambo_deploy/predictor.py",
         "dev/releases/mambo_v3/benchmark.py",
         "dev/releases/mambo_v3/ucloud_summary.py",
@@ -345,8 +355,9 @@ if __name__ == "__main__":
     parser.add_argument("--reuse-v2-from", type=Path, help="With --new-campaign: verified completed V2 qualification/full evidence")
     for key in ("read-workers", "read-window", "encoded-budget-mib"):
         parser.add_argument("--" + key, type=int, help="With --new-campaign: streaming input control")
+    parser.add_argument("--v3-batch-size", type=int, help="With --new-campaign: V3 collection batch size")
     args = parser.parse_args()
-    for key in ("read_workers", "read_window", "encoded_budget_mib"):
+    for key in ("read_workers", "read_window", "encoded_budget_mib", "v3_batch_size"):
         value = getattr(args, key)
         if value is not None and (not args.new_campaign or value < 1):
             parser.error("Positive streaming controls require --new-campaign")
@@ -361,7 +372,7 @@ if __name__ == "__main__":
     config = configuration(args.config.resolve())
     if args.onnx_python:
         config["onnx_python"] = os.path.abspath(args.onnx_python.expanduser())
-    for key in ("decode_workers", "prefetch_batches", "read_workers", "read_window", "encoded_budget_mib"):
+    for key in ("decode_workers", "prefetch_batches", "read_workers", "read_window", "encoded_budget_mib", "v3_batch_size"):
         if (value := getattr(args, key)) is not None:
             config[key] = value
     if args.reuse_v2_from:

@@ -539,3 +539,12 @@ def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
     np.testing.assert_array_equal(np.concatenate([v for _, v in observed]), vectors)
     np.testing.assert_array_equal(np.concatenate([r.indices for r, _ in observed]), expected.indices)
     np.testing.assert_array_equal(np.concatenate([r.confidence for r, _ in observed]), expected.confidence)
+
+
+@pytest.mark.parametrize("topk", [1, 2])
+def test_top1_fast_path_preserves_stable_ties(topk):
+    raw = [np.array([[2, 2, -1], [-3, -3, -3], [0, 2, 1]], dtype=np.float32)] * 3
+    labels = [["a", "b", "c"]] * 3
+    result = Prediction(raw, labels, [np.arange(3)] * 3, topk)
+    expected = np.stack([np.argsort(-v, axis=1, kind="stable")[:, :topk] for v in raw], axis=-1)
+    np.testing.assert_array_equal(result.indices, expected)

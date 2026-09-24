@@ -443,3 +443,50 @@ python -m dev.releases.mambo_v3.ucloud_summary \
 
 The standalone monitor takes `~/.cache/mambo-ucloud/runs-assembly/full`. Both full
 collection and deployment streaming benchmarks use the corrected assembly path.
+
+### Batch 256 with overlapped result processing
+
+Use this campaign for the next B200 run. All four V3 variants collect at batch
+**256**, without a batch-size search. The original V2 collection invocation and
+completed results remain unchanged. V3 GPU benchmarks retain their existing request
+sizes and add 256; their streaming cell uses 256. All variants use the same enlarged
+request timing image bank, while V2 retains its original batch sizes.
+
+Top-1 selection now uses a maximum instead of sorting every class. Confidence
+normalization and hierarchical reduction are unchanged. Collection and the public
+streaming API process results in a single ordered background worker with at most
+two batches outstanding. CSV output order and failure propagation are preserved;
+completion counts advance only after results have been written. Final reports are
+published after the output queue drains.
+
+Keep 256 readers, 48 preparation workers and the 1,024-image read window. Use **one
+prepared batch ahead** at batch 256: the preparation window holds at most 512
+images plus assembly temporaries, rather than nine batches of 256. TTA multiplies
+prepared-image storage. The encoded budget remains 2 GiB.
+
+Stop the previous run and queued commands before pulling this change. No venv
+update is needed. The new campaign inherits runtime paths and V2 reuse:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-assembly/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-batch256 \
+  --v3-batch-size 256 --prefetch-batches 1
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-batch256/config.json
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-batch256/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-batch256/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-batch256 \
+  --output ~/.cache/mambo-ucloud/summary-batch256
+```
+
+Watch `~/.cache/mambo-ucloud/runs-batch256/full/torch.log`. Interval timings now
+separate `hierarchy_seconds`, `prediction_seconds` and `write_seconds` for completed
+background jobs. They overlap inference and must not be added to foreground times.
+`output_wait_seconds` measures consumer backpressure while retiring results.
+B200 qualification exercises batch 256; local output checks use laptop-sized
+batches and do not establish B200 memory use or throughput.

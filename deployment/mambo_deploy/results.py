@@ -40,7 +40,12 @@ class Prediction:
             raise ValueError("topk must be positive and no larger than the smallest retained rank")
         self.topk, self.metadata, self.raw_logits = topk, metadata, raw
         self.cls2idx = {str(rank): {label: i for i, label in enumerate(names)} for rank, names in enumerate(labels)}
-        indices = [np.argsort(-values, axis=1, kind="stable")[:, :topk] for values in raw]
+        indices = [
+            np.argmax(values, axis=1)[:, None]
+            if topk == 1 and not np.isnan(values).any()
+            else np.argsort(-values, axis=1, kind="stable")[:, :topk]
+            for values in raw
+        ]
         self.indices = np.stack(indices, axis=-1)
         self.global_indices = np.stack([mapping[idx] for mapping, idx in zip(global_indices, indices)], axis=-1)
         self.logits = np.stack([np.take_along_axis(values, idx, axis=1) for values, idx in zip(raw, indices)], axis=-1)

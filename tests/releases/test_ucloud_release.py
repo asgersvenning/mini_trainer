@@ -289,3 +289,18 @@ def test_loading_controls_apply_only_to_v3_collection():
                 assert command[command.index("--prefetch-batches") + 1] == "2"
             elif job["legacy"]:
                 assert "--prefetch-batches" not in command
+
+
+def test_large_v3_batch_preserves_v2_reuse_and_shared_timing_bank():
+    config = configuration(CONFIG.resolve())
+    original = jobs(config, "full")[0]["command"]
+    config["v3_batch_size"] = 256
+    assert jobs(config, "full")[0]["command"] == original
+    for job in jobs(config, "full")[1:]:
+        c = job["command"]
+        assert c[c.index("--batch-size") + 1] == "256"
+    for job in jobs(config, "benchmark"):
+        c = job["command"]
+        assert c[c.index("--bank-size") + 1] == "256"
+        sizes = c[c.index("--batches") + 1 : c.index("--bank-size")]
+        assert ("256" in sizes) == (not job["legacy"] and job["device"] != "cpu")
