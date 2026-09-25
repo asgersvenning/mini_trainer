@@ -89,7 +89,7 @@ class Predictor:
             expected = self.bundle.manifest["files"][self.bundle.manifest["profiles"]["torch"]["model"]]["sha256"]
             if digest != expected:
                 raise ValueError("Local weights must match the pinned release checkpoint")
-        self.preset = self._preset_name(model or ("full" if weights is not None else "europe"))
+        self.preset = self._preset_name(model or "full")
         if class_list is not None:
             self._select_labels(self._read_list(class_list))
             self.preset = "custom"
@@ -447,7 +447,7 @@ class Predictor:
         topk=1,
         read_workers=32,
         prepare_workers=None,
-        read_window=128,
+        read_window=None,
         prefetch_batches=2,
         encoded_budget=256 * 1024**2,
         stats=None,
@@ -464,7 +464,7 @@ class Predictor:
             device_prefetch=device_prefetch,
             read_workers=read_workers,
             prepare_workers=self.preprocess_workers if prepare_workers is None else prepare_workers,
-            read_window=read_window,
+            read_window=max(128, self.batch_size) if read_window is None else read_window,
             prefetch_batches=prefetch_batches,
             encoded_budget=encoded_budget,
             stats=stats,

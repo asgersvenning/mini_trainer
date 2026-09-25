@@ -61,7 +61,7 @@ def test_tiny_legacy_top1_fixture():
 
 def test_custom_list_replaces_preset_and_predictors_are_isolated(bundle):
     first = Predictor(bundle, class_list=["c", "c", "a"])
-    second = Predictor(bundle)
+    second = Predictor(bundle, model="europe")
     assert first.class_list == ["a", "c"]
     assert second.class_list == ["a", "b"]
     first._apply_class_mask(-1)
@@ -81,7 +81,7 @@ def test_hash_failure_and_escape_are_rejected(bundle):
         loaded.file("../outside")
     (bundle / "europe.classes").write_text("c\nb\n")
     with pytest.raises(ValueError, match="hash mismatch"):
-        Predictor(bundle)
+        Predictor(bundle, model="europe")
 
 
 def test_uint8_and_float_inputs_align_and_reject_hwc():
@@ -781,3 +781,80 @@ def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
     out = np.empty((3, 384, 768), dtype=dtype)[:, :, ::2]
     assert preprocess(image, out=out, padding=0.25) is out
     np.testing.assert_array_equal(out, expected)
+
+
+def test_default_scope_is_global_including_legacy_facade(bundle, monkeypatch):
+    from mini_trainer import deploy
+
+    monkeypatch.setattr(deploy, "_runtime", lambda: Predictor)
+    for predictor in (Predictor(bundle), deploy.Predictor(device="cpu", bundle=bundle)._predictor):
+        assert predictor.preset == "full"
+        assert predictor.class_list == ["a", "b", "c"]
+    assert Predictor(bundle, model="europe").class_list == ["a", "b"]
+
+
+def test_stream_window_default_accommodates_large_batches(bundle, monkeypatch):
+    predictor = Predictor(bundle, batch_size=256)
+    captured = {}
+
+    def prepare(*args, **kwargs):
+        captured.update(kwargs)
+        yield from ()
+
+    monkeypatch.setattr(predictor, "prepared_batches", prepare)
+    assert list(predictor.predict_stream([])) == []
+    assert captured["read_window"] == 256
+    assert list(predictor.predict_stream([], read_window=1024)) == []
+    assert captured["read_window"] == 1024
+
+
+@pytest.mark.parametrize("embeddings", [False, True])
+def test_cli_streams_ordered_results_and_publishes_only_complete_output(bundle, tmp_path, monkeypatch, embeddings):
+    import csv
+    import sys
+    from types import SimpleNamespace
+
+    from deployment.mambo_deploy import cli
+
+    paths = [tmp_path / "a" / f"{i}.jpg" for i in range(3)]
+    closed = []
+    fail = [False]
+
+    def batches(items, **kwargs):
+        assert items == paths
+        assert kwargs == {"topk": 1, "embeddings": embeddings}
+        try:
+            for start, size in ((0, 2), (2, 1)):
+                if fail[0] and start:
+                    raise ValueError("decode failed")
+                raw, labels, indices = hierarchy(np.tile([3.0, 2.0, 1.0], (size, 1)), [0, 1, 2], CLASSES)
+                result = Prediction(raw, labels, indices, model_id="fixture", preset="full")
+                yield (result, np.full((size, 1280), start, dtype=np.float32)) if embeddings else result
+        finally:
+            closed.append(True)
+
+    predictor = SimpleNamespace(bundle=SimpleNamespace(classes=CLASSES), predict_stream=batches)
+    monkeypatch.setattr(cli, "Predictor", lambda *args, **kwargs: predictor)
+    argv = ["mambo_predict", "-i", *map(str, paths), "-o", str(tmp_path), "--name", "success"]
+    if embeddings:
+        argv.append("--embeddings")
+    monkeypatch.setattr(sys, "argv", argv)
+    cli.run()
+    records = json.loads((tmp_path / "success/predictions.json").read_text())
+    assert len(records["results"]) == 3 and records["metadata"]["preset"] == "full"
+    with (tmp_path / "success/mini_metric.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert [r["filename"] for r in rows[::3]] == list(map(str, paths))
+    assert [r["instance_id"] for r in rows[::3]] == ["0", "1", "2"]
+    assert all(r["correct"] == "1" for r in rows)
+    if embeddings:
+        vectors = np.load(tmp_path / "success/embeddings.npy")
+        assert vectors.shape == (3, 1280) and vectors.dtype == np.float32
+        np.testing.assert_array_equal(vectors[:, 0], [0, 0, 2])
+    argv[argv.index("success")] = "failed"
+    fail[0] = True
+    with pytest.raises(ValueError, match="decode failed"):
+        cli.run()
+    assert not (tmp_path / "failed").exists()
+    assert not list(tmp_path.glob(".mambo-results-*"))
+    assert len(closed) == 2

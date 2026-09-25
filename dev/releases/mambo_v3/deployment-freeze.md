@@ -34,10 +34,12 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    existing application environment and an offline bundle. Explain scope/runtime/TTA
    decisions; leave tuning and kernel diagnostics in linked details.
 
-   Concrete usability items to settle before freezing (not new performance work):
-   the CLI retains whole-collection results; `read_window=128` must be raised for
-   streaming batches above 128; arrays require CHW conversion; native setup needs
-   the `timm` extra. Decide which need a small API/CLI fix versus explicit guidance.
+   Implemented integration decisions: the `mambo-v3` distribution alone owns
+   `mambo_predict`; API/CLI default to global; CLI writes batches incrementally and
+   publishes only complete outputs; the streaming read-window default grows with
+   batch size; the native extra includes `timm`. Arrays retain explicit CHW input
+   to avoid guessing ambiguous layouts. These changes need final installed-bundle
+   qualification below.
    Retain V2 entry-point and format compatibility where promised; distinguish that
    from identical vocabularies, scores or embeddings.
 
@@ -91,3 +93,17 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
 Freeze completion requires the final installed artifacts and documentation to agree.
 Historical qualification is supporting evidence, not a substitute for checking the
 final wheels and embedded metadata.
+
+## Integration increment evidence — 25 September 2026
+
+The package is now model-generation-specific (`mambo-v3`, Python import
+`mambo_deploy`), version 0.3.0. The root training package no longer registers the
+same executable. Existing candidate installations need a fresh environment (or
+removal of `mambo-deploy`) to avoid two distributions owning the import directory.
+No published package was changed.
+
+Focused contracts: 96 passed, four GPU-dependent skips, across the initial run
+and correction of a generator stub in the new read-window test. Static checks and
+the required minimal installed training-wheel check passed. The renamed deployment
+wheel builds; final installed ONNX/native bundle checks remain ahead. No performance
+or quality evaluation was rerun.

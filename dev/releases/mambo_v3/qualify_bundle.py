@@ -67,7 +67,7 @@ def qualify(bundle, dataset, device, backends, tta="none"):
             a, b = (report["variants"][backend][mode] for backend in backends)
             report[f"{mode}_backend_top1_agreement"] = sum(x["label"] == y["label"] for x, y in zip(a, b)) / len(a)
     report["versions"] = {}
-    for name in ("numpy", "pillow", "torch", "onnxruntime", "onnxruntime-gpu", "mambo-deploy"):
+    for name in ("numpy", "pillow", "torch", "onnxruntime", "onnxruntime-gpu", "mambo-v3"):
         try:
             report["versions"][name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

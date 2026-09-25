@@ -1,5 +1,5 @@
 [project]
-name = "mambo-deploy"
+name = "mambo-v3"
 version = "0.3.0"
 description = "Portable local inference for MAMBO model bundles"
 requires-python = ">=3.12"
@@ -11,7 +11,7 @@ license-files = ["LICENSE"]
 [project.optional-dependencies]
 onnx = ["onnxruntime>=1.20"]
 onnx-cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.21,<2"]
-torch = ["mini_trainer>=0.3.0"]
+torch = ["mini_trainer[timm]>=0.3.0,<0.4"]
 
 [project.scripts]
 mambo_predict = "mambo_deploy.cli:run"
@@ -22,3 +22,4 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = "mambo_deploy"

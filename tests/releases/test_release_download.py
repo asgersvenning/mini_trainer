@@ -53,7 +53,7 @@ def test_packaged_metadata_and_automatic_predictor(tmp_path, monkeypatch):
     monkeypatch.setenv("MAMBO_CACHE", str(tmp_path))
     monkeypatch.setattr(download, "urlopen", lambda *a, **k: pytest.fail("metadata should be packaged"))
     p = Predictor()
-    assert p.bundle.download and p.preset == "europe"
+    assert p.bundle.download and p.preset == "full"
     monkeypatch.setenv("MAMBO_OFFLINE", "1")
     assert Predictor().bundle.root == p.bundle.root
     with pytest.raises(FileNotFoundError, match="not cached"):

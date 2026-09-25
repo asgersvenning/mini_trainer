@@ -11,9 +11,9 @@ locally until publication. Choose one runtime installation:
 
 | Environment | Installation | Predictor options / CLI |
 |---|---|---|
-| CPU, without PyTorch | `uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
-| NVIDIA GPU, without the training package | `uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx-cuda]'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
-| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl[timm]' ./mambo_deploy-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
+| CPU, without PyTorch | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx]'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
+| NVIDIA GPU, without the training package | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx-cuda]'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
+| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl[timm]' ./mambo_v3-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
 
 For an environment with ONNX Runtime already provisioned, install the base
 `mambo_deploy` wheel without extras. Do not install CPU and GPU ONNX Runtime
@@ -94,14 +94,15 @@ options belong to `predict_stream`, not the constructor or CLI:
 | Option | Default | When it matters |
 |---|---|---|
 | `read_workers` | `32` | Concurrent file reads, useful for storage latency. |
-| `read_window` | `128` images | Maximum lookahead; must accommodate the predictor's `batch_size`. Increase alongside larger batches. |
+| `read_window` | `max(128, batch_size)` images | Maximum lookahead; follows larger batches automatically unless explicitly set. |
 | `prepare_workers` | Predictor's `preprocess_workers` | Decoding and image preparation; shares CPU capacity with your application. |
 | `prefetch_batches` | `2` | Prepared input buffer size; trades memory for overlap. |
 | `encoded_budget` | `256 * 1024**2` bytes | Encoded image buffer budget; a larger single file fails explicitly. |
 
 These budgets do not bound total process memory: model weights, decoded images,
-prepared views and results also consume memory. `predict()` and the CLI accumulate
-results for the whole input collection, so submit bounded requests there.
+prepared views and results also consume memory. `predict()` accumulates results for the whole input collection; submit bounded
+requests there. The CLI streams predictions and embeddings to disk and publishes
+the output directory only when the complete run succeeds.
 
 For diagnostics, `stats={}` collects queue/buffer and wait statistics;
 `device_prefetch=False` disables device staging. These are not routine integration

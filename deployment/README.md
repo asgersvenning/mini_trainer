@@ -18,15 +18,15 @@ is required. Install ONNX/CPU to start without a CUDA setup:
 ```sh
 uv venv --python 3.13 .venv
 source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
-uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
+uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx]'
 ```
 
-**Python** — choose the region where your images were collected:
+**Python** — supply images directly:
 
 ```python
 from mambo_deploy import Predictor
 
-predictor = Predictor(model="north_europe")  # ONNX, CPU; use "full" for global
+predictor = Predictor()  # Global species list, ONNX, CPU
 result = predictor.predict(["moth.jpg", "butterfly.jpg"])
 print(result[0].label)       # (species_id, genus_id, family_id)
 print(result[0].confidence)  # confidence for each of those ranks
@@ -36,14 +36,14 @@ records = result.to_dict()   # list of JSON-serializable records for your applic
 **CLI** — the same defaults, for files or a directory:
 
 ```sh
-mambo_predict -i ./images --model north_europe -o ./output --name predictions
+mambo_predict -i ./images -o ./output --name predictions
 ```
 
 This creates `output/predictions/predictions.json` and `mini_metric.csv`;
 `--embeddings` also writes `embeddings.npy`. Choose a new output name for each run.
 For a one-off command without installing into your application environment, replace
 `mambo_predict` with
-`uvx --from './mambo_deploy-0.3.0-py3-none-any.whl[onnx]' mambo_predict`.
+`uvx --from './mambo_v3-0.3.0-py3-none-any.whl[onnx]' mambo_predict`.
 
 | Interface | Inputs | Outputs |
 |---|---|---|
@@ -59,7 +59,7 @@ folder names; arbitrary image folders do not supply evaluation ground truth.
 
 ## Choose the configuration that matters
 
-**Choose a geographic scope; leave the other defaults initially.** ONNX/CPU is the
+**Start with the defaults; select a regional preset when your location is known.** ONNX/CPU is the
 simplest dependency footprint and a useful starting point for CPU-only and edge
 applications. For NVIDIA GPU throughput, use PyTorch if it fits your environment,
 or ONNX/CUDA to keep the training package out of your application.
@@ -81,7 +81,7 @@ CLI flags apply to `mambo_predict`.
 
 | Python API | CLI | Default | Role / main trade-off |
 |---|---|---|---|
-| `model=`, `class_list=` | `--model`, `--class-list` | `europe` / no override | Eligible species; affects predictions and confidence. |
+| `model=`, `class_list=` | `--model`, `--class-list` | `full` / no override | Eligible species; affects predictions and confidence. |
 | `backend=`, `device=` | `--backend`, `--device` | `onnx`, `cpu` | Runtime and hardware: `onnx` or `torch`; `cpu` or `cuda:0`. |
 | `tta=True` | `--tta` | Off | Quality versus throughput; enabling uses the recommended three-view recipe. |
 | `batch_size=` | `--batch-size` | `8` | Images per model call: throughput versus memory. |
@@ -134,9 +134,35 @@ with closing(predictor.predict_stream(image_paths)) as batches:
 
 Input order is preserved. Add `embeddings=True` to receive `(result, vectors)` pairs.
 For in-memory inputs, split large collections into smaller `predict()` requests;
-that method and the CLI retain results for the whole request. `batch_size` limits
+that method retains results for the whole request. The CLI writes results batch by batch. `batch_size` limits
 model calls, not total request memory. [Streaming controls](../docs/mambo-integration.md#streaming-controls)
 are available if the defaults do not fit your workload.
+
+## Changes from MAMBO V2
+
+- Global (`full`) is now the default scope. Select `europe` or `north_europe` to
+  retain those geographic restrictions; the legacy lists remain available.
+- Install the model-generation package **`mambo-v3`**; its Python import remains
+  `mambo_deploy`. Maintenance releases of this package retain the V3 trained model.
+  Pin the package version for reproducible application builds. Use a separate
+  environment for V2 or an older deployment candidate.
+- `mambo_predict` is owned by the deployment package alone and defaults to ONNX/CPU.
+  Existing native CLI workflows must specify `--backend torch --device cuda:0`.
+  The Python `mini_trainer.deploy.Predictor` facade retains native/CUDA defaults.
+- V3 uses EfficientNetV2-S, adds ONNX, expanded regional presets, optional TTA and
+  streaming output. Raw inputs and result formats are documented above; old
+  preprocessed tensors, numeric class positions and embeddings need migration.
+
+### Beyond Python
+
+The ONNX assets also provide a path to local browser inference with
+[ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/deploy.html), where
+images can be processed on the user's device. Existing browser work is recorded
+in the [release roadmap](../docs/ucloud-model-release-roadmap.md#located-production-artifacts-and-existing-browser-work).
+This Python release does not ship a browser SDK: preprocessing, external weights
+and browser/runtime support still need integration. The same local API or CLI can
+be embedded in desktop applications, batch jobs and services without a hosted
+prediction service.
 
 ## Release comparison
 
