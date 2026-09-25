@@ -5,10 +5,10 @@ that every temporary binary remains in the checkout. Cleanup consolidates local
 evidence under ignored `local-evidence/quantization-2026-09-09/`; no model, dataset
 or generated result is committed by this operation.
 
-Historical cleanup counts, disk-space observations and the test snapshot are
-preserved in the [dated agent handoff](../.agents/notes/2026-09-09-quantization-cleanup.md).
-They do not establish current artifact availability or test status. This guide
-covers the retained layout and restore procedure.
+Historical cleanup counts and validation are recorded in
+[the original report](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/quantization-artifacts.md).
+They do not establish current artifact availability or test status. Verify the
+local inventory before reuse; this guide owns the restore procedure.
 
 ## Retained locally
 

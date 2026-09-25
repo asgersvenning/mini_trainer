@@ -16,6 +16,7 @@ optional dependencies, expected failures or slow-backbone requirements.
 | `export/` | ONNX export and native-quantized export contracts |
 | `integration/` | Full training, lazy data and distributed integration |
 | `benchmarks/` | Dataset/evaluation orchestration, inference probes, provenance and report storage |
+| `releases/` | Deployment adapters, presets, streaming ownership, campaign evidence and packaging |
 | `logging/` | Console, TensorBoard and W&B logging |
 | `utils/` | General device/plot helpers and the opt-in compatibility utility |
 

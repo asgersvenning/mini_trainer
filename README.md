@@ -59,31 +59,18 @@ uv sync --extra all --extra [cpu/cu126/cu130/cu132]
 source .venv/bin/activate
 ```
 
-> [!TIP]
-> We highly recommend installing `torch` and `torchvision` with native CUDA support via either `uv sync ... --extra [cpu/cu126/cu130/cu132]` or `uv pip install ... --torch-backend=auto`, **and** crucially running scripts or tools associated with your `uv` virtual environment by **activating the venv:**
-> ```bash
-> source .venv/bin/activate
-> ```
-> Using `uv run ...` is likely to automatically install CUDA-incompatible wheels. If you really want to use `uv run`, we suggest using the `--no-sync` flag every time.
-> Note that if you are *"lucky"* you might have the default CUDA version on your system, meaning that `uv run` might in fact use the correct wheels. This is, however, not guaranteed.
+Activate the environment, use its executables directly, or use `uv run --no-sync`.
+An implicit sync can replace the deliberately selected PyTorch backend. Select the
+backend explicitly whenever installing or synchronizing dependencies.
 
 ## Data loading on shared machines
 
-Automatic DataLoader worker selection uses the CPUs available to the process when
-the OS exposes that information, including CPU affinity. It reserves four CPUs,
-rounds down to an even worker count, and caps workers at 16 for training and 32 for
-prediction. For example, an 8-CPU affinity limit selects four workers, even on a
-larger shared machine. Four or fewer available CPUs selects zero workers.
-
-Set `--num_workers 2` to choose a count explicitly, or `--num_workers 0` to load in
-the main process. CUDA-cached datasets always use zero DataLoader workers.
-RAM-cache preloading uses a separate thread pool that also respects process CPU
-availability, reserves two CPUs, and uses between 1 and 128 threads.
-
-Affinity does not describe all container CPU quotas or competition from other jobs.
-If an allocation shares an unrestricted CPU set, choose a conservative explicit
-worker count per training process. `--num_workers` does not control RAM-cache
-preloading; use uncached loading when you need that explicit bound.
+Defaults use process CPU availability, affinity, visible cgroup quotas and Slurm
+allocation limits. Shared resources may still need an explicit per-process budget.
+Set `--num_workers N` for loading (`0` runs in the main process), and
+`--cache-workers N` for training-cache preparation. CUDA-cached datasets use zero
+DataLoader workers. See [automatic budgets](dev/README.md#automatic-cpu-budgets)
+for caps and fallback behavior; cache readers and DataLoader workers are separate.
 
 ## Weights & Biases Integration
 
@@ -115,7 +102,7 @@ Feel free to contribute, but here are a few tips:
 
 Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
 their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).
-The quantization branch has a focused [bottleneck and handoff roadmap](docs/quantization-roadmap.md).
+Remaining quantization work has a focused [target-qualification roadmap](docs/quantization-roadmap.md).
 
 ## ONNX export
 

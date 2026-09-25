@@ -2,7 +2,7 @@
 
 Tests are grouped by subsystem; see the [test suite map](../tests/README.md).
 Use [local worktrees](worktrees.md) to develop independent branches concurrently.
-For quantization work, follow the [branch roadmap](../docs/quantization-roadmap.md)
+For quantization work, follow the [quantization roadmap](../docs/quantization-roadmap.md)
 and [benchmark command index](benchmarks/README.md).
 For a mounted global_lepi dataset on a manually allocated UCloud node, use the
 [paired branch training comparison](ucloud/README.md), including fresh environment
@@ -324,20 +324,27 @@ Agent-only edits need content/link review and `git diff --check`; changes to the
 classifier or workflows need their focused checks. Release-tag, scheduled and
 manual workflows are not disabled by agent commit messages.
 
+The first hosted agent-only PR still needs required-check verification under the
+repository's actual branch-protection settings; local classifier tests do not
+establish those hosted statuses.
+
 ## Automatic CPU budgets
 
-Automatic loader and cache worker counts now use the smallest detected process
-CPU count, affinity mask, visible Linux cgroup CPU quota, and positive
-`SLURM_CPUS_PER_TASK` allocation. Cgroup v1 and v2 ancestor limits are included;
-fractional CPU quotas are rounded down before applying the existing four-CPU
-reserve and worker caps. Explicit worker counts, including zero, remain unchanged.
-Unreadable, unlimited, or malformed quota data falls back to the other signals.
+Defaults use the smallest detected process CPU count, affinity mask, visible Linux
+cgroup quota (v1/v2 ancestors included) and positive `SLURM_CPUS_PER_TASK`. Malformed,
+unavailable or unlimited quota data falls back to other signals; fractional quotas
+round down. Explicit counts, including zero, are preserved.
 
-These are resource ceilings, not a measurement of contention from other jobs.
-For a deliberately shared allocation, set worker counts explicitly when needed.
-The relevant interfaces are documented by the
-[Linux kernel](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files)
-and [Slurm](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_CPUS_PER_TASK).
+| Consumer | Automatic budget | Override |
+| --- | --- | --- |
+| Training DataLoader | Available CPUs minus 4, rounded down to even, bounded 0–16 | `--num_workers` |
+| Prediction DataLoader | Same rule, capped at 32 | `--num_workers` |
+| Training cache preparation | Same rule, capped at 16; zero uses serial preparation | `--cache-workers` / `cache_workers` |
+
+CUDA-cached datasets force zero DataLoader workers. Limits describe available
+resources, not competition from other jobs; set explicit per-rank budgets when
+sharing an allocation. See the [Linux quota interface](https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu-interface-files)
+and [Slurm allocation setting](https://slurm.schedmd.com/sbatch.html#OPT_SLURM_CPUS_PER_TASK).
 
 CI runs on pull requests targeting `master` and on pushes to `master`. Feature
 branches such as `quant` use PR checks, avoiding duplicate push/PR jobs. New
