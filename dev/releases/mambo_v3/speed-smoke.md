@@ -84,3 +84,7 @@ and worker settings unchanged. Run the four variants once; do not repeat the MIG
 quality or GPU-resident tests. The existing resident reference at batch 256 is
 3,667 images/s; it excludes transfers and CPU result construction and remains a
 reference, not an end-to-end promise. Keep prior output directories for comparison.
+
+For a local check that removes model speed from the comparison, use the
+[three-case pipeline probe](pipeline-probe.md). It does not require another model
+evaluation or a new UCloud allocation.
