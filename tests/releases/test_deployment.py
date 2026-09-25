@@ -210,16 +210,22 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         ((4, 24, 15), "e4dfd0c4a4174cd6d4913b1bf4f88bfd8c82a21802ec0d006e12594995bb1d64"),
     ],
 )
-def test_fp32_preprocessing_preserves_geometry_with_bounded_rounding(shape, digest, monkeypatch):
+def test_fp32_preprocessing_preserves_geometry_with_bounded_rounding(shape, digest):
     array = np.random.default_rng(19).integers(0, 256, size=shape, dtype=np.uint8)
     value = preprocess(array)
     assert value.dtype == np.float32 and value.flags.c_contiguous
     from deployment.mambo_deploy import preprocessing
 
-    # Retain the frozen FP64 reference to detect geometry/normalization drift.
-    with monkeypatch.context() as reference:
-        reference.setattr(preprocessing, "_FRACTION", preprocessing._COORD - preprocessing._LO)
-        legacy = preprocess(array)
+    # Freeze the FP64 equation itself, independently of production scratch dtypes.
+    image = np.ascontiguousarray(preprocessing._square(array), dtype=np.float32)
+    lo, hi = preprocessing._LO, preprocessing._HI
+    fraction = preprocessing._COORD - lo
+    rows = image[:, lo] * (1 - fraction)[None, :, None] + image[:, hi] * fraction[None, :, None]
+    pixels = rows[:, :, lo] * (1 - fraction)[None, None, :] + rows[:, :, hi] * fraction[None, None, :]
+    legacy = np.rint(pixels).astype(np.float32)
+    legacy /= 255
+    legacy -= preprocessing._MEAN
+    legacy /= preprocessing._STD
     assert hashlib.sha256(legacy.tobytes()).hexdigest() == digest
     error_in_pixel_levels = np.abs(value - legacy) * np.array(RECIPE["std"])[:, None, None] * 255
     assert error_in_pixel_levels.max() <= 1.001
@@ -642,7 +648,9 @@ def test_native_batched_preprocessing_matches_release_geometry(device):
     ]
     compact = prepare_batch(source, compact=True)
     assert compact.dtype == np.uint8
-    actual = TorchPreprocess(torch, device)(torch.from_numpy(compact).to(device)).cpu().numpy()
+    tensor = TorchPreprocess(torch, device)(torch.from_numpy(compact).to(device))
+    assert tensor.is_contiguous()
+    actual = tensor.cpu().numpy()
     expected = prepare_batch(source)
     error = np.abs(actual - expected) * np.array(RECIPE["std"])[None, :, None, None] * 255
     assert error.max() <= 1.001
@@ -745,3 +753,31 @@ def test_square_gather_preserves_pixels_across_decoded_and_strided_layouts():
                 target = np.empty((3, 384, 384), dtype=np.uint8)
                 assert prepare_uint8(image, out=target, padding=padding) is target
                 np.testing.assert_array_equal(target, expected)
+
+
+@pytest.mark.parametrize("topk", [1, 2])
+def test_prediction_nonfinite_ordering_matches_stable_sort(topk):
+    raw = np.array([[1, np.nan, 2], [np.nan, np.nan, np.nan], [np.inf, 2, -np.inf]], dtype=np.float32)
+    with np.errstate(invalid="ignore"):
+        result = Prediction([raw] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk)
+        expected = np.argsort(-raw, axis=1, kind="stable")[:, :topk]
+    np.testing.assert_array_equal(result.indices, np.stack([expected] * 3, axis=-1))
+    assert np.isnan(result.confidence).all()
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
+    from deployment.mambo_deploy import preprocessing as p
+
+    image = np.random.default_rng(915).integers(0, 256, (3, 275, 403), dtype=np.uint8)
+    square = np.ascontiguousarray(p._square(image, padding=0.25), dtype=np.float32)
+    rows = square[:, p._LO] * (1 - p._FRACTION)[None, :, None] + square[:, p._HI] * p._FRACTION[None, :, None]
+    pixels = rows[:, :, p._LO] * (1 - p._FRACTION)[None, None, :] + rows[:, :, p._HI] * p._FRACTION[None, None, :]
+    expected = np.rint(pixels).astype(dtype)
+    expected /= 255
+    expected -= p._MEAN
+    expected /= p._STD
+    # A view into caller-owned batch storage must also work.
+    out = np.empty((3, 384, 768), dtype=dtype)[:, :, ::2]
+    assert preprocess(image, out=out, padding=0.25) is out
+    np.testing.assert_array_equal(out, expected)

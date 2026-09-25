@@ -71,8 +71,9 @@ When the next full-B200 comparison is needed, reuse its working environments.
 Native Torch decoding and compiled Pillow rotation are retained. Pixel selection
 now gathers complete RGB pixels instead of using three-axis NumPy indexing. This
 changes real preparation in both backends. The same stack removes Python-heavy
-hierarchy cache keys, defers unused class-name dictionaries and reduces confidence
-scratch allocations. Test these together in a fresh directory:
+hierarchy cache keys, defers unused class-name dictionaries, reuses CPU interpolation
+scratch, removes redundant score scans and fuses Torch normalization. Test these
+together in a fresh directory:
 
 ```sh
 export MAMBO_CACHE=/work/mambo-cache

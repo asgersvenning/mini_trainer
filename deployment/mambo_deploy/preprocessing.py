@@ -94,10 +94,20 @@ def prepare_uint8(item, out=None, *, padding=0):
 def preprocess(item, out=None, *, padding=0):
     """Finish the release geometry and normalization in FP32 on CPU."""
     image = np.ascontiguousarray(_square(item, padding), dtype=np.float32)
-    rows = image[:, _LO] * (1 - _FRACTION)[None, :, None] + image[:, _HI] * _FRACTION[None, :, None]
-    pixels = rows[:, :, _LO] * (1 - _FRACTION)[None, None, :] + rows[:, :, _HI] * _FRACTION[None, None, :]
+    rows = image.take(_LO, axis=1)
+    scratch = image.take(_HI, axis=1)
+    rows *= (1 - _FRACTION)[None, :, None]
+    scratch *= _FRACTION[None, :, None]
+    rows += scratch
+    pixels = out if out is not None and out.dtype == np.float32 else np.empty((3, _SIZE, _SIZE), dtype=np.float32)
+    # Coordinates are already clamped; clip permits unbuffered writes to out.
+    np.take(rows, _LO, axis=2, out=pixels, mode="clip")
+    np.take(rows, _HI, axis=2, out=scratch, mode="clip")
+    pixels *= (1 - _FRACTION)[None, None, :]
+    scratch *= _FRACTION[None, None, :]
+    pixels += scratch
     if out is None:
-        out = np.empty((3, _SIZE, _SIZE), dtype=np.float32)
+        out = pixels
     np.rint(pixels, out=out)
     out /= 255
     out -= _MEAN
@@ -152,8 +162,9 @@ class TorchPreprocess:
 
     def __init__(self, torch, device):
         self.torch = torch
-        self.mean = torch.as_tensor(_MEAN, device=device)
-        self.std = torch.as_tensor(_STD, device=device)
+        mean = torch.as_tensor(_MEAN, device=device)
+        std = torch.as_tensor(_STD, device=device)
+        self.scale, self.bias = 1 / (255 * std), -mean / std
 
     def __call__(self, images):
         torch = self.torch
@@ -163,7 +174,8 @@ class TorchPreprocess:
             )
             start = (_RESIZED - _SIZE) // 2
             values = values[..., start : start + _SIZE, start : start + _SIZE]
-            return values.round_().div_(255).sub_(self.mean).div_(self.std)
+            # One broadcast normalization kernel also produces compact NCHW storage.
+            return torch.addcmul(self.bias, values.round_(), self.scale)
 
 
 def image_items(value):

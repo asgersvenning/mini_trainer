@@ -131,3 +131,80 @@ Validation: static/import checks, deployment Ruff checks, and affected deploymen
 streaming and evaluation tests (92 passed, six optional tests skipped). The CUDA
 probe retained actual transfers/preprocessing but mocked model execution. The next
 HPC check is the existing four-variant full-B200 smoke, once for the complete stack.
+
+
+## Further stage simplification
+
+A bounded synthetic stage check removes filesystem/cache latency, decoding and
+model execution from attribution. It uses decoded interleaved RGB at 256×256 and
+2048×2048, and three score matrices with 30,000/4,000/500 classes at batches 64 and
+256. CPU timings are collected outside the profiler. A separate CUDA trace records
+actual preprocessing and asynchronous result download, with operator counts,
+allocations and output strides. Reproduce it only when investigating those stages:
+
+```sh
+CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.releases.mambo_v3.pipeline_stages \
+  --output local-evidence/pipeline-stages-check
+```
+
+The implementation changes are:
+
+- CPU bilinear preparation uses native `take` operations and reuses interpolation
+  scratch and caller-owned FP32 output storage. It avoids separate multiplication,
+  sum and final-output temporaries. Pre-clamped indices permit `mode="clip"`;
+  NumPy documents that the default `raise` mode always buffers `out`
+  ([reference](https://numpy.org/doc/stable/reference/generated/numpy.take.html)).
+  This benefits ONNX preparation and Torch CPU preparation, including each TTA view.
+- Top-1 result construction reuses the maximum selected by `argmax`. NaN detection
+  checks that one selected score per image instead of allocating and scanning a
+  full score-sized boolean array, while retaining the stable-sort fallback.
+  Confidence normalization reuses the same maximum, removing another full scan.
+- Torch finishing uses `addcmul` for broadcast normalization. Rounding remains
+  unchanged; rounding plus normalization now requires two kernels instead of four.
+  Output is contiguous 384×384 storage instead of a view retaining 438×438 storage.
+  This applies to every CUDA Torch view without compilation or a new dependency.
+
+Local stage comparison (before = `c497a9d`, RTX 3080 Ti Laptop GPU):
+
+| Stage | Before | After |
+|---|---:|---:|
+| CPU preparation, 32 small images / four workers | 60.6 ms | 35.0 ms |
+| CPU preparation, 32 large images / four workers | 65.6 ms | 37.7 ms |
+| Result construction, batch 64 | 6.69 ms | 4.32 ms |
+| Result construction, batch 256 | 31.8 ms | 18.2 ms |
+| GPU preparation, batch 64, unprofiled paired median | 3.95 ms | 2.32 ms |
+
+Raw stage reports/traces are in `local-evidence/pipeline-stages/`; the paired CUDA
+event timings are in `gpu-unprofiled.json`. Profiler durations are used to locate
+work, not as the timing comparison. Fewer full-array passes and compact output
+storage are structural improvements; the percentages above are local measurements,
+not predicted B200 gains. They also do not establish pipeline GPU saturation.
+
+The final short mocked-model pipeline pass (`after-stage-simplification/report.json`
+under `local-evidence/pipeline-profile/`) measured resident/host/stream at
+12,110/15,055/1,068 images/s, versus 11,806/9,598/928 before this increment. Its very
+short prepared-input runs remain sensitive to scheduling; the host-versus-resident
+ordering must not be read as a benefit from transferring inputs. It is an
+integration check, not the basis for choosing the changes.
+
+Output packing remained about 44 microseconds for batch 64 in the CUDA traces,
+versus roughly 0.66 milliseconds for the resulting 8.4 MiB D2H copy. The snapshot
+also protects deferred results against later device-slot writes. Direct-copy or
+buffer-pooling changes are not justified by this evidence. Transfer leases and
+stream synchronization remain intact; PyTorch requires explicit synchronization
+and lifetime handling across streams
+([reference](https://docs.pytorch.org/docs/2.14/notes/cuda.html#cuda-streams)).
+The compact CPU path still copies selected RGB pixels into planar batch slots;
+that is bounded to 384×384 pixels, rather than another source-sized image copy.
+
+Validation covers output storage, stable ties/NaNs, immutable raw scores, exact CPU
+interpolation against the prior equation, the original FP64 fixture hashes and
+CUDA image geometry. The FP64 fixture now evaluates its frozen equation directly
+instead of monkeypatching the optimized production function's scratch dtype;
+expected hashes and tolerances are unchanged. Initial failures of two such fixture
+cases were resolved by separating that reference. All 96 focused CPU cases pass
+across the initial run and targeted rerun; six optional cases were skipped. The
+intentional CUDA geometry case passed separately. Static/import checks pass.
+
+Run the existing four-variant full-B200 smoke once for the whole stack. This adds
+no campaign, environment setup, scheduler or tuning option.

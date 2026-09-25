@@ -91,18 +91,26 @@ class Prediction:
         self.topk, self.metadata, self.raw_logits = topk, metadata, raw
         # Snapshot names cheaply; most callers never need the complete lookup map.
         self._class_labels = tuple(tuple(names) for names in labels)
-        indices = [
-            np.argmax(values, axis=1)[:, None]
-            if topk == 1 and not np.isnan(values).any()
-            else np.argsort(-values, axis=1, kind="stable")[:, :topk]
-            for values in raw
-        ]
+        indices, maxima = [], []
+        for values in raw:
+            if topk == 1:
+                index = np.argmax(values, axis=1)[:, None]
+                maximum = np.take_along_axis(values, index, axis=1)
+                # argmax selects NaN when present; inspect only one value per row.
+                # Keep stable sorting's NaN-last prediction and NaN confidence.
+                if np.isnan(maximum).any():
+                    index = np.argsort(-values, axis=1, kind="stable")[:, :1]
+            else:
+                index = np.argsort(-values, axis=1, kind="stable")[:, :topk]
+                maximum = values.max(axis=1, keepdims=True)
+            indices.append(index)
+            maxima.append(maximum)
         self.indices = np.stack(indices, axis=-1)
         self.global_indices = np.stack([mapping[idx] for mapping, idx in zip(global_indices, indices)], axis=-1)
         self.logits = np.stack([np.take_along_axis(values, idx, axis=1) for values, idx in zip(raw, indices)], axis=-1)
         probabilities = []
-        for values, idx in zip(raw, indices):
-            exp = values - values.max(axis=1, keepdims=True)
+        for values, idx, maximum in zip(raw, indices, maxima):
+            exp = values - maximum
             exp = np.exp(exp, out=exp if exp.dtype.kind in "fc" else None)
             probabilities.append(np.take_along_axis(exp, idx, axis=1) / exp.sum(axis=1, keepdims=True))
         self.confidence = np.stack(probabilities, axis=-1)
