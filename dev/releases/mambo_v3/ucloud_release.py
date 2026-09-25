@@ -234,6 +234,7 @@ def reuse_v2(config, phase, job, frozen):
         "dev/releases/mambo_v3/prefetch.py",
         "dev/releases/mambo_v3/ucloud_release.py",
         "deployment/mambo_deploy/augmentation.py",
+        "deployment/mambo_deploy/preprocessing.py",
         "deployment/mambo_deploy/streaming.py",
         "deployment/mambo_deploy/result_worker.py",
         "deployment/mambo_deploy/transfers.py",

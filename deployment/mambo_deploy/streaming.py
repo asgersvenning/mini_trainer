@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 from .augmentation import _prepare_view
-from .preprocessing import _rgb, preprocess
+from .preprocessing import RECIPE, _rgb, preprocess
 
 
 def read_image(path, size, digest):
@@ -24,10 +24,17 @@ def read_image(path, size, digest):
     return data
 
 
-def prepare_image(data, tta):
+def prepare_image(data, tta, out=None):
     with Image.open(io.BytesIO(data)) as image:
         decoded = _rgb(image)
-    return (preprocess(decoded),) if tta is None else tuple(_prepare_view(decoded, view) for view in tta.transforms)
+    if out is None:
+        return (preprocess(decoded),) if tta is None else tuple(_prepare_view(decoded, view) for view in tta.transforms)
+    if tta is None:
+        preprocess(decoded, out=out[0])
+    else:
+        for transform, target in zip(tta.transforms, out, strict=True):
+            _prepare_view(decoded, transform, out=target)
+    return out
 
 
 class BatchBuffers:
@@ -51,21 +58,6 @@ class BatchBuffers:
             self.available.append(views)
 
 
-def assemble_batch(images, pool=None):
-    """Stack and release per-image arrays on the assembler thread."""
-    start = time.perf_counter()
-    if pool is None:
-        views = tuple(np.stack(view) for view in zip(*images, strict=True))
-    else:
-        shapes = [(len(images), *view.shape) for view in images[0]]
-        buffers = pool.acquire(shapes)
-        views = tuple(buffer[: len(images)] for buffer in buffers)
-        for index, view in enumerate(zip(*images, strict=True)):
-            np.stack(view, out=views[index])
-    images.clear()
-    return views, time.perf_counter() - start
-
-
 def prepared_stream(
     items,
     batch_size,
@@ -80,10 +72,11 @@ def prepared_stream(
     reuse_buffers=False,
     buffer_factory=None,
 ):
-    """Yield (offset, stacked views) from (path, optional SHA256) items; close on early exit.
+    """Yield (offset, batch views) from (path, optional SHA256) items; close on early exit.
 
     IO reservations include in-flight reads and bytes held by preparation. Prepared
-    images are bounded by (prefetch_batches + 1) * batch_size, plus a stacked batch.
+    images are bounded by (prefetch_batches + 1) * batch_size, plus the consumed batch.
+    Workers write directly to disjoint batch slices; completion callbacks wake the coordinator.
     Preparation workers do not call models or sessions. Shutdown waits for running filesystem calls.
     """
     values = (batch_size, read_workers, prepare_workers, read_window, encoded_budget)
@@ -99,37 +92,56 @@ def prepared_stream(
     source = iter(items)
     capacity = batch_size * (prefetch_batches + 1)
 
+    def wake(_=None):
+        with condition:
+            state["generation"] += 1
+            condition.notify_all()
+
+    state["generation"] = 0
+
     def produce():
-        reads, decoding, buffers, sizes = {}, {}, {}, {}
-        ready = {}
-        next_index, reserved, assemble_offset = 0, 0, 0
-        assembling = None
-        assembling_count = 0
+        reads, decoding, buffers, sizes, active = {}, {}, {}, {}, {}
+        next_index, reserved = 0, 0
         pending = None
         exhausted = False
-        readers = ThreadPoolExecutor(max_workers=read_workers)
-        preparers = ThreadPoolExecutor(max_workers=prepare_workers)
-        assembler = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mambo-assemble")
+        readers = ThreadPoolExecutor(max_workers=read_workers, thread_name_prefix="mambo-read")
+        preparers = ThreadPoolExecutor(max_workers=prepare_workers, thread_name_prefix="mambo-prepare")
+        shape = (batch_size, 3, RECIPE["crop_size"], RECIPE["crop_size"])
+        shapes = [shape] * (1 if tta is None else len(tta.transforms))
+        pool = buffer_pool or BatchBuffers(buffer_factory)
         try:
             while True:
                 with condition:
                     if state["stop"]:
                         break
-                    consumed = state["consumed"]
+                    generation, consumed = state["generation"], state["consumed"]
                 for index, future in list(reads.items()):
                     if future.done():
                         buffers[index] = future.result()
                         del reads[index]
                 for index, future in list(decoding.items()):
                     if future.done():
-                        result = future.result()
+                        elapsed = future.result()
                         del decoding[index]
                         reserved -= sizes.pop(index)
-                        ready[index] = result
-                        del result
-                for index in sorted(buffers):
+                        active[index // batch_size][1] += 1
+                        stats["preparation_worker_seconds"] = stats.get("preparation_worker_seconds", 0.0) + elapsed
+                for number, (views, count) in list(active.items()):
+                    expected = min(batch_size, next_index - number * batch_size) if exhausted else batch_size
+                    if count == expected:
+                        with condition:
+                            batches[number * batch_size] = tuple(view[:count] for view in views)
+                            condition.notify_all()
+                        del active[number]
+                for index in list(buffers):
                     if index < consumed + capacity and len(decoding) < prepare_workers:
-                        decoding[index] = preparers.submit(prepare_image, buffers.pop(index), tta)
+                        number, slot = divmod(index, batch_size)
+                        if number not in active:
+                            active[number] = [pool.acquire(shapes), 0]
+                        target = tuple(view[slot] for view in active[number][0])
+                        future = preparers.submit(prepare_into, buffers.pop(index), target)
+                        decoding[index] = future
+                        future.add_done_callback(wake)
                 while not exhausted and next_index < consumed + read_window and len(reads) < read_workers:
                     if pending is None:
                         try:
@@ -138,7 +150,7 @@ def prepared_stream(
                             exhausted = True
                             with condition:
                                 state["end"] = next_index
-                                condition.notify_all()
+                                wake()
                             break
                         path = Path(path)
                         size = path.stat().st_size
@@ -150,43 +162,27 @@ def prepared_stream(
                         break
                     sizes[next_index] = size
                     reserved += size
-                    reads[next_index] = readers.submit(read_image, path, size, digest)
+                    future = readers.submit(read_image, path, size, digest)
+                    reads[next_index] = future
+                    future.add_done_callback(wake)
                     next_index += 1
                     pending = None
-                if assembling is not None and assembling.done():
-                    views, elapsed = assembling.result()
-                    with condition:
-                        batches[assemble_offset] = views
-                        stats["batch_assembly_seconds"] = stats.get("batch_assembly_seconds", 0.0) + elapsed
-                        condition.notify_all()
-                    del views
-                    assembling = None
-                    assemble_offset += assembling_count
-                    assembling_count = 0
-                end = min(assemble_offset + batch_size, next_index) if exhausted else assemble_offset + batch_size
-                if assembling is None and end > assemble_offset and all(i in ready for i in range(assemble_offset, end)):
-                    assembling_count = end - assemble_offset
-                    images = [ready.pop(i) for i in range(assemble_offset, end)]
-                    assembling = (
-                        assembler.submit(assemble_batch, images, buffer_pool) if buffer_pool else assembler.submit(assemble_batch, images)
-                    )
                 with condition:
-                    prepared_count = len(ready) + sum(len(views[0]) for views in batches.values()) + assembling_count
+                    prepared_count = sum(count for _, count in active.values()) + sum(len(v[0]) for v in batches.values())
                     stats.update(
                         reading=len(reads),
                         encoded_ready=len(buffers),
                         preparing=len(decoding),
                         prepared_images=prepared_count,
                         prepared_batches=len(batches),
-                        assembling=assembling_count,
                         encoded_bytes=reserved,
-                        host_buffer_allocations=buffer_pool.allocations if buffer_pool else None,
+                        host_buffer_allocations=pool.allocations,
                     )
                     stats["peak_encoded_bytes"] = max(stats.get("peak_encoded_bytes", 0), reserved)
                     stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), prepared_count + len(decoding))
-                    if exhausted and not reads and not decoding and not buffers and not ready and assembling is None:
+                    if exhausted and not reads and not decoding and not buffers and not active:
                         break
-                    condition.wait(timeout=0.005)
+                    condition.wait_for(lambda: state["stop"] or state["generation"] != generation)
         except BaseException as error:
             with condition:
                 state["error"] = error
@@ -196,7 +192,11 @@ def prepared_stream(
                 future.cancel()
             readers.shutdown(wait=True, cancel_futures=True)
             preparers.shutdown(wait=True, cancel_futures=True)
-            assembler.shutdown(wait=True, cancel_futures=True)
+
+    def prepare_into(data, target):
+        start = time.perf_counter()
+        prepare_image(data, tta, out=target)
+        return time.perf_counter() - start
 
     producer = threading.Thread(target=produce, name="mambo-stream")
     producer.start()
@@ -228,7 +228,7 @@ def prepared_stream(
             offset = end
             with condition:
                 state["consumed"] = end
-                condition.notify_all()
+                wake()
     finally:
         with condition:
             state["stop"] = True

@@ -46,26 +46,53 @@ def _rgb(item):
     return array
 
 
-def preprocess(item):
+# The model-space interpolation grid is fixed; source-size indexing is per image.
+_SIZE, _RESIZED = RECIPE["crop_size"], RECIPE["resize_size"]
+_GRID = np.arange(_SIZE, dtype=np.float32)
+_COORD = np.maximum((np.arange(_RESIZED, dtype=np.float32) + 0.5) * np.float32(_SIZE / _RESIZED) - 0.5, 0)
+_COORD = _COORD[(_RESIZED - _SIZE) // 2 : (_RESIZED + _SIZE) // 2]
+_LO = np.floor(_COORD).astype(np.intp)
+_HI = np.minimum(_LO + 1, _SIZE - 1)
+# Keep release rounding at half-integer pixels; constants are cached once.
+_FRACTION = _COORD - _LO
+_MEAN = np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]
+_STD = np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
+
+
+def preprocess(item, out=None):
+    """Apply the release geometry and normalize directly into optional batch storage."""
     image = _rgb(item)
-    size, resized = 384, 438
-    yy = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[1] / size)).astype(int), image.shape[1] - 1)
-    xx = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[2] / size)).astype(int), image.shape[2] - 1)
-    image = np.ascontiguousarray(image[:, yy][:, :, xx], dtype=np.float32)
-    # Upsampling uses a bilinear support of one pixel (no downsampling antialias filter).
-    coordinates = np.maximum((np.arange(resized, dtype=np.float32) + 0.5) * np.float32(size / resized) - 0.5, 0)
-    offset = (resized - size) // 2
-    coordinates = coordinates[offset : offset + size]
-    lo = np.floor(coordinates).astype(int)
-    hi = np.minimum(lo + 1, size - 1)
-    fraction = coordinates - lo
-    rows = image[:, lo] * (1 - fraction)[None, :, None] + image[:, hi] * fraction[None, :, None]
-    rows = np.ascontiguousarray(rows)
-    pixels = rows[:, :, lo] * (1 - fraction)[None, None, :] + rows[:, :, hi] * fraction[None, None, :]
-    pixels = np.ascontiguousarray(np.rint(pixels).astype(np.float32) / 255)
-    return np.ascontiguousarray(
-        (pixels - np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]) / np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
-    )
+    yy = np.minimum((_GRID * np.float32(image.shape[1] / _SIZE)).astype(np.intp), image.shape[1] - 1)
+    xx = np.minimum((_GRID * np.float32(image.shape[2] / _SIZE)).astype(np.intp), image.shape[2] - 1)
+    image = np.ascontiguousarray(image[:, yy[:, None], xx[None, :]], dtype=np.float32)
+    rows = image[:, _LO] * (1 - _FRACTION)[None, :, None] + image[:, _HI] * _FRACTION[None, :, None]
+    pixels = rows[:, :, _LO] * (1 - _FRACTION)[None, None, :] + rows[:, :, _HI] * _FRACTION[None, None, :]
+    if out is None:
+        out = np.empty((3, _SIZE, _SIZE), dtype=np.float32)
+    np.rint(pixels, out=out)
+    out /= 255
+    out -= _MEAN
+    out /= _STD
+    return out
+
+
+def prepare_batch(items, pool=None, transform=None):
+    """Fill one contiguous batch without per-image output allocations and stacking."""
+    output = np.empty((len(items), 3, _SIZE, _SIZE), dtype=np.float32)
+
+    def fill(index):
+        item = items[index]
+        if transform is not None:
+            item = transform(item.copy())
+        preprocess(item, out=output[index])
+
+    if pool is not None and len(items) > 1:
+        for _ in pool.map(fill, range(len(items))):
+            pass
+    else:
+        for index in range(len(items)):
+            fill(index)
+    return output
 
 
 def image_items(value):

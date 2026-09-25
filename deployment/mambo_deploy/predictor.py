@@ -6,6 +6,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, nullcontext
+from functools import cached_property
 from itertools import islice
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from .augmentation import infer_augmented, infer_prepared, prepared_views, resol
 from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
-from .preprocessing import RECIPE, image_items, preprocess
+from .preprocessing import RECIPE, image_items, prepare_batch
 from .result_worker import ResultWorker
 from .results import HierarchyPlan, Prediction
 from .streaming import prepared_stream
@@ -77,6 +78,7 @@ class Predictor:
         self._hierarchy_plans = {}
         self.runtime_timings = {}
         self._model_events = []
+        self._download_stream = None
         self.onnx_session_info = {}
         self._lock = threading.RLock()
         self.weights = weights
@@ -162,11 +164,26 @@ class Predictor:
     def available_presets(self):
         return {"full": {"count": len(self.bundle.classes["labels"][0]), "scope": "All model species"}, **self.bundle.regions}
 
-    def _onnx(self, images, embeddings):
+    @cached_property
+    def _onnx_api(self):
         try:
             import onnxruntime as ort
         except ImportError as error:
             raise ImportError("Install mambo-deploy[onnx], or onnxruntime-gpu for CUDA") from error
+        return ort
+
+    @cached_property
+    def _torch_api(self):
+        try:
+            import torch
+
+            from mini_trainer.modeling.classifier import bypass_submodule
+        except ImportError as error:
+            raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
+        return torch, bypass_submodule
+
+    def _onnx(self, images, embeddings):
+        ort = self._onnx_api
         key = "onnx-embedding" if embeddings else "onnx"
         if key not in self._sessions:
             path = self.bundle.profile(key)
@@ -203,14 +220,10 @@ class Predictor:
         return values[0], values[1] if embeddings else None
 
     def _torch(self, images, embeddings, *, tensors=False):
-        try:
-            import torch
-
-            from mini_trainer.builders import BaseBuilder
-            from mini_trainer.modeling.classifier import bypass_submodule
-        except ImportError as error:
-            raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
+        torch, bypass_submodule = self._torch_api
         if self._torch_model is None:
+            from mini_trainer.builders import BaseBuilder
+
             path = self.weights or self.bundle.profile("torch")
             if self.device != "cpu" and not torch.cuda.is_available():
                 raise RuntimeError("PyTorch CUDA is unavailable; explicitly choose device='cpu' or install/configure CUDA")
@@ -257,7 +270,7 @@ class Predictor:
             self._hierarchy_plans[key] = HierarchyPlan(selected, self.bundle.classes)
         return self._hierarchy_plans[key]
 
-    def _ranked_views(self, views, view_count, selectors, embeddings=False):
+    def _ranked_views(self, views, view_count, selectors, embeddings=False, *, defer=False):
         """Keep native ranks on Torch; reduce masked/averaged leaves on the same device."""
         if self.backend != "torch":
             leaf, vectors = (
@@ -265,8 +278,8 @@ class Predictor:
                 if self.tta is not None
                 else self._infer(next(iter(views)), embeddings)
             )
-            return leaf, vectors, None
-        import torch
+            return (lambda: (leaf, vectors, None)) if defer else (leaf, vectors, None)
+        torch, _ = self._torch_api
 
         leaf, vectors, output, norms = None, None, None, None
         self._model_events.clear()
@@ -292,20 +305,30 @@ class Predictor:
                 tensors.append(vectors)
             if norms is not None:
                 tensors.append(norms)
-            downloaded = iter(download_tensors(tensors, self.runtime_timings))
-            for begin, end in self._model_events:
+            if defer and leaf.device.type == "cuda" and self._download_stream is None:
+                self._download_stream = torch.cuda.Stream(device=leaf.device)
+            download = download_tensors(
+                tensors, self.runtime_timings, torch=torch, defer=True, stream=self._download_stream if defer else None
+            )
+            events = tuple(self._model_events)
+            self._model_events.clear()
+
+        def finish():
+            downloaded = iter(download())
+            for begin, end in events:
                 self.runtime_timings["model_stream_seconds"] = (
                     self.runtime_timings.get("model_stream_seconds", 0.0) + begin.elapsed_time(end) / 1000
                 )
-            self._model_events.clear()
-            ranks = {name: ([next(downloaded) for _ in raw], labels, mapping) for name, (raw, labels, mapping) in ranks.items()}
-            leaf_array = ranks[full_name][0][0] if full_name is not None else next(downloaded)
-            vectors = next(downloaded) if vectors is not None else None
+            completed = {name: ([next(downloaded) for _ in raw], labels, mapping) for name, (raw, labels, mapping) in ranks.items()}
+            leaf_array = completed[full_name][0][0] if full_name is not None else next(downloaded)
+            embedding_array = next(downloaded) if vectors is not None else None
             if norms is not None:
-                norms = next(downloaded)
-                if not np.isfinite(norms).all() or np.any(norms <= np.finfo(np.float32).eps):
+                norm_array = next(downloaded)
+                if not np.isfinite(norm_array).all() or np.any(norm_array <= np.finfo(np.float32).eps):
                     raise RuntimeError("TTA produced an undefined mean embedding")
-            return leaf_array, vectors, ranks
+            return leaf_array, embedding_array, completed
+
+        return finish if defer else finish()
 
     def prepared_batches(self, items, batch_size, *, device_prefetch=True, stats=None, **options):
         """Shared streaming preparation; device slots remain valid until the next iteration."""
@@ -321,7 +344,7 @@ class Predictor:
                     yield offset, views, len(views[0])
 
     def _prepare(self, batch, pool=None):
-        return np.stack(list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch])
+        return prepare_batch(batch, pool)
 
     def _infer(self, images, embeddings=False):
         return (self._torch if self.backend == "torch" else self._onnx)(images, embeddings)
@@ -412,21 +435,20 @@ class Predictor:
             stats=stats,
         )
 
-        def process(leaves, vectors, plan, ranks, metadata):
-            result = Prediction(*(ranks if ranks is not None else plan.numpy(leaves)), topk, **metadata)
+        def process(resolve, plan, metadata):
+            leaves, vectors, ranks = resolve()
+            if not np.isfinite(leaves).all():
+                raise RuntimeError("Model returned non-finite species scores")
+            result = Prediction(*(ranks["selected"] if ranks is not None else plan.numpy(leaves)), topk, **metadata)
             return (result, vectors) if embeddings else result
 
         with closing(batches), ResultWorker(process) as worker:
             for _, views, _ in batches:
                 with self._lock:
-                    leaves, vectors, ranks = self._ranked_views(views, len(views), {"selected": self.selected}, embeddings)
-                    if not np.isfinite(leaves).all():
-                        raise RuntimeError("Model returned non-finite species scores")
+                    resolve = self._ranked_views(views, len(views), {"selected": self.selected}, embeddings, defer=True)
                     worker.submit(
-                        leaves,
-                        vectors,
+                        resolve,
                         self.hierarchy_plan(self.selected),
-                        ranks["selected"] if ranks is not None else None,
                         dict(
                             model_id=self.bundle.manifest["model_id"],
                             backend=self.backend,

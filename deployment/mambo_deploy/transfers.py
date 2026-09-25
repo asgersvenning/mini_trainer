@@ -1,5 +1,6 @@
 """Two-slot device staging; runtime imports remain optional and lazy."""
 
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -14,31 +15,39 @@ def pinned_factory(device):
     return allocate
 
 
-def download_tensors(values, stats=None):
-    """One completed D2H copy for all ranks/embeddings, with owning NumPy views."""
-    import torch
-
+def download_tensors(values, stats=None, *, torch, defer=False, stream=None):
+    """Return CPU arrays, or a completion callable retaining buffers until D2H finishes."""
     if values[0].device.type == "cpu":
-        return [value.float().numpy() for value in values]
-    start = time.perf_counter()
+        arrays = [value.float().numpy() for value in values]
+        return (lambda: arrays) if defer else arrays
     packed = torch.cat([value.float().reshape(-1) for value in values])
+    shapes = [tuple(value.shape) for value in values]
     host = torch.empty(packed.shape, dtype=torch.float32, pin_memory=True)
-    begin = torch.cuda.Event(enable_timing=True)
-    begin.record(torch.cuda.current_stream(packed.device))
-    host.copy_(packed, non_blocking=True)
-    done = torch.cuda.Event(enable_timing=True)
-    done.record(torch.cuda.current_stream(packed.device))
-    done.synchronize()  # CPU results must be complete before the result worker reads them.
-    if stats is not None:
-        stats["d2h_device_seconds"] = stats.get("d2h_device_seconds", 0.0) + begin.elapsed_time(done) / 1000
-        stats["download_host_seconds"] = stats.get("download_host_seconds", 0.0) + time.perf_counter() - start
-    array = host.numpy()
-    result, offset = [], 0
-    for value in values:
-        end = offset + value.numel()
-        result.append(array[offset:end].reshape(tuple(value.shape)))
-        offset = end
-    return result
+    current = torch.cuda.current_stream(packed.device)
+    stream = stream or current
+    stream.wait_stream(current)
+    with torch.cuda.stream(stream):
+        begin, done = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+        begin.record(stream)
+        host.copy_(packed, non_blocking=True)
+        done.record(stream)
+        packed.record_stream(stream)
+
+    def finish():
+        start = time.perf_counter()
+        done.synchronize()  # Only the result consumer waits; no CPU access before completion.
+        if stats is not None:
+            stats["d2h_device_seconds"] = stats.get("d2h_device_seconds", 0.0) + begin.elapsed_time(done) / 1000
+            stats["output_completion_wait_seconds"] = stats.get("output_completion_wait_seconds", 0.0) + time.perf_counter() - start
+        array = host.numpy()
+        result, offset = [], 0
+        for shape in shapes:
+            end = offset + math.prod(shape)
+            result.append(array[offset:end].reshape(shape))
+            offset = end
+        return result
+
+    return finish if defer else finish()
 
 
 def device_batches(source, backend, device, stats):

@@ -1,8 +1,8 @@
 # V2/V3 inference pipeline review
 
 Review date: 25 September 2026. Code baseline: `0eb90b2`; V2 source:
-`32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`. This is a design review, not an
-implementation change. Evidence is the completed UCloud campaign and source
+`32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`. The review below records the original design baseline; the
+[implementation follow-up](#implementation-follow-up) records subsequent changes. Evidence is the completed UCloud campaign and source
 inspection. No new B200 measurements have been made.
 
 The concern is substantially justified: several V3 changes restored efficiency
@@ -348,3 +348,73 @@ would need an actual sustained end-to-end measurement; the prepared-input number
 only show that the current hundreds-of-images/s plateau is not an established
 model ceiling. Existing CUDA compilation/graph and decoder accelerators can follow
 if the simplified pipeline exposes those as the next material limit.
+
+
+## Implementation follow-up
+
+Implemented on 25 September 2026 against baseline `7a8f53a`, confined to deployment
+and the release harness. This is a bounded replacement of the preparation and
+completion boundaries, not a claim that all proposed architecture work is finished.
+
+- Preparation workers now normalize directly into disjoint reusable batch slices.
+  Removed the serial assembly executor, per-image output/stack copies, repeated
+  buffer sorting and 5 ms polling. Completion callbacks wake the coordinator.
+  Request prediction, TTA and release diagnostic helpers use the same direct-fill
+  preparation operations. Separate read/prepare concurrency remains useful for
+  high storage latency and is still independently bounded.
+- Cached the fixed interpolation geometry and normalization constants, and replaced
+  source-width intermediate indexing with direct two-axis selection. Retained the
+  original interpolation precision and release pixel hashes. The earlier float32
+  coefficient probe remains experimental; its larger speedup is not claimed here.
+- Torch output copies now run on a dedicated CUDA stream. The existing bounded
+  result worker owns completion waits and CPU processing, allowing the submitting
+  thread to continue. Device buffer reuse remains protected by CUDA events; output
+  allocations retain their lifetime until completion. Standalone ONNX retains its
+  synchronous output boundary without acquiring a Torch dependency.
+- Top-k confidence construction normalizes only selected entries, avoiding a full
+  normalized probability matrix. The full raw-logit public contract is preserved.
+- Backend imports and hierarchy helpers are cached on first use. Transfer setup
+  imports remain at stream initialization; repeated batch execution reuses loaded
+  backend references. No new dependency or configuration control was introduced.
+
+The remaining scheduler, two device slots and result worker retain explicit bounded
+ownership. This removes one execution stage rather than adding another executor.
+The request and streaming APIs still have different scheduling because requests
+accept in-memory images and return accumulated results. Torch still computes
+parent ranks per TTA view and repeats embedding preparation when requested; those
+are not solved by this change. Moving resize work to GPU or compacting the public
+result contract also remains separate work. The current core embedding context is
+process-global, so using it across independent predictors would require a core
+concurrency change through the prescribed feature-branch workflow.
+
+### Local evidence
+
+RTX 3080 Ti Laptop GPU, 256 real Flemming images, warm filesystem, batch 16,
+global vocabulary, Torch auto precision, four preparation/runtime threads for
+inference; median of three process-local trials after model warmup:
+
+| Measurement | Before, images/s | After, images/s |
+|---|---:|---:|
+| Host preparation, 4 workers | 204.2 | 290.4 |
+| Host preparation, 16 workers | 248.2 | 340.2 |
+| GPU request, including preparation/results | 162.5 | 163.9 |
+| GPU streaming, including preparation/results | 183.7 | 202.3 |
+
+Preparation includes reading, decode, transforms and batch delivery, with buffer
+reuse. The request result is essentially unchanged. Streaming trial ranges overlap
+(before 160–198, after 189–214 images/s), so its roughly 10% median increase is
+preliminary. This short, sequential local comparison is neither a B200 projection
+nor a replacement for the published campaign benchmarks. It tests smaller cropped
+images, not large in-domain photographs or cold WEKA storage.
+
+All before/after predicted classes matched at all three ranks. Scripts and raw
+measurements are retained, uncommitted, in `local-evidence/pipeline-review/`
+(`compare_pipeline.py`, `before.json`, `after-final.json` and prediction arrays).
+Focused checks cover release pixels, custom transforms, ordering, bounds, errors,
+early close, CUDA slot reuse and deferred download ownership. Real-model CUDA
+checks cover global/northern-Europe lists, default TTA, embeddings and partial
+batches, for Torch and standalone ONNX (without importing Torch). A 65-image
+Torch release collection additionally verified both preset CSVs, embeddings and
+final timing totals. Static checks passed; the affected suite passed 95 tests with
+two metric-environment tests skipped. No metric code changed. B200 throughput and
+a full quality campaign have not been rerun.

@@ -2,12 +2,11 @@
 
 import hashlib
 from dataclasses import dataclass
-from functools import partial
 
 import numpy as np
 from PIL import Image
 
-from .preprocessing import _rgb, preprocess
+from .preprocessing import _rgb, prepare_batch, preprocess
 
 
 @dataclass(frozen=True)
@@ -152,8 +151,8 @@ def resolve_tta(value):
     return TTA(views, value)
 
 
-def _prepare_view(image, transform):
-    return preprocess(transform(image.copy()))
+def _prepare_view(image, transform, out=None):
+    return preprocess(transform(image.copy()), out=out)
 
 
 def prepared_views(items, tta, pool=None):
@@ -163,7 +162,7 @@ def prepared_views(items, tta, pool=None):
         return list(pool.map(fn, values)) if pool and len(values) > 1 else [fn(item) for item in values]
 
     decoded = mapped(_rgb, items)
-    views = (np.stack(mapped(partial(_prepare_view, transform=transform), decoded)) for transform in tta.transforms)
+    views = (prepare_batch(decoded, pool, transform) for transform in tta.transforms)
     return views
 
 

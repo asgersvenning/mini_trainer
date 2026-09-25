@@ -2,8 +2,11 @@
 
 import json
 from dataclasses import asdict, dataclass
+from functools import cached_property
 
 import numpy as np
+
+from .transfers import download_tensors
 
 
 @dataclass
@@ -46,11 +49,16 @@ class HierarchyPlan:
             logits.append(values)
         return logits, self.labels, self.indices
 
-    def torch_values(self, leaf, native=None):
+    @cached_property
+    def _torch_api(self):
         import torch
 
         from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
 
+        return torch, batched_scatter_logsumexp
+
+    def torch_values(self, leaf, native=None):
+        torch, batched_scatter_logsumexp = self._torch_api
         if self.full and native is not None:
             values = native
         else:
@@ -67,10 +75,8 @@ class HierarchyPlan:
         return values, self.labels, self.indices
 
     def torch(self, leaf, native=None):
-        from .transfers import download_tensors
-
         values, labels, indices = self.torch_values(leaf, native)
-        return download_tensors(values), labels, indices
+        return download_tensors(values, torch=self._torch_api[0]), labels, indices
 
 
 def hierarchy(leaf, selected, classes):
@@ -96,7 +102,7 @@ class Prediction:
         probabilities = []
         for values, idx in zip(raw, indices):
             exp = np.exp(values - values.max(axis=1, keepdims=True))
-            probabilities.append(np.take_along_axis(exp / exp.sum(axis=1, keepdims=True), idx, axis=1))
+            probabilities.append(np.take_along_axis(exp, idx, axis=1) / exp.sum(axis=1, keepdims=True))
         self.confidence = np.stack(probabilities, axis=-1)
         self.labels = [[[labels[r][int(self.indices[b, k, r])] for r in range(3)] for k in range(topk)] for b in range(len(raw[0]))]
         nested = [

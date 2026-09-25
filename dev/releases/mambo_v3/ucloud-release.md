@@ -581,3 +581,32 @@ Single-request benchmark cells retain their existing execution path.
 Local validation covers CUDA buffer reuse and source lifetime, real PyTorch
 predictions with global/regional lists and TTA/embeddings, and real ONNX CUDA
 TTA/embedding collection. B200 throughput is not yet established for this change.
+
+
+## Simplified preparation and Torch result completion
+
+The deployment runtime now fills reusable batch slices directly from preparation
+workers. The separate batch-assembly executor and polling loop have been removed;
+request prediction and release diagnostic helpers also avoid per-image output
+allocation followed by stacking. The release geometry and pixel rounding are
+preserved. These changes need no dependency or environment update.
+
+Torch streaming submits packed output downloads on a separate CUDA stream. The
+existing result worker waits for completion before accessing CPU arrays, allowing
+the inference thread to submit the next batch. ONNX still returns completed CPU
+outputs from its runtime call. Both paths preserve ordered, bounded results.
+
+For new reports, `runtime_submit_seconds` replaces `runtime_seconds`: Torch's
+value no longer includes waiting for output completion; ONNX's still includes its
+synchronous execution. `output_completion_wait_seconds` measures the result
+worker's D2H completion wait. `preparation_worker_seconds` replaces the removed
+assembly counter and **sums concurrent worker durations**, so it can exceed wall
+time. `model_stream_seconds` and `d2h_device_seconds` remain CUDA-event intervals.
+None of these overlapping measurements should be summed into elapsed time.
+
+Existing completed campaign results remain valid historical evidence. A new
+campaign is needed only to measure the revised implementation; do not overwrite
+`runs-transfers` or mix its benchmark reports with new measurements. Completed V2
+qualification/full results can still be reused with `--reuse-v2-from`. See the
+[implementation follow-up](../../../docs/mambo-inference-pipeline-review.md#implementation-follow-up)
+for local qualification and the limits of the current changes.

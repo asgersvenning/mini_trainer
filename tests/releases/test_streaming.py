@@ -48,8 +48,8 @@ def test_slow_first_read_does_not_block_later_preparation(tmp_path, monkeypatch)
             assert later.wait(3), "later images must prepare while first read waits"
         return original_read(path, size, digest)
 
-    def prepare(data, tta):
-        result = original_prepare(data, tta)
+    def prepare(data, tta, out=None):
+        result = original_prepare(data, tta, out=out)
         later.set()
         return result
 
@@ -72,31 +72,32 @@ def test_failure_close_and_empty(tmp_path):
     assert not any(t.name == "mambo-stream" for t in threading.enumerate())
 
 
-def test_assembly_runs_in_background_and_errors_propagate(tmp_path, monkeypatch):
+def test_workers_fill_batch_storage_and_errors_propagate(tmp_path, monkeypatch):
     items = inputs(tmp_path, 5)
-    original = streaming.assemble_batch
-    calls = []
+    original = streaming.prepare_image
+    targets = []
 
-    def assemble(images):
-        calls.append(threading.current_thread().name)
-        result = original(images)
-        assert images == []  # Per-image buffers are released by the assembler.
-        return result
+    def prepare(data, tta, out=None):
+        assert out is not None
+        targets.append((threading.current_thread().name, out[0]))
+        return original(data, tta, out=out)
 
-    monkeypatch.setattr(streaming, "assemble_batch", assemble)
+    monkeypatch.setattr(streaming, "prepare_image", prepare)
     stats = {}
-    assert len(list(streaming.prepared_stream(items, 2, stats=stats))) == 3
-    assert len(calls) == 3 and all(name.startswith("mambo-assemble") for name in calls)
-    assert stats["batch_assembly_seconds"] > 0
+    batches = list(streaming.prepared_stream(items, 2, stats=stats))
+    assert len(targets) == 5
+    assert all(name.startswith("mambo-prepare") for name, _ in targets)
+    assert all(any(np.shares_memory(target, views[0]) for _, views in batches) for _, target in targets)
+    assert stats["preparation_worker_seconds"] > 0
     assert stats["queue_wait_seconds"] == stats["input_wait_seconds"]
 
-    def fail(images):
-        raise ValueError("assembly failure")
+    def fail(data, tta, out=None):
+        raise ValueError("preparation failure")
 
-    monkeypatch.setattr(streaming, "assemble_batch", fail)
-    with pytest.raises(ValueError, match="assembly failure"):
+    monkeypatch.setattr(streaming, "prepare_image", fail)
+    with pytest.raises(ValueError, match="preparation failure"):
         list(streaming.prepared_stream(items, 2))
-    assert not any(t.name.startswith("mambo-assemble") for t in threading.enumerate())
+    assert not any(t.name.startswith("mambo-prepare") for t in threading.enumerate())
 
 
 def test_result_worker_order_bounds_overlap_and_failure():
@@ -130,7 +131,7 @@ def test_reusable_batch_buffers_are_bounded(tmp_path, monkeypatch):
     items = inputs(tmp_path, 21)
     stats = {}
     # Keep the test about ownership/reuse, not expensive image interpolation.
-    monkeypatch.setattr(streaming, "prepare_image", lambda data, tta: (np.full((3, 2, 2), len(data), dtype=np.float32),))
+    monkeypatch.setattr(streaming, "prepare_image", lambda data, tta, out: out[0].fill(len(data)))
     pointers = set()
     count = 0
     with closing(streaming.prepared_stream(items, 2, prefetch_batches=2, reuse_buffers=True, stats=stats)) as batches:
@@ -164,8 +165,29 @@ def test_cuda_device_slots_and_pinned_source_lifetime():
     with closing(device_batches(source(), "torch", "cuda:0", stats)) as batches:
         for offset, views, count in batches:
             pointers.add(views[0].data_ptr())
-            result = download_tensors([views[0] * 2])[0]
+            result = download_tensors([views[0] * 2], torch=torch)[0]
             np.testing.assert_array_equal(result, np.full((count, 3, 4, 4), offset, dtype=np.float32))
     assert len(pointers) == 2
     assert stats["device_buffer_allocations"] == 2
     assert stats["h2d_device_seconds"] >= 0
+
+
+def test_cuda_deferred_download_retains_outputs_after_slot_reuse():
+    import torch
+
+    from deployment.mambo_deploy.transfers import download_tensors
+
+    if not torch.cuda.is_available():
+        pytest.skip("Intentional CUDA test; set CUDA_VISIBLE_DEVICES")
+    stream = torch.cuda.Stream()
+    source = torch.empty((8, 128), device="cuda")
+    pending = []
+    for index in range(6):
+        source.fill_(index)
+        # Completing later must retain this batch, not expose a reused device slot.
+        pending.append(download_tensors([source[: index + 1], source.sum(1)], torch=torch, defer=True, stream=stream))
+    del source
+    for index, complete in enumerate(pending):
+        values, sums = complete()
+        np.testing.assert_array_equal(values, np.full((index + 1, 128), index))
+        np.testing.assert_array_equal(sums, np.full(8, index * 128))

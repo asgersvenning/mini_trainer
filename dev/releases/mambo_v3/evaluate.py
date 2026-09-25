@@ -12,7 +12,7 @@ import numpy as np
 
 from deployment.mambo_deploy import Predictor
 from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
-from deployment.mambo_deploy.preprocessing import preprocess
+from deployment.mambo_deploy.preprocessing import prepare_batch as prepare_batch
 from deployment.mambo_deploy.result_worker import ResultWorker
 from deployment.mambo_deploy.results import Prediction
 from dev.benchmarks.inference.onnx_inference import file_hash
@@ -34,11 +34,6 @@ def runtime_settings(threads, backend="torch"):
 
         result["onnxruntime"] = ort.__version__
     return result
-
-
-def prepare_batch(paths, pool=None):
-    """Ordered results and at most one model batch of prepared images."""
-    return np.stack(list(pool.map(preprocess, paths)) if pool else [preprocess(path) for path in paths])
 
 
 def collect(args):
@@ -102,20 +97,28 @@ def collect(args):
                 name: 0.0
                 for name in (
                     "input_wait_seconds",
-                    "runtime_seconds",
+                    "runtime_submit_seconds",
                     "output_wait_seconds",
                     "hierarchy_seconds",
                     "prediction_seconds",
                     "write_seconds",
                     "model_stream_seconds",
                     "d2h_device_seconds",
-                    "download_host_seconds",
+                    "output_completion_wait_seconds",
                 )
             }
 
             plans = {name: predictor.hierarchy_plan(selected) for name, selected in selectors.items()}
 
-            def process(batch, leaf, ranks, offset):
+            def process(batch, resolve, offset):
+                leaf, vectors, ranks = resolve()
+                if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
+                    raise ValueError("Invalid leaf scores")
+                if embeddings is not None:
+                    if vectors.shape != (len(batch), 1280) or not np.isfinite(vectors).all():
+                        raise ValueError("Invalid embeddings")
+                    np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-4)
+                    embeddings[offset : offset + len(batch)] = vectors
                 phase = {name: 0.0 for name in ("hierarchy_seconds", "prediction_seconds", "write_seconds")}
                 for name, selected in selectors.items():
                     t = time.perf_counter()
@@ -158,7 +161,7 @@ def collect(args):
             last_progress = time.perf_counter()
             previous_completed = 0
             previous_timings = dict(timings)
-            previous_assembly = 0.0
+            previous_preparation = 0.0
             while True:
                 waiting = time.perf_counter()
                 try:
@@ -171,18 +174,11 @@ def collect(args):
                     break
                 timings["input_wait_seconds"] += time.perf_counter() - waiting
                 t = time.perf_counter()
-                leaf, vectors, ranks = predictor._ranked_views(views, len(views), selectors, args.embeddings)
-                timings["runtime_seconds"] += time.perf_counter() - t
+                resolve = predictor._ranked_views(views, len(views), selectors, args.embeddings, defer=True)
+                timings["runtime_submit_seconds"] += time.perf_counter() - t
                 timings.update(predictor.runtime_timings)
-                if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
-                    raise ValueError("Invalid leaf scores")
-                if embeddings is not None:
-                    if vectors.shape != (len(batch), 1280) or not np.isfinite(vectors).all():
-                        raise ValueError("Invalid embeddings")
-                    np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-4)
-                    embeddings[offset : offset + len(batch)] = vectors
-                worker.submit(batch, leaf, ranks, offset)
-                del views
+                worker.submit(batch, resolve, offset)
+
                 if len(worker.pending) == 2:
                     completed += finish_one()
                 now = time.perf_counter()
@@ -190,8 +186,8 @@ def collect(args):
                     interval = now - last_progress
                     rate = (completed - previous_completed) / interval
                     phase_seconds = {name: round(value - previous_timings[name], 3) for name, value in timings.items()}
-                    assembly = stream_stats.get("batch_assembly_seconds", 0.0)
-                    phase_seconds["background_assembly_seconds"] = round(assembly - previous_assembly, 3)
+                    preparation = stream_stats.get("preparation_worker_seconds", 0.0)
+                    phase_seconds["background_preparation_worker_seconds"] = round(preparation - previous_preparation, 3)
                     # Retain the existing machine-readable count line for live monitors.
                     print(f"{args.backend} {args.device}: {completed}/{len(records)}", flush=True)
                     eta = f"{(len(records) - completed) / rate / 60:.1f} min" if rate else "waiting for first written batch"
@@ -199,8 +195,9 @@ def collect(args):
                     print(f"interval={interval:.3f}s; phases={phase_seconds}", flush=True)
                     previous_timings = dict(timings)
                     previous_completed = completed
-                    previous_assembly = assembly
+                    previous_preparation = preparation
                     last_progress = now
+            timings.update(predictor.runtime_timings)
             if embeddings is not None:
                 embeddings.flush()
         if args.backend == "onnx":
