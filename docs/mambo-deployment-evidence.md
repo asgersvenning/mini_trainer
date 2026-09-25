@@ -98,7 +98,7 @@ summarizes global → Europe → northern Europe across pipelines and ranks usin
 the earlier padded-scale TTA; the new recipe has been fully evaluated only for northern Europe.
 We recommend legacy `north_europe` here: the updated list adds 222 species but
 no Flemming species coverage, and lowers measured accuracy/F1. It remains available
-as `north_europe_v3` for broader eligibility; the API default stays `europe`.
+as `north_europe_v3` for broader eligibility; the V3 API/CLI default is now global (`full`).
 
 Speed remains **images per second**, measured end to end on an i7-12800H / RTX
 3080 Ti Laptop, with four preparation/runtime CPU threads. CPU uses FP32.

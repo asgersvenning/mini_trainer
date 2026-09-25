@@ -10,7 +10,7 @@ Each geographic preset applies the minimum row count shown below. Counts use all
 
 In this pinned snapshot every model species has at least 50 global rows; 0 model species fall below the proposed global minimum of 25. Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.
 
-`europe` and `north_europe` preserve MAMBO_v2 membership and the default remains legacy Europe. Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; that equivalence does not establish equivalence at the lower threshold, so they are not silently added. The deployment API discovers all lists from the bundle; Flemming evaluation favours legacy north_europe; updated membership remains an explicit broader option.
+`europe` and `north_europe` preserve MAMBO_v2 membership while the V3 deployment default is global (`full`). Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; that equivalence does not establish equivalence at the lower threshold, so they are not silently added. The deployment API discovers all lists from the bundle; Flemming evaluation favours legacy north_europe; updated membership remains an explicit broader option.
 
 ## Presets
 

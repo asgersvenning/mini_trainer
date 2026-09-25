@@ -54,7 +54,7 @@ but Flemming contains no examples of those additions. Their recognition benefit
 is therefore unmeasured here. Legacy combines better measured discrimination with
 backwards compatibility; updated membership remains an explicit broader option.
 This is a northern-Europe recommendation, not a change to the API's legacy
-`europe` default. See [geographic definitions](model-presets.md).
+historical `europe` default; the final V3 API/CLI defaults to `full`. See [geographic definitions](model-presets.md).
 
 ![Northern-Europe comparison at all three ranks](assets/mambo-defaults-ranks-all.svg)
 

@@ -210,10 +210,11 @@ Produce a compact release inventory before changing inference behavior:
   revision and manifest schema separate identities. An artifact repair may create
   a new revision; it must not replace bytes behind a published version.
 
-Retain Europe as the default for the successor's MAMBO compatibility
-interface, matching MAMBO_v2; make `full` and `north_europe` explicit choices.
+The V3 API and CLI default to global (`full`), an explicit change from MAMBO_v2.
+Keep `europe` and `north_europe` as explicit choices with their legacy membership.
 Version aliases within a release. Do not silently redirect old pinned consumers
-to new weights. For the new deployment API, prefer explicit model-bundle selection.
+to new weights. Use the model-generation package `mambo-v3` for automatic verified downloads;
+explicit bundles remain available for managed/offline integration.
 Store regional lists with provenance and hashes, and disclose excluded true labels.
 
 **Done when:** immutable candidate and baseline inventories exist, compatibility

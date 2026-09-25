@@ -72,7 +72,10 @@ def prepare(source, output):
         if path.is_file():
             manifest["files"][path.relative_to(output).as_posix()] = {"size": path.stat().st_size, "sha256": digest(path)}
     (output / "release-candidate.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (output / "SHA256SUMS").write_text("".join(f"{entry['sha256']}  {name}\n" for name, entry in manifest["files"].items()))
+    (output / "SHA256SUMS").write_text(
+        "".join(f"{entry['sha256']}  {name}\n" for name, entry in manifest["files"].items())
+        + f"{digest(output / 'release-candidate.json')}  release-candidate.json\n"
+    )
     print(output / "release-candidate.json")
 
 

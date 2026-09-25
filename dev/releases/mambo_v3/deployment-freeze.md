@@ -126,3 +126,17 @@ The log is 60,812,963 bytes (retrieved in full after a truncated first read was
 correctly rejected by its checksum). It records best epoch 30. Weight licensing
 and upstream initialization attribution require owner input; questions are pending.
 No missing source identity has been invented.
+
+## Final installed candidate
+
+The [installed-candidate record](final-qualification.md) now covers clean ONNX CPU,
+read-only offline API/CLI with TTA/embeddings, actual automatic ERDA downloads and
+offline reuse, native CPU, and native/ONNX laptop CUDA. Installed package payloads
+were compared with the built wheels; the two-package install has one CLI owner.
+No performance/quality campaign was rerun. Runtime source is `0bfb5d7`.
+
+Artifacts are prepared in `local-evidence/mambo-v3-release-candidate/`; publication
+remains prohibited. Model-weight licensing and initialization attribution are
+pending owner decisions. Training source revision is explicitly unknown in the
+retained materials. After those decisions, refresh final notices/metadata and the
+artifact inventory; do not substitute a historical checkout or invent permission.
