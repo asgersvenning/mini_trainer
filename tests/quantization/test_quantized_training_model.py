@@ -353,9 +353,7 @@ def test_tensor_scalar_decay_preserves_integer_codes_and_rng():
 def test_cuda_storage_update_rounding_versions_and_rng(operation, dtype):
     from mini_trainer.modeling._quantized_training import TrainingWeight
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify fused storage updates")
-    assert torch.cuda.is_available()
+    cuda()
     torch.manual_seed(29)
     weight = nn.Parameter(TrainingWeight.from_float(torch.randn(33, 67, device="cuda", dtype=dtype)))
     update = torch.randn_like(weight.dequantize())
@@ -396,9 +394,7 @@ def test_cuda_storage_update_rounding_versions_and_rng(operation, dtype):
 def test_cuda_mixed_update_matches_materialized_trajectory(dtype, transposed, monkeypatch):
     from mini_trainer.modeling._quantized_training import TrainingWeight
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify mixed-dtype storage updates")
-    assert torch.cuda.is_available()
+    cuda()
     torch.manual_seed(29)
     weight = nn.Parameter(TrainingWeight.from_float(torch.randn(33, 67, device="cuda")))
     reference = nn.Parameter(weight.detach().clone())
@@ -432,9 +428,7 @@ def test_cuda_mixed_update_matches_materialized_trajectory(dtype, transposed, mo
 def test_cuda_storage_update_invalidates_saved_weight():
     from mini_trainer.modeling._quantized_training import TrainingWeight
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify saved-tensor invalidation")
-    assert torch.cuda.is_available()
+    cuda()
     weight = nn.Parameter(TrainingWeight.from_float(torch.randn(16, 32, device="cuda")))
     inputs = torch.randn(8, 32, device="cuda", requires_grad=True)
     output = nn.functional.linear(inputs, weight)
@@ -449,9 +443,7 @@ def test_cuda_storage_kernel_reused_across_parameter_objects_and_rates(monkeypat
 
     from mini_trainer.modeling import _quantized_training as backend
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify storage-kernel reuse")
-    assert torch.cuda.is_available()
+    cuda()
     counter = CompileCounterWithBackend("inductor")
     operation = backend.update_int8_rows_
 
@@ -480,9 +472,7 @@ def test_cuda_local_matmul_tuning_bounds_temporary_memory(monkeypatch):
     from mini_trainer.modeling._quantized_training import scaled_int8_mm
     from mini_trainer.modeling._quantized_training.matmul import _kernel
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify first-use tuning memory")
-    assert torch.cuda.is_available()
+    cuda()
     assert _kernel is not upstream and _kernel.fn is upstream.fn
     # Force actual tuning rather than accepting an earlier process's disk cache.
     monkeypatch.setattr(_kernel, "cache", {})
@@ -511,9 +501,7 @@ def test_cuda_compiled_optimizer_handles_many_quantized_groups(kind):
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.training.compilation import compile_optimizer
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify many-group optimizer compilation")
-    assert torch.cuda.is_available()
+    cuda()
     # Measure this optimizer's frames, independently of earlier tests' Dynamo
     # caches/skip decisions. Never reset between groups or measured updates.
     torch._dynamo.reset()
@@ -564,9 +552,7 @@ def test_cuda_compiled_quantized_update_matches_float_before_rounding(kind, cuda
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.training.compilation import compile_optimizer
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify compiled QT update arithmetic")
-    assert torch.cuda.is_available()
+    cuda()
     torch.manual_seed(107)
     weight = nn.Parameter(TrainingWeight.from_float(torch.randn(32, 64, device="cuda")))
     reference = nn.Parameter(weight.dequantize().detach().clone())
@@ -600,9 +586,7 @@ def test_cuda_compiled_stochastic_rounding_preserves_sub_code_updates():
     from mini_trainer.modeling._quantized_training import TrainingWeight
     from mini_trainer.training.compilation import compile_optimizer
 
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify sub-code compiled QT updates")
-    assert torch.cuda.is_available()
+    cuda()
     torch.manual_seed(109)
     weight = nn.Parameter(TrainingWeight.from_float(torch.ones(128, 1024, device="cuda")))
     optimizer = torch.optim.SGD([weight], lr=1, foreach=False)
