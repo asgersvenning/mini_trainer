@@ -1,6 +1,6 @@
 ---
 name: mini-trainer-maintenance
-description: Maintain mini_trainer with compatibility-focused code inspection, installed-package validation, and checkpoint regression checks. Use for repository refactors, packaging, CI, and training-state maintenance.
+description: Maintain mini_trainer through repository cleanup, compatibility-focused refactoring, packaging, CI, and training-state validation.
 ---
 
 # mini_trainer maintenance
@@ -8,6 +8,35 @@ description: Maintain mini_trainer with compatibility-focused code inspection, i
 Read the root [AGENTS.md](../../../AGENTS.md) and select the affected contracts before editing.
 Use the shared commands in [dev/README.md](../../../dev/README.md); do not copy their
 implementation into a new harness or implicitly sync the working environment.
+
+## Repository reduction campaigns
+
+Use this mode for repository-wide cleanup, not every small code change. Follow
+[retention guidance](../../README.md#maintenance) and
+[test guidance](../../rules/code-contribution.md#keeping-tests-useful).
+
+- Start from tracked content and the user's content groups. Preserve a fixed
+  revision, per-file character counts (including whitespace), exclusions and
+  classification rules; apply identical rules to baseline and current content.
+  Distinguish prose/source from generated evidence, figures, locks and outputs.
+- Build a hierarchical map with short evidence-backed assessments of navigation,
+  responsibility boundaries, signal-to-detail ratio and ongoing maintenance value.
+  Use a coarse 1–5 scale: 1 obstructive, 2 substantial cleanup, 3 mixed,
+  4 clear with minor issues, 5 lean and sufficient. Mark unreviewed areas;
+  character counts and passing tests do not establish quality. Read the actual
+  content and relevant consumers before scoring it or calling it a reduction
+  target; inventories and filenames only identify where to inspect next.
+- Select the highest-value bounded campaign from that map. Check consumers,
+  generators, public contracts and provenance before retiring content. Prefer
+  consolidation or removal over a new abstraction or archive of the same clutter.
+- After each campaign, validate affected contracts, recount by the same groups
+  and reassess the hierarchy, including newly exposed targets. Record remaining
+  work explicitly; a successful bounded campaign is not repository-wide completion.
+
+Keep detailed inventories, score rationales and campaign snapshots in ignored
+`.agents/local/`. Track only reusable guidance and concise navigation that helps
+contributors. Reduction is an auxiliary measure; preserve useful coverage and
+reproducibility, and do not count minification or relocation as simplification.
 
 ## Choose checks by boundary
 
