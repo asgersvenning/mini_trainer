@@ -703,3 +703,21 @@ def test_native_decode_preserves_high_bit_depth_png_conversion():
     Image.fromarray(source).save(encoded, format="PNG")
     data = encoded.getvalue()
     np.testing.assert_array_equal(TorchDecode(torch)(data), _rgb(data))
+
+
+def test_square_gather_preserves_pixels_across_decoded_and_strided_layouts():
+    from deployment.mambo_deploy.preprocessing import prepare_uint8
+
+    for height, width in [(73, 127), (511, 769)]:
+        decoded = np.random.default_rng(81).integers(0, 256, (height, width, 3), dtype=np.uint8).transpose(2, 0, 1)
+        for image in [decoded, np.ascontiguousarray(decoded), decoded[..., ::-1], decoded.transpose(0, 2, 1)]:
+            for padding in [0, 0.25]:
+                h, w = image.shape[1:]
+                py, px = int(np.ceil(h * padding)), int(np.ceil(w * padding))
+                grid = np.arange(384, dtype=np.float32)
+                y = np.clip((grid * np.float32((h + 2 * py) / 384)).astype(np.intp) - py, 0, h - 1)
+                x = np.clip((grid * np.float32((w + 2 * px) / 384)).astype(np.intp) - px, 0, w - 1)
+                expected = image[:, y[:, None], x[None, :]]
+                target = np.empty((3, 384, 384), dtype=np.uint8)
+                assert prepare_uint8(image, out=target, padding=padding) is target
+                np.testing.assert_array_equal(target, expected)

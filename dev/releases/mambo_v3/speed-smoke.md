@@ -68,15 +68,16 @@ none of these installation commands.
 ## Current preparation update
 
 When the next full-B200 comparison is needed, reuse its working environments.
-Native Torch decoding is retained; compiled Pillow rotation has been restored after
-the NumPy sampler regressed TTA. Use a fresh directory:
+Native Torch decoding and compiled Pillow rotation are retained. Pixel selection
+now gathers complete RGB pixels instead of using three-axis NumPy indexing. This
+changes real preparation in both backends; use a fresh directory:
 
 ```sh
 export MAMBO_CACHE=/work/mambo-cache
 .venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.speed_smoke \
   --metadata /work/datasets/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet \
   --onnx-python /tmp/mambo-ort-ptx/bin/python \
-  --output /work/mambo-speed/b200-full-decoding
+  --output /work/mambo-speed/b200-full-gather
 ```
 
 No environment rebuild, model change or new setting is needed. Keep batch size

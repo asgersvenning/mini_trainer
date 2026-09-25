@@ -53,3 +53,36 @@ not reproduce UCloud's large images and 48-worker setup. The short prepared-inpu
 cases establish a large local separation, not a precise throughput difference
 between their two modes. Use one same-environment probe when that distinction
 would change the next implementation; do not introduce a worker sweep or campaign.
+
+
+## Profile-driven pixel gathering change
+
+A native `py-spy` profile located the preparation hotspot in `_square`: the
+broadcast three-axis NumPy expression repeatedly entered `mapiter_get` and buffered
+iterator code. Sampling at 200 Hz with native stacks fell behind and substantially
+perturbed execution; its timings are **not** performance evidence. It was used only
+to locate the hot operation. The profile and a small selector comparison are under
+`local-evidence/pipeline-profile/`.
+
+Deployment now gathers complete RGB pixels with `take`. Large contiguous decoded
+images use flat pixel indices, avoiding a full-width row intermediate. Small or
+strided images gather rows and then columns, avoiding a source-sized flattening
+copy. Coordinates, padding, output layout and caller-owned buffers are preserved.
+This changes both Torch and ONNX preparation, without new configuration or queues.
+
+Unprofiled probe comparison with the original 1,025-image run, same batch/workers:
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Streaming images/s | 699 | 957 |
+| Preparation worker elapsed seconds (summed) | 4.883 | 3.423 |
+| Background input wait seconds | 1.391 | 0.987 |
+| Caller result wait seconds | 0.0024 | 0.0026 |
+| Prepared resident images/s | 7,771 | 7,557 |
+| Prepared host images/s | 7,627 | 7,221 |
+
+The final report is `local-evidence/pipeline-profile/after-layout-gather/report.json`.
+This is a useful local +37% end-to-end diagnostic improvement, not an expected B200
+speedup. Preparation/submission contention remains; this does not establish GPU
+saturation. Static checks and the affected deployment/streaming tests cover the
+change. Use the existing four-variant speed smoke for the next B200 measurement.

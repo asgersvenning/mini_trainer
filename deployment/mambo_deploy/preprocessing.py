@@ -70,7 +70,16 @@ def _square(item, padding=0):
     height, width = image.shape[1:]
     if height == width == _SIZE and padding == 0:
         return image
-    return image[:, _nearest_indices(height, padding)[:, None], _nearest_indices(width, padding)[None, :]]
+    # Gather whole RGB pixels, avoiding NumPy's buffered three-axis iterator.
+    rgb = image.transpose(1, 2, 0)
+    yy, xx = _nearest_indices(height, padding), _nearest_indices(width, padding)
+    if width > _SIZE and rgb.flags.c_contiguous:
+        # Large decoded images: select just the output pixels, not full-width rows.
+        square = rgb.reshape(-1, 3).take(yy[:, None] * width + xx[None, :], axis=0)
+    else:
+        # Small/strided images: row gathering avoids flattening/copying the source.
+        square = rgb[yy].take(xx, axis=1)
+    return square.transpose(2, 0, 1)
 
 
 def prepare_uint8(item, out=None, *, padding=0):
