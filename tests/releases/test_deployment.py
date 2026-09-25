@@ -420,28 +420,6 @@ def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
     np.testing.assert_array_equal(image, original)
 
 
-@pytest.mark.parametrize("option", ["padded_scale"])
-def test_enabled_tta_uses_qualified_padded_recipe(bundle, monkeypatch, option):
-    from dev.releases.mambo_v3.tta_candidates import candidate_policy
-
-    p = Predictor(bundle, tta=option, preprocess_workers=1)
-    image = np.random.default_rng(18).integers(0, 256, (3, 23, 41), dtype=np.uint8)
-    observed = []
-
-    def runtime(images, embeddings):
-        observed.append(images[0].copy())
-        return np.ones((len(images), 3), np.float32), None
-
-    monkeypatch.setattr(p, "_onnx", runtime)
-    result = p.predict(image)
-    expected = candidate_policy("padded_scale")
-    assert len(observed) == 3
-    for actual, transform in zip(observed, expected.transforms, strict=True):
-        np.testing.assert_array_equal(actual, preprocess(transform(image)))
-    assert result.metadata["tta"] == "padded_scale" and result.metadata["tta_views"] == 3
-    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
-
-
 @pytest.mark.parametrize(
     ("options", "recipe"), [([], None), (["--tta"], "rotation30_pad25_3"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
 )
@@ -473,31 +451,34 @@ def test_composed_rotation_reproduces_existing_padded_rotation(degrees):
     np.testing.assert_array_equal(image, original)
 
 
-@pytest.mark.parametrize("recipe", ["rotation30_pad25_3", "wide_rotation_mixed_padding_5"])
-def test_promoted_tta_matches_full_evaluation_views(bundle, monkeypatch, recipe):
+@pytest.mark.parametrize("option", ["padded_scale", True, "rotation30_pad25_3", "wide_rotation_mixed_padding_5"])
+def test_builtin_tta_matches_qualified_evaluation_views(bundle, monkeypatch, option):
     from deployment.mambo_deploy.augmentation import resolve_tta
     from dev.releases.mambo_v3.compact_tta import policies
+    from dev.releases.mambo_v3.tta_candidates import candidate_policy
 
-    views, _, recipes = policies()
+    recipe = "rotation30_pad25_3" if option is True else option
+    if recipe == "padded_scale":
+        transforms = candidate_policy(recipe).transforms
+    else:
+        views, _, recipes = policies()
+        transforms = [views[key] for key in recipes[recipe]]
     source = np.random.default_rng(19).integers(0, 256, (3, 47, 83), dtype=np.uint8)
     original = source.copy()
-    expected = [preprocess(views[key](source)) for key in recipes[recipe]]
-    for option in [True, recipe] if recipe == "rotation30_pad25_3" else [recipe]:
-        policy = resolve_tta(option)
-        for transform, key in zip(policy.transforms, recipes[recipe], strict=True):
-            np.testing.assert_array_equal(transform(source), views[key](source))
-        predictor = Predictor(bundle, tta=option, preprocess_workers=1)
-        observed = []
+    for transform, reference in zip(resolve_tta(option).transforms, transforms, strict=True):
+        np.testing.assert_array_equal(transform(source), reference(source))
+    predictor = Predictor(bundle, tta=option, preprocess_workers=1)
+    observed = []
 
-        def runtime(images, embeddings):
-            observed.append(images[0].copy())
-            return np.ones((len(images), 3), np.float32), None
+    def runtime(images, embeddings):
+        observed.append(images[0].copy())
+        return np.ones((len(images), 3), np.float32), None
 
-        monkeypatch.setattr(predictor, "_onnx", runtime)
-        result = predictor.predict(source)
-        np.testing.assert_array_equal(observed, expected)
-        assert result.metadata["tta"] == recipe
-        assert result.metadata["tta_views"] == len(expected)
+    monkeypatch.setattr(predictor, "_onnx", runtime)
+    result = predictor.predict(source)
+    np.testing.assert_array_equal(observed, [preprocess(transform(source)) for transform in transforms])
+    assert result.metadata["tta"] == recipe
+    assert result.metadata["tta_views"] == len(transforms)
     np.testing.assert_array_equal(source, original)
 
 
@@ -786,6 +767,8 @@ def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
 
 
 def test_default_scope_is_global_including_legacy_facade(bundle, monkeypatch):
+    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
+
     from mini_trainer import deploy
 
     monkeypatch.setattr(deploy, "_runtime", lambda: Predictor)
