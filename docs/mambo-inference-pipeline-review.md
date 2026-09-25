@@ -418,3 +418,59 @@ Torch release collection additionally verified both preset CSVs, embeddings and
 final timing totals. Static checks passed; the affected suite passed 95 tests with
 two metric-environment tests skipped. No metric code changed. B200 throughput and
 a full quality campaign have not been rerun.
+
+
+## Compact preparation follow-up
+
+The full-B200 smoke result (873 Torch / 826 ONNX images/s without TTA) and the
+user-reported 1/7 MIG result (493 / 333 images/s) support targeting preparation
+cost before adding more concurrency. This increment implements that target:
+
+- Portable preprocessing uses FP32 interpolation instead of accidentally promoted
+  FP64 intermediates. Frozen legacy hashes remain in tests as reference geometry;
+  tests explicitly permit rare one-level uint8 rounding changes and bound their
+  mean error. This is an intentional numerical implementation change, not a
+  relaxation of the image framing, transform order or normalization contract.
+- CUDA Torch request and streaming paths prepare nearest-square uint8 images on
+  CPU. Existing batch buffers, pinned storage and device slots preserve uint8.
+  Native batched Torch interpolation, center crop, rounding and normalization run
+  on the device before the existing FP16-backbone/FP32-head inference boundary.
+  A 256-image RGB 384-square staging buffer is 108 MiB instead of 432 MiB.
+  This fourfold reduction describes staging storage, not total GPU or process RAM;
+  device interpolation also needs temporary floating-point storage.
+- TTA transforms still operate before nearest-square preparation. The default
+  rotation/padding recipe, custom transform isolation, averaging, class selection
+  and embedding semantics are unchanged. Full-resolution TTA materialization,
+  redundant head work and optional ONNX reduced precision remain separate targets.
+- ONNX and CPU execution retain portable CPU preparation and do not import Torch
+  for preprocessing. No new dependencies, worker pools, user flags or model files.
+
+A fresh laptop comparison against `dcb00d0` used the same 256 Flemming images,
+batch 16, global list, default Torch CUDA precision and three warmed repetitions:
+
+| Measurement | Before, images/s | After, images/s |
+|---|---:|---:|
+| Portable CPU preparation, 4 workers | 308.8 | 435.2 |
+| Portable CPU preparation, 16 workers | 322.4 | 438.7 |
+| Torch CUDA request | 164.0 | 257.7 |
+| Torch CUDA streaming | 217.6 | 305.8 |
+
+All 256 predicted species/genus/family labels matched before and after for both
+request and streaming. This is a prediction-stability check, not a new accuracy
+estimate. These results establish a useful local improvement, not an assumed
+B200 speedup. Script outputs and prediction arrays are retained uncommitted in
+`local-evidence/compact-preparation/`; the comparison script is
+`local-evidence/pipeline-review/compare_pipeline.py`.
+
+Static checks passed. The focused suite passed 107 tests, with two metric-environment
+checks skipped (metric code unchanged). Real Torch and standalone ONNX CUDA checks
+covered global/northern-Europe lists, default TTA, embeddings and partial batches.
+Large-image geometry is also covered in CPU/CUDA preprocessing tests. A 65-image
+release collection with default TTA produced complete three-rank CSVs for both
+lists and finite 1280-dimensional embeddings; predicted labels matched the prior
+implementation throughout.
+
+Run the same [four-variant UCloud check](../dev/releases/mambo_v3/speed-smoke.md)
+with fresh output folders to compare this implementation on full B200 and MIG.
+Existing model caches and environments are reusable. Full quality evaluations
+and the published deployment figures have not been regenerated for this change.

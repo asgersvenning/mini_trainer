@@ -28,6 +28,11 @@ Preparation workers follow the exposed CPU quota (maximum 48); override with
 `--workers N` if the container does not expose the UCloud CPU allocation correctly.
 Keep both runs on the same commit and runtime versions.
 
+To compare the compact-preparation update with the completed baseline, rerun the
+same command using new output names such as `b200-full-compact` and
+`b200-mig-compact`. No environment rebuild, new model download or campaign setup
+is needed when the existing environments and model cache are available.
+
 Expect minutes, with the small MIG slice potentially taking tens of minutes;
 initial model downloads and cold storage add setup time. Each completed variant
 prints a row and updates `summary.csv`. Runtime output and errors are in its `.log`.

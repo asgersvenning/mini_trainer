@@ -186,11 +186,20 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         ((4, 24, 15), "e4dfd0c4a4174cd6d4913b1bf4f88bfd8c82a21802ec0d006e12594995bb1d64"),
     ],
 )
-def test_preprocessing_preserves_frozen_release_pixels(shape, digest):
+def test_fp32_preprocessing_preserves_geometry_with_bounded_rounding(shape, digest, monkeypatch):
     array = np.random.default_rng(19).integers(0, 256, size=shape, dtype=np.uint8)
     value = preprocess(array)
     assert value.dtype == np.float32 and value.flags.c_contiguous
-    assert hashlib.sha256(value.tobytes()).hexdigest() == digest
+    from deployment.mambo_deploy import preprocessing
+
+    # Retain the frozen FP64 reference to detect geometry/normalization drift.
+    with monkeypatch.context() as reference:
+        reference.setattr(preprocessing, "_FRACTION", preprocessing._COORD - preprocessing._LO)
+        legacy = preprocess(array)
+    assert hashlib.sha256(legacy.tobytes()).hexdigest() == digest
+    error_in_pixel_levels = np.abs(value - legacy) * np.array(RECIPE["std"])[:, None, None] * 255
+    assert error_in_pixel_levels.max() <= 1.001
+    assert error_in_pixel_levels.mean() < 0.001
     np.testing.assert_array_equal(value, preprocess(array.astype(np.float32) / 255))
 
 
@@ -593,3 +602,25 @@ def test_global_native_ranks_are_reused(monkeypatch):
     raw, _, _ = plan.torch(native[0], native)
     for values, tensor in zip(raw, native, strict=True):
         np.testing.assert_array_equal(values, tensor.numpy())
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda:0"])
+def test_native_batched_preprocessing_matches_release_geometry(device):
+    import torch
+
+    from deployment.mambo_deploy.preprocessing import TorchPreprocess, prepare_batch
+
+    if device != "cpu" and not torch.cuda.is_available():
+        pytest.skip("Intentional CUDA test; set CUDA_VISIBLE_DEVICES")
+    source = [
+        np.random.default_rng(i).integers(0, 256, size=(3, height, width), dtype=np.uint8)
+        for i, (height, width) in enumerate(((73, 125), (2048, 3072), (3072, 1024)))
+    ]
+    compact = prepare_batch(source, compact=True)
+    assert compact.dtype == np.uint8
+    actual = TorchPreprocess(torch, device)(torch.from_numpy(compact).to(device)).cpu().numpy()
+    expected = prepare_batch(source)
+    error = np.abs(actual - expected) * np.array(RECIPE["std"])[None, :, None, None] * 255
+    assert error.max() <= 1.001
+    assert error.mean() < 0.001
+    np.testing.assert_array_equal(compact, prepare_batch(source, compact=True))

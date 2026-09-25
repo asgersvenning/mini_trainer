@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-from .preprocessing import _rgb, prepare_batch, preprocess
+from .preprocessing import _rgb, prepare_batch, prepare_uint8, preprocess
 
 
 @dataclass(frozen=True)
@@ -151,18 +151,19 @@ def resolve_tta(value):
     return TTA(views, value)
 
 
-def _prepare_view(image, transform, out=None):
-    return preprocess(transform(image.copy()), out=out)
+def _prepare_view(image, transform, out=None, *, compact=False):
+    prepare = prepare_uint8 if compact else preprocess
+    return prepare(transform(image.copy()), out=out)
 
 
-def prepared_views(items, tta, pool=None):
+def prepared_views(items, tta, pool=None, *, compact=False):
     """Decode once and lazily prepare views in recipe order."""
 
     def mapped(fn, values):
         return list(pool.map(fn, values)) if pool and len(values) > 1 else [fn(item) for item in values]
 
     decoded = mapped(_rgb, items)
-    views = (prepare_batch(decoded, pool, transform) for transform in tta.transforms)
+    views = (prepare_batch(decoded, pool, transform, compact=compact) for transform in tta.transforms)
     return views
 
 

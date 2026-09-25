@@ -223,7 +223,8 @@ independent of model batch size, which the read window must accommodate. A suppl
 summed preparation-worker time. Workers fill batch storage directly; preparation
 time overlaps inference and sums concurrent workers, so it is not elapsed time.
 CUDA streaming reuses device buffers and stages the next batch in a transfer worker.
-PyTorch uses pinned host buffers and a separate CUDA copy stream; ONNX uses device
+PyTorch stages compact uint8 images and finishes preprocessing on the GPU, using
+pinned host buffers and a separate CUDA copy stream; ONNX uses device
 inputs with I/O binding, with copy overlap determined by the runtime. Set
 `device_prefetch=False` to disable device staging for comparison. PyTorch downloads
 ranks and embeddings together; the result worker waits for completion while the

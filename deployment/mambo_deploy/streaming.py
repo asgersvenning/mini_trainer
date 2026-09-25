@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 from .augmentation import _prepare_view
-from .preprocessing import RECIPE, _rgb, preprocess
+from .preprocessing import RECIPE, _rgb, prepare_uint8, preprocess
 
 
 def read_image(path, size, digest):
@@ -24,22 +24,23 @@ def read_image(path, size, digest):
     return data
 
 
-def prepare_image(data, tta, out=None):
+def prepare_image(data, tta, out=None, *, compact=False):
     with Image.open(io.BytesIO(data)) as image:
         decoded = _rgb(image)
+    prepare = prepare_uint8 if compact else preprocess
     if out is None:
-        return (preprocess(decoded),) if tta is None else tuple(_prepare_view(decoded, view) for view in tta.transforms)
+        return (prepare(decoded),) if tta is None else tuple(_prepare_view(decoded, view, compact=compact) for view in tta.transforms)
     if tta is None:
-        preprocess(decoded, out=out[0])
+        prepare(decoded, out=out[0])
     else:
         for transform, target in zip(tta.transforms, out, strict=True):
-            _prepare_view(decoded, transform, out=target)
+            _prepare_view(decoded, transform, out=target, compact=compact)
     return out
 
 
 class BatchBuffers:
-    def __init__(self, factory=None):
-        self.factory = factory or (lambda shape: np.empty(shape, dtype=np.float32))
+    def __init__(self, factory=None, *, compact=False):
+        self.factory = factory or (lambda shape: np.empty(shape, dtype=np.uint8 if compact else np.float32))
         self.available = []
         self.lock = threading.Lock()
         self.allocations = 0
@@ -71,6 +72,7 @@ def prepared_stream(
     stats=None,
     reuse_buffers=False,
     buffer_factory=None,
+    compact=False,
 ):
     """Yield (offset, batch views) from (path, optional SHA256) items; close on early exit.
 
@@ -88,7 +90,7 @@ def prepared_stream(
     condition = threading.Condition()
     state = dict(stop=False, consumed=0, end=None, error=None)
     batches = {}
-    buffer_pool = BatchBuffers(buffer_factory) if reuse_buffers else None
+    buffer_pool = BatchBuffers(buffer_factory, compact=compact) if reuse_buffers else None
     source = iter(items)
     capacity = batch_size * (prefetch_batches + 1)
 
@@ -108,7 +110,7 @@ def prepared_stream(
         preparers = ThreadPoolExecutor(max_workers=prepare_workers, thread_name_prefix="mambo-prepare")
         shape = (batch_size, 3, RECIPE["crop_size"], RECIPE["crop_size"])
         shapes = [shape] * (1 if tta is None else len(tta.transforms))
-        pool = buffer_pool or BatchBuffers(buffer_factory)
+        pool = buffer_pool or BatchBuffers(buffer_factory, compact=compact)
         try:
             while True:
                 with condition:
@@ -195,7 +197,7 @@ def prepared_stream(
 
     def prepare_into(data, target):
         start = time.perf_counter()
-        prepare_image(data, tta, out=target)
+        prepare_image(data, tta, out=target, compact=compact)
         return time.perf_counter() - start
 
     producer = threading.Thread(target=produce, name="mambo-stream")

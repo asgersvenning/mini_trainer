@@ -1,4 +1,4 @@
-"""Campaign image recipe on CPU, shared by both runtimes."""
+"""Release image geometry with portable CPU and batched Torch finishing."""
 
 from pathlib import Path
 
@@ -53,18 +53,27 @@ _COORD = np.maximum((np.arange(_RESIZED, dtype=np.float32) + 0.5) * np.float32(_
 _COORD = _COORD[(_RESIZED - _SIZE) // 2 : (_RESIZED + _SIZE) // 2]
 _LO = np.floor(_COORD).astype(np.intp)
 _HI = np.minimum(_LO + 1, _SIZE - 1)
-# Keep release rounding at half-integer pixels; constants are cached once.
-_FRACTION = _COORD - _LO
+# FP32 is sufficient for image interpolation; avoid promoting every temporary to FP64.
+_FRACTION = _COORD - _LO.astype(np.float32)
 _MEAN = np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]
 _STD = np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
 
 
-def preprocess(item, out=None):
-    """Apply the release geometry and normalize directly into optional batch storage."""
+def prepare_uint8(item, out=None):
+    """Decode and apply the recipe's nearest-square step, retaining compact pixels."""
     image = _rgb(item)
     yy = np.minimum((_GRID * np.float32(image.shape[1] / _SIZE)).astype(np.intp), image.shape[1] - 1)
     xx = np.minimum((_GRID * np.float32(image.shape[2] / _SIZE)).astype(np.intp), image.shape[2] - 1)
-    image = np.ascontiguousarray(image[:, yy[:, None], xx[None, :]], dtype=np.float32)
+    square = image[:, yy[:, None], xx[None, :]]
+    if out is None:
+        return np.ascontiguousarray(square)
+    out[...] = square
+    return out
+
+
+def preprocess(item, out=None):
+    """Finish the release geometry and normalization in FP32 on CPU."""
+    image = prepare_uint8(item).astype(np.float32)
     rows = image[:, _LO] * (1 - _FRACTION)[None, :, None] + image[:, _HI] * _FRACTION[None, :, None]
     pixels = rows[:, :, _LO] * (1 - _FRACTION)[None, None, :] + rows[:, :, _HI] * _FRACTION[None, None, :]
     if out is None:
@@ -76,15 +85,16 @@ def preprocess(item, out=None):
     return out
 
 
-def prepare_batch(items, pool=None, transform=None):
+def prepare_batch(items, pool=None, transform=None, *, compact=False):
     """Fill one contiguous batch without per-image output allocations and stacking."""
-    output = np.empty((len(items), 3, _SIZE, _SIZE), dtype=np.float32)
+    output = np.empty((len(items), 3, _SIZE, _SIZE), dtype=np.uint8 if compact else np.float32)
+    prepare = prepare_uint8 if compact else preprocess
 
     def fill(index):
         item = items[index]
         if transform is not None:
             item = transform(item.copy())
-        preprocess(item, out=output[index])
+        prepare(item, out=output[index])
 
     if pool is not None and len(items) > 1:
         for _ in pool.map(fill, range(len(items))):
@@ -93,6 +103,25 @@ def prepare_batch(items, pool=None, transform=None):
         for index in range(len(items)):
             fill(index)
     return output
+
+
+class TorchPreprocess:
+    """Finish a batch of uint8 squares with native operations on its Torch device."""
+
+    def __init__(self, torch, device):
+        self.torch = torch
+        self.mean = torch.as_tensor(_MEAN, device=device)
+        self.std = torch.as_tensor(_STD, device=device)
+
+    def __call__(self, images):
+        torch = self.torch
+        with torch.autocast(images.device.type, enabled=False):
+            values = torch.nn.functional.interpolate(
+                images.float(), size=(_RESIZED, _RESIZED), mode="bilinear", align_corners=False, antialias=False
+            )
+            start = (_RESIZED - _SIZE) // 2
+            values = values[..., start : start + _SIZE, start : start + _SIZE]
+            return values.round_().div_(255).sub_(self.mean).div_(self.std)
 
 
 def image_items(value):

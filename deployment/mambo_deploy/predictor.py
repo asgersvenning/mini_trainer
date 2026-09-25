@@ -16,7 +16,7 @@ from .augmentation import infer_augmented, infer_prepared, prepared_views, resol
 from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
-from .preprocessing import RECIPE, image_items, prepare_batch
+from .preprocessing import RECIPE, TorchPreprocess, image_items, prepare_batch
 from .result_worker import ResultWorker
 from .results import HierarchyPlan, Prediction
 from .streaming import prepared_stream
@@ -182,6 +182,14 @@ class Predictor:
             raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
         return torch, bypass_submodule
 
+    @cached_property
+    def _device_preprocess(self):
+        return TorchPreprocess(self._torch_api[0], self.device)
+
+    @property
+    def _compact_inputs(self):
+        return self.backend == "torch" and self.device != "cpu"
+
     def _onnx(self, images, embeddings):
         ort = self._onnx_api
         key = "onnx-embedding" if embeddings else "onnx"
@@ -248,6 +256,8 @@ class Predictor:
                 bypass_submodule(self._torch_model, self._torch_model._backbone_output_name),
             ):
                 tensor = images if isinstance(images, torch.Tensor) else torch.from_numpy(images).to(self.device)
+                if tensor.dtype == torch.uint8:
+                    tensor = self._device_preprocess(tensor)
                 events = None
                 if tensors and tensor.device.type == "cuda":
                     events = (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
@@ -331,11 +341,17 @@ class Predictor:
         return finish if defer else finish()
 
     def prepared_batches(self, items, batch_size, *, device_prefetch=True, stats=None, **options):
-        """Shared streaming preparation; device slots remain valid until the next iteration."""
+        """Yield backend inputs: CUDA Torch uint8 squares, otherwise normalized FP32.
+
+        Device slots remain valid until the next iteration.
+        """
         stats = {} if stats is None else stats
         accelerated = device_prefetch and self.device != "cpu"
-        factory = pinned_factory(self.device) if accelerated and self.backend == "torch" else None
-        source = prepared_stream(items, batch_size, tta=self.tta, stats=stats, reuse_buffers=True, buffer_factory=factory, **options)
+        compact = self._compact_inputs
+        factory = pinned_factory(self.device, compact=compact) if accelerated and self.backend == "torch" else None
+        source = prepared_stream(
+            items, batch_size, tta=self.tta, stats=stats, reuse_buffers=True, buffer_factory=factory, compact=compact, **options
+        )
         if accelerated:
             yield from device_batches(source, self.backend, self.device, stats)
         else:
@@ -344,7 +360,7 @@ class Predictor:
                     yield offset, views, len(views[0])
 
     def _prepare(self, batch, pool=None):
-        return prepare_batch(batch, pool)
+        return prepare_batch(batch, pool, compact=self._compact_inputs)
 
     def _infer(self, images, embeddings=False):
         return (self._torch if self.backend == "torch" else self._onnx)(images, embeddings)
@@ -361,7 +377,11 @@ class Predictor:
             with ThreadPoolExecutor(max_workers=self.preprocess_workers) if self.preprocess_workers > 1 else nullcontext(None) as pool:
                 while batch := list(islice(items, self.batch_size)):
                     if self.backend == "torch":
-                        views = prepared_views(batch, self.tta, pool) if self.tta else (self._prepare(batch, pool),)
+                        views = (
+                            prepared_views(batch, self.tta, pool, compact=self._compact_inputs)
+                            if self.tta
+                            else (self._prepare(batch, pool),)
+                        )
                         leaves, vectors, ranks = self._ranked_views(
                             views, len(self.tta.transforms) if self.tta else 1, {"selected": self.selected}, embeddings
                         )

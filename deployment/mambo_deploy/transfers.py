@@ -5,12 +5,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 
-def pinned_factory(device):
+def pinned_factory(device, *, compact=False):
     import torch
 
     def allocate(shape):
         with torch.cuda.device(device):
-            return torch.empty(shape, dtype=torch.float32, pin_memory=True).numpy()
+            return torch.empty(shape, dtype=torch.uint8 if compact else torch.float32, pin_memory=True).numpy()
 
     return allocate
 
@@ -82,11 +82,12 @@ def device_batches(source, backend, device, stats):
                 begin.record(copy_stream)
                 staged = []
                 for index, view in enumerate(views):
+                    source_tensor = torch.from_numpy(view)
                     if index == len(slot["buffers"]):
-                        slot["buffers"].append(torch.empty(view.shape, dtype=torch.float32, device=device))
+                        slot["buffers"].append(torch.empty(view.shape, dtype=source_tensor.dtype, device=device))
                         stats["device_buffer_allocations"] = stats.get("device_buffer_allocations", 0) + 1
                     target = slot["buffers"][index][: len(view)]
-                    target.copy_(torch.from_numpy(view), non_blocking=True)
+                    target.copy_(source_tensor, non_blocking=True)
                     staged.append(target)
                 end.record(copy_stream)
                 end.synchronize()  # The source may recycle its pinned host buffers on next().
