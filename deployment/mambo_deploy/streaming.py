@@ -4,8 +4,10 @@ import hashlib
 import io
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+from heapq import heappop, heappush
 from pathlib import Path
+from queue import Empty, SimpleQueue
 
 import numpy as np
 from PIL import Image
@@ -38,25 +40,42 @@ def prepare_image(data, tta, out=None, *, compact=False):
     return out
 
 
-class BatchBuffers:
-    def __init__(self, factory=None, *, compact=False):
-        self.factory = factory or (lambda shape: np.empty(shape, dtype=np.uint8 if compact else np.float32))
-        self.available = []
-        self.lock = threading.Lock()
-        self.allocations = 0
+class EncodedReads:
+    """Own byte reservations in input order; metadata and file IO stay in readers."""
 
-    def acquire(self, shapes):
-        with self.lock:
-            for i, buffers in enumerate(self.available):
-                if all(b.shape[0] >= s[0] and b.shape[1:] == s[1:] for b, s in zip(buffers, shapes, strict=True)):
-                    return self.available.pop(i)
-            self.allocations += len(shapes)
-        return tuple(self.factory(shape) for shape in shapes)
+    def __init__(self, budget, stats):
+        self.budget, self.stats = budget, stats
+        self.condition = threading.Condition()
+        self.next_index = self.reserved = 0
+        self.closed = False
+        stats["encoded_bytes"] = 0
 
-    def release(self, views):
-        # Partial batches retain the full allocation via .base; no further work follows the final partial batch.
-        with self.lock:
-            self.available.append(views)
+    def read(self, index, path, digest):
+        path = Path(path)
+        size = path.stat().st_size
+        if size > self.budget:
+            raise ValueError(f"Image exceeds encoded byte budget: {path}")
+        with self.condition:
+            self.condition.wait_for(lambda: self.closed or (index == self.next_index and self.reserved + size <= self.budget))
+            if self.closed:
+                raise CancelledError()
+            self.reserved += size
+            self.stats["encoded_bytes"] = self.reserved
+            self.stats["peak_encoded_bytes"] = max(self.stats.get("peak_encoded_bytes", 0), self.reserved)
+            self.next_index += 1
+            self.condition.notify_all()
+        return size, read_image(path, size, digest)
+
+    def release(self, size):
+        with self.condition:
+            self.reserved -= size
+            self.stats["encoded_bytes"] = self.reserved
+            self.condition.notify_all()
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+            self.condition.notify_all()
 
 
 def prepared_stream(
@@ -74,12 +93,12 @@ def prepared_stream(
     buffer_factory=None,
     compact=False,
 ):
-    """Yield (offset, batch views) from (path, optional SHA256) items; close on early exit.
+    """Yield ordered (offset, batch views); reusable buffers are leased until next().
 
-    IO reservations include in-flight reads and bytes held by preparation. Prepared
-    images are bounded by (prefetch_batches + 1) * batch_size, plus the consumed batch.
-    Workers write directly to disjoint batch slices; completion callbacks wake the coordinator.
-    Preparation workers do not call models or sessions. Shutdown waits for running filesystem calls.
+    The reading stage owns byte admission. One preparation owner assigns disjoint
+    slices and recycles returned batches; workers report completions. Encoded bytes
+    stay reserved through preparation; batch capacity is released by the consumer.
+    Close on early exit. Shutdown waits for running filesystem/preparation calls.
     """
     values = (batch_size, read_workers, prepare_workers, read_window, encoded_budget)
     if any(not isinstance(v, int) or v < 1 for v in values) or not isinstance(prefetch_batches, int) or prefetch_batches < 0:
@@ -87,152 +106,126 @@ def prepared_stream(
     if read_window < batch_size:
         raise ValueError("read_window must cover at least one batch")
     stats = {} if stats is None else stats
-    condition = threading.Condition()
-    state = dict(stop=False, consumed=0, end=None, error=None)
-    batches = {}
-    buffer_pool = BatchBuffers(buffer_factory, compact=compact) if reuse_buffers else None
+    events, output = SimpleQueue(), SimpleQueue()
     source = iter(items)
     capacity = batch_size * (prefetch_batches + 1)
-
-    def wake(_=None):
-        with condition:
-            state["generation"] += 1
-            condition.notify_all()
-
-    state["generation"] = 0
-
-    def produce():
-        reads, decoding, buffers, sizes, active = {}, {}, {}, {}, {}
-        next_index, reserved = 0, 0
-        pending = None
-        exhausted = False
-        readers = ThreadPoolExecutor(max_workers=read_workers, thread_name_prefix="mambo-read")
-        preparers = ThreadPoolExecutor(max_workers=prepare_workers, thread_name_prefix="mambo-prepare")
-        shape = (batch_size, 3, RECIPE["crop_size"], RECIPE["crop_size"])
-        shapes = [shape] * (1 if tta is None else len(tta.transforms))
-        pool = buffer_pool or BatchBuffers(buffer_factory, compact=compact)
-        try:
-            while True:
-                with condition:
-                    if state["stop"]:
-                        break
-                    generation, consumed = state["generation"], state["consumed"]
-                for index, future in list(reads.items()):
-                    if future.done():
-                        buffers[index] = future.result()
-                        del reads[index]
-                for index, future in list(decoding.items()):
-                    if future.done():
-                        elapsed = future.result()
-                        del decoding[index]
-                        reserved -= sizes.pop(index)
-                        active[index // batch_size][1] += 1
-                        stats["preparation_worker_seconds"] = stats.get("preparation_worker_seconds", 0.0) + elapsed
-                for number, (views, count) in list(active.items()):
-                    expected = min(batch_size, next_index - number * batch_size) if exhausted else batch_size
-                    if count == expected:
-                        with condition:
-                            batches[number * batch_size] = tuple(view[:count] for view in views)
-                            condition.notify_all()
-                        del active[number]
-                for index in list(buffers):
-                    if index < consumed + capacity and len(decoding) < prepare_workers:
-                        number, slot = divmod(index, batch_size)
-                        if number not in active:
-                            active[number] = [pool.acquire(shapes), 0]
-                        target = tuple(view[slot] for view in active[number][0])
-                        future = preparers.submit(prepare_into, buffers.pop(index), target)
-                        decoding[index] = future
-                        future.add_done_callback(wake)
-                while not exhausted and next_index < consumed + read_window and len(reads) < read_workers:
-                    if pending is None:
-                        try:
-                            path, digest = next(source)
-                        except StopIteration:
-                            exhausted = True
-                            with condition:
-                                state["end"] = next_index
-                                wake()
-                            break
-                        path = Path(path)
-                        size = path.stat().st_size
-                        if size > encoded_budget:
-                            raise ValueError(f"Image exceeds encoded byte budget: {path}")
-                        pending = path, digest, size
-                    path, digest, size = pending
-                    if reserved + size > encoded_budget:
-                        break
-                    sizes[next_index] = size
-                    reserved += size
-                    future = readers.submit(read_image, path, size, digest)
-                    reads[next_index] = future
-                    future.add_done_callback(wake)
-                    next_index += 1
-                    pending = None
-                with condition:
-                    prepared_count = sum(count for _, count in active.values()) + sum(len(v[0]) for v in batches.values())
-                    stats.update(
-                        reading=len(reads),
-                        encoded_ready=len(buffers),
-                        preparing=len(decoding),
-                        prepared_images=prepared_count,
-                        prepared_batches=len(batches),
-                        encoded_bytes=reserved,
-                        host_buffer_allocations=pool.allocations,
-                    )
-                    stats["peak_encoded_bytes"] = max(stats.get("peak_encoded_bytes", 0), reserved)
-                    stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), prepared_count + len(decoding))
-                    if exhausted and not reads and not decoding and not buffers and not active:
-                        break
-                    condition.wait_for(lambda: state["stop"] or state["generation"] != generation)
-        except BaseException as error:
-            with condition:
-                state["error"] = error
-                condition.notify_all()
-        finally:
-            for future in (*reads.values(), *decoding.values()):
-                future.cancel()
-            readers.shutdown(wait=True, cancel_futures=True)
-            preparers.shutdown(wait=True, cancel_futures=True)
+    factory = buffer_factory or (lambda shape: np.empty(shape, dtype=np.uint8 if compact else np.float32))
+    shape = (batch_size, 3, RECIPE["crop_size"], RECIPE["crop_size"])
 
     def prepare_into(data, target):
         start = time.perf_counter()
         prepare_image(data, tta, out=target, compact=compact)
         return time.perf_counter() - start
 
+    def submit(pool, kind, index, size, function, *args):
+        pool.submit(function, *args).add_done_callback(lambda future: events.put((kind, index, size, future)))
+
+    def produce():
+        ready, available, active = [], [], {}
+        consumed = admitted = emitted = 0
+        reading = preparing = 0
+        exhausted = False
+        readers = ThreadPoolExecutor(max_workers=read_workers, thread_name_prefix="mambo-read")
+        preparers = ThreadPoolExecutor(max_workers=prepare_workers, thread_name_prefix="mambo-prepare")
+        encoded = EncodedReads(encoded_budget, stats)
+        stats.update(prepared_images=0, prepared_batches=0, host_buffer_allocations=0)
+
+        def complete(event):
+            nonlocal consumed, reading, preparing
+            kind, index, size, value = event
+            if kind == "read":
+                reading -= 1
+                size, data = value.result()
+                heappush(ready, (index, size, data))
+            elif kind == "prepared":
+                stats["preparation_worker_seconds"] = stats.get("preparation_worker_seconds", 0.0) + value.result()
+                preparing -= 1
+                encoded.release(size)
+                active[index // batch_size][1] += 1
+                stats["prepared_images"] += 1
+            elif kind == "taken":
+                stats["prepared_images"] -= size
+                stats["prepared_batches"] -= 1
+            elif kind == "returned":
+                consumed = index + size
+                if reuse_buffers:
+                    available.append(value)
+            return kind != "stop"
+
+        try:
+            while True:
+                # Completions identify exactly which item changed; no future/buffer scans.
+                try:
+                    while complete(events.get_nowait()):
+                        pass
+                    break
+                except Empty:
+                    pass
+                while ready and ready[0][0] < consumed + capacity and preparing < prepare_workers:
+                    index, size, data = heappop(ready)
+                    number, slot = divmod(index, batch_size)
+                    if number not in active:
+                        if available:
+                            views = available.pop()
+                        else:
+                            views = tuple(factory(shape) for _ in range(1 if tta is None else len(tta.transforms)))
+                            stats["host_buffer_allocations"] += len(views)
+                        active[number] = [views, 0]
+                    target = tuple(view[slot] for view in active[number][0])
+                    submit(preparers, "prepared", index, size, prepare_into, data, target)
+                    preparing += 1
+                    del data
+                while not exhausted and admitted < consumed + read_window and reading < read_workers:
+                    try:
+                        path, digest = next(source)
+                    except StopIteration:
+                        exhausted = True
+                        break
+                    submit(readers, "read", admitted, 0, encoded.read, admitted, path, digest)
+                    reading += 1
+                    admitted += 1
+                while emitted // batch_size in active:
+                    views, count = active[emitted // batch_size]
+                    expected = min(batch_size, admitted - emitted) if exhausted else batch_size
+                    if count != expected:
+                        break
+                    del active[emitted // batch_size]
+                    stats["prepared_batches"] += 1
+                    output.put((emitted, tuple(view[:count] for view in views)))
+                    emitted += count
+                stats.update(reading=reading, encoded_ready=len(ready), preparing=preparing)
+                stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), stats["prepared_images"] + preparing)
+                if exhausted and consumed == admitted:
+                    output.put(None)
+                    return
+                if not complete(events.get()):
+                    break
+        except BaseException as error:
+            output.put(error)
+        finally:
+            encoded.close()
+            readers.shutdown(wait=True, cancel_futures=True)
+            preparers.shutdown(wait=True, cancel_futures=True)
+            # Completed futures can retain encoded images; discard them after shutdown.
+            while not events.empty():
+                events.get_nowait()
+
     producer = threading.Thread(target=produce, name="mambo-stream")
     producer.start()
-    offset = 0
     try:
         while True:
             start = time.perf_counter()
-            with condition:
-                while True:
-                    if state["error"] is not None:
-                        raise state["error"]
-                    end = min(offset + batch_size, state["end"]) if state["end"] is not None else offset + batch_size
-                    if end == offset:
-                        return
-                    if offset in batches:
-                        views = batches.pop(offset)
-                        stats["prepared_batches"] = len(batches)
-                        stats["prepared_images"] = max(0, stats.get("prepared_images", 0) - len(views[0]))
-                        break
-                    condition.wait()
-            with condition:
-                stats["queue_wait_seconds"] = stats.get("queue_wait_seconds", 0.0) + time.perf_counter() - start
-                stats["input_wait_seconds"] = stats["queue_wait_seconds"]
-                condition.notify_all()
+            result = output.get()
+            stats["queue_wait_seconds"] = stats.get("queue_wait_seconds", 0.0) + time.perf_counter() - start
+            stats["input_wait_seconds"] = stats["queue_wait_seconds"]
+            if isinstance(result, BaseException):
+                raise result
+            if result is None:
+                return
+            offset, views = result
+            events.put(("taken", offset, len(views[0]), None))
             yield offset, views
-            if buffer_pool is not None:
-                buffer_pool.release(views)
-            del views
-            offset = end
-            with condition:
-                state["consumed"] = end
-                wake()
+            events.put(("returned", offset, len(views[0]), views))
     finally:
-        with condition:
-            state["stop"] = True
-            condition.notify_all()
+        events.put(("stop", 0, 0, None))
         producer.join()

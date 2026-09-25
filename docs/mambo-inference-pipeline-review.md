@@ -474,3 +474,56 @@ Run the same [four-variant UCloud check](../dev/releases/mambo_v3/speed-smoke.md
 with fresh output folders to compare this implementation on full B200 and MIG.
 Existing model caches and environments are reusable. Full quality evaluations
 and the published deployment figures have not been regenerated for this change.
+
+## Streaming ownership and virtual padding
+
+The full-B200 resident experiment establishes a useful reference for the existing
+GPU execution: 3,667 images/s at batch 256, 3,781 at 512 and 3,818 at 1,024. The
+trace has almost continuous kernel execution; increasing batch size is not the
+main answer to the 1,232 images/s streaming result. This increment preserves GPU
+execution and addresses preparation and handoffs instead.
+
+- The reading stage owns metadata lookup and encoded-byte reservations. Metadata
+  lookup runs in the existing reading pool, so a slow `stat()` cannot block the
+  preparation owner. Reservations are granted in input order to prevent later
+  reads from occupying the whole byte budget ahead of a required earlier image.
+- The preparation owner receives completion messages instead of rescanning future
+  dictionaries and buffered images. A priority heap selects the earliest ready
+  image; unavailable earlier reads do not prevent later ready work from proceeding.
+- That owner alone allocates/recycles preparation buffers. The consumer returns a
+  leased batch after use; workers fill assigned disjoint slices. This replaces the
+  old buffer-pool lock, shared condition/generation state and repeated progress scans.
+  The message queues are bounded indirectly by read admission and batch capacity.
+- Built-in non-mutating TTA transforms avoid an unconditional input copy. Custom
+  callables, including subclasses of built-ins, retain copy isolation. Edge padding
+  is represented in nearest-square sampling coordinates rather than materialized
+  as a full-size padded image. Rotation geometry and interpolation are unchanged.
+- Portable FP32 preparation converts selected pixels directly to its required
+  contiguous format, without an intermediate contiguous uint8 copy. Torch/ONNX
+  input contracts and the transfer/result stages are unchanged.
+
+The streaming module is slightly shorter (238 to 231 lines). Across the three
+production files, the functional additions produce a net increase of 17 lines;
+this is a reduction in coordination state and interactions, not a large net code
+reduction. No dependencies, worker pools, user settings or model assets were added.
+
+Validation: the affected suite passed 117 tests with two metric-environment tests
+skipped. After separating byte accounting from telemetry, the 17 streaming tests
+passed again. Static checks passed. Tests cover slow reads and metadata, earliest
+ready work, bounded storage, buffer leases, partial batches, source/worker errors,
+early close and blocked-reader shutdown. Materialized versus virtual TTA padding
+matches prepared pixels exactly, including on large images. Real Torch and
+standalone ONNX CUDA checks cover global/northern-Europe lists, TTA, embeddings
+and partial batches.
+
+An initial laptop comparison of the completion/virtual-padding changes showed no
+clear throughput shift on 256 small Flemming images: about 269 versus 270 images/s
+without TTA and 98 versus 96 with TTA, with overlapping repetition ranges. Predicted
+labels matched at all three ranks. This timing preceded moving metadata lookup into
+readers; the final implementation has not been benchmarked on B200. It does not
+establish a speedup. Local evidence is retained under `local-evidence/stream-owner/`.
+
+Use the existing [full-B200 smoke command](../dev/releases/mambo_v3/speed-smoke.md#streaming-ownership-and-preparation-update)
+with a fresh output directory, keeping the same batch and worker settings. Reuse
+the resident reference and existing environments; no MIG or quality campaign is
+needed for this bounded pipeline comparison.

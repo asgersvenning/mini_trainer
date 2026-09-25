@@ -59,21 +59,27 @@ _MEAN = np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]
 _STD = np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
 
 
-def prepare_uint8(item, out=None):
-    """Decode and apply the recipe's nearest-square step, retaining compact pixels."""
+def _square(item, padding=0):
     image = _rgb(item)
-    yy = np.minimum((_GRID * np.float32(image.shape[1] / _SIZE)).astype(np.intp), image.shape[1] - 1)
-    xx = np.minimum((_GRID * np.float32(image.shape[2] / _SIZE)).astype(np.intp), image.shape[2] - 1)
-    square = image[:, yy[:, None], xx[None, :]]
+    height, width = image.shape[1:]
+    py, px = int(np.ceil(height * padding)), int(np.ceil(width * padding))
+    yy = np.clip((_GRID * np.float32((height + 2 * py) / _SIZE)).astype(np.intp) - py, 0, height - 1)
+    xx = np.clip((_GRID * np.float32((width + 2 * px) / _SIZE)).astype(np.intp) - px, 0, width - 1)
+    return image[:, yy[:, None], xx[None, :]]
+
+
+def prepare_uint8(item, out=None, *, padding=0):
+    """Select compact pixels; virtual edge padding avoids a full-size padded image."""
+    square = _square(item, padding)
     if out is None:
         return np.ascontiguousarray(square)
     out[...] = square
     return out
 
 
-def preprocess(item, out=None):
+def preprocess(item, out=None, *, padding=0):
     """Finish the release geometry and normalization in FP32 on CPU."""
-    image = prepare_uint8(item).astype(np.float32)
+    image = np.ascontiguousarray(_square(item, padding), dtype=np.float32)
     rows = image[:, _LO] * (1 - _FRACTION)[None, :, None] + image[:, _HI] * _FRACTION[None, :, None]
     pixels = rows[:, :, _LO] * (1 - _FRACTION)[None, None, :] + rows[:, :, _HI] * _FRACTION[None, None, :]
     if out is None:

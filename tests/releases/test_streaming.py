@@ -209,3 +209,120 @@ def test_compact_stream_preserves_views_and_quarters_storage(tmp_path, tta):
             expected = np.stack([streaming.prepare_image(p.read_bytes(), tta)[index] for p, _ in paths[offset : offset + len(view)]])
             assert view.nbytes * 4 == expected.nbytes
             np.testing.assert_allclose(finish(torch.from_numpy(view)).numpy(), expected, atol=1e-6)
+
+
+def test_ready_work_prioritizes_earliest_batch(tmp_path, monkeypatch):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    items = inputs(tmp_path, 4)
+    indices = {p.read_bytes(): i for i, (p, _) in enumerate(items)}
+    preparing_first, release_first, later_read = threading.Event(), threading.Event(), threading.Event()
+    original = streaming.read_image
+    order, stats = [], {}
+
+    def read(path, size, digest):
+        index = int(path.stem)
+        if index:
+            assert preparing_first.wait(3)
+        if index == 1:
+            assert later_read.wait(3)
+        data = original(path, size, digest)
+        if index == 3:
+            later_read.set()
+        return data
+
+    def prepare(data, tta, out, **kwargs):
+        index = indices[data]
+        order.append(index)
+        if index == 0:
+            preparing_first.set()
+            assert release_first.wait(5)
+        out[0].fill(index)
+
+    monkeypatch.setattr(streaming, "read_image", read)
+    monkeypatch.setattr(streaming, "prepare_image", prepare)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(list, streaming.prepared_stream(items, 2, read_workers=4, prepare_workers=1, read_window=4, stats=stats))
+        try:
+            deadline = time.monotonic() + 3
+            while stats.get("encoded_ready", 0) != 3 and time.monotonic() < deadline:
+                time.sleep(0.001)
+            assert stats.get("encoded_ready") == 3
+        finally:
+            release_first.set()
+        assert len(future.result(timeout=5)) == 2
+    assert order == [0, 1, 2, 3]
+
+
+def test_lease_prevents_early_reuse_and_source_errors_propagate(tmp_path, monkeypatch):
+    items = inputs(tmp_path, 12)
+    second_prepared = threading.Event()
+    original = streaming.prepare_image
+    second_data = items[3][0].read_bytes()
+
+    def prepare(data, tta, out=None, **kwargs):
+        result = original(data, tta, out=out, **kwargs)
+        if data == second_data:
+            second_prepared.set()
+        return result
+
+    monkeypatch.setattr(streaming, "prepare_image", prepare)
+    with closing(streaming.prepared_stream(items, 2, prefetch_batches=1, reuse_buffers=True)) as stream:
+        _, first = next(stream)
+        assert second_prepared.wait(3)
+        # Preparing the next batch must not overwrite the batch still held by the consumer.
+        np.testing.assert_array_equal(first[0], np.stack([preprocess(p) for p, _ in items[:2]]))
+        _, second = next(stream)
+        np.testing.assert_array_equal(second[0][0], preprocess(items[2][0]))
+
+    def broken():
+        yield items[0]
+        raise OSError("input iterator failed")
+
+    with pytest.raises(OSError, match="input iterator failed"):
+        list(streaming.prepared_stream(broken(), 2))
+    assert not any(t.name.startswith(("mambo-read", "mambo-prepare", "mambo-stream")) for t in threading.enumerate())
+
+
+def test_metadata_latency_does_not_block_preparation(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    items = inputs(tmp_path, 5)
+    prepared = threading.Event()
+    original_stat, original_prepare = Path.stat, streaming.prepare_image
+    threads = []
+
+    def stat(path, *args, **kwargs):
+        if path in [p for p, _ in items]:
+            threads.append(threading.current_thread().name)
+            if path == items[2][0]:
+                assert prepared.wait(3), "metadata IO must not stall the preparation owner"
+        return original_stat(path, *args, **kwargs)
+
+    def prepare(data, tta, out=None, **kwargs):
+        result = original_prepare(data, tta, out=out, **kwargs)
+        prepared.set()
+        return result
+
+    monkeypatch.setattr(Path, "stat", stat)
+    monkeypatch.setattr(streaming, "prepare_image", prepare)
+    assert len(list(streaming.prepared_stream(items, 2, read_workers=4, read_window=8))) == 3
+    assert all(name.startswith("mambo-read") for name in threads)
+
+
+def test_close_wakes_readers_waiting_for_byte_capacity(tmp_path):
+    items = inputs(tmp_path, 8)
+    budget = max(p.stat().st_size for p, _ in items)
+    with closing(streaming.prepared_stream(items, 1, read_workers=4, read_window=8, prefetch_batches=0, encoded_budget=budget)) as stream:
+        next(stream)
+    assert not any(t.name.startswith(("mambo-read", "mambo-prepare", "mambo-stream")) for t in threading.enumerate())
+
+
+def test_invalid_source_fails_before_starting_workers():
+    class InvalidSource:
+        def __iter__(self):
+            raise ValueError("cannot iterate source")
+
+    with pytest.raises(ValueError, match="cannot iterate source"):
+        next(streaming.prepared_stream(InvalidSource(), 1))

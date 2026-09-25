@@ -624,3 +624,35 @@ def test_native_batched_preprocessing_matches_release_geometry(device):
     assert error.max() <= 1.001
     assert error.mean() < 0.001
     np.testing.assert_array_equal(compact, prepare_batch(source, compact=True))
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_virtual_tta_padding_matches_materialized_pixels(compact):
+    from deployment.mambo_deploy.augmentation import EdgePad, RotatePad, View, _prepare_view
+    from deployment.mambo_deploy.preprocessing import prepare_uint8
+
+    prepare = prepare_uint8 if compact else preprocess
+    for shape in [(3, 1, 7), (3, 51, 83), (3, 1025, 1537)]:
+        image = np.random.default_rng(31).integers(0, 256, size=shape, dtype=np.uint8)
+        original = image.copy()
+        for transform in [View(), EdgePad(0), EdgePad(0.25), RotatePad(-30), RotatePad(30, 0.15)]:
+            expected = prepare(transform(image.copy()))
+            target = np.empty_like(expected)
+            actual = _prepare_view(image, transform, out=target, compact=compact)
+            assert actual is target
+            np.testing.assert_array_equal(actual, expected)
+            np.testing.assert_array_equal(image, original)
+
+
+def test_builtin_subclass_keeps_custom_transform_copy_isolation():
+    from deployment.mambo_deploy.augmentation import View, _prepare_view
+
+    class MutatingView(View):
+        def __call__(self, image):
+            image.fill(0)
+            return image
+
+    image = np.full((3, 9, 11), 255, dtype=np.uint8)
+    actual = _prepare_view(image, MutatingView(), compact=True)
+    assert not actual.any()
+    assert (image == 255).all()

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-from .preprocessing import _rgb, prepare_batch, prepare_uint8, preprocess
+from .preprocessing import RECIPE, _rgb, prepare_uint8, preprocess
 
 
 @dataclass(frozen=True)
@@ -61,11 +61,14 @@ class RotatePad:
             raise ValueError("Rotation must be finite")
         EdgePad(self.padding)
 
-    def __call__(self, image):
+    def rotate(self, image):
         rotated = Image.fromarray(image.transpose(1, 2, 0)).rotate(
             self.degrees, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104)
         )
-        return EdgePad(self.padding)(np.asarray(rotated).transpose(2, 0, 1))
+        return np.asarray(rotated).transpose(2, 0, 1)
+
+    def __call__(self, image):
+        return EdgePad(self.padding)(self.rotate(image))
 
 
 @dataclass(frozen=True)
@@ -94,7 +97,7 @@ class SaltAndPepper:
 
 @dataclass(frozen=True)
 class TTA:
-    """Named finite transforms; each callable receives its own uint8 CHW image copy."""
+    """Named finite transforms; custom callables receive isolated uint8 CHW copies."""
 
     transforms: tuple
     name: str = "custom"
@@ -153,7 +156,12 @@ def resolve_tta(value):
 
 def _prepare_view(image, transform, out=None, *, compact=False):
     prepare = prepare_uint8 if compact else preprocess
-    return prepare(transform(image.copy()), out=out)
+    # Exact built-in types are non-mutating; subclasses/custom callables retain isolation.
+    if type(transform) is RotatePad:
+        return prepare(transform.rotate(image), out=out, padding=transform.padding)
+    if type(transform) is EdgePad:
+        return prepare(image, out=out, padding=transform.fraction)
+    return prepare(transform(image if type(transform) in (View, SaltAndPepper) else image.copy()), out=out)
 
 
 def prepared_views(items, tta, pool=None, *, compact=False):
@@ -163,8 +171,18 @@ def prepared_views(items, tta, pool=None, *, compact=False):
         return list(pool.map(fn, values)) if pool and len(values) > 1 else [fn(item) for item in values]
 
     decoded = mapped(_rgb, items)
-    views = (prepare_batch(decoded, pool, transform, compact=compact) for transform in tta.transforms)
-    return views
+
+    def batches():
+        for transform in tta.transforms:
+            output = np.empty((len(decoded), 3, RECIPE["crop_size"], RECIPE["crop_size"]), dtype=np.uint8 if compact else np.float32)
+
+            def fill(index):
+                _prepare_view(decoded[index], transform, out=output[index], compact=compact)
+
+            mapped(fill, range(len(decoded)))
+            yield output
+
+    return batches()
 
 
 def infer_augmented(runtime, items, tta, embeddings=False, pool=None):

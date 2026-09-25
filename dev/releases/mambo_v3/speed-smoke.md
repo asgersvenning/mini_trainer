@@ -1,4 +1,4 @@
-# Short UCloud speed check: full B200, then one MIG slice
+# Short UCloud deployment speed check
 
 Run from this checkout on each manually allocated node with `/work/datasets` mounted.
 This measures **V3 PyTorch, ONNX, and each with default TTA**. No V2 run, quality
@@ -15,7 +15,8 @@ export MAMBO_CACHE=/work/mambo-cache
   --output /work/mambo-speed/b200-full
 ```
 
-On the second node, run the same command with `--output /work/mambo-speed/b200-mig`.
+A MIG comparison is optional when it answers a specific deployment question.
+For that comparison, use `--output /work/mambo-speed/b200-mig` on the second node.
 Use a **single visible MIG slice**, not the entire parent GPU. `environment.json`
 records `nvidia-smi -L`, visible-device settings and the CPU quota, so retain the
 exact MIG profile when comparing results. The full node and slice may also differ
@@ -29,8 +30,7 @@ Preparation workers follow the exposed CPU quota (maximum 48); override with
 Keep both runs on the same commit and runtime versions.
 
 To compare the compact-preparation update with the completed baseline, rerun the
-same command using new output names such as `b200-full-compact` and
-`b200-mig-compact`. No environment rebuild, new model download or campaign setup
+same command using a fresh output name such as `b200-full-compact`. No environment rebuild, new model download or campaign setup
 is needed when the existing environments and model cache are available.
 
 Expect minutes, with the small MIG slice potentially taking tens of minutes;
@@ -39,7 +39,7 @@ prints a row and updates `summary.csv`. Runtime output and errors are in its `.l
 Stop after these four variants on each node unless the results expose a specific
 failure or unexplained regression.
 
-**Return the two output folders**, or initially just both `summary.csv` and
+**Return the output folder(s)**, or initially their `summary.csv` and
 `environment.json` files. The JSON reports retain raw trial timings, runtime
 versions, preparation counters, host memory, and Torch allocator peak GPU memory.
 The primary comparison is streaming images/s. Request timing is a separate API
@@ -64,3 +64,13 @@ uv pip install --python /tmp/mambo-ort-ptx/bin/python \
 Use the ONNX version already qualified on B200 here. This is an environment-specific
 test setup, not a new deployment-wide dependency pin. Existing environments need
 none of these installation commands.
+
+## Streaming ownership and preparation update
+
+Reuse the full B200, its working environments and the same command above with
+`--output /work/mambo-speed/b200-full-streaming`. This checks all four affected
+variants against `b200-full-compact`; do not repeat the MIG or GPU-resident test.
+No environment rebuild, model change or new setting is needed. Keep batch size
+and worker settings unchanged so the pipeline is the variable being compared.
+The existing resident reference at batch 256 is 3,667 images/s; it excludes transfers
+and CPU result construction and remains a reference, not an end-to-end promise.
