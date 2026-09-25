@@ -38,8 +38,8 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    `mambo_predict`; API/CLI default to global; CLI writes batches incrementally and
    publishes only complete outputs; the streaming read-window default grows with
    batch size; the native extra selects the matching training-package series. Arrays retain explicit CHW input
-   to avoid guessing ambiguous layouts. These changes need final installed-bundle
-   qualification below.
+   to avoid guessing ambiguous layouts. These changes passed the installed-bundle
+   qualification recorded below.
    Retain V2 entry-point and format compatibility where promised; distinguish that
    from identical vocabularies, scores or embeddings.
 
@@ -106,7 +106,7 @@ No published package was changed.
 Focused contracts: 96 passed, four GPU-dependent skips, across the initial run
 and correction of a generator stub in the new read-window test. Static checks and
 the required minimal installed training-wheel check passed. The renamed deployment
-wheel builds; final installed ONNX/native bundle checks remain ahead. No performance
+wheel builds; the final installed ONNX/native bundle checks are recorded below. No performance
 or quality evaluation was rerun.
 
 The automatic model cache now stores verified weight bytes by SHA-256 and reuses
@@ -140,3 +140,21 @@ remains prohibited. Model-weight licensing and initialization attribution are
 pending owner decisions. Training source revision is explicitly unknown in the
 retained materials. After those decisions, refresh final notices/metadata and the
 artifact inventory; do not substitute a historical checkout or invent permission.
+
+## Final preparation audit
+
+| Requirement | Current evidence / remaining work |
+| --- | --- |
+| Simple distribution and stable model selection | `mambo-v3` distribution, embedded immutable asset hashes, supplied-wheel installation and future PyPI commands; global default. No repository checkout needed for consumer installs. |
+| API/CLI and V2 migration | Installed checks above; README documents inputs/outputs, independent rank labels, embeddings, TTA, region/custom lists and migration. Sole CLI owner and bounded output writing verified. |
+| Quality and speed presentation | README retains Flemming, in-domain, laptop and HPC figures; linked pages identify protocols and historical/current timing boundaries. No new measurements required. |
+| Preset definitions | Selected V3 row-count policy; all 25 lists reconstructed unchanged from pinned metadata. Updated definition hashes and embedded descriptor verified. |
+| Offline/download behavior | Installed automatic download/offline/relocation checks plus nine cache tests. Download checker now requires an empty cache. |
+| Reusable evidence and portability limits | `evidence-policy.md`, model card and linked evidence; browser integration described as a path, not a tested platform. |
+| Packaging and handoff | Local wheels, source distribution, bundle, checksums and qualification records; `publication.md` covers human publication and rollback. |
+| Final notices and immutable candidate | Pending model-weight license and initialization attribution. Then refresh artifacts and verify only the changed metadata/installation boundary, reusing identical runtime evidence. |
+
+The refreshed preset metadata is staged in source and
+`local-evidence/mambo-freeze/preset-policy-bundle/`; the earlier installed wheel
+identities remain historical qualification evidence. Do not describe those wheel
+hashes as the final notice-complete release. No publication was performed.

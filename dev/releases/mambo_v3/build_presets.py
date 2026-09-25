@@ -144,17 +144,18 @@ def build(metadata, evidence_root, write=False):
         "Each row counts once even if it matches both a country and a continent predicate. "
         "Full uses all model species without a regional threshold. Lists retain the model's species order.",
         "",
-        f"**Provisional qualification:** new presets require at least {regional_minimum} regional rows and "
-        f"at least {global_minimum} global rows for a species. These inclusive thresholds are a working proposal, "
-        "pending the final release decision. They reduce weak occurrence evidence but do not prove that records are independent "
+        f"**V3 qualification policy:** new presets require at least {regional_minimum} regional rows and "
+        f"at least {global_minimum} global rows for a species. These inclusive thresholds "
+        "reduce weak occurrence evidence but do not prove that records are independent "
         "or correctly geolocated: multiple images may belong to one observation. The global count measures available examples, "
         "not demonstrated model quality. Legacy presets retain their historical >25 regional-row rule with no new global gate.",
         "",
         f"In this pinned snapshot every model species has at least {min(global_counts.get(label, 0) for label in vocabulary)} "
         f"global rows; {sum(global_counts.get(label, 0) < global_minimum for label in vocabulary)} model species fall below "
-        f"the proposed global minimum of {global_minimum}. "
-        "Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, "
-        "and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.",
+        f"the global minimum of {global_minimum}. "
+        "V3 retains row counts to preserve the evaluated memberships. Counting distinct GBIF observations instead would "
+        "require a future preset revision and assessment of rare-species coverage. "
+        "The rule is reproducible, not a claim of ecological certainty.",
         "",
         "`europe` and `north_europe` preserve MAMBO_v2 membership while the V3 deployment default is global (`full`). "
         "Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. "

@@ -1,5 +1,5 @@
 schema_version = 2
-qualification_status = "provisional; pending final release decision"
+qualification_status = "selected for MAMBO_v3; metadata row-count policy"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 # Geographic predicates are OR-ed; state_province/excluded_countries then constrain that union.

@@ -28,7 +28,7 @@ Updated Europe adds 72 candidate species and updated northern Europe adds 222,
 with no removals. Those broader choices slightly reduce accuracy on Flemming;
 choose a preset for its documented geographic scope, not its test-set score.
 The [preset catalogue](model-presets.md) describes the occurrence filters and
-provisional minimum counts. This European dataset does not qualify the usefulness
+documented minimum metadata-row counts. This European dataset does not qualify the usefulness
 of every other geographic preset.
 
 Macro-F1 follows the pinned `mini_metrics` implementation, including predicted-only

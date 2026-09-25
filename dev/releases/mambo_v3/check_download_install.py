@@ -14,6 +14,9 @@ import numpy as np
 from mambo_deploy import Predictor, download
 
 image, output = map(Path, sys.argv[1:])
+cache = os.environ.get("MAMBO_CACHE")
+if not cache or (Path(cache).exists() and any(Path(cache).iterdir())):
+    raise RuntimeError("Set MAMBO_CACHE to a new or empty directory to qualify actual downloads")
 urls = []
 original = download.urlopen
 
@@ -31,6 +34,8 @@ embedded, vectors = predictor.predict_with_embeddings(image)
 assert plain.labels == embedded.labels
 assert vectors.shape == (1, 1280) and np.isfinite(vectors).all()
 np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-4)
+if not urls:
+    raise RuntimeError("No model assets were downloaded; automatic download was not qualified")
 os.environ["MAMBO_OFFLINE"] = "1"
 
 

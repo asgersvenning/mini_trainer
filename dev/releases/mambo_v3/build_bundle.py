@@ -91,7 +91,8 @@ def build(source, destination):
         lines = [
             "# Presets",
             "",
-            "Geographic minima are provisional; rows include all metadata splits.",
+            "V3 uses metadata row counts, including all splits, without further deduplication. "
+            "New lists require at least 3 regional and 25 global rows; legacy lists preserve their historical membership.",
             "",
             "| Preset | Species | Regional/global minimum rows | Scope |",
             "|---|---:|---|---|",

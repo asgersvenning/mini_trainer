@@ -56,14 +56,14 @@ conditional on the selected list. The reconstruction details below concern the
 two unchanged legacy presets; new filters and thresholds are defined in
 [preset-definitions.toml](preset-definitions.toml).
 
-New presets provisionally require **at least 3 regional metadata rows and at least
+New V3 presets require **at least 3 regional metadata rows and at least
 25 global rows**. Both minima are inclusive. This replaces the initial one-row
-draft and remains subject to a final qualification decision. The snapshot already
+draft and is the selected V3 policy. The snapshot already
 has at least 50 global rows for every model species, so the global gate currently
 excludes nothing further. Australia changes from 1,907 to 1,874 species, Tasmania
-from 401 to 274, and Japan from 974 to 697. Decide whether to count distinct GBIF
-observations before finalizing: multiple image rows are not necessarily independent
-occurrence evidence. A local Tasmania check gives 274 species with either three
+from 401 to 274, and Japan from 974 to 697. V3 preserves these evaluated memberships;
+counting distinct GBIF observations would require a future preset revision. Multiple
+image rows are not necessarily independent occurrence evidence. A local Tasmania check gives 274 species with either three
 rows or three distinct `gbifID` values. Both legacy lists remain unchanged.
 
 | Preset | Species | Construction and evidence | Limits |
