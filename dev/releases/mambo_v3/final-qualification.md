@@ -1,8 +1,8 @@
 # MAMBO V3 installed-candidate qualification
 
-25 September 2026. Prepared runtime source: `0bfb5d7a7ac04afdaa392a8494191d8a160954ac`. No publication, tag or public pointer change was performed.
+25 September 2026. Current candidate source: `d6d19e0f157a0c17b2b6a735b3f6c638f62c060d`. Runtime execution qualification: `0bfb5d7a7ac04afdaa392a8494191d8a160954ac`, reused by the payload-identity checks below. No publication, tag or public pointer change was performed.
 
-Local artifacts: `local-evidence/mambo-v3-release-candidate/`. The directory contains deployment wheel/source distribution, matching training wheel, a 406 MiB compressed offline bundle, public evidence and a complete artifact inventory. Qualifications are retained in its `qualification/` directory.
+Current local artifacts: `local-evidence/mambo-v3-release-candidate-d6d19e0/`. The earlier `local-evidence/mambo-v3-release-candidate/` is retained as execution evidence. The directory contains deployment wheel/source distribution, matching training wheel, a 406 MiB compressed offline bundle, public evidence and a complete artifact inventory. Qualifications are retained in its `qualification/` directory.
 
 ## Verified boundaries
 
@@ -22,10 +22,12 @@ Local artifacts: `local-evidence/mambo-v3-release-candidate/`. The directory con
 
 | Artifact | SHA-256 |
 |---|---|
-| `mambo_v3-0.3.0-py3-none-any.whl` | `684b4f12bb3183390ccbbf0b3f510bef54c3ded08c4e0cec64a77f16d4e3efac` |
+| `mambo_v3-0.3.0-py3-none-any.whl` | `3872e594b93a5cda7de519657ef4037244fdf42066c507da4d94959e3d1b7dee` |
 | `mini_trainer-0.3.0-py3-none-any.whl` | `0cf47254f962803b786c50310ca4ee40fe4710beaa0a9534386b73cd08f6883e` |
 
-The manifest hashes the expanded bundle, archive, wheels, source distribution and public evidence. `qualification/validation.json` binds the test records to the installed wheel identities. Qualification report hashes are retained there; raw input paths remain in local evidence only.
+The manifest covers 128 files, including the expanded bundle, archive, wheels, source distribution, public evidence and qualification records. `SHA256SUMS` also covers the manifest itself. The 44 files in the compressed bundle match the expanded bundle. All inventory hashes were verified.
+
+`qualification/validation.json` binds retained execution reports to the earlier wheels and records why they apply to the current candidate: the matching training wheel is identical, and the deployment wheel differs only in `default_bundle.json` and its checksum record. The new wheel was installed in the clean ONNX environment; its 17 payload files match the wheel. Offline metadata bootstrap, global default, embedded/expanded bundle agreement and sole CLI ownership passed. No inference or speed campaign was repeated. Report hashes and the earlier validation record are included; raw input paths remain in local evidence only.
 
 ## Scope and remaining decisions
 
@@ -35,6 +37,6 @@ The checkpoint and best epoch 30 are verified. The retained training material do
 
 The V3 preset policy is now explicit: 3 regional / 25 global metadata rows for updated lists, legacy membership unchanged. Reconstruction from the pinned Parquet confirms all 25 preset memberships and counts are unchanged. Distinct-observation deduplication is deferred to a future preset revision, rather than silently altering evaluated membership.
 
-The subsequent metadata refresh changes only `PRESETS.md`, `PRESET_DEFINITIONS.toml` and `presets.json` in the bundle. All model files, preprocessing, class lists and runtime code remain identical to this installed candidate. The checked-in automatic-download descriptor matches the refreshed bundle (`release.json` SHA-256 `9ad1064753b17719034c2e25c71df14446d9059838945e2d82b8d5048714f483`). Nine cache/download tests pass; the installation checker also rejects a populated cache instead of claiming that cache reuse qualified downloading. The wheel hashes above still identify the earlier installed candidate, not a rebuilt final release.
+The subsequent metadata refresh changes only `PRESETS.md`, `PRESET_DEFINITIONS.toml` and `presets.json` in the bundle. All model files, preprocessing, class lists and runtime code remain identical to the earlier execution-qualified candidate. The checked-in automatic-download descriptor matches the refreshed bundle (`release.json` SHA-256 `9ad1064753b17719034c2e25c71df14446d9059838945e2d82b8d5048714f483`). Nine cache/download tests pass; the installation checker also rejects a populated cache instead of claiming that cache reuse qualified downloading. The wheel hashes above identify the rebuilt candidate with this policy; final owner-driven notices remain outstanding.
 
 Final owner-driven documentation/notice changes will require refreshed bundle metadata and artifact hashes. Reuse these runtime checks for byte-identical code and weights; verify the rebuilt metadata/installation boundary instead of rerunning model evaluation.

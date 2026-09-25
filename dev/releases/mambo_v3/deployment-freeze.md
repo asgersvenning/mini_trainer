@@ -135,7 +135,7 @@ offline reuse, native CPU, and native/ONNX laptop CUDA. Installed package payloa
 were compared with the built wheels; the two-package install has one CLI owner.
 No performance/quality campaign was rerun. Runtime source is `0bfb5d7`.
 
-Artifacts are prepared in `local-evidence/mambo-v3-release-candidate/`; publication
+Current artifacts are prepared in `local-evidence/mambo-v3-release-candidate-d6d19e0/`; publication
 remains prohibited. Model-weight licensing and initialization attribution are
 pending owner decisions. Training source revision is explicitly unknown in the
 retained materials. After those decisions, refresh final notices/metadata and the
@@ -154,7 +154,9 @@ artifact inventory; do not substitute a historical checkout or invent permission
 | Packaging and handoff | Local wheels, source distribution, bundle, checksums and qualification records; `publication.md` covers human publication and rollback. |
 | Final notices and immutable candidate | Pending model-weight license and initialization attribution. Then refresh artifacts and verify only the changed metadata/installation boundary, reusing identical runtime evidence. |
 
-The refreshed preset metadata is staged in source and
-`local-evidence/mambo-freeze/preset-policy-bundle/`; the earlier installed wheel
-identities remain historical qualification evidence. Do not describe those wheel
-hashes as the final notice-complete release. No publication was performed.
+The refreshed candidate was built from `d6d19e0` and installed for metadata checks.
+Runtime payload identity allows reuse of the earlier execution checks. Its inventory
+now includes the qualification reports and reuse rationale; all 128 file hashes
+and compressed/expanded bundle agreement passed. See the exact wheel identities in
+[final qualification](final-qualification.md). This is ready for owner review, but
+not a notice-complete public release. No publication was performed.
