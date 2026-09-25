@@ -1,6 +1,8 @@
 # Deployment comparison evidence
 
 Complete results supporting the [integration guide](../deployment/README.md).
+The complementary [in-domain/HPC evidence](mambo-indomain-evidence.md) uses the same
+calibration and support policy on a separate image domain; the tables below remain Flemming-only.
 This reference retains both confidence settings, full and truncated support,
 all three ranks, coverage, timing ranges and historical-study boundaries.
 

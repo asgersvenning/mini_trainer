@@ -165,7 +165,33 @@ to your accuracy and processing-budget requirements.
 
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
-In-domain UCloud results will be reported separately; the [UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md) is ready for qualification.
+### Complementary in-domain and HPC results
+
+The original global-lepi test split adds a comparison on general photographs using
+the global vocabulary. It complements Flemming's deployment-relevant monitoring
+crops; the image domains and class lists differ, so their absolute scores should
+not be compared as a controlled domain-effect estimate. The same `mini_metrics`
+calibration/support policy uses 568,939 reporting images and 63,974 separate
+calibration images, with both confidence settings evaluated on the reporting split.
+
+![In-domain quality at all ranks, with calibration, support truncation and coverage](../docs/assets/mambo-indomain-quality.svg)
+
+V3 improves in-domain performance over V2. The Flemming-selected TTA recipe reduces
+in-domain performance, illustrating that its benefit depends on the input domain;
+this does not override its benefit on the more deployment-relevant Flemming crops.
+Support >5 changes the class average, not the evaluation rows. Truth classes outside
+that average represent 1.70% / 0.34% / <0.01% of species/genus/family images without
+thresholds, and 1.88% / 0.38% / <0.01% after calibration. Thresholds and complete
+metrics are in the [in-domain evidence](../docs/mambo-indomain-evidence.md).
+
+![EPYC CPU and B200 request throughput, with separate streaming measurements](../docs/assets/mambo-indomain-speed.svg)
+
+Measured on UCloud (AMD EPYC 9655 / NVIDIA B200), using four runtime threads;
+streaming uses 48 preparation workers and 256 readers. Lines show median and range
+across three process trials. Streaming includes startup over 1,024 images and is
+shown separately from single-request measurements. These are measured pipeline
+rates, not GPU throughput ceilings; preparation remains a bottleneck. Keep the
+laptop results above when assessing consumer-device deployments.
 
 ### Streaming image collections
 

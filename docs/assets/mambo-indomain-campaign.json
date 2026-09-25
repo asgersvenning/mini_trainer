@@ -1,0 +1,733 @@
+{
+  "environment_id": "j-12402286-job-0",
+  "fingerprint": {
+    "config": {
+      "environment_id": "j-12402286-job-0",
+      "v2_python": "/work/mini_trainer/.venv-mambo-runtime/bin/python",
+      "v3_python": "/work/mini_trainer/.venv-mambo-runtime/bin/python",
+      "metrics_python": "/work/mini_trainer/.venv-mambo-runtime/bin/python",
+      "legacy_source": "/home/ucloud/.cache/mambo-ucloud/legacy-source/32b3cd661778356b2e8c4cff5b10fa9061aa6f5d",
+      "legacy_weights": "/home/ucloud/.cache/mambo-ucloud/archives/MAMBO",
+      "hf_cache": "/home/ucloud/.cache/mambo-ucloud/huggingface/hub",
+      "bundle": "/home/ucloud/.cache/mambo-ucloud/models/2c327f197991d396",
+      "manifest": "/home/ucloud/.cache/mambo-ucloud/global-lepi-test-manifest.json",
+      "root": "/work/datasets/global_lepi",
+      "output": "/home/ucloud/.cache/mambo-ucloud/runs-transfers",
+      "cuda_visible_devices": "0",
+      "quality_device": "cuda:0",
+      "quality_batch_size": 32,
+      "qualification_count": 256,
+      "threads": 4,
+      "quality_presets": [
+        "full"
+      ],
+      "timing_presets": [
+        "full",
+        "north_europe"
+      ],
+      "timing_devices": [
+        "cpu",
+        "cuda:0"
+      ],
+      "cpu_batches": [
+        1,
+        8
+      ],
+      "gpu_batches": [
+        1,
+        8,
+        32
+      ],
+      "onnx_python": "/tmp/mambo-ort-ptx/bin/python",
+      "decode_workers": 48,
+      "prefetch_batches": 8,
+      "reuse_v2_from": "/home/ucloud/.cache/mambo-ucloud/runs-ptx",
+      "read_workers": 256,
+      "read_window": 4096,
+      "encoded_budget_mib": 2048,
+      "v3_batch_size": 256
+    },
+    "inputs": {
+      "manifest": "b5bc0f190efe00f5d7455faebce7541cd18e62bb1dc2841407bf98a8c3a6c590",
+      "bundle": "91118482591a966ea514594b11e784657898de7c9f4e6cb12b11700df9b84304",
+      "scripts": {
+        "dev/releases/mambo_v3/acceleration_report.py": "6abcdc616409397fca367b11e15c4c14818164d0aaca2e9fcbd37dacdf614388",
+        "dev/releases/mambo_v3/audit.py": "afead9cba151356d173de5d3d9d1eecd439f6713462b2099c2fb1698cbe09bd8",
+        "dev/releases/mambo_v3/benchmark.py": "3ae7b1f967076e71d665ca3c4bc063acb070598fa83255f009143940b0afc094",
+        "dev/releases/mambo_v3/benchmark_acceleration.py": "6cfb746d84ab722a2b2ced5058b154ad5b20b8b3eb877595e169362f052064d6",
+        "dev/releases/mambo_v3/build_bundle.py": "0219ff29a720fc2739d75ecce78c8eaf66604eb3750a5e2f69b23c731f313179",
+        "dev/releases/mambo_v3/build_presets.py": "878df0e46914b2e583940da7d1700cb8b0ea976a889118b543df1d42b98d2904",
+        "dev/releases/mambo_v3/check_legacy_fixture.py": "5ce2829176884f58da9b77df96333c57fba7cfde2ce0d1e8b8cf7e3764bcf2eb",
+        "dev/releases/mambo_v3/check_portable_install.py": "faa86fa2915f1b50292f792ad8aea92dbb5813b475bb02376bb2c8d583e63f6d",
+        "dev/releases/mambo_v3/compact_tta.py": "eb6309a4a689d8b4e62663f5d33fd06cbdecf30101cba11f60460147a2a030d1",
+        "dev/releases/mambo_v3/compact_tta_metrics.py": "c4a40db1643bb2544bbfbd0559f4cbcd4e5f677093a3eba1fddcce4551e89720",
+        "dev/releases/mambo_v3/compare_quality.py": "8ec7c46c877523c41e8ab2977b88d8e40f9240d4f469e76032818ec0dc9b108d",
+        "dev/releases/mambo_v3/comparison_charts.py": "ec653dcc738e8e10a7abd3a4d9edb1f8f2fdd4a238c5239a4cfe8eb1e87b409b",
+        "dev/releases/mambo_v3/composed_full.py": "706aae887e68e7001a000985aa492f0d8ec05dca4d8dd1ba72d1247a65a5b09f",
+        "dev/releases/mambo_v3/composed_metrics.py": "1b01531d64d74ca02ba5a250ff05917313cd1c4264bd97a7c63f784c91e1c2b0",
+        "dev/releases/mambo_v3/composed_report.py": "3d3f5adcb38471e6f610e381c997c39c7640dca706b6265172fe6b9db143261d",
+        "dev/releases/mambo_v3/defaults_report.py": "ec8831cbd75e378c021015298a840cd708cd036e9ac4fd3138dc1637e500e166",
+        "dev/releases/mambo_v3/evaluate.py": "deafad8bc562018a936ee7b6135dfa30cd0f2ae33229e6418d6b9b3cb0a00a5a",
+        "dev/releases/mambo_v3/evaluation_data.py": "45e277bd8ad011141ff892c8e608c89de2915efb52aae6f05c50d49ee0ef192a",
+        "dev/releases/mambo_v3/family_precision_report.py": "136e36cc6a0dca06c670df864ded8a238c9c5ee088beb729856a69770b1468a5",
+        "dev/releases/mambo_v3/frequency_comparison.py": "e4b3a66c52eeb4b1888aed7b032162564a5e720bf4fd8e1d84c9046ccbc26c69",
+        "dev/releases/mambo_v3/hash_images.py": "b5ff032b0baaeddde78859e9c961f6528ba8e189e477dcc6f6627f408536979e",
+        "dev/releases/mambo_v3/legacy_evaluation.py": "f6c2acc02b1d1d51d6a057ef4bc551ab398c7091c23c603e353484193aed4668",
+        "dev/releases/mambo_v3/loading_charts.py": "b66c20788825e4ecf73612079aa8ced924b6fd4bee04ba19d922909975466a49",
+        "dev/releases/mambo_v3/loading_scaling.py": "f36e0e6b83ce985a7da034d3f781976da8a13b655b1ed2818f4aab9c401fbf93",
+        "dev/releases/mambo_v3/metrics.py": "1c2116b5d98d19de685f4611e289abbaad5c66f537b8e7b9f3e34954c9c27e71",
+        "dev/releases/mambo_v3/package_download_metadata.py": "356312b595c573764ad06d0968c022cc39502968730769f4def7e7a76d3a9a90",
+        "dev/releases/mambo_v3/plot_overlap.py": "a646fb4ce31e5e84faff89501345e3f5ad05b4b3a7e2b7bcea8a16d6525d197b",
+        "dev/releases/mambo_v3/prefetch.py": "9224e3837ae64b8a329915284b5e7d79b39225e478a0bc6a426937755e7abb52",
+        "dev/releases/mambo_v3/prepare_ucloud.py": "4711c898b64c7f8f8a242fe479baace9da78950b496f31dd5298e623395a653a",
+        "dev/releases/mambo_v3/probe_onnx_cuda.py": "d9d27bb61807f0d94a2b9a806f31fbbc22bd86eb12fc5820aa24e5067883fafe",
+        "dev/releases/mambo_v3/probe_preprocessing.py": "81db56e6961dbb1c6e7e201ffcd0981428e496135743914c1683cedc5fed0252",
+        "dev/releases/mambo_v3/profile_batch_scaling.py": "2e8ae5c53ad97c6173adb9ec01960e0b3cc07dca6b2b218c3499799b00768008",
+        "dev/releases/mambo_v3/profile_onnx_batch.py": "c66395fe4060f5f5a275636ec116dbbb8a4acb19570add4730f04a7d96e7fa1b",
+        "dev/releases/mambo_v3/profile_preprocessing.py": "5805c5c61e07c90c1dc0093fe1609c001dda0121e2d6831082fd108b0cb3027c",
+        "dev/releases/mambo_v3/promoted_report.py": "3c87fd0abb76a308c4ffa453e4005834520214a8821f53783155364a7e5a9c14",
+        "dev/releases/mambo_v3/qualify_bundle.py": "441a5295079e60cea66aab49e86a7ee03fe22b044ce275b478c6f648abe78d45",
+        "dev/releases/mambo_v3/qualify_precision.py": "e36c31ae6624a5927a2370b57d70296fdcaee8d5bb254a89aa645bb575dcb769",
+        "dev/releases/mambo_v3/qualify_tta.py": "fa8023179228dd3192ea535e4726744aa25c1138fcb0c34f0b1a6706118c4fa6",
+        "dev/releases/mambo_v3/reconstruct_presets.py": "4be1c2073f5bfd298e78a761353f8632dd38e5819ec9a37ef650635379cd7067",
+        "dev/releases/mambo_v3/release_comparison.py": "7340be6992c730920a8f8ab0dcb430e60b16c4c791b4764a6e5e66b3f147a7d6",
+        "dev/releases/mambo_v3/run_local.py": "20a3032a3a294a517b226362ae7e9940b4cbfdbe1caa8bce1bab5a91ebc230c3",
+        "dev/releases/mambo_v3/setup_ucloud_release.py": "fb566e87b0114f9fda34a94aebe2984845dbe07e9db5c4309403186b7ad43404",
+        "dev/releases/mambo_v3/summarize.py": "f336b3a989cd30c2c24ccc18b5d39378985f7e1ef53988e9a08d5834358a05cc",
+        "dev/releases/mambo_v3/summarize_batch_scaling.py": "2e5f01d9257b9138664c0e08ea2c1e004a8398f1d4adcded35e43ebe8ecef7a4",
+        "dev/releases/mambo_v3/tail_charts.py": "d3eb76ebee762841337ace7adee06130d29293a63112a0076489b2673b7298d1",
+        "dev/releases/mambo_v3/tail_report.py": "115156ae1c9e4a801bd943c35a833be8c48b00dcdb54ddead49026070f5d5c94",
+        "dev/releases/mambo_v3/threshold_report.py": "3682d8c7a96829c371e09b3e9c82add0534eff97cb28c3f5aa1f95c4f61cb1fc",
+        "dev/releases/mambo_v3/tta_candidates.py": "88cc7d74a095656000ab50bf0fe8741886c8283d7d4345e32d29609cb04f7c6a",
+        "dev/releases/mambo_v3/tta_charts.py": "2366dd549128719cc47265d8ead1007af5ba394f0da774697f559a640c396333",
+        "dev/releases/mambo_v3/tta_report.py": "698c5e081ff3eef9ad9ceb28be37de0836a613b94763f462878804157d4237ca",
+        "dev/releases/mambo_v3/ucloud_release.py": "676e3676c2abc890635c65b49672830ff6dd45926ee902cdf3beddd87034c480",
+        "dev/releases/mambo_v3/ucloud_summary.py": "e0efad6426b6c8d8f39e5c627b8bf5c52397f3e01020728b2db1c1d7ed76f994",
+        "deployment/mambo_deploy/__init__.py": "30a425a6bc569f7037fbdf058a59b7abbf1cc55fb951735b0d231edad926ccd9",
+        "deployment/mambo_deploy/augmentation.py": "a633c4b75577c18cfd987287d5b961448c1e49b197d48bdf234efb70b1986cc9",
+        "deployment/mambo_deploy/bundle.py": "e4e2b7f135c1a1d5d8990ab0c535eeb3e21a2380c8cf8c469bcc1ebbbda2a38e",
+        "deployment/mambo_deploy/cli.py": "0259e7cc6a93bd952866218166c962c82964714faa3267d7773fee07ba65240f",
+        "deployment/mambo_deploy/download.py": "cd388130e064790c17b510829c58a0dc1b00af2311e91d575090ced96c3c48f6",
+        "deployment/mambo_deploy/onnx_session.py": "c5b38486690a5183cec73ad745adba89825d70da7a65b85ea772499e17ea0124",
+        "deployment/mambo_deploy/predictor.py": "b0ee2d2585b52bdb3e86e934e14f7f3793b18467eb8ff4484b110c90eb7c4c11",
+        "deployment/mambo_deploy/preprocessing.py": "40d0667c25f85dccf2811c51d7dc8113aa1b236d48a68ebe61c6b1073fe40bd5",
+        "deployment/mambo_deploy/result_worker.py": "4126c2da2fb6b21bb89ee38405a6787c7fd5e9bcb2282c3a7cd537321c1c9139",
+        "deployment/mambo_deploy/results.py": "0b15face20eaa2b19b19b612285f44c94752ed8a208c3d5bace631c4743b128e",
+        "deployment/mambo_deploy/streaming.py": "c6c72fe53fc4651fec75bdc00377ea4028bde2d0c90e17ee660250535df8af69",
+        "deployment/mambo_deploy/transfers.py": "119fa1986acaa616dd0ff23892d90c85cfad13071362c2aad81e702802642e24"
+      },
+      "environments": {
+        "/tmp/mambo-ort-ptx/bin/python": {
+          "python": "3.13.15 (main, Sep  1 2026, 14:18:08) [Clang 22.1.3 ]",
+          "packages": [
+            [
+              "coloredlogs",
+              "15.0.1",
+              null
+            ],
+            [
+              "flatbuffers",
+              "25.12.19",
+              null
+            ],
+            [
+              "humanfriendly",
+              "10.0",
+              null
+            ],
+            [
+              "mambo-deploy",
+              "0.3.0",
+              "{\"url\":\"file:///work/mini_trainer/deployment\",\"dir_info\":{}}"
+            ],
+            [
+              "mpmath",
+              "1.3.0",
+              null
+            ],
+            [
+              "numpy",
+              "2.5.3",
+              null
+            ],
+            [
+              "nvidia-cublas-cu12",
+              "12.9.2.10",
+              null
+            ],
+            [
+              "nvidia-cuda-nvrtc-cu12",
+              "12.9.86",
+              null
+            ],
+            [
+              "nvidia-cuda-runtime-cu12",
+              "12.9.79",
+              null
+            ],
+            [
+              "nvidia-cudnn-cu12",
+              "9.26.0.51",
+              null
+            ],
+            [
+              "nvidia-cufft-cu12",
+              "11.4.1.4",
+              null
+            ],
+            [
+              "nvidia-curand-cu12",
+              "10.3.10.19",
+              null
+            ],
+            [
+              "nvidia-nvjitlink-cu12",
+              "12.9.86",
+              null
+            ],
+            [
+              "onnxruntime-gpu",
+              "1.22.0",
+              null
+            ],
+            [
+              "packaging",
+              "26.3",
+              null
+            ],
+            [
+              "pillow",
+              "12.3.0",
+              null
+            ],
+            [
+              "protobuf",
+              "7.36.2",
+              null
+            ],
+            [
+              "sympy",
+              "1.14.0",
+              null
+            ]
+          ]
+        },
+        "/work/mini_trainer/.venv-mambo-runtime/bin/python": {
+          "python": "3.13.15 (main, Sep  1 2026, 14:18:08) [Clang 22.1.3 ]",
+          "packages": [
+            [
+              "Jinja2",
+              "3.1.6",
+              null
+            ],
+            [
+              "Markdown",
+              "3.10.3",
+              null
+            ],
+            [
+              "MarkupSafe",
+              "3.0.3",
+              null
+            ],
+            [
+              "PyYAML",
+              "6.0.3",
+              null
+            ],
+            [
+              "Werkzeug",
+              "3.1.8",
+              null
+            ],
+            [
+              "absl-py",
+              "2.5.0",
+              null
+            ],
+            [
+              "annotated-types",
+              "0.8.0",
+              null
+            ],
+            [
+              "anyio",
+              "4.15.1",
+              null
+            ],
+            [
+              "biopython",
+              "1.88",
+              null
+            ],
+            [
+              "certifi",
+              "2026.7.22",
+              null
+            ],
+            [
+              "charset-normalizer",
+              "3.5.1",
+              null
+            ],
+            [
+              "click",
+              "8.5.0",
+              null
+            ],
+            [
+              "cloudpickle",
+              "3.1.2",
+              null
+            ],
+            [
+              "contourpy",
+              "1.4.0",
+              null
+            ],
+            [
+              "cuda-bindings",
+              "13.4.3",
+              null
+            ],
+            [
+              "cuda-pathfinder",
+              "1.8.2",
+              null
+            ],
+            [
+              "cuda-toolkit",
+              "13.2.1",
+              null
+            ],
+            [
+              "cycler",
+              "0.12.1",
+              null
+            ],
+            [
+              "diskcache",
+              "5.6.3",
+              null
+            ],
+            [
+              "filelock",
+              "4.0.3",
+              null
+            ],
+            [
+              "flatbuffers",
+              "25.12.19",
+              null
+            ],
+            [
+              "fonttools",
+              "4.66.0",
+              null
+            ],
+            [
+              "fsspec",
+              "2026.9.0",
+              null
+            ],
+            [
+              "ftfy",
+              "6.3.1",
+              null
+            ],
+            [
+              "googleapis-common-protos",
+              "1.75.3",
+              null
+            ],
+            [
+              "grpcio",
+              "1.84.0",
+              null
+            ],
+            [
+              "h11",
+              "0.16.0",
+              null
+            ],
+            [
+              "hf-xet",
+              "1.6.0",
+              null
+            ],
+            [
+              "httpcore2",
+              "2.13.1",
+              null
+            ],
+            [
+              "httpx2",
+              "2.13.1",
+              null
+            ],
+            [
+              "huggingface_hub",
+              "2.0.0",
+              null
+            ],
+            [
+              "idna",
+              "3.20",
+              null
+            ],
+            [
+              "joblib",
+              "1.6.0",
+              null
+            ],
+            [
+              "kiwisolver",
+              "1.5.1",
+              null
+            ],
+            [
+              "mambo-deploy",
+              "0.3.0",
+              "{\"url\":\"file:///work/mini_trainer/deployment\",\"dir_info\":{}}"
+            ],
+            [
+              "matplotlib",
+              "3.11.2",
+              null
+            ],
+            [
+              "mini_metrics",
+              "0.3.0",
+              "{\"url\":\"https://github.com/GuillaumeMougeot/mini_metrics.git\",\"vcs_info\":{\"vcs\":\"git\",\"commit_id\":\"70cc69adc05362863439277048e06386c1f885e1\",\"requested_revision\":\"70cc69adc05362863439277048e06386c1f885e1\"}}"
+            ],
+            [
+              "mini_trainer",
+              "0.3.0",
+              "{\"url\":\"file:///work/mini_trainer\",\"dir_info\":{}}"
+            ],
+            [
+              "mpmath",
+              "1.3.0",
+              null
+            ],
+            [
+              "narwhals",
+              "2.26.0",
+              null
+            ],
+            [
+              "networkx",
+              "3.7",
+              null
+            ],
+            [
+              "numpy",
+              "2.5.3",
+              null
+            ],
+            [
+              "nvidia-cublas",
+              "13.4.0.1",
+              null
+            ],
+            [
+              "nvidia-cuda-cupti",
+              "13.2.75",
+              null
+            ],
+            [
+              "nvidia-cuda-nvrtc",
+              "13.2.78",
+              null
+            ],
+            [
+              "nvidia-cuda-runtime",
+              "13.2.75",
+              null
+            ],
+            [
+              "nvidia-cudnn-cu13",
+              "9.24.0.43",
+              null
+            ],
+            [
+              "nvidia-cufft",
+              "12.2.0.46",
+              null
+            ],
+            [
+              "nvidia-cufile",
+              "1.17.1.22",
+              null
+            ],
+            [
+              "nvidia-curand",
+              "10.4.2.55",
+              null
+            ],
+            [
+              "nvidia-cusolver",
+              "12.2.0.1",
+              null
+            ],
+            [
+              "nvidia-cusparse",
+              "12.7.10.1",
+              null
+            ],
+            [
+              "nvidia-cusparselt-cu13",
+              "0.8.1",
+              null
+            ],
+            [
+              "nvidia-nccl-cu13",
+              "2.30.7",
+              null
+            ],
+            [
+              "nvidia-nvjitlink",
+              "13.4.92",
+              null
+            ],
+            [
+              "nvidia-nvshmem-cu13",
+              "3.4.5",
+              null
+            ],
+            [
+              "nvidia-nvtx",
+              "13.2.75",
+              null
+            ],
+            [
+              "onnxruntime-gpu",
+              "1.30.0",
+              null
+            ],
+            [
+              "open_clip_torch",
+              "3.3.0",
+              null
+            ],
+            [
+              "opentelemetry-api",
+              "1.44.0",
+              null
+            ],
+            [
+              "opentelemetry-exporter-otlp-proto-common",
+              "1.44.0",
+              null
+            ],
+            [
+              "opentelemetry-exporter-otlp-proto-http",
+              "1.44.0",
+              null
+            ],
+            [
+              "opentelemetry-proto",
+              "1.44.0",
+              null
+            ],
+            [
+              "opentelemetry-sdk",
+              "1.44.0",
+              null
+            ],
+            [
+              "opentelemetry-semantic-conventions",
+              "0.65b0",
+              null
+            ],
+            [
+              "packaging",
+              "26.3",
+              null
+            ],
+            [
+              "pandas",
+              "3.0.6",
+              null
+            ],
+            [
+              "pillow",
+              "12.3.0",
+              null
+            ],
+            [
+              "platformdirs",
+              "4.11.12",
+              null
+            ],
+            [
+              "protobuf",
+              "7.36.2",
+              null
+            ],
+            [
+              "psutil",
+              "7.2.2",
+              null
+            ],
+            [
+              "pyCirclize",
+              "1.10.1",
+              null
+            ],
+            [
+              "pyarrow",
+              "25.0.1",
+              null
+            ],
+            [
+              "pydantic",
+              "2.13.5",
+              null
+            ],
+            [
+              "pydantic_core",
+              "2.46.5",
+              null
+            ],
+            [
+              "pyparsing",
+              "3.3.3",
+              null
+            ],
+            [
+              "python-dateutil",
+              "2.9.0.post0",
+              null
+            ],
+            [
+              "regex",
+              "2026.9.10",
+              null
+            ],
+            [
+              "requests",
+              "2.34.2",
+              null
+            ],
+            [
+              "safetensors",
+              "0.8.0",
+              null
+            ],
+            [
+              "scikit-learn",
+              "1.9.1",
+              null
+            ],
+            [
+              "scipy",
+              "1.18.1",
+              null
+            ],
+            [
+              "setuptools",
+              "81.0.0",
+              null
+            ],
+            [
+              "six",
+              "1.17.0",
+              null
+            ],
+            [
+              "sympy",
+              "1.14.0",
+              null
+            ],
+            [
+              "tensorboard",
+              "2.21.0",
+              null
+            ],
+            [
+              "tensorboard-data-server",
+              "0.7.2",
+              null
+            ],
+            [
+              "threadpoolctl",
+              "3.7.0",
+              null
+            ],
+            [
+              "timm",
+              "1.0.30",
+              null
+            ],
+            [
+              "torch",
+              "2.14.0+cu132",
+              null
+            ],
+            [
+              "torchvision",
+              "0.29.0+cu132",
+              null
+            ],
+            [
+              "tqdm",
+              "4.70.1",
+              null
+            ],
+            [
+              "triton",
+              "3.8.0",
+              null
+            ],
+            [
+              "truststore",
+              "0.10.4",
+              null
+            ],
+            [
+              "typing-inspection",
+              "0.4.4",
+              null
+            ],
+            [
+              "typing_extensions",
+              "4.16.0",
+              null
+            ],
+            [
+              "urllib3",
+              "2.8.0",
+              null
+            ],
+            [
+              "wandb",
+              "0.30.0",
+              null
+            ],
+            [
+              "wcwidth",
+              "0.9.1",
+              null
+            ],
+            [
+              "xxhash",
+              "4.0.1",
+              null
+            ]
+          ]
+        }
+      },
+      "revision": "9d6e29e2ab7250835754305f0fe219dc2a146f39"
+    }
+  },
+  "metric_revision": "70cc69adc05362863439277048e06386c1f885e1",
+  "policy": "Original full test split; no threshold selection on test; all and known truth; timings isolated from collection",
+  "sample_ids_sha256": "b1a0ce749a3534e35a283cbe7c17c0fc273ad60affcca6d2866bb24283090bd7",
+  "timing_bank_sha256": "2301b147066a2545f7bef9ea9698bad2210f0702e4056fd11ea2938cdb5bcb6f",
+  "source_sha256": {
+    "ucloud-summary.json": "084595c8c4380f6b59fb521706fa862adfc37d67c450d6fcffd06fc58dff5c22",
+    "speed.csv": "604180640f24d7ed180832d0b2ac4fbfea4dbf7a5b8be173edb760388e51820f",
+    "streaming_speed.csv": "acadae4e9b747afa63af2db6e198db4694afd66dbeadd111e5ba41ed1956d4bc"
+  }
+}
