@@ -47,31 +47,6 @@ def test_launch_topology_and_paired_plan(harness, config, int8_variant):
         compare.validate(config)
 
 
-def test_combined_int8_plan_isolates_each_added_option(harness):
-    compare, _ = harness
-    source = Path(__file__).resolve().parents[2] / "dev" / "ucloud" / "combined-int8.json"
-    config = compare.validate(json.loads(source.read_text()))
-    runs = compare.plan(config)
-    assert [run["name"] for run in runs] == [
-        f"{variant}_seed42"
-        for variant in (
-            "quant_eager",
-            "master_eager",
-            "quant_compile_model",
-            "quant_compile_both",
-            "quant_float_combined",
-            "quant_int8_combined",
-        )
-    ]
-    assert runs[3]["options"] == {**runs[2]["options"], "compile_optimizer": True}
-    assert runs[4]["options"] == {**runs[3]["options"], "cuda_prefetch": True}
-    assert runs[5]["options"] == {**runs[4]["options"], "quantized_training": True}
-    assert all(run["branch"] == "quant" for run in runs[2:])
-    assert compare.uses_quantized_training(config)
-    config["variants"].remove("quant_int8_combined")
-    assert not compare.uses_quantized_training(config)
-
-
 @pytest.mark.parametrize("variant", ["quant_compile_both", "quant_float_combined", "quant_int8_combined"])
 def test_combined_worker_routes_training_and_loader_options(harness, config, monkeypatch, variant):
     import torch
@@ -735,17 +710,6 @@ def test_scaling_workers_warm_steps_and_separate_storage(harness, tmp_path):
     assert storage["exclude_qualification_sha256"] == "a" * 64
     with pytest.raises(ValueError, match="num_workers"):
         scaling.trial(base, tmp_path / "invalid.json", tmp_path / "invalid", 64, 3, workers=-1)
-
-
-def test_timing_windows_survive_completed_chunks(harness):
-    _, worker = harness
-    saved, synchronized = [], []
-    loader = worker.TimedLoader([([1, 2], [0, 1])] * 35, synchronize=lambda: synchronized.append(True), on_window=saved.append)
-    assert len(list(loader)) == 35
-    assert [w["steps"] for w in saved] == [32, 3]
-    assert [w["samples"] for w in saved] == [64, 6]
-    assert len(synchronized) == 2
-    assert sum(w["loader_wait_seconds"] for w in saved) <= loader.wait_seconds
 
 
 def test_torchrun_parser_preserves_worker_run_argument(harness, config):

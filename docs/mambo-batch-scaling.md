@@ -1,107 +1,38 @@
-# Why MAMBO v3 batch throughput plateaus
+# Historical FP32 batch-scaling diagnosis
 
-This records the pre-optimization diagnosis at commit `a99b855`. See the
-[accelerated deployment qualification](mambo-accelerated-deployment.md) for the
-implemented fixes and their new measurements. Historical preprocessing probes
-should be replayed from that commit, since the current adapter is optimized.
+At adapter revision `a99b855`, V3's plateau had two causes: serial, allocation-heavy
+CPU preprocessing and strict FP32 backbone execution. Batch sizes reached the
+model correctly. This diagnosis motivated the implemented
+[preparation and mixed-precision changes](mambo-accelerated-deployment.md);
+it does not describe the current pipeline.
 
-The plateau comes from **serial, allocation-heavy CPU preprocessing plus a strict
-FP32 convolutional backend that gains little throughput beyond batch 8**. It is
-not a batch-size parameter being ignored. Forward hooks observed exactly
-`[1,3,384,384]`, `[8,3,384,384]` and `[32,3,384,384]` at the native model boundary.
-The interventions below explain that historical baseline; current release timings
-come from the later qualification campaigns.
+## Findings worth retaining
 
-## CPU cause: the release image adapter
+- Advanced indexing produced non-contiguous arrays, interpolation promoted
+  intermediates to float64, and the adapter resized pixels later discarded by
+  the crop. Contiguous intermediates plus computing only the retained crop
+  reduced preparation of 32 images from 562 to 300 ms in the controlled probe.
+- With GPU-resident input, native batch-32 throughput rose from 177.6 images/s
+  in FP32/NCHW to 371.4 with FP16/NCHW and 418.4 with FP16/channels-last.
+  Layout alone did not help. Convolutions, batch normalization and SiLU dominated;
+  the classifier contributed about 0.15% of kernel time.
+- V2 used a different backbone at 224 pixels with autocast; V3 used 384 pixels
+  and FP32. Neither model size alone nor a larger batch predicts relative speed.
+- ONNX convolution ran on CUDA. Small CPU graph nodes were not evidence of a
+  silent CPU backbone fallback.
 
-The NumPy preprocessor executes one image at a time before calling the GPU. Its
-advanced indexing produces non-contiguous arrays, and `float32 coordinates -
-int64 indices` promotes interpolation weights and intermediate images to float64.
-It interpolates the entire 438×438 image before discarding its border for the
-384×384 crop. The row/column interpolation and normalization dominate the CPU
-profile; decoding accounts for only about 30 ms of a 602 ms batch-32 profile.
-Increasing the batch size cannot amortize this per-image work.
+These are controlled laptop interventions, not current release benchmarks.
+They establish preparation and precision effects, not a hardware-counter
+distinction between arithmetic and memory-bandwidth limits.
 
-A controlled, single-thread intervention retained the arithmetic and verified
-byte-identical prepared pixels for all 32 benchmark images. Three sweeps with
-reversed middle ordering and seven observations per condition gave:
+## Evidence and replay
 
-| Preparation of 32 images | Median time |
-|---|---:|
-| Current implementation | 562 ms |
-| Make intermediate arrays contiguous | 344 ms |
-| Compute only the retained crop | 526 ms |
-| Both interventions | 300 ms |
+[Recorded measurements](assets/mambo-batch-diagnosis.json) retain the sweeps.
+Replay the retired probes with the matching historical adapter; the
+[historical report](https://github.com/asgersvenning/mini_trainer/blob/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/docs/mambo-batch-scaling.md)
+records commands, environments and methodology. Do not apply its monkey patches
+to current code.
 
-A separate diagnostic with the **original** pixel function and eight preparation
-workers reduced measured end-to-end native batch-32 time from 753 to 361 ms
-(42.5 → 88.7 images/s). Four workers reached 398 ms. Those single-process,
-seven-observation interventions demonstrate causality, not a replacement for the
-three-fresh-process release benchmark. Results are hardware-dependent. Preprocessing
-and inference still do not overlap in this probe.
-
-## GPU cause: FP32 backbone work, not hierarchy or silent CPU execution
-
-With inputs already resident on the GPU, the same model at the same resolution
-was tested with TF32 disabled. These are medians across three sweeps × seven
-observations, with the middle order reversed:
-
-| Diagnostic native mode | Batch 1, images/s | Batch 8, images/s | Batch 32, images/s |
-|---|---:|---:|---:|
-| Release FP32 / NCHW | 53.4 | 162.7 | 177.6 |
-| FP16 autocast / NCHW | 39.9 | 310.2 | 371.4 |
-| FP32 / channels-last | 51.3 | 134.0 | 137.6 |
-| FP16 autocast / channels-last | 39.5 | 293.4 | 418.4 |
-
-Batch 8 already captures most of the FP32 throughput benefit. At batch 32, CUDA
-kernel durations are approximately **63.6% convolution, 14.2% batch normalization
-and 12.3% SiLU**. The final classifier matrix multiplication is about 0.15% of
-kernel time. Reducing hierarchy work or changing class lists cannot explain away
-the backbone plateau. Memory-layout changes alone do not fix it. The controlled
-precision change more than doubles large-batch throughput; FP16 can still be
-slower at batch 1 because launch/cast overhead remains.
-
-ONNX placement traces confirm convolution runs on CUDA at batches 1, 8 and 32.
-Small `Acos` and `Concat` nodes run on CPU; this is not a silent CPU backbone
-fallback. Their host-side node durations are not GPU kernel durations and should
-not be read as a GPU utilization breakdown.
-
-V2 uses a different backbone at 224 pixels with CUDA autocast; v3 uses 384 pixels
-and strict FP32. These released choices, plus the adapter's CPU work, explain why
-v3 does not inherit v2's batching curve. The evidence localizes the bottleneck to
-feature-map operations and demonstrates a precision effect; it does **not**
-establish a hardware-counter distinction between arithmetic and memory bandwidth
-limits. Profiler overhead and laptop clock variation are why unprofiled timings
-and reversed-order interventions are reported separately.
-
-## Follow-up
-
-Contiguous/crop preparation and mixed precision were subsequently implemented and
-qualified in the [accelerated comparison](mambo-accelerated-deployment.md).
-Later concurrency, transfer and hierarchy changes are summarized in the
-[pipeline review](mambo-inference-pipeline-review.md). This diagnosis remains a
-historical explanation of the FP32 baseline, not outstanding implementation work.
-
-## Reproduce
-
-[Compact diagnostic evidence](assets/mambo-batch-diagnosis.json) records timings,
-shapes, array layouts, kernel attribution and raw evidence hashes. Large traces and
-private sample paths stay under `local-evidence/mambo-batch-root-cause/`.
-Run these sequentially, with no competing benchmark workload:
-
-```sh
-CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 \
-  .venv/bin/python -m dev.releases.mambo_v3.profile_batch_scaling \
-  --bundle /path/to/bundle --manifest /path/to/flemming-manifest.json \
-  --root /path/to/flemming --output /path/to/new-diagnosis
-
-python -m dev.releases.mambo_v3.profile_preprocessing \
-  --evidence /path/to/new-diagnosis --root /path/to/flemming
-python -m dev.releases.mambo_v3.probe_preprocessing \
-  --evidence /path/to/new-diagnosis --root /path/to/flemming
-# Use the qualified ONNX CUDA environment for this command:
-python -m dev.releases.mambo_v3.profile_onnx_batch \
-  --evidence /path/to/new-diagnosis --root /path/to/flemming --bundle /path/to/bundle
-python -m dev.releases.mambo_v3.summarize_batch_scaling \
-  --evidence /path/to/new-diagnosis --output /path/to/diagnosis.json
-```
+For current work use the [pipeline review](mambo-inference-pipeline-review.md),
+[pipeline probe](../dev/releases/mambo_v3/pipeline-probe.md) and
+[target speed check](../dev/releases/mambo_v3/speed-smoke.md).

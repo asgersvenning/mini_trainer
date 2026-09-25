@@ -1,6 +1,4 @@
 import json
-import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -152,23 +150,3 @@ def test_changed_quality_batches_stop_before_resources(pipeline, tmp_path, monke
         deployment.evaluate(*builds, manifest, inputs, tmp_path / "result")
     assert not calls
     assert json.loads((tmp_path / "result/report.json").read_text())["status"] == "failed"
-
-
-def test_help_is_runtime_independent():
-    subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            """
-import runpy, sys
-sys.argv = ['tensorrt_deployment', '--help']
-try:
-    runpy.run_module('dev.benchmarks.inference.tensorrt_deployment', run_name='__main__')
-except SystemExit as error:
-    assert error.code == 0
-assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules
-""",
-        ],
-        check=True,
-        capture_output=True,
-    )

@@ -1,32 +1,11 @@
 import json
 import os
-import subprocess
 import sys
 
 import numpy as np
 import pytest
 
 from dev.benchmarks.inference.tensorrt_memory import measure
-
-
-def test_help_does_not_import_gpu_libraries():
-    subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            """
-import runpy, sys
-sys.argv = ['tensorrt_memory', '--help']
-try:
-    runpy.run_module('dev.benchmarks.inference.tensorrt_memory', run_name='__main__')
-except SystemExit as error:
-    assert error.code == 0
-assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules
-""",
-        ],
-        check=True,
-        capture_output=True,
-    )
 
 
 def test_missing_runtime_retains_failure_and_does_not_overwrite(tmp_path, monkeypatch):

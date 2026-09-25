@@ -1,7 +1,5 @@
 import json
 import os
-import subprocess
-import sys
 
 import numpy as np
 import pytest
@@ -49,19 +47,6 @@ def test_complete_trials_survive_later_execution_failure():
     with pytest.raises(ValueError):
         trials.extend(paired_trials(execute, 0, 2))
     assert len(trials) == 1
-
-
-def test_help_does_not_load_gpu_libraries():
-    code = """
-import runpy, sys
-sys.argv = ['tensorrt_pair', '--help']
-try:
-    runpy.run_module('dev.benchmarks.inference.tensorrt_pair', run_name='__main__')
-except SystemExit as error:
-    assert error.code == 0
-assert 'tensorrt' not in sys.modules and 'torch' not in sys.modules
-"""
-    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)
 
 
 @pytest.mark.parametrize("pinned", [False, True])

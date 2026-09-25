@@ -286,7 +286,9 @@ Inspect the epoch summary and checkpoints during production; the full-dataset ru
 has no harness wall-time guard and stops at its configured epoch horizon or when the
 job/process is terminated. Evaluation/export are separate post-training activities.
 
-For held-out prediction/metrics and export after training, use
-[the evaluation runbook](evaluate-results.md) and [ONNX export guide](../../docs/onnx.md).
+For held-out prediction after training, use the installed `mt_hpredict` CLI.
+Pass completed prediction CSVs to the pinned `mini_metrics` package; the
+[release evaluation runbook](../releases/mambo_v3/evaluation.md#metrics) documents
+that metric environment. Export follows the [ONNX guide](../../docs/onnx.md).
 Preserve class order, score semantics and preprocessing; a later master-versus-quant
 training comparison remains a separate experiment.

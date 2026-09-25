@@ -217,10 +217,12 @@ or target-GPU performance. Native INT8 checkpoints require the separate explicit
 CUDA-reference export path. See [ONNX](../../docs/onnx.md) and
 [inference benchmarks](../benchmarks/inference.md); calibrate PTQ on training only.
 
-**Production/expert inference:** use [DDP qualification](ddp.md), then the
-[bounded expert staging trial](expert-trial.md) and
-[test inference](test-inference.md). Validate installed code changes in the
-environment actually used by a profile; a harness-only edit needs no reinstall.
+**Production inference:** use the normal prediction CLI after
+[DDP qualification](ddp.md). The completed September campaign's pinned-overlay
+staging helpers are retired; their
+[historical source](https://github.com/asgersvenning/mini_trainer/tree/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/dev/ucloud)
+and [lessons](../../docs/training-workflow-postmortem.md) remain available.
+For current MAMBO comparisons use [the release runbook](../releases/mambo_v3/ucloud-release.md).
 
 ## Calibrate filesystem read concurrency
 

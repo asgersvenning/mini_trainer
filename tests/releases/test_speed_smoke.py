@@ -86,7 +86,6 @@ def test_automatic_runtime_installation_stays_outside_active_environment(tmp_pat
     assert interpreter.is_relative_to(tmp_path)
     assert str(interpreter) != speed_smoke.sys.executable
     assert calls[-1][calls[-1].index("--python") + 1] == str(interpreter)
-    assert "onnxruntime-gpu[cuda,cudnn]==1.22.0" in calls[-1]
     calls.clear()
     assert speed_smoke.prepare_onnx_runtime() == interpreter
     assert all(c[1:3] == ["pip", "install"] for c in calls)

@@ -135,3 +135,11 @@ for workflow contracts and target runs for hardware claims. Expand experiments o
 when they change a decision; a production matrix is not a default test suite.
 Unresolved PTQ/native integer and target-performance work belongs in the
 [quantization roadmap](quantization-roadmap.md), not this operational plan.
+
+The completed campaign's hard-coded expert/test staging and evaluation launchers
+are retained only in
+[Git at 852bf71](https://github.com/asgersvenning/mini_trainer/tree/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/dev/ucloud).
+They used a source overlay pinned to `0c572ca` and job-specific `/work` paths;
+they are not maintained next-run infrastructure. The original 512-reader,
+RAM-staging evidence above remains valid. New workflow work should use the public
+CLIs and the recovery requirements here rather than revive those launchers.

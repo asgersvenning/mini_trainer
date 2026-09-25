@@ -61,20 +61,6 @@ def test_reference_checks_float_tolerance_and_contract():
             compare_outputs(actual, wrong, 0, 0)
 
 
-def test_help_does_not_import_tensorrt_or_torch():
-    code = """
-import runpy, sys
-sys.argv = ['tensorrt_build', '--help']
-try:
-    runpy.run_module('dev.benchmarks.inference.tensorrt_build', run_name='__main__')
-except SystemExit as error:
-    assert error.code == 0
-assert 'tensorrt' not in sys.modules
-assert 'torch' not in sys.modules
-"""
-    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
-
-
 def gpu_dependencies():
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 in a prepared TensorRT/CUDA environment")
@@ -145,3 +131,18 @@ def test_parser_failure_retains_diagnostics_without_engine(tmp_path):
     assert report["parser_errors"]
     assert report["messages"]
     assert not (output / "model.engine").exists()
+
+
+@pytest.mark.parametrize("module", ["tensorrt_build", "tensorrt_memory", "tensorrt_pair", "tensorrt_deployment"])
+def test_help_does_not_import_gpu_libraries(module):
+    code = """
+import runpy, sys
+module = sys.argv[1]
+sys.argv = [module, '--help']
+try:
+    runpy.run_module('dev.benchmarks.inference.' + module, run_name='__main__')
+except SystemExit as error:
+    assert error.code == 0
+assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", code, module], check=True, capture_output=True)
