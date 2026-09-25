@@ -3,7 +3,7 @@
 Review date: 25 September 2026. Code baseline: `0eb90b2`; V2 source:
 `32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`. The review below records the original design baseline; the
 [implementation follow-up](#implementation-follow-up) records subsequent changes. Evidence is the completed UCloud campaign and source
-inspection. No new B200 measurements have been made.
+inspection. Subsequent B200 measurements are recorded in the implementation follow-up.
 
 The concern is substantially justified: several V3 changes restored efficiency
 lost by the initial portable adapter, and the streaming implementation accumulated
@@ -622,4 +622,82 @@ reduced pixel work but introduced multiple array passes, gathers and temporary
 allocations in place of compiled interpolation. The sampler was therefore removed
 and the previous Pillow rotation restored; native decoding, virtual padding and
 square-input shortcuts remain. The focused virtual-padding checks passed after
-rollback. Post-rollback TTA throughput has not yet been measured.
+rollback. Post-rollback TTA throughput was subsequently measured with the combined stack below.
+
+
+### Profile-guided stack validated on a fresh full B200
+
+The `b200-full-gather` archive records commit `503de96` with the native decoder,
+restored Pillow rotation, RGB pixel gathers, cheaper hierarchy lookup/lazy vocabulary
+maps, reused CPU interpolation scratch, fewer top-1 score scans, and fused Torch
+normalization. The later `f9cbd81` commit changes experiment setup only.
+
+All four reports completed. Imported baseline and compact reports match the new
+run's metadata/sample hashes, 4,096 ordered image identities, bundle and class-list
+hashes, benchmark settings and recorded runtime versions. The new allocation has a
+different GPU UUID but the same full B200 model, 48-CPU quota, 48 preparation workers,
+AMD EPYC 9655 CPU, driver 610.57.04, Torch 2.14.0+cu132 and ORT 1.22.0. Batch is 256;
+Torch uses FP16 and ONNX TF32. Both ONNX reports select the optimized session profile
+with no failed compatibility attempts; the logs contain no failure warnings.
+
+Comparison with the preceding `b200-full-preparation` summary supplied by the user:
+
+| Variant | Previous streaming images/s | New streaming images/s | Change | New request images/s | Request change | Peak host GiB |
+|---|---:|---:|---:|---:|---:|---:|
+| Torch | 1,826.6 | 1,975.7 | +8.2% | 1,469.3 | +47.6% | 4.01 |
+| ONNX | 720.5 | 996.5 | +38.3% | 761.9 | +66.9% | 4.75 |
+| Torch + TTA | 375.2 | 623.9 | +66.3% | 391.4 | +81.3% | 5.84 |
+| ONNX + TTA | 237.1 | 396.1 | +67.0% | 211.8 | +76.3% | 7.35 |
+
+The immediate prior TTA run included the regressed NumPy rotation. Against the
+stronger admission-run TTA figures (473.5 and 312.9 images/s), the new rates are
+still +31.8% and +26.6%. Against the original imported full-B200 smoke, all four
+streaming variants improve: approximately +126%, +21%, +97% and +31% respectively.
+Memory is not uniformly lower: ONNX + TTA rises from 7.05 to 7.35 GiB versus the
+preceding preparation summary. Torch allocator peaks are 3.42 GiB without TTA and
+3.88 GiB with TTA; these are not total device-memory usage or ORT memory estimates.
+
+This supports the combined structural changes across deployment environments.
+Three short passes on one new allocation do not identify each patch's individual
+contribution. Torch's observed streaming rates span 1,795–2,109 images/s; its smaller
++8% median change deserves less weight than the larger ONNX/TTA and request gains.
+The no-TTA prepared-input diagnostic remains about 92 ms for Torch and 114 ms for
+ONNX per batch. It excludes decode/reduction and uses already normalized FP32 input,
+so it does not measure the newly optimized compact GPU preprocessing path.
+
+The remaining targets differ by backend. Counters below accumulate all three
+passes (48 batches); worker elapsed times overlap and cannot be added to runtime:
+
+| Variant | Background input wait, ms/batch | Transfer-worker elapsed, ms/batch | Measured H2D, ms/batch |
+|---|---:|---:|---:|
+| Torch | 16.5 | 52.4 | 2.6 |
+| ONNX | 227.7 | 21.3 | Not instrumented |
+| Torch + TTA | 57.8 | 72.3 | 8.9 |
+| ONNX + TTA | 549.6 | 66.5 | Not instrumented |
+
+For ONNX, input wait remains 10.93 s across 12.50 s elapsed without TTA, and 26.38 s
+across 30.71 s with TTA. Together with the preparation-worker totals, this prioritizes
+CPU decoding/preparation throughput and contention over changes to inference kernels.
+These are background waits, not GPU-idle percentages or proof of storage latency.
+
+For Torch, the physical H2D copy is small, while transfer-worker elapsed also includes
+slot availability and host dispatch. Summed preparation-worker elapsed is 88.8 s
+across 6.30 s wall time, far below 48 workers continuously active. Increasing reader
+or preparation counts alone is unlikely to resolve the remaining gap. The next
+useful boundary is host submission, safe slot reuse and result completion, including
+contention while preparation runs; a timeline should distinguish these rather than
+calling all non-DMA transfer-worker time overhead. Existing counters do not resolve
+that distinction.
+
+Torch streaming now reaches 53.9% of the earlier batch-256 resident reference of
+3,667 images/s. This is a throughput ratio, not GPU utilization. The resident path
+excludes transfers and CPU results and predates the normalization improvement;
+it remains a useful reference rather than a new measured ceiling. No further run
+was requested simply to confirm the gains.
+
+Evidence is retained uncommitted under
+`local-evidence/ucloud-speed-smoke-2026-09-25/b200-full-gather/`, with the source
+archive alongside it and derived `gather-analysis.json`. Archive SHA-256:
+`d51ee3105af4e37aa048bb16fed4c94a9cd87dfefd2a574bbe9e924aec7e6947`.
+The immediately preceding preparation-run comparison uses the user's pasted summary;
+its complete archive was not supplied. This speed check adds no quality metrics.
