@@ -1,0 +1,32 @@
+schema = "mambo-model-provenance-v1"
+model_id = "MAMBO_v3"
+architecture = "EfficientNetV2-S with normalized hierarchical classifier"
+training_run = "global_lepi_production_w32_1"
+training_started = "2026-09-10"
+training_finished = "2026-09-11"
+best_epoch = 30
+best_epoch_source = "Checksum-verified training/console.log: Best model found at epoch 30"
+seed = 42
+training_epochs = 30
+training_world_size = 4
+training_source_revision_status = "Not recorded in retained checkpoint, config, or console log; packaging checkout is not asserted as training source."
+initialization_status = "Training config loads initial_seed42.pt with pretrained=false; upstream initialization lineage is not established by the retained files."
+packaging_checkout = "52954edae5dae31a62ecb639533e6f8573d57055"
+packaging_checkout_role = "Original September 11 export/package environment only"
+weights_license_status = "Awaiting owner designation; repository MIT license covers code only"
+
+[checkpoint]
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
+sha256 = "174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a"
+
+[training_log]
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/console.log"
+sha256 = "d710f226651413ced619ff5e63da1e731a650959eaee4b86632358ea847e5e54"
+
+[epoch_summary]
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/logs/summary.csv"
+sha256 = "be1bf9f00729e3c0afdd56c4b2209a2bfe79e92bb1b0a2aa6013c18798c095b2"
+
+[configuration]
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/run-metadata/config.yaml"
+sha256 = "a10caf8c1abca6b1660c0ca4c6e3cc42687512f1db02501bf1a3e236165c960f"

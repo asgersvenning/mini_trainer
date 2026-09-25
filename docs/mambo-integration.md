@@ -13,7 +13,7 @@ locally until publication. Choose one runtime installation:
 |---|---|---|
 | CPU, without PyTorch | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx]'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
 | NVIDIA GPU, without the training package | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx-cuda]'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
-| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl[timm]' ./mambo_v3-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
+| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl' ./mambo_v3-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
 
 For an environment with ONNX Runtime already provisioned, install the base
 `mambo_deploy` wheel without extras. Do not install CPU and GPU ONNX Runtime

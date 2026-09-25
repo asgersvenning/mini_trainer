@@ -109,6 +109,8 @@ def test_batches_embeddings_and_masked_output_contract(bundle, monkeypatch):
     assert len(result) == 5 and vectors.shape == (5, 1280)
     assert result[0].label == ("c", "g1", "f0")
     assert result[0].confidence == (1.0, 1.0, 1.0)
+    assert result.metadata["bundle_sha256"] == hashlib.sha256((bundle / "release.json").read_bytes()).hexdigest()
+    assert result.metadata["preprocessing_id"] == RECIPE["id"]
     with pytest.raises(ValueError, match="No images"):
         predictor.predict([])
 

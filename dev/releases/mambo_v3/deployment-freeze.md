@@ -37,7 +37,7 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    Implemented integration decisions: the `mambo-v3` distribution alone owns
    `mambo_predict`; API/CLI default to global; CLI writes batches incrementally and
    publishes only complete outputs; the streaming read-window default grows with
-   batch size; the native extra includes `timm`. Arrays retain explicit CHW input
+   batch size; the native extra selects the matching training-package series. Arrays retain explicit CHW input
    to avoid guessing ambiguous layouts. These changes need final installed-bundle
    qualification below.
    Retain V2 entry-point and format compatibility where promised; distinguish that
@@ -54,11 +54,12 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    rather than erasing their provenance. Preserve CPU/GPU, request/streaming and
    V2/V3 comparison categories; update only measured values, and never imply older
    CPU/laptop or smaller-batch results were rerun.
-3. **Refresh candidate metadata once documentation settles.** The checked-in
-   `deployment/mambo_deploy/default_bundle.json` embeds an older README and model
-   card. The card still describes full task metrics as outstanding. Update the
-   builder's card text and regenerate with the existing `build_bundle.py` and
-   `package_download_metadata.py` workflows. Verify preset files, source URLs,
+3. **Refresh candidate metadata after any final owner decisions.** The checked-in
+   descriptor now embeds the current README, maintained model card, notices and
+   verified epoch/checkpoint provenance. Model identity is `MAMBO_v3`, artifact
+   revision 3, distribution `mambo-v3` and default preset `full`. The model-weight
+   license and initialization lineage remain explicitly unresolved. Regenerate
+   with `build_bundle.py` and `package_download_metadata.py` after resolving them. Verify preset files, source URLs,
    all file hashes, and version/model/artifact identities. Documentation changes
    alter the descriptor-derived cache revision; record the final revision rather
    than repeatedly regenerating it during editorial work. Ensure links work from
@@ -73,9 +74,9 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    throughput or hardware campaign without a concrete compatibility failure.
 5. **Record the freeze manifest.** Capture source commit, wheel hashes, bundle
    revision/hashes, versions, tested runtime environments, known limitations and
-   publication/rollback assets. Confirm training revision/best-epoch provenance
-   and weight/data redistribution notices, which remain open in the current model
-   card. Qualify only the OS/runtime combinations actually checked; additional OS
+   publication/rollback assets. The verified training log confirms best epoch 30; the exact training Git
+   revision is absent from the retained checkpoint/config/log. Do not substitute
+   packaging-time revision. Resolve weight-license and initialization notices. Qualify only the OS/runtime combinations actually checked; additional OS
    support is not implied. Tagging, uploading and promotion are separate from
    preparing these reviewable assets.
 
@@ -112,3 +113,16 @@ The automatic model cache now stores verified weight bytes by SHA-256 and reuses
 them across metadata revisions (hard links where possible, ordinary copies
 otherwise). Offline mode can materialize packaged metadata but still forbids
 network downloads. Nine focused cache/download tests pass.
+
+## Candidate assembly
+
+[Publication handoff](publication.md) describes the prepared artifacts and the
+separate human publication step. `prepare_candidate.py` builds only local outputs
+from a clean committed checkout. [Evidence policy](evidence-policy.md) defines
+what subsequent releases retain and when older results can be reused.
+
+`model-provenance.toml` records checksum-verified console and epoch-summary sources.
+The log is 60,812,963 bytes (retrieved in full after a truncated first read was
+correctly rejected by its checksum). It records best epoch 30. Weight licensing
+and upstream initialization attribution require owner input; questions are pending.
+No missing source identity has been invented.

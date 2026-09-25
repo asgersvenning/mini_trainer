@@ -448,7 +448,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mini-trainer", extras = ["timm"], marker = "extra == 'torch'", specifier = ">=0.3.0,<0.4" },
+    { name = "mini-trainer", marker = "extra == 'torch'", specifier = ">=0.3.0,<0.4" },
     { name = "numpy", specifier = ">=2.4" },
     { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
     { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], marker = "extra == 'onnx-cuda'", specifier = ">=1.21,<2" },

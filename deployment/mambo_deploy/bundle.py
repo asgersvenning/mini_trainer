@@ -12,8 +12,9 @@ class Bundle:
     def __init__(self, root, *, download=False):
         self.download = download
         self.root = Path(root).expanduser().resolve()
-        with (self.root / "release.json").open() as stream:
-            self.manifest = json.load(stream)
+        manifest_bytes = (self.root / "release.json").read_bytes()
+        self.manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+        self.manifest = json.loads(manifest_bytes)
         if self.manifest.get("schema") != "mambo-release-v1":
             raise ValueError("Unsupported MAMBO bundle schema")
         if self.manifest.get("score_semantics") != "hierarchical-leaf-logits-logsumexp-v1":

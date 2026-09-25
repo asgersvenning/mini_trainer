@@ -11,7 +11,7 @@ license-files = ["LICENSE"]
 [project.optional-dependencies]
 onnx = ["onnxruntime>=1.20"]
 onnx-cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.21,<2"]
-torch = ["mini_trainer[timm]>=0.3.0,<0.4"]
+torch = ["mini_trainer>=0.3.0,<0.4"]
 
 [project.scripts]
 mambo_predict = "mambo_deploy.cli:run"
