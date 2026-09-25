@@ -52,6 +52,11 @@ observable outputs, errors and ownership/lifetime guarantees to source-text chec
 or assertions that repeat configuration literals. Keep performance guards only
 when they detect a documented cost mechanism without machine-specific timing.
 
+Retire tests for retired tools and assertions that merely freeze transient
+experiment matrices, private helper structure or mutable presentation. An
+elaborate fixture is justified by the failure it detects, not by existing coverage
+alone. Do not preserve obsolete behavior just to preserve its tests.
+
 When consolidating, preserve distinct regression cases, skip/xfail meaning and
 checkpoint/spawn fixture identities. Fewer lines or cases are secondary to simpler
 coverage with the same fault detection. Do not add a generic fixture framework or

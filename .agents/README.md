@@ -49,6 +49,11 @@ from file paths, independently of the message prefix. See
 
 ## Maintenance
 
+Keep tracked explanations and evidence only when they are highly useful for a
+current decision, maintained workflow or likely future development. Uniqueness
+alone is not a reason to retain a finding. Condense superseded investigations to
+their consequential conclusion and provenance; use Git for the detailed history.
+
 Keep one maintained home for each contract, procedure, result and backlog item.
 Update that section when evidence changes instead of appending another dated fix
 or campaign recap. Link from indexes rather than copying explanations or tables.
