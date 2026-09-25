@@ -86,3 +86,48 @@ This is a useful local +37% end-to-end diagnostic improvement, not an expected B
 speedup. Preparation/submission contention remains; this does not establish GPU
 saturation. Static checks and the affected deployment/streaming tests cover the
 change. Use the existing four-variant speed smoke for the next B200 measurement.
+
+
+## Stack submission and result work before the next B200 test
+
+The same captured profile exposed additional work beyond pixel gathering:
+
+- `hierarchy_plan` repeatedly converted the entire selected vocabulary into Python
+  integers and hashed that tuple on the submission thread. Lookup now hashes native
+  contiguous index bytes and reuses each resolved plan within `_ranked_views`.
+  Selection order and content still determine the cache key.
+- `Prediction` eagerly rebuilt all class-name dictionaries for each batch. It now
+  snapshots names and constructs `cls2idx` only on access, including serialization.
+  Each result retains its own mutable dictionary, independent of later selections.
+- Confidence normalization allocated separate shifted-logit and exponential arrays.
+  Floating-point scores now use one scratch array; raw logits remain untouched.
+
+The unprofiled combined probe used the same 1,025 images, batch 64 and four workers:
+
+| Measurement | Pixel gather only | Plus submission/result changes |
+|---|---:|---:|
+| Resident images/s | 7,557 | 11,806 |
+| Host images/s | 7,221 | 9,598 |
+| Stream images/s | 957 | 928 |
+| Resident submission seconds | 0.077 | 0.031 |
+| Resident result-worker seconds | 0.128 | 0.079 |
+| Stream preparation-worker seconds (summed) | 3.423 | 3.492 |
+
+Raw report: `local-evidence/pipeline-profile/after-host-overhead/report.json`.
+These short single passes show reduced overhead with prepared inputs, but **no
+additional local file-streaming improvement**. Streaming still waits on preparation;
+submission elapsed time there also includes contention with preparation workers.
+The combined streaming rate remains above the original 699 images/s baseline.
+Do not convert these diagnostic differences into projected B200 gains.
+
+Other sampled work includes copying gathered pixels into batch storage, GPU
+preprocessing, packing/downloading rank scores, and required score validation.
+These remain possible limits after preparation improves. The profile does not
+establish transfer-bandwidth saturation or a need for more queues: its prominent
+owner-thread `events.get()` frame is a blocking wait. No additional scheduler,
+transfer pool or result API is introduced for this stack.
+
+Validation: static/import checks, deployment Ruff checks, and affected deployment,
+streaming and evaluation tests (92 passed, six optional tests skipped). The CUDA
+probe retained actual transfers/preprocessing but mocked model execution. The next
+HPC check is the existing four-variant full-B200 smoke, once for the complete stack.

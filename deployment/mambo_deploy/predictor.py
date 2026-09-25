@@ -279,10 +279,12 @@ class Predictor:
                 return (output if tensors else output[0].float().cpu().numpy()), embedding
 
     def hierarchy_plan(self, selected):
-        key = tuple(selected)
-        if key not in self._hierarchy_plans:
-            self._hierarchy_plans[key] = HierarchyPlan(selected, self.bundle.classes)
-        return self._hierarchy_plans[key]
+        # Hash contiguous bytes in native code, not one Python integer per species.
+        key = np.asarray(selected, dtype=np.int64).tobytes()
+        plan = self._hierarchy_plans.get(key)
+        if plan is None:
+            plan = self._hierarchy_plans[key] = HierarchyPlan(selected, self.bundle.classes)
+        return plan
 
     def _ranked_views(self, views, view_count, selectors, embeddings=False, *, defer=False):
         """Keep native ranks on Torch; reduce masked/averaged leaves on the same device."""
@@ -310,9 +312,10 @@ class Predictor:
                 norms = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
                 vectors /= norms
             native = output if self.tta is None else None
-            ranks = {name: self.hierarchy_plan(selected).torch_values(leaf, native) for name, selected in selectors.items()}
+            plans = {name: self.hierarchy_plan(selected) for name, selected in selectors.items()}
+            ranks = {name: plan.torch_values(leaf, native) for name, plan in plans.items()}
             tensors = [value for raw, _, _ in ranks.values() for value in raw]
-            full_name = next((name for name, selected in selectors.items() if self.hierarchy_plan(selected).full), None)
+            full_name = next((name for name, plan in plans.items() if plan.full), None)
             if full_name is None:
                 tensors.append(leaf)
             if vectors is not None:

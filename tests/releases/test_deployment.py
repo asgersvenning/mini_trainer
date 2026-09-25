@@ -123,6 +123,30 @@ def test_topk_serialization_handles_nested_items(tmp_path):
         Prediction(raw, labels, indices, topk=3)
 
 
+def test_prediction_vocabulary_is_a_private_snapshot(tmp_path):
+    raw, labels, indices = hierarchy(np.array([[1.0, 2.0, 3.0]], dtype=np.float32), [0, 2], CLASSES)
+    first, second = (Prediction(raw, labels, indices) for _ in range(2))
+    labels[0][0] = "changed-after-prediction"
+    expected = {"0": {"a": 0, "c": 1}, "1": {"g0": 0, "g1": 1}, "2": {"f0": 0}}
+    assert first.cls2idx == expected
+    first.cls2idx["0"]["a"] = 99
+    assert second.cls2idx == expected
+    second.save(tmp_path / "result.json")
+    assert json.loads((tmp_path / "result.json").read_text())["config"]["cls2idx"] == expected
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64])
+def test_confidence_preserves_readonly_scores(dtype):
+    values = np.array([[1000, 999, -1000], [-3, -3, -3]], dtype=dtype)
+    values.flags.writeable = False
+    original = values.copy()
+    result = Prediction([values] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk=2)
+    exp = np.exp(values - values.max(axis=1, keepdims=True))
+    expected = exp[:, :2] / exp.sum(axis=1, keepdims=True)
+    np.testing.assert_array_equal(result.confidence, np.stack([expected] * 3, axis=-1))
+    np.testing.assert_array_equal(values, original)
+
+
 def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeypatch):
     import torch
 

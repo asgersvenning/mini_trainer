@@ -89,7 +89,8 @@ class Prediction:
         if not isinstance(topk, int) or topk < 1 or topk > min(map(len, labels)):
             raise ValueError("topk must be positive and no larger than the smallest retained rank")
         self.topk, self.metadata, self.raw_logits = topk, metadata, raw
-        self.cls2idx = {str(rank): {label: i for i, label in enumerate(names)} for rank, names in enumerate(labels)}
+        # Snapshot names cheaply; most callers never need the complete lookup map.
+        self._class_labels = tuple(tuple(names) for names in labels)
         indices = [
             np.argmax(values, axis=1)[:, None]
             if topk == 1 and not np.isnan(values).any()
@@ -101,7 +102,8 @@ class Prediction:
         self.logits = np.stack([np.take_along_axis(values, idx, axis=1) for values, idx in zip(raw, indices)], axis=-1)
         probabilities = []
         for values, idx in zip(raw, indices):
-            exp = np.exp(values - values.max(axis=1, keepdims=True))
+            exp = values - values.max(axis=1, keepdims=True)
+            exp = np.exp(exp, out=exp if exp.dtype.kind in "fc" else None)
             probabilities.append(np.take_along_axis(exp, idx, axis=1) / exp.sum(axis=1, keepdims=True))
         self.confidence = np.stack(probabilities, axis=-1)
         self.labels = [[[labels[r][int(self.indices[b, k, r])] for r in range(3)] for k in range(topk)] for b in range(len(raw[0]))]
@@ -110,6 +112,10 @@ class Prediction:
             for labs, confs, idxs in zip(self.labels, self.confidence, self.indices)
         ]
         self.items = [row[0] for row in nested] if topk == 1 else nested
+
+    @cached_property
+    def cls2idx(self):
+        return {str(rank): {label: i for i, label in enumerate(names)} for rank, names in enumerate(self._class_labels)}
 
     def __len__(self):
         return len(self.items)

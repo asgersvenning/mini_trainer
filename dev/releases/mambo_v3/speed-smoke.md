@@ -65,12 +65,14 @@ Use the ONNX version already qualified on B200 here. This is an environment-spec
 test setup, not a new deployment-wide dependency pin. Existing environments need
 none of these installation commands.
 
-## Current preparation update
+## Current preparation and host-overhead update
 
 When the next full-B200 comparison is needed, reuse its working environments.
 Native Torch decoding and compiled Pillow rotation are retained. Pixel selection
 now gathers complete RGB pixels instead of using three-axis NumPy indexing. This
-changes real preparation in both backends; use a fresh directory:
+changes real preparation in both backends. The same stack removes Python-heavy
+hierarchy cache keys, defers unused class-name dictionaries and reduces confidence
+scratch allocations. Test these together in a fresh directory:
 
 ```sh
 export MAMBO_CACHE=/work/mambo-cache
