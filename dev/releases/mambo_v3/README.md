@@ -1,19 +1,25 @@
-# MAMBO_v3 release inputs
+# MAMBO_v3 release maintenance
 
-Input audit performed 23 September 2026. This page owns source identities, legacy
-contracts and geographic reconstruction; [final qualification](final-qualification.md)
-records the completed release preparation. Models, predictions and raw data remain
-outside Git in ignored storage.
+Start with the [deployment README](../../../deployment/README.md) for integration.
+This directory maintains release inputs, qualification and reproducible evaluation.
+Models, predictions and raw datasets stay outside Git.
+
+| Task | Maintained source |
+| --- | --- |
+| Build and qualify release artifacts | [Deployment qualification](deployment-qualification.md); [final qualification](final-qualification.md) records the completed candidate |
+| Prepare publication | [Publication checklist](publication.md) |
+| Evaluate or regenerate reports | [Evaluation workflow](evaluation.md), [UCloud runbook](ucloud-release.md), [evidence policy](evidence-policy.md) |
+| Inspect or revise geographic presets | [Catalogue](../../../docs/model-presets.md), [definitions](preset-definitions.toml), [generated hashes/counts](preset-manifest.toml) |
+| Integrate or migrate from V2 | [Integration details](../../../docs/mambo-integration.md) |
+| Verify model identity and training provenance | [Inventory](inventory.toml), [model provenance](model-provenance.toml), audit below |
 
 ## Reproduce the audit
 
 `inventory.toml` pins 44 downloaded files by URL, relative path, size and SHA-256.
-Download each URL to its corresponding path beneath an evidence root. Keep both
-ONNX graphs with their adjacent `model.onnx.data`; a graph alone is incomplete.
-Production files were checked against the published checksums; historical MAMBO
-weights have newly observed hashes, not independent historical signatures.
-`metadata_readback` identifies metadata hashed during this retrieval. These pins
-establish reproducible inputs, not publisher authenticity.
+Download each to its corresponding path beneath an evidence root. Keep both ONNX
+graphs beside their `model.onnx.data` files. Production hashes were checked against
+published checksums; legacy weight hashes were observed during retrieval, not
+independently authenticated. `metadata_readback` identifies metadata hashed then.
 
 From the repository root, using the existing environment without synchronization:
 
@@ -24,164 +30,92 @@ From the repository root, using the existing environment without synchronization
 bash dev/check.sh test tests/releases/test_mambo_inventory.py
 ```
 
-The audit checks every pinned file, safely reads checkpoint state on CPU, compares
-all three ordered class mappings and both parent maps, recovers the region masks
-from legacy weights and checks the committed lists. The standard ONNX manifest
-must agree with the candidate mapping. It does not execute ONNX or build a model.
-The legacy fixture extracts only the prediction container classes from the pinned
-Git commit; it needs local Git history, but no old dependencies or backbone download.
+The audit verifies pinned files, safely reads checkpoint state on CPU, compares
+ordered class/parent mappings, recovers legacy masks and checks the ONNX manifest.
+It does not execute models. The container fixture needs the pinned local Git
+history, but neither old dependencies nor a backbone download.
 
-Observed result: 44 files verified; all legacy/candidate class and parent mappings
-identical; 12,632 species, 4,476 genera, 104 families. No additions, removals or
-index remappings. This does not imply equal predictions: the backbone changes from
-BioCLIP-2 to EfficientNetV2-S and preprocessing changes from 512 to 384 pixels.
-The old files contain classifier weights and require a separately available
-backbone; they are not standalone offline baseline bundles.
+The September 23 audit verified all 44 files and identical V2/V3 mappings:
+12,632 species, 4,476 genera and 104 families, with no index remapping. Predictions
+are not equivalent: BioCLIP-2 becomes EfficientNetV2-S and input size changes
+from 512 to 384. Legacy classifier weights need a separately available backbone.
+Best epoch 30 is verified; the exact training revision and original
+`initial_seed42.pt` hash remain unavailable. [Final qualification](final-qualification.md)
+distinguishes the recovered initialization recipe from verified starting bytes.
 
 ## Regional scope and construction
 
-The release-facing [preset catalogue](../../../docs/model-presets.md) defines every
-preset, its geographic filter, species count and evidence threshold. It includes
-Australia (including Tasmania), Tasmania-only, the requested overlapping American,
-Asian, African, Mediterranean and Arctic regions, plus Oceania, Southeast Asia,
-East Asia and the Middle East. The northern-European scope lists ambiguous
-historical additions in parentheses.
-
-Presets aim to avoid most geographically nonsensical predictions while allowing
-species that **can be found** in a region. They do not describe natural/native
-distributions or where a species should occur. Introduced species, migrants and
-vagrants are eligible; no establishment-status filter is applied. Exclusion does
-not prove absence. Lists inherit metadata coverage and errors, sampling and
-taxonomy. Changing allowed classes changes score normalization; confidence is
-conditional on the selected list. The reconstruction details below concern the
-two unchanged legacy presets; new filters and thresholds are defined in
-[preset-definitions.toml](preset-definitions.toml).
-
-New V3 presets require **at least 3 regional metadata rows and at least
-25 global rows**. Both minima are inclusive. This replaces the initial one-row
-draft and is the selected V3 policy. The snapshot already
-has at least 50 global rows for every model species, so the global gate currently
-excludes nothing further. Australia changes from 1,907 to 1,874 species, Tasmania
-from 401 to 274, and Japan from 974 to 697. V3 preserves these evaluated memberships;
-counting distinct GBIF observations would require a future preset revision. Multiple
-image rows are not necessarily independent occurrence evidence. A local Tasmania check gives 274 species with either three
-rows or three distinct `gbifID` values. Both legacy lists remain unchanged.
-
-| Preset | Species | Construction and evidence | Limits |
-| --- | ---: | --- | --- |
-| `full` | 12,632 | Every species in the pinned model mapping | Global training vocabulary, not every Lepidoptera species |
-| `europe` | 3,014 | Filter the pinned metadata by `continent == "EUROPE"`, count rows per `speciesKey`, retain counts **> 25**. Exact membership and retained count-table match. | Uses the metadata's continent assignment, not a union of entire countries. The upstream method that assigned continents is not established here. |
-| `north_europe` | 1,977 | Filter `countryCode` to `DE DK EE FI LT LV NL NO PL SE`, count rows per `speciesKey`, retain counts **> 25**. Exact membership match to the weights and tagged `data/reduced.txt`. | This reconstructs the list but does not uniquely establish the original country expression: several additional countries leave membership unchanged. |
-
-The ordered files in `presets/` contain GBIF species IDs, one per line. Their
-source-weight paths and hashes are in `inventory.toml`. Extraction uses each
-weight's `cls2idx` and active indices, preserving model order rather than sorting
-IDs or inferring a list from the new evaluation data. Keep these release-versioned
-memberships fixed for backwards compatibility. Custom lists should resolve IDs
-explicitly and report missing/duplicate IDs and excluded truth labels.
+The [preset catalogue](../../../docs/model-presets.md) owns current geographic
+scope, thresholds and membership rules. The details here explain how the unchanged
+legacy lists were recovered; [construction.toml](construction.toml) pins the source
+Parquet hash, filters and totals. Presets follow model order from each weight's
+`cls2idx` and active indices, not sorted GBIF IDs.
 
 ### Reproduce construction from metadata
 
-The user-identified Parquet is available locally even though the full image dataset
-is not. [construction.toml](construction.toml) pins its SHA-256, byte size, geography
-filters, counting rule and expected totals. Using the existing environment with
-PyArrow available, run from the repository root:
+With PyArrow installed in the existing environment, run:
 
 ```sh
 .venv/bin/python -m dev.releases.mambo_v3.reconstruct_presets \
   examples/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
 ```
 
-This reads only the geography/species columns after verifying the source hash and
-compares reconstructed membership to the frozen lists. It does not alter their
-model ordering. Count **metadata rows**, with no additional occurrence/image
-deduplication, across **all existing splits `0`–`9`**, including held-out records.
-Thus the historical README's phrase "training data" means the overall metadata
-corpus for this reconstruction, not just the training partition. Preserve that
-disclosure when reporting held-out metrics; the historical vocabulary selection
-used those rows too. The script neither changes nor regenerates splits.
+The script verifies the Parquet hash and frozen memberships without changing
+ordering or splits. Counts use metadata rows, without additional deduplication,
+across **all existing splits 0–9, including held-out records**. Historical vocabulary
+selection therefore used test rows too; retain this disclosure in evaluation.
 
-Europe selects 2,079,617 rows covering 3,132 species before the strict threshold.
-All 3,132 per-species counts exactly match `tmp/europe_training_data.csv`; the
-minimum included count is 26. That retained table's SHA-256 is
-`47e817d3e5009f929df4a8bc7404e4434c98232806596bc1585dd8c2b88e37d5`.
-The reconstruction no longer depends on those unversioned CSV/list files.
-The world count table also matches all 12,632 species' metadata row counts.
+| Legacy preset | Reconstruction | Evidence / limit |
+| --- | --- | --- |
+| `europe` | `continent == "EUROPE"`; species with >25 rows | 3,014 species; membership and all 3,132 pre-threshold species counts match the retained historical table. |
+| `north_europe` | `countryCode` in `DE DK EE FI LT LV NL NO PL SE`; species with >25 rows | 1,977 species; exact membership match, but the original country expression is not uniquely recoverable. |
 
-The Europe filter includes records coded `TR` (743), `GE` (361), `AZ` (242),
-`RU` (110,277) and `KZ` (13) **only when their continent field is `EUROPE`**;
-it does not include all records from Turkey or the Caucasus. No Armenian records
-pass this filter. Country-only selection cannot reproduce the preset using the
-same >25-row rule: species `11470119` has 595 rows, all `ES`, and is included;
-species `5145842` has 194 `ES` rows and is excluded (192 are `AFRICA`, two have
-blank continent). Including all Spain would therefore force an unwanted species.
+Europe cannot be reproduced as a union of entire countries with the same threshold.
+For example, species `11470119` is included with 595 Spanish rows, while `5145842`
+is excluded despite 194 Spanish rows (192 labelled AFRICA, two without continent).
+Transcontinental countries contribute only their EUROPE-labelled records. The
+original continent-assignment geometry and taxonomy retrieval date are unknown.
 
-The northern reconstruction uses **Germany, Denmark, Estonia, Finland, Lithuania,
-Latvia, Netherlands, Norway, Poland and Sweden**. These select 768,497 rows and
-2,291 species before thresholding. Removing any one of those ten countries
-changes membership. Adding the **UK (`GB`) adds 29 species** absent from the
-frozen list. Adding Ireland (`IE`), Iceland (`IS`), Åland (`AX`), Faroe Islands
-(`FO`), Guernsey (`GG`), Isle of Man (`IM`), Jersey (`JE`) and Svalbard/Jan Mayen
-(`SJ`), individually or all together, changes no selected species. Consequently
-the final list cannot tell us whether Ireland or Iceland was originally included.
-These are tested equivalent additions, not an exhaustive enumeration of all
-possible filters. No original generation script was recovered.
+For northern Europe, removing any of the ten countries changes membership; adding
+the UK adds 29 unwanted species. Adding any or all `IE IS AX FO GG IM JE SJ` changes
+nothing. These are tested equivalent additions, not a recovered original script or
+an exhaustive list of possible filters. The catalogue marks this ambiguity.
 
-The source Parquet hash identifies the exact taxonomy/metadata snapshot used for
-reproduction; it does not establish the original GBIF taxonomy retrieval date or
-the upstream continent-assignment geometry. Keep those remaining provenance
-limits explicit. Neither preset is a comprehensive regional checklist.
-A future regenerated list should have its own revision and added/removed-ID report;
-it must not silently replace these compatibility presets. Deployment documentation
-and API preset metadata should expose count, membership, rule and provenance gaps.
+The historical Europe count-table SHA-256 is
+`47e817d3e5009f929df4a8bc7404e4434c98232806596bc1585dd8c2b88e37d5`;
+reconstruction no longer depends on that unversioned table. Published memberships
+remain fixed; intentional changes require a new revision and added/removed-ID report.
 
 ## Compatibility boundary
 
-Pinned baseline: MAMBO_v2, commit
-`32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`, plus the observed weight hashes.
-The tagged `mini_trainer/deploy.py`, `mini_trainer/classifier.py` and
-`mini_trainer/hierarchical/model.py` establish these expectations:
+The baseline is MAMBO_v2 commit `32b3cd661778356b2e8c4cff5b10fa9061aa6f5d` plus
+observed weight hashes. [compatibility.toml](compatibility.toml) captures its top-1
+container and archived CSV columns. The fixture qualifies that container only;
+current input, masking, CLI and backend coverage is described in
+[deployment qualification](deployment-qualification.md).
 
-| Surface | Preserve / qualify |
-| --- | --- |
-| Python entry | `mini_trainer.deploy.Predictor(device="cuda", model=None, weights=None, class_mask=None, **kwargs)`; Europe default; `model` and `weights` mutually exclusive |
-| Calls | `predict(x, **kwargs)` and `__call__`; path, NumPy, tensor or iterable; CHW/BCHW and grayscale handling; iterable stacked as one batch historically |
-| Masks | Species ID lists or index masks; `-1` clears the mask; region selection is distinct from class ordering |
-| Result | Iterable/indexable hierarchical prediction; top-1 item has native tuples `label`, `confidence`, `index`, ordered species/genus/family; `to_dict()` returns a list of dictionaries |
-| Embeddings | `predict_with_embeddings` returns `(prediction, embeddings)`; new embedding dimension is model-specific, not BioCLIP-compatible |
-| CLI | Restore `mambo_predict`, `--model`/`-M`, explicit weights and result-name convention; test parsing and exported rows before claiming compatibility |
-| Top-k | Legacy ranks are independently ranked; they are not necessarily one ancestral path. `topk>1` warns as experimental; exceeding the smallest rank width raises. Legacy nested-result serialization is incomplete. Define supported behavior explicitly rather than perpetuating defects. |
+Keep these historical distinctions when interpreting compatibility:
 
-`compatibility.toml` contains a small captured top-1 fixture and archived evaluation
-CSV columns. The executable fixture checks the original container behavior only.
-Wrapper input/error, CLI, masking and both new backend integration checks are now
-implemented; see [deployment qualification](deployment-qualification.md). The
-archived CSV schema alone is not proof of complete legacy CLI equivalence.
-The legacy probability-detection heuristic uses a batch-wide sum; do not enshrine
-that defect as a new probability contract. Any shared core correction belongs on a
-feature/master branch before merge into the release branch.
+- V2 defaulted to Europe; portable V3 defaults to global. Embeddings and predictions
+  change with the model; [migration guidance](../../../docs/mambo-integration.md#moving-from-v2)
+  owns current calling conventions and output differences.
+- Legacy ranks were independently ranked, not necessarily one ancestral path.
+  Top-k beyond one was experimental and nested-result serialization incomplete.
+- The legacy probability heuristic used a batch-wide sum. This defect and an
+  archived CSV schema are not sufficient grounds for promising score or CLI parity.
 
 ## Evaluation handoff
 
-Local Flemming has **58,640 images / 522 species**. Species-directory and filename
-identities match every archived expert species-level prediction, with no missing
-or extra JPEGs. This is membership evidence, not image-content checksum equality.
-Both regional presets exclude 16 truth species / 8,042 images here. Preserve them
-in evaluation and report all-image and in-vocabulary metrics separately; do not
-silently drop unknown labels to improve accuracy.
+Flemming contains 58,640 images / 522 species. Its species-directory and filename
+identities match the archived expert predictions; this is membership evidence,
+not image-content checksum equality. Both legacy regional lists exclude 16 truth
+species / 8,042 images. Keep those rows visible in evaluation.
 
-The original 632,913-image global-lepi test split was subsequently evaluated on
-UCloud without resplitting. Preserve source identities when joining staged filenames;
-numeric staging names are not original sample IDs. The full images remain on UCloud,
-while retained prediction/confidence archives support local metric recomputation.
+The 632,913-image global-lepi test split was evaluated on UCloud without resplitting.
+Preserve original sample identities when joining numeric staging filenames.
+Retained prediction/confidence archives support metric recomputation without images.
 
 Current results: [Flemming](../../../docs/mambo-deployment-evidence.md),
-[in-domain](../../../docs/mambo-indomain-evidence.md) and
-[HPC timings](../../../docs/mambo-hpc-evidence.md). Procedures and measurement
-boundaries live in [evaluation.md](evaluation.md), [ucloud-release.md](ucloud-release.md)
-and [evidence-policy.md](evidence-policy.md). Historical first-pass reports are not
-the current default-TTA comparison.
-
-Best epoch 30 is verified. The exact training revision and original
-`initial_seed42.pt` hash remain unavailable; [final qualification](final-qualification.md)
-distinguishes recovered initialization recipe from verified starting bytes.
+[in-domain](../../../docs/mambo-indomain-evidence.md), [HPC timings](../../../docs/mambo-hpc-evidence.md).
+Use the workflows linked above; historical first-pass reports do not describe the
+current default-TTA comparison.
