@@ -1,8 +1,9 @@
 # MAMBO_v3 release inputs
 
-This is the first release preparation increment, verified 2026-09-23. It freezes
-inputs and compatibility expectations; it does not qualify a deployment adapter.
-Model files, predictions and raw data stay outside Git in ignored storage.
+Input audit performed 23 September 2026. This page owns source identities, legacy
+contracts and geographic reconstruction; [final qualification](final-qualification.md)
+records the completed release preparation. Models, predictions and raw data remain
+outside Git in ignored storage.
 
 ## Reproduce the audit
 
@@ -169,28 +170,18 @@ Both regional presets exclude 16 truth species / 8,042 images here. Preserve the
 in evaluation and report all-image and in-vocabulary metrics separately; do not
 silently drop unknown labels to improve accuracy.
 
-The global in-domain dataset is intentionally absent locally. Run its comparison
-on UCloud where `/work/global_lepi` is available, using the original supplied test
-split and taxonomy. The pinned training config identifies the original Parquet;
-`evaluation/in-domain/provenance/staging.json` maps staged filenames back to source
-images. Keep that mapping when joining the archived predictions; numeric staged
-names must not be treated as original image identities. Verify the supplied split,
-source membership and expected 632,913 predictions before a full run, with a small
-qualification first. Do not regenerate a random split from the training proportion.
+The original 632,913-image global-lepi test split was subsequently evaluated on
+UCloud without resplitting. Preserve source identities when joining staged filenames;
+numeric staging names are not original sample IDs. The full images remain on UCloud,
+while retained prediction/confidence archives support local metric recomputation.
 
-Portable assets and aligned PyTorch/ONNX adapters are implemented; see
-[deployment qualification](deployment-qualification.md). Full Flemming metrics and
-local CPU/GPU timings are documented in the
-[measured release report](../../../docs/mambo-v3-evaluation.md), with reproduction
-commands and the prepared UCloud handoff in [evaluation.md](evaluation.md).
+Current results: [Flemming](../../../docs/mambo-deployment-evidence.md),
+[in-domain](../../../docs/mambo-indomain-evidence.md) and
+[HPC timings](../../../docs/mambo-hpc-evidence.md). Procedures and measurement
+boundaries live in [evaluation.md](evaluation.md), [ucloud-release.md](ucloud-release.md)
+and [evidence-policy.md](evidence-policy.md). Historical first-pass reports are not
+the current default-TTA comparison.
 
-The original in-domain split and taxonomy have been checked against all 632,913
-archived test identities. Image verification and inference still require UCloud.
-Archived selected predictions support historical context, not MAMBO_v2 model
-quality or downstream embedding claims. Training-source revision and best-epoch
-provenance remain unresolved; packaging checkout is not training provenance.
-
-The [real-world v2/v3 comparison](../../../docs/mambo-release-comparison.md) adds
-the published BioCLIP-2 model baseline across northern Europe, Europe and global,
-with quality, speed and memory charts. Reproduction and the explicit ancillary
-v2 CPU input adapter are documented in [release-comparison.md](release-comparison.md).
+Best epoch 30 is verified. The exact training revision and original
+`initial_seed42.pt` hash remain unavailable; [final qualification](final-qualification.md)
+distinguishes recovered initialization recipe from verified starting bytes.

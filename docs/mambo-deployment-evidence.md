@@ -126,5 +126,7 @@ ONNX runtime `threads` and defaults to it.
 
 Use ordinary V3 for throughput and enable TTA when its accuracy/cost trade-off fits.
 Recipe exploration used this Flemming dataset, so these results are descriptive,
-not independent validation. In-domain UCloud evaluation, other operating systems,
-and publication/license review remain open. See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).
+not independent validation. The complementary [in-domain evaluation](mambo-indomain-evidence.md) is complete.
+[Installed qualification](../dev/releases/mambo_v3/final-qualification.md) records
+runtime/platform limits and the selected license; publication remains separate.
+See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).
