@@ -29,12 +29,13 @@ def config(tmp_path):
 @pytest.mark.parametrize("int8_variant", ["quant_int8", "quant_int8_combined"])
 def test_launch_topology_and_paired_plan(harness, config, int8_variant):
     compare, _ = harness
+    config.update(gpus=4, global_batch_size=64, seeds=[3, 9], variants=["master_eager", "quant_eager", "quant_prefetch"])
     compare.validate(config)
     runs = compare.plan(config)
     assert runs == compare.plan(config)
-    assert len(runs) == 18
-    for seed in config["seeds"]:
-        assert sum(r["seed"] == seed for r in runs) == 6
+    assert sorted((r["name"], r["seed"]) for r in runs) == sorted(
+        (f"{variant}_seed{seed}", seed) for seed in config["seeds"] for variant in config["variants"]
+    )
     argv = compare.command(config, runs[0], Path(config["output"]) / "comparison.json")
     assert "--nproc-per-node=4" in argv
     assert argv[-3] == str(Path(config["output"]) / "comparison.json")
