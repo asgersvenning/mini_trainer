@@ -1,12 +1,12 @@
 """Outer, runtime-independent TTA over decoded CHW images."""
 
 import hashlib
-import math
 from dataclasses import dataclass
 
 import numpy as np
+from PIL import Image
 
-from .preprocessing import RECIPE, _nearest_indices, _rgb, _square, prepare_uint8, preprocess
+from .preprocessing import RECIPE, _rgb, prepare_uint8, preprocess
 
 
 @dataclass(frozen=True)
@@ -62,50 +62,13 @@ class RotatePad:
         EdgePad(self.padding)
 
     def rotate(self, image):
-        return _rotated(image, self.degrees)
+        rotated = Image.fromarray(image.transpose(1, 2, 0)).rotate(
+            self.degrees, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104)
+        )
+        return np.asarray(rotated).transpose(2, 0, 1)
 
     def __call__(self, image):
         return EdgePad(self.padding)(self.rotate(image))
-
-
-def _rotated(image, degrees, padding=None):
-    """Sample an expanded rotation, optionally only at the final square's pixels.
-
-    Preserve rotate-to-uint8 THEN nearest selection, including virtual edge pad.
-    Sampling a resized source instead would change the augmentation geometry.
-    """
-    angle = degrees % 360
-    if angle % 90 == 0:
-        rotated = np.rot90(image, int(angle // 90), axes=(1, 2))
-        return rotated.copy() if padding is None else _square(rotated, padding)
-    height, width = image.shape[1:]
-    a, b = round(math.cos(-math.radians(angle)), 15), round(math.sin(-math.radians(angle)), 15)
-    c, f = a * (-width / 2) + b * (-height / 2) + width / 2, -b * (-width / 2) + a * (-height / 2) + height / 2
-    corners = [(0, 0), (width, 0), (width, height), (0, height)]
-    xx, yy = zip(*[(a * x + b * y + c, -b * x + a * y + f) for x, y in corners], strict=True)
-    nw, nh = math.ceil(max(xx)) - math.floor(min(xx)), math.ceil(max(yy)) - math.floor(min(yy))
-    c += a * (-(nw - width) / 2) + b * (-(nh - height) / 2)
-    f += -b * (-(nw - width) / 2) + a * (-(nh - height) / 2)
-    x, y = np.arange(nw), np.arange(nh)
-    if padding is not None:
-        # Upscaling and edge padding repeat pixels: interpolate each only once.
-        x, columns = np.unique(_nearest_indices(nw, padding), return_inverse=True)
-        y, rows = np.unique(_nearest_indices(nh, padding), return_inverse=True)
-    x, y = x[None, :] + 0.5, y[:, None] + 0.5
-    sx, sy = a * x + b * y + c, -b * x + a * y + f
-    outside = (sx < 0) | (sx >= width) | (sy < 0) | (sy >= height)
-    sx, sy = sx - 0.5, sy - 0.5
-    ix, iy = np.floor(sx).astype(np.intp), np.floor(sy).astype(np.intp)
-    dx, dy = sx - ix, sy - iy
-    x0, x1 = np.clip(ix, 0, width - 1), np.clip(ix + 1, 0, width - 1)
-    y0, y1 = np.clip(iy, 0, height - 1), np.clip(iy + 1, 0, height - 1)
-    top, bottom = image[:, y0, x0].astype(np.float64), image[:, y1, x0].astype(np.float64)
-    top += (image[:, y0, x1] - top) * dx
-    bottom += (image[:, y1, x1] - bottom) * dx
-    top += (bottom - top) * dy
-    result = top.astype(np.uint8)
-    result[:, outside] = np.array([124, 116, 104], dtype=np.uint8)[:, None]
-    return result if padding is None else result[:, rows[:, None], columns[None, :]]
 
 
 @dataclass(frozen=True)
@@ -195,7 +158,7 @@ def _prepare_view(image, transform, out=None, *, compact=False):
     prepare = prepare_uint8 if compact else preprocess
     # Exact built-in types are non-mutating; subclasses/custom callables retain isolation.
     if type(transform) is RotatePad:
-        return prepare(_rotated(image, transform.degrees, transform.padding), out=out)
+        return prepare(transform.rotate(image), out=out, padding=transform.padding)
     if type(transform) is EdgePad:
         return prepare(image, out=out, padding=transform.fraction)
     return prepare(transform(image if type(transform) in (View, SaltAndPepper) else image.copy()), out=out)

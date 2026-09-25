@@ -576,7 +576,7 @@ regression, not resolution of the Torch streaming gap to the resident reference.
 
 ### Decode once; sample only the rotation pixels used
 
-The next increment changes preparation work, leaving scheduling, buffers, transfers
+The `0ac0422` increment changed preparation work, leaving scheduling, buffers, transfers
 and GPU inference unchanged:
 
 - Torch JPEG/PNG inputs use the existing torchvision native CPU decoder, as the core
@@ -607,5 +607,19 @@ CUDA checks skipped) and focused checks for the subsequent high-bit-depth fallba
 and repeated-pixel sampling. Pixel fixtures compare against the prior Pillow rotation,
 including expanded non-square canvases, thin/large images and cardinal rotations.
 No local throughput sweep, model-quality campaign or GPU-reference rerun was performed.
-B200 throughput remains unmeasured: compare the same smoke in `b200-full-preparation`
-against `b200-full-admission`, preserving all worker settings and environments.
+The subsequent `b200-full-preparation` results were:
+
+| Variant | Streaming images/s | Request images/s | Peak host GiB |
+|---|---:|---:|---:|
+| Torch | 1,826.6 | 995.7 | 3.94 |
+| ONNX | 720.5 | 456.6 | 5.02 |
+| Torch + TTA | 375.2 | 215.8 | 5.93 |
+| ONNX + TTA | 237.1 | 120.1 | 7.05 |
+
+Native decoding improved no-TTA Torch streaming by 49% over admission. Both TTA
+variants regressed by 21–24%, strongly implicating the shared NumPy sampler. It
+reduced pixel work but introduced multiple array passes, gathers and temporary
+allocations in place of compiled interpolation. The sampler was therefore removed
+and the previous Pillow rotation restored; native decoding, virtual padding and
+square-input shortcuts remain. The focused virtual-padding checks passed after
+rollback. Post-rollback TTA throughput has not yet been measured.

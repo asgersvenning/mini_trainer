@@ -690,19 +690,6 @@ def test_native_decode_matches_portable_inputs(tmp_path, format):
     np.testing.assert_array_equal(decode(source.transpose(2, 0, 1)), source.transpose(2, 0, 1))
 
 
-@pytest.mark.parametrize("angle", [0, 90, 180, -90, -30, 10, 30])
-def test_numpy_rotation_preserves_expansion_fill_and_interpolation(angle):
-    from PIL import Image
-
-    from deployment.mambo_deploy.augmentation import RotatePad
-
-    source = np.random.default_rng(47).integers(0, 256, (3, 41, 68), dtype=np.uint8)
-    expected = np.asarray(
-        Image.fromarray(source.transpose(1, 2, 0)).rotate(angle, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104))
-    ).transpose(2, 0, 1)
-    np.testing.assert_array_equal(RotatePad(angle).rotate(source), expected)
-
-
 def test_native_decode_preserves_high_bit_depth_png_conversion():
     import io
 
