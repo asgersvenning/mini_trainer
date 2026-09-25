@@ -5,6 +5,9 @@ global-lepi dataset mounted. Clone this release branch with its Git history ther
 the scripts live in `dev/releases/mambo_v3` and are not included in the deployment
 wheel. No allocation or remote submission is performed by these commands.
 
+For a short full-B200 versus MIG speed check, use the
+[four-variant speed smoke test](speed-smoke.md) instead of this campaign workflow.
+
 ## Setup with uv
 
 From the checkout root, resolve runtime dependencies afresh for this machine.
