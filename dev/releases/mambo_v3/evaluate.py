@@ -11,10 +11,10 @@ from pathlib import Path
 import numpy as np
 
 from deployment.mambo_deploy import Predictor
-from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES, infer_prepared
+from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
 from deployment.mambo_deploy.preprocessing import preprocess
 from deployment.mambo_deploy.result_worker import ResultWorker
-from deployment.mambo_deploy.results import Prediction, hierarchy
+from deployment.mambo_deploy.results import Prediction
 from deployment.mambo_deploy.streaming import prepared_stream
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, PRESETS, canonical_rows, load_records, prepare_flemming, write_json
@@ -111,11 +111,13 @@ def collect(args):
                 )
             }
 
-            def process(batch, leaf, offset):
+            plans = {name: predictor.hierarchy_plan(selected) for name, selected in selectors.items()}
+
+            def process(batch, leaf, ranks, offset):
                 phase = {name: 0.0 for name in ("hierarchy_seconds", "prediction_seconds", "write_seconds")}
                 for name, selected in selectors.items():
                     t = time.perf_counter()
-                    reduced = hierarchy(leaf, selected, predictor.bundle.classes)
+                    reduced = ranks[name] if ranks is not None else plans[name].numpy(leaf)
                     phase["hierarchy_seconds"] += time.perf_counter() - t
                     t = time.perf_counter()
                     result = Prediction(*reduced)
@@ -167,10 +169,7 @@ def collect(args):
                     break
                 timings["input_wait_seconds"] += time.perf_counter() - waiting
                 t = time.perf_counter()
-                if predictor.tta is not None:
-                    leaf, vectors = infer_prepared(predictor._infer, views, len(views), args.embeddings)
-                else:
-                    leaf, vectors = predictor._infer(views[0], args.embeddings)
+                leaf, vectors, ranks = predictor._ranked_views(views, len(views), selectors, args.embeddings)
                 timings["runtime_seconds"] += time.perf_counter() - t
                 if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
                     raise ValueError("Invalid leaf scores")
@@ -179,7 +178,7 @@ def collect(args):
                         raise ValueError("Invalid embeddings")
                     np.testing.assert_allclose(np.linalg.norm(vectors, axis=1), 1, atol=1e-4)
                     embeddings[offset : offset + len(batch)] = vectors
-                worker.submit(batch, leaf, offset)
+                worker.submit(batch, leaf, ranks, offset)
                 del views
                 if len(worker.pending) == 2:
                     completed += finish_one()

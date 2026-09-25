@@ -246,11 +246,15 @@ def test_tta_averages_leaf_logits_before_masking_and_normalizes_embeddings(bundl
     predictor = Predictor(bundle, backend=backend, tta="hflip", class_list=["a", "c"], batch_size=2, preprocess_workers=1)
     seen = []
 
-    def runtime(images, embeddings):
+    def runtime(images, embeddings, *, tensors=False):
         seen.append(images.copy())
         right = images[:, 0, 0, -1] > images[:, 0, 0, 0]
         scores = np.array([[4, 9, 0] if x else [0, 1, 6] for x in right], dtype=np.float32)
         vectors = np.array([[1, 0] if x else [0, 1] for x in right], dtype=np.float32)
+        if tensors:
+            import torch
+
+            scores = [torch.from_numpy(scores)]
         return scores, vectors if embeddings else None
 
     monkeypatch.setattr(predictor, "_" + backend, runtime)
@@ -548,3 +552,42 @@ def test_top1_fast_path_preserves_stable_ties(topk):
     result = Prediction(raw, labels, [np.arange(3)] * 3, topk)
     expected = np.stack([np.argsort(-v, axis=1, kind="stable")[:, :topk] for v in raw], axis=-1)
     np.testing.assert_array_equal(result.indices, expected)
+
+
+@pytest.mark.parametrize("selected", [[0, 1, 2], [0, 2], [1]])
+def test_batched_hierarchy_matches_original_and_torch(selected):
+    import torch
+
+    from deployment.mambo_deploy.results import HierarchyPlan
+
+    leaves = np.random.default_rng(9).normal(size=(256, 3)).astype(np.float32) * 100
+    plan = HierarchyPlan(selected, CLASSES)
+    actual = plan.numpy(leaves)[0]
+    expected = [leaves[:, selected]]
+    for inverse, _, _ in plan.groups:
+        grouped = np.full((len(leaves), int(inverse.max()) + 1), -np.inf, dtype=np.float32)
+        for row in range(len(leaves)):
+            np.logaddexp.at(grouped[row], inverse, expected[-1][row])
+        expected.append(grouped)
+    native = plan.torch(torch.from_numpy(leaves))[0]
+    for a, b, c in zip(actual, expected, native, strict=True):
+        np.testing.assert_allclose(a, b, atol=3e-5, rtol=1e-6)
+        np.testing.assert_allclose(a, c, atol=3e-5, rtol=1e-6)
+
+
+def test_global_native_ranks_are_reused(monkeypatch):
+    import torch
+
+    from deployment.mambo_deploy.results import HierarchyPlan
+    from mini_trainer.hierarchical import utils
+
+    plan = HierarchyPlan([0, 1, 2], CLASSES)
+    native = [torch.ones((2, n)) for n in (3, 2, 1)]
+
+    def fail(*args, **kwargs):
+        pytest.fail("Global hierarchy should not be recomputed")
+
+    monkeypatch.setattr(utils, "batched_scatter_logsumexp", fail)
+    raw, _, _ = plan.torch(native[0], native)
+    for values, tensor in zip(raw, native, strict=True):
+        np.testing.assert_array_equal(values, tensor.numpy())

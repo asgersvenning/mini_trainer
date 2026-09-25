@@ -490,3 +490,42 @@ background jobs. They overlap inference and must not be added to foreground time
 `output_wait_seconds` measures consumer backpressure while retiring results.
 B200 qualification exercises batch 256; local output checks use laptop-sized
 batches and do not establish B200 memory use or throughput.
+
+### Reuse native hierarchy reduction
+
+The PyTorch deployment adapter now retains the head's existing global rank outputs
+instead of transferring species logits and recomputing their hierarchy on CPU.
+Regional/custom lists use the existing `batched_scatter_logsumexp` on the model
+device after species selection. TTA still averages species logits before masking
+and hierarchy reduction; parent logits are not averaged across views.
+
+The standalone ONNX path uses cached parent groups and batched stable max/exp/sum/log
+reductions in NumPy. It does not require PyTorch. Parent confidence values can differ
+slightly from the previous sequential reduction because summation order changes.
+Both request and streaming APIs, collection and benchmarks use these paths.
+For PyTorch, device-side hierarchy work is included in `runtime_seconds`; the
+background `hierarchy_seconds` now measures retrieval of the prepared ranks.
+For ONNX it continues to measure CPU reduction.
+
+Stop the active run before pulling; no dependency installation is needed. Inherit
+batch 256, the current buffers and completed V2 reuse into the updated campaign:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-batch256/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-hierarchy
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-hierarchy/config.json
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-hierarchy/full
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-hierarchy/config.json
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-hierarchy \
+  --output ~/.cache/mambo-ucloud/summary-hierarchy
+```
+
+Monitor `~/.cache/mambo-ucloud/runs-hierarchy/full/torch.log`. Existing output timing
+fields and counters remain available. Requalify all V3 variants; reuse of the
+unchanged V2 evidence is still checked against its original inputs and code.

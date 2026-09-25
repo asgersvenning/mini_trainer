@@ -11,13 +11,13 @@ from pathlib import Path
 
 import numpy as np
 
-from .augmentation import infer_augmented, infer_prepared, resolve_tta
+from .augmentation import infer_augmented, infer_prepared, prepared_views, resolve_tta
 from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
 from .preprocessing import RECIPE, image_items, preprocess
 from .result_worker import ResultWorker
-from .results import Prediction, hierarchy
+from .results import HierarchyPlan, Prediction
 from .streaming import prepared_stream
 
 
@@ -73,6 +73,7 @@ class Predictor:
             raise ValueError("Unsupported preprocessing recipe; use the matching deployment runtime")
         self.backend, self.device, self.batch_size, self.threads = backend, str(device), batch_size, threads
         self._sessions, self._torch_model = {}, None
+        self._hierarchy_plans = {}
         self.onnx_session_info = {}
         self._lock = threading.RLock()
         self.weights = weights
@@ -190,7 +191,7 @@ class Predictor:
         values = self._sessions[key].run(outputs, {"images": images})
         return values[0], values[1] if embeddings else None
 
-    def _torch(self, images, embeddings):
+    def _torch(self, images, embeddings, *, tensors=False):
         try:
             import torch
 
@@ -227,7 +228,44 @@ class Predictor:
                 features = features.float()
                 output = head(features)
                 embedding = head.preclassification(features).cpu().numpy() if embeddings else None
-                return output[0].float().cpu().numpy(), embedding
+                return (output if tensors else output[0].float().cpu().numpy()), embedding
+
+    def hierarchy_plan(self, selected):
+        key = tuple(selected)
+        if key not in self._hierarchy_plans:
+            self._hierarchy_plans[key] = HierarchyPlan(selected, self.bundle.classes)
+        return self._hierarchy_plans[key]
+
+    def _ranked_views(self, views, view_count, selectors, embeddings=False):
+        """Keep native ranks on Torch; reduce masked/averaged leaves on the same device."""
+        if self.backend != "torch":
+            leaf, vectors = (
+                infer_prepared(self._infer, views, view_count, embeddings)
+                if self.tta is not None
+                else self._infer(next(iter(views)), embeddings)
+            )
+            return leaf, vectors, None
+        import torch
+
+        leaf, vectors, output = None, None, None
+        with torch.inference_mode():
+            for view in views:
+                output, embedding = self._torch(view, embeddings, tensors=True)
+                part = output[0].float() / view_count if self.tta is not None else output[0].float()
+                leaf = part if leaf is None else leaf + part
+                if embeddings:
+                    part = embedding.astype(np.float32) / np.float32(view_count) if self.tta is not None else embedding
+                    vectors = part if vectors is None else vectors + part
+            if embeddings and self.tta is not None:
+                norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+                if not np.isfinite(norms).all() or np.any(norms <= np.finfo(np.float32).eps):
+                    raise RuntimeError("TTA produced an undefined mean embedding")
+                vectors /= norms
+            native = output if self.tta is None else None
+            ranks = {name: self.hierarchy_plan(selected).torch(leaf, native) for name, selected in selectors.items()}
+            full_name = next((name for name, selected in selectors.items() if self.hierarchy_plan(selected).full), None)
+            leaf_array = ranks[full_name][0][0] if full_name is not None else leaf.cpu().numpy()
+            return leaf_array, vectors, ranks
 
     def _prepare(self, batch, pool=None):
         return np.stack(list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch])
@@ -242,11 +280,18 @@ class Predictor:
 
     def _predict(self, x, embeddings=False, topk=1):
         with self._lock:
-            leaf_batches, embedding_batches = [], []
+            leaf_batches, embedding_batches, rank_batches = [], [], []
             items = image_items(x)
             with ThreadPoolExecutor(max_workers=self.preprocess_workers) if self.preprocess_workers > 1 else nullcontext(None) as pool:
                 while batch := list(islice(items, self.batch_size)):
-                    leaves, vectors = self._infer_batch(batch, embeddings, pool)
+                    if self.backend == "torch":
+                        views = prepared_views(batch, self.tta, pool) if self.tta else (self._prepare(batch, pool),)
+                        leaves, vectors, ranks = self._ranked_views(
+                            views, len(self.tta.transforms) if self.tta else 1, {"selected": self.selected}, embeddings
+                        )
+                        rank_batches.append(ranks["selected"])
+                    else:
+                        leaves, vectors = self._infer_batch(batch, embeddings, pool)
                     if not np.isfinite(leaves).all():
                         raise RuntimeError("Model returned non-finite species scores")
                     leaf_batches.append(leaves)
@@ -254,7 +299,11 @@ class Predictor:
                         embedding_batches.append(vectors)
             if not leaf_batches:
                 raise ValueError("No images supplied")
-            raw, labels, mappings = hierarchy(np.concatenate(leaf_batches), self.selected, self.bundle.classes)
+            if rank_batches:
+                raw = [np.concatenate([batch[0][rank] for batch in rank_batches]) for rank in range(len(rank_batches[0][0]))]
+                labels, mappings = rank_batches[0][1:]
+            else:
+                raw, labels, mappings = self.hierarchy_plan(self.selected).numpy(np.concatenate(leaf_batches))
             result = Prediction(
                 raw,
                 labels,
@@ -309,24 +358,21 @@ class Predictor:
             stats=stats,
         )
 
-        def process(leaves, vectors, selected, metadata):
-            result = Prediction(*hierarchy(leaves, selected, self.bundle.classes), topk, **metadata)
+        def process(leaves, vectors, plan, ranks, metadata):
+            result = Prediction(*(ranks if ranks is not None else plan.numpy(leaves)), topk, **metadata)
             return (result, vectors) if embeddings else result
 
         with closing(batches), ResultWorker(process) as worker:
             for _, views in batches:
                 with self._lock:
-                    leaves, vectors = (
-                        infer_prepared(self._infer, views, len(views), embeddings)
-                        if self.tta is not None
-                        else self._infer(views[0], embeddings)
-                    )
+                    leaves, vectors, ranks = self._ranked_views(views, len(views), {"selected": self.selected}, embeddings)
                     if not np.isfinite(leaves).all():
                         raise RuntimeError("Model returned non-finite species scores")
                     worker.submit(
                         leaves,
                         vectors,
-                        self.selected.copy(),
+                        self.hierarchy_plan(self.selected),
+                        ranks["selected"] if ranks is not None else None,
                         dict(
                             model_id=self.bundle.manifest["model_id"],
                             backend=self.backend,

@@ -16,22 +16,60 @@ class PredictionItem:
         return asdict(self)
 
 
+class HierarchyPlan:
+    """Cache vocabulary order and parent groups; no runtime dependency for NumPy."""
+
+    def __init__(self, selected, classes):
+        indices = np.asarray(selected, dtype=np.int64)
+        self.full = np.array_equal(indices, np.arange(len(classes["labels"][0])))
+        self.indices = [indices]
+        self.groups = []
+        for parents in classes["parents"]:
+            indices, inverse = np.unique(np.asarray(parents, dtype=np.int64)[indices], return_inverse=True)
+            order = np.argsort(inverse, kind="stable")
+            starts = np.r_[0, np.flatnonzero(np.diff(inverse[order])) + 1]
+            self.groups.append((inverse, order, starts))
+            self.indices.append(indices)
+        self.labels = [[classes["labels"][rank][int(i)] for i in indices] for rank, indices in enumerate(self.indices)]
+        self._devices = {}
+
+    def numpy(self, leaf):
+        values = np.asarray(leaf if self.full else leaf[:, self.indices[0]], dtype=np.float32)
+        logits = [values]
+        for inverse, order, starts in self.groups:
+            ordered = values[:, order]
+            maxima = np.maximum.reduceat(ordered, starts, axis=1)
+            shifts = np.where(np.isfinite(maxima), maxima, 0)
+            with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+                shifted = np.exp(ordered - shifts[:, inverse[order]])
+                values = np.log(np.add.reduceat(shifted, starts, axis=1)) + shifts
+            logits.append(values)
+        return logits, self.labels, self.indices
+
+    def torch(self, leaf, native=None):
+        import torch
+
+        from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
+
+        if self.full and native is not None:
+            values = native
+        else:
+            key = str(leaf.device)
+            if key not in self._devices:
+                self._devices[key] = (
+                    torch.as_tensor(self.indices[0], device=leaf.device),
+                    [torch.as_tensor(group[0], device=leaf.device) for group in self.groups],
+                )
+            selected, parents = self._devices[key]
+            values = [leaf.index_select(1, selected)]
+            for rank, index in enumerate(parents, start=1):
+                values.append(batched_scatter_logsumexp(values[-1], index, dim_size=len(self.indices[rank])))
+        return [value.float().cpu().numpy() for value in values], self.labels, self.indices
+
+
 def hierarchy(leaf, selected, classes):
-    """Mask leaves first; preserve original rank ordering and recompute every parent."""
-    indices = np.asarray(selected, dtype=np.int64)
-    values = np.asarray(leaf[:, indices], dtype=np.float32)
-    logits, global_indices = [values], [indices]
-    for parents in classes["parents"]:
-        selected_parents = np.asarray(parents, dtype=np.int64)[indices]
-        indices, inverse = np.unique(selected_parents, return_inverse=True)
-        grouped = np.full((len(values), len(indices)), -np.inf, dtype=np.float32)
-        for row in range(len(values)):
-            np.logaddexp.at(grouped[row], inverse, values[row])
-        values = grouped
-        logits.append(values)
-        global_indices.append(indices)
-    labels = [[classes["labels"][rank][int(i)] for i in indices] for rank, indices in enumerate(global_indices)]
-    return logits, labels, global_indices
+    """Mask leaves before batched stable parent reduction, preserving class order."""
+    return HierarchyPlan(selected, classes).numpy(leaf)
 
 
 class Prediction:

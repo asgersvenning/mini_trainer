@@ -156,15 +156,19 @@ def _prepare_view(image, transform):
     return preprocess(transform(image.copy()))
 
 
-def infer_augmented(runtime, items, tta, embeddings=False, pool=None):
-    """Generate a view, run ordinary preprocessing/inference, then aggregate leaves."""
+def prepared_views(items, tta, pool=None):
+    """Decode once and lazily prepare views in recipe order."""
 
     def mapped(fn, values):
         return list(pool.map(fn, values)) if pool and len(values) > 1 else [fn(item) for item in values]
 
     decoded = mapped(_rgb, items)
     views = (np.stack(mapped(partial(_prepare_view, transform=transform), decoded)) for transform in tta.transforms)
-    return infer_prepared(runtime, views, len(tta.transforms), embeddings)
+    return views
+
+
+def infer_augmented(runtime, items, tta, embeddings=False, pool=None):
+    return infer_prepared(runtime, prepared_views(items, tta, pool), len(tta.transforms), embeddings)
 
 
 def infer_prepared(runtime, views, view_count, embeddings=False):
