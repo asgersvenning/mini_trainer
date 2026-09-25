@@ -7,6 +7,11 @@ package, so upgrading this package cannot select a different trained model.
 
 ## Local candidate
 
+The prepared review set is `local-evidence/mambo-v3-release-candidate-final/`.
+Its manifest includes qualification records, and its checksum list includes the
+manifest itself. See [final qualification](final-qualification.md) for the exact
+source commit, wheel hashes and evidence-reuse scope.
+
 From a clean, committed release checkout:
 
 ```sh
