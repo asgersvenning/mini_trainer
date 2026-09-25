@@ -477,6 +477,9 @@ and the published deployment figures have not been regenerated for this change.
 
 ## Streaming ownership and virtual padding
 
+The initial implementation below was delivered in `0c6ace2`; its B200 regression
+and the subsequent admission correction are recorded below.
+
 The full-B200 resident experiment establishes a useful reference for the existing
 GPU execution: 3,667 images/s at batch 256, 3,781 at 512 and 3,818 at 1,024. The
 trace has almost continuous kernel execution; increasing batch size is not the
@@ -520,10 +523,49 @@ An initial laptop comparison of the completion/virtual-padding changes showed no
 clear throughput shift on 256 small Flemming images: about 269 versus 270 images/s
 without TTA and 98 versus 96 with TTA, with overlapping repetition ranges. Predicted
 labels matched at all three ranks. This timing preceded moving metadata lookup into
-readers; the final implementation has not been benchmarked on B200. It does not
-establish a speedup. Local evidence is retained under `local-evidence/stream-owner/`.
+readers; it therefore did not validate the implementation subsequently tested on
+B200. It does not establish a speedup. Local evidence is retained under `local-evidence/stream-owner/`.
 
 Use the existing [full-B200 smoke command](../dev/releases/mambo_v3/speed-smoke.md#streaming-ownership-and-preparation-update)
 with a fresh output directory, keeping the same batch and worker settings. Reuse
 the resident reference and existing environments; no MIG or quality campaign is
 needed for this bounded pipeline comparison.
+
+
+### B200 regression and read admission correction
+
+The subsequent `b200-full-streaming` run regressed against `b200-full-compact`:
+
+| Variant | Compact streaming, images/s | `0c6ace2` streaming, images/s |
+|---|---:|---:|
+| Torch | 1,232.4 | 604.8 |
+| ONNX | 697.8 | 400.9 |
+| Torch + TTA | 412.1 | 296.9 |
+| ONNX + TTA | 254.6 | 213.9 |
+
+These are the supplied B200 summaries, not local benchmark estimates. Local
+correctness tests did not establish performance at the B200's concurrency.
+Inspection found that `EncodedReads` made reader workers wait for their input-order
+turn and byte capacity, with `notify_all()` on every admission/release. This created
+avoidable contention and occupied IO workers with scheduling waits. Its exact share
+of the measured slowdown has not been isolated.
+
+The correction removes that class and its condition variable. The existing owner
+receives asynchronous metadata completions, reserves bytes in input order, then
+submits only admitted reads. Metadata and reads share the existing IO pool, with
+reads dispatched first when slots are available. Readers perform filesystem work;
+capacity waits consume no reader slots. Metadata lookahead remains bounded by
+`read_window`; encoded bytes remain reserved through preparation. Ordered admission
+prevents later images from exhausting the budget ahead of required earlier images;
+actual reads and preparation still complete concurrently and out of order.
+
+This removes 17 production lines without adding pools, dependencies or settings.
+Virtual padding and reduced image copies are retained. Static checks and deployment
+Ruff checks passed; the focused streaming suite passed 15 tests with three unchanged
+CUDA transfer tests skipped. It covers ordering, budgets, buffer ownership, failures,
+shutdown and continued metadata progress under byte-budget backpressure. GPU transfer
+and model code did not change; their existing validation is reused.
+
+Performance of the correction remains unmeasured. Run the same four-variant full-B200
+smoke once in `b200-full-admission`, retaining the compact and regressed outputs for
+comparison. Reuse the environments and resident reference; no quality or MIG rerun.

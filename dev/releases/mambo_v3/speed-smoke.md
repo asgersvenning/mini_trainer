@@ -68,8 +68,10 @@ none of these installation commands.
 ## Streaming ownership and preparation update
 
 Reuse the full B200, its working environments and the same command above with
-`--output /work/mambo-speed/b200-full-streaming`. This checks all four affected
-variants against `b200-full-compact`; do not repeat the MIG or GPU-resident test.
+`--output /work/mambo-speed/b200-full-admission`. This checks the correction to
+reader admission after `b200-full-streaming` regressed. Compare all four variants
+with both `b200-full-compact` and `b200-full-streaming`; do not repeat the MIG or
+GPU-resident test.
 No environment rebuild, model change or new setting is needed. Keep batch size
 and worker settings unchanged so the pipeline is the variable being compared.
 The existing resident reference at batch 256 is 3,667 images/s; it excludes transfers

@@ -311,7 +311,7 @@ def test_metadata_latency_does_not_block_preparation(tmp_path, monkeypatch):
     assert all(name.startswith("mambo-read") for name in threads)
 
 
-def test_close_wakes_readers_waiting_for_byte_capacity(tmp_path):
+def test_close_with_pending_byte_admission(tmp_path):
     items = inputs(tmp_path, 8)
     budget = max(p.stat().st_size for p, _ in items)
     with closing(streaming.prepared_stream(items, 1, read_workers=4, read_window=8, prefetch_batches=0, encoded_budget=budget)) as stream:
@@ -326,3 +326,46 @@ def test_invalid_source_fails_before_starting_workers():
 
     with pytest.raises(ValueError, match="cannot iterate source"):
         next(streaming.prepared_stream(InvalidSource(), 1))
+
+
+def test_full_byte_budget_does_not_occupy_io_workers(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    items = inputs(tmp_path, 6)
+    budget = max(p.stat().st_size for p, _ in items)
+    inspected, reads = [], []
+    all_inspected, release_prepare = threading.Event(), threading.Event()
+    original_metadata, original_read = streaming.image_metadata, streaming.read_image
+
+    def metadata(path, digest):
+        result = original_metadata(path, digest)
+        inspected.append(path)
+        if len(inspected) == len(items):
+            all_inspected.set()
+        return result
+
+    def read(path, size, digest):
+        reads.append(path)
+        return original_read(path, size, digest)
+
+    def prepare(data, tta, out, **kwargs):
+        assert release_prepare.wait(5)
+        out[0].fill(0)
+
+    monkeypatch.setattr(streaming, "image_metadata", metadata)
+    monkeypatch.setattr(streaming, "read_image", read)
+    monkeypatch.setattr(streaming, "prepare_image", prepare)
+    stats = {}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            list,
+            streaming.prepared_stream(items, 2, read_workers=2, read_window=6, encoded_budget=budget, stats=stats),
+        )
+        try:
+            assert all_inspected.wait(3), "byte-budget backpressure must leave IO workers available for metadata"
+            assert len(reads) <= 1  # The reservation includes bytes held by preparation.
+        finally:
+            release_prepare.set()
+        assert len(future.result(timeout=5)) == 3
+    assert stats["peak_encoded_bytes"] <= budget
+    assert stats["encoded_bytes"] == 0

@@ -4,7 +4,7 @@ import hashlib
 import io
 import threading
 import time
-from concurrent.futures import CancelledError, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from heapq import heappop, heappush
 from pathlib import Path
 from queue import Empty, SimpleQueue
@@ -40,42 +40,9 @@ def prepare_image(data, tta, out=None, *, compact=False):
     return out
 
 
-class EncodedReads:
-    """Own byte reservations in input order; metadata and file IO stay in readers."""
-
-    def __init__(self, budget, stats):
-        self.budget, self.stats = budget, stats
-        self.condition = threading.Condition()
-        self.next_index = self.reserved = 0
-        self.closed = False
-        stats["encoded_bytes"] = 0
-
-    def read(self, index, path, digest):
-        path = Path(path)
-        size = path.stat().st_size
-        if size > self.budget:
-            raise ValueError(f"Image exceeds encoded byte budget: {path}")
-        with self.condition:
-            self.condition.wait_for(lambda: self.closed or (index == self.next_index and self.reserved + size <= self.budget))
-            if self.closed:
-                raise CancelledError()
-            self.reserved += size
-            self.stats["encoded_bytes"] = self.reserved
-            self.stats["peak_encoded_bytes"] = max(self.stats.get("peak_encoded_bytes", 0), self.reserved)
-            self.next_index += 1
-            self.condition.notify_all()
-        return size, read_image(path, size, digest)
-
-    def release(self, size):
-        with self.condition:
-            self.reserved -= size
-            self.stats["encoded_bytes"] = self.reserved
-            self.condition.notify_all()
-
-    def close(self):
-        with self.condition:
-            self.closed = True
-            self.condition.notify_all()
+def image_metadata(path, digest):
+    path = Path(path)
+    return path, path.stat().st_size, digest
 
 
 def prepared_stream(
@@ -95,8 +62,9 @@ def prepared_stream(
 ):
     """Yield ordered (offset, batch views); reusable buffers are leased until next().
 
-    The reading stage owns byte admission. One preparation owner assigns disjoint
-    slices and recycles returned batches; workers report completions. Encoded bytes
+    One owner admits reads, assigns disjoint preparation slices and recycles
+    returned batches; IO workers only do metadata/file IO, never wait for capacity.
+    Workers report completions to the owner. Encoded bytes
     stay reserved through preparation; batch capacity is released by the consumer.
     Close on early exit. Shutdown waits for running filesystem/preparation calls.
     """
@@ -121,26 +89,30 @@ def prepared_stream(
         pool.submit(function, *args).add_done_callback(lambda future: events.put((kind, index, size, future)))
 
     def produce():
-        ready, available, active = [], [], {}
-        consumed = admitted = emitted = 0
-        reading = preparing = 0
+        ready, available, active, metadata = [], [], {}, {}
+        consumed = admitted = emitted = next_read = reserved = 0
+        reading = inspecting = preparing = 0
         exhausted = False
         readers = ThreadPoolExecutor(max_workers=read_workers, thread_name_prefix="mambo-read")
         preparers = ThreadPoolExecutor(max_workers=prepare_workers, thread_name_prefix="mambo-prepare")
-        encoded = EncodedReads(encoded_budget, stats)
-        stats.update(prepared_images=0, prepared_batches=0, host_buffer_allocations=0)
+        stats.update(encoded_bytes=0, prepared_images=0, prepared_batches=0, host_buffer_allocations=0)
 
         def complete(event):
-            nonlocal consumed, reading, preparing
+            nonlocal consumed, reading, inspecting, preparing, reserved
             kind, index, size, value = event
-            if kind == "read":
+            if kind == "metadata":
+                inspecting -= 1
+                path, length, digest = value.result()
+                if length > encoded_budget:
+                    raise ValueError(f"Image exceeds encoded byte budget: {path}")
+                metadata[index] = (path, length, digest)
+            elif kind == "read":
                 reading -= 1
-                size, data = value.result()
-                heappush(ready, (index, size, data))
+                heappush(ready, (index, size, value.result()))
             elif kind == "prepared":
                 stats["preparation_worker_seconds"] = stats.get("preparation_worker_seconds", 0.0) + value.result()
                 preparing -= 1
-                encoded.release(size)
+                reserved -= size
                 active[index // batch_size][1] += 1
                 stats["prepared_images"] += 1
             elif kind == "taken":
@@ -175,14 +147,26 @@ def prepared_stream(
                     submit(preparers, "prepared", index, size, prepare_into, data, target)
                     preparing += 1
                     del data
-                while not exhausted and admitted < consumed + read_window and reading < read_workers:
+                # Reserve before dispatch, in order: later images cannot crowd an
+                # earlier required image out of the byte budget. Readers never wait.
+                while next_read in metadata and reading + inspecting < read_workers:
+                    path, size, digest = metadata[next_read]
+                    if reserved + size > encoded_budget:
+                        break
+                    del metadata[next_read]
+                    reserved += size
+                    stats["peak_encoded_bytes"] = max(stats.get("peak_encoded_bytes", 0), reserved)
+                    submit(readers, "read", next_read, size, read_image, path, size, digest)
+                    reading += 1
+                    next_read += 1
+                while not exhausted and admitted < consumed + read_window and reading + inspecting < read_workers:
                     try:
                         path, digest = next(source)
                     except StopIteration:
                         exhausted = True
                         break
-                    submit(readers, "read", admitted, 0, encoded.read, admitted, path, digest)
-                    reading += 1
+                    submit(readers, "metadata", admitted, 0, image_metadata, path, digest)
+                    inspecting += 1
                     admitted += 1
                 while emitted // batch_size in active:
                     views, count = active[emitted // batch_size]
@@ -193,7 +177,7 @@ def prepared_stream(
                     stats["prepared_batches"] += 1
                     output.put((emitted, tuple(view[:count] for view in views)))
                     emitted += count
-                stats.update(reading=reading, encoded_ready=len(ready), preparing=preparing)
+                stats.update(reading=reading, inspecting=inspecting, encoded_bytes=reserved, encoded_ready=len(ready), preparing=preparing)
                 stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), stats["prepared_images"] + preparing)
                 if exhausted and consumed == admitted:
                     output.put(None)
@@ -203,7 +187,6 @@ def prepared_stream(
         except BaseException as error:
             output.put(error)
         finally:
-            encoded.close()
             readers.shutdown(wait=True, cancel_futures=True)
             preparers.shutdown(wait=True, cancel_futures=True)
             # Completed futures can retain encoded images; discard them after shutdown.
