@@ -15,7 +15,6 @@ from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
 from deployment.mambo_deploy.preprocessing import preprocess
 from deployment.mambo_deploy.result_worker import ResultWorker
 from deployment.mambo_deploy.results import Prediction
-from deployment.mambo_deploy.streaming import prepared_stream
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, PRESETS, canonical_rows, load_records, prepare_flemming, write_json
 
@@ -108,6 +107,9 @@ def collect(args):
                     "hierarchy_seconds",
                     "prediction_seconds",
                     "write_seconds",
+                    "model_stream_seconds",
+                    "d2h_device_seconds",
+                    "download_host_seconds",
                 )
             }
 
@@ -140,16 +142,16 @@ def collect(args):
             report["pipeline"] = {"decode_workers": args.decode_workers, "prefetch_batches": args.prefetch_batches, "read_once": True}
             stream_stats = {}
             report["streaming"] = stream_stats
-            batches = prepared_stream(
+            batches = predictor.prepared_batches(
                 ((args.root / record["path"], record["sha256"]) for record in records),
                 args.batch_size,
-                tta=predictor.tta,
                 read_workers=args.read_workers,
                 prepare_workers=max(1, args.decode_workers),
                 read_window=args.read_window,
                 prefetch_batches=args.prefetch_batches,
                 encoded_budget=args.encoded_budget_mib * 1024**2,
                 stats=stream_stats,
+                device_prefetch=not args.no_device_prefetch,
             )
             stack.callback(batches.close)
             completed = 0
@@ -160,8 +162,8 @@ def collect(args):
             while True:
                 waiting = time.perf_counter()
                 try:
-                    offset, views = next(batches)
-                    batch = records[offset : offset + len(views[0])]
+                    offset, views, batch_count = next(batches)
+                    batch = records[offset : offset + batch_count]
                 except StopIteration:
                     while worker.pending:
                         completed += finish_one()
@@ -171,6 +173,7 @@ def collect(args):
                 t = time.perf_counter()
                 leaf, vectors, ranks = predictor._ranked_views(views, len(views), selectors, args.embeddings)
                 timings["runtime_seconds"] += time.perf_counter() - t
+                timings.update(predictor.runtime_timings)
                 if leaf.shape != (len(batch), len(predictor.bundle.classes["labels"][0])) or not np.isfinite(leaf).all():
                     raise ValueError("Invalid leaf scores")
                 if embeddings is not None:
@@ -239,6 +242,7 @@ def main():
     run.add_argument("--threads", type=int, default=4)
     run.add_argument("--decode-workers", type=int, default=4)
     run.add_argument("--prefetch-batches", type=int, default=2, help="Prepared batches queued ahead; 0 disables overlap")
+    run.add_argument("--no-device-prefetch", action="store_true")
     run.add_argument("--read-workers", type=int, default=32)
     run.add_argument("--read-window", type=int, default=128)
     run.add_argument("--encoded-budget-mib", type=int, default=256)

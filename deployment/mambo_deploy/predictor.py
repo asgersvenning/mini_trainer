@@ -19,6 +19,7 @@ from .preprocessing import RECIPE, image_items, preprocess
 from .result_worker import ResultWorker
 from .results import HierarchyPlan, Prediction
 from .streaming import prepared_stream
+from .transfers import device_batches, download_tensors, pinned_factory
 
 
 class Predictor:
@@ -74,6 +75,8 @@ class Predictor:
         self.backend, self.device, self.batch_size, self.threads = backend, str(device), batch_size, threads
         self._sessions, self._torch_model = {}, None
         self._hierarchy_plans = {}
+        self.runtime_timings = {}
+        self._model_events = []
         self.onnx_session_info = {}
         self._lock = threading.RLock()
         self.weights = weights
@@ -188,7 +191,15 @@ class Predictor:
             self.onnx_session_info[key] = info
             self._sessions[key] = session
         outputs = ["output_0", "embedding"] if embeddings else ["output_0"]
-        values = self._sessions[key].run(outputs, {"images": images})
+        if isinstance(images, ort.OrtValue):
+            binding = self._sessions[key].io_binding()
+            binding.bind_ortvalue_input("images", images)
+            for name in outputs:
+                binding.bind_output(name, "cpu")
+            self._sessions[key].run_with_iobinding(binding)
+            values = [value.numpy() for value in binding.get_outputs()]
+        else:
+            values = self._sessions[key].run(outputs, {"images": images})
         return values[0], values[1] if embeddings else None
 
     def _torch(self, images, embeddings, *, tensors=False):
@@ -223,11 +234,21 @@ class Predictor:
                 torch.autocast(device_type, dtype=dtype, enabled=amp),
                 bypass_submodule(self._torch_model, self._torch_model._backbone_output_name),
             ):
-                features = self._torch_model(torch.from_numpy(images).to(self.device))
+                tensor = images if isinstance(images, torch.Tensor) else torch.from_numpy(images).to(self.device)
+                events = None
+                if tensors and tensor.device.type == "cuda":
+                    events = (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+                    events[0].record(torch.cuda.current_stream(tensor.device))
+                features = self._torch_model(tensor)
             with torch.autocast(device_type, enabled=False):
                 features = features.float()
                 output = head(features)
-                embedding = head.preclassification(features).cpu().numpy() if embeddings else None
+                embedding = head.preclassification(features) if embeddings else None
+                if events is not None:
+                    events[1].record(torch.cuda.current_stream(tensor.device))
+                    self._model_events.append(events)
+                if embedding is not None and not tensors:
+                    embedding = embedding.cpu().numpy()
                 return (output if tensors else output[0].float().cpu().numpy()), embedding
 
     def hierarchy_plan(self, selected):
@@ -247,25 +268,57 @@ class Predictor:
             return leaf, vectors, None
         import torch
 
-        leaf, vectors, output = None, None, None
+        leaf, vectors, output, norms = None, None, None, None
+        self._model_events.clear()
         with torch.inference_mode():
             for view in views:
                 output, embedding = self._torch(view, embeddings, tensors=True)
                 part = output[0].float() / view_count if self.tta is not None else output[0].float()
                 leaf = part if leaf is None else leaf + part
                 if embeddings:
-                    part = embedding.astype(np.float32) / np.float32(view_count) if self.tta is not None else embedding
+                    embedding = torch.as_tensor(embedding, device=leaf.device).float()
+                    part = embedding / view_count if self.tta is not None else embedding
                     vectors = part if vectors is None else vectors + part
             if embeddings and self.tta is not None:
-                norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-                if not np.isfinite(norms).all() or np.any(norms <= np.finfo(np.float32).eps):
-                    raise RuntimeError("TTA produced an undefined mean embedding")
+                norms = torch.linalg.vector_norm(vectors, dim=1, keepdim=True)
                 vectors /= norms
             native = output if self.tta is None else None
-            ranks = {name: self.hierarchy_plan(selected).torch(leaf, native) for name, selected in selectors.items()}
+            ranks = {name: self.hierarchy_plan(selected).torch_values(leaf, native) for name, selected in selectors.items()}
+            tensors = [value for raw, _, _ in ranks.values() for value in raw]
             full_name = next((name for name, selected in selectors.items() if self.hierarchy_plan(selected).full), None)
-            leaf_array = ranks[full_name][0][0] if full_name is not None else leaf.cpu().numpy()
+            if full_name is None:
+                tensors.append(leaf)
+            if vectors is not None:
+                tensors.append(vectors)
+            if norms is not None:
+                tensors.append(norms)
+            downloaded = iter(download_tensors(tensors, self.runtime_timings))
+            for begin, end in self._model_events:
+                self.runtime_timings["model_stream_seconds"] = (
+                    self.runtime_timings.get("model_stream_seconds", 0.0) + begin.elapsed_time(end) / 1000
+                )
+            self._model_events.clear()
+            ranks = {name: ([next(downloaded) for _ in raw], labels, mapping) for name, (raw, labels, mapping) in ranks.items()}
+            leaf_array = ranks[full_name][0][0] if full_name is not None else next(downloaded)
+            vectors = next(downloaded) if vectors is not None else None
+            if norms is not None:
+                norms = next(downloaded)
+                if not np.isfinite(norms).all() or np.any(norms <= np.finfo(np.float32).eps):
+                    raise RuntimeError("TTA produced an undefined mean embedding")
             return leaf_array, vectors, ranks
+
+    def prepared_batches(self, items, batch_size, *, device_prefetch=True, stats=None, **options):
+        """Shared streaming preparation; device slots remain valid until the next iteration."""
+        stats = {} if stats is None else stats
+        accelerated = device_prefetch and self.device != "cpu"
+        factory = pinned_factory(self.device) if accelerated and self.backend == "torch" else None
+        source = prepared_stream(items, batch_size, tta=self.tta, stats=stats, reuse_buffers=True, buffer_factory=factory, **options)
+        if accelerated:
+            yield from device_batches(source, self.backend, self.device, stats)
+        else:
+            with closing(source):
+                for offset, views in source:
+                    yield offset, views, len(views[0])
 
     def _prepare(self, batch, pool=None):
         return np.stack(list(pool.map(preprocess, batch)) if pool and len(batch) > 1 else [preprocess(item) for item in batch])
@@ -340,16 +393,17 @@ class Predictor:
         prefetch_batches=2,
         encoded_budget=256 * 1024**2,
         stats=None,
+        device_prefetch=True,
     ):
         """Yield one Prediction (or Prediction/embedding pair) per batch of paths.
 
         Use contextlib.closing when stopping before exhaustion. Input paths are lazy;
         outputs are not accumulated. Loading settings are explicit per stream.
         """
-        batches = prepared_stream(
+        batches = self.prepared_batches(
             ((path, None) for path in paths),
             self.batch_size,
-            tta=self.tta,
+            device_prefetch=device_prefetch,
             read_workers=read_workers,
             prepare_workers=self.preprocess_workers if prepare_workers is None else prepare_workers,
             read_window=read_window,
@@ -363,7 +417,7 @@ class Predictor:
             return (result, vectors) if embeddings else result
 
         with closing(batches), ResultWorker(process) as worker:
-            for _, views in batches:
+            for _, views, _ in batches:
                 with self._lock:
                     leaves, vectors, ranks = self._ranked_views(views, len(views), {"selected": self.selected}, embeddings)
                     if not np.isfinite(leaves).all():

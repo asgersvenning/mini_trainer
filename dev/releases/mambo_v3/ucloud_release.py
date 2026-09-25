@@ -109,6 +109,8 @@ def jobs(config, phase):
                             "--prefetch-batches",
                             str(config.get("prefetch_batches", 2)),
                         ]
+                    if not config.get("device_prefetch", True):
+                        command.append("--no-device-prefetch")
                     for key, default in (("read_workers", 32), ("read_window", 128), ("encoded_budget_mib", 256)):
                         command += ["--" + key.replace("_", "-"), str(config.get(key, default))]
                     if timing:
@@ -234,6 +236,7 @@ def reuse_v2(config, phase, job, frozen):
         "deployment/mambo_deploy/augmentation.py",
         "deployment/mambo_deploy/streaming.py",
         "deployment/mambo_deploy/result_worker.py",
+        "deployment/mambo_deploy/transfers.py",
         "deployment/mambo_deploy/results.py",
         "deployment/mambo_deploy/predictor.py",
         "dev/releases/mambo_v3/benchmark.py",
@@ -356,7 +359,10 @@ if __name__ == "__main__":
     for key in ("read-workers", "read-window", "encoded-budget-mib"):
         parser.add_argument("--" + key, type=int, help="With --new-campaign: streaming input control")
     parser.add_argument("--v3-batch-size", type=int, help="With --new-campaign: V3 collection batch size")
+    parser.add_argument("--no-device-prefetch", action="store_true", help="With --new-campaign: disable device input staging")
     args = parser.parse_args()
+    if args.no_device_prefetch and not args.new_campaign:
+        parser.error("--no-device-prefetch requires --new-campaign")
     for key in ("read_workers", "read_window", "encoded_budget_mib", "v3_batch_size"):
         value = getattr(args, key)
         if value is not None and (not args.new_campaign or value < 1):
@@ -370,6 +376,8 @@ if __name__ == "__main__":
     if args.new_campaign and (args.phase != "qualification" or args.resume or args.dry_run):
         parser.error("--new-campaign requires qualification without --resume or --dry-run")
     config = configuration(args.config.resolve())
+    if args.no_device_prefetch:
+        config["device_prefetch"] = False
     if args.onnx_python:
         config["onnx_python"] = os.path.abspath(args.onnx_python.expanduser())
     for key in ("decode_workers", "prefetch_batches", "read_workers", "read_window", "encoded_budget_mib", "v3_batch_size"):

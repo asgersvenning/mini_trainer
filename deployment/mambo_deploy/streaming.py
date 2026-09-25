@@ -30,10 +30,38 @@ def prepare_image(data, tta):
     return (preprocess(decoded),) if tta is None else tuple(_prepare_view(decoded, view) for view in tta.transforms)
 
 
-def assemble_batch(images):
+class BatchBuffers:
+    def __init__(self, factory=None):
+        self.factory = factory or (lambda shape: np.empty(shape, dtype=np.float32))
+        self.available = []
+        self.lock = threading.Lock()
+        self.allocations = 0
+
+    def acquire(self, shapes):
+        with self.lock:
+            for i, buffers in enumerate(self.available):
+                if all(b.shape[0] >= s[0] and b.shape[1:] == s[1:] for b, s in zip(buffers, shapes, strict=True)):
+                    return self.available.pop(i)
+            self.allocations += len(shapes)
+        return tuple(self.factory(shape) for shape in shapes)
+
+    def release(self, views):
+        # Partial batches retain the full allocation via .base; no further work follows the final partial batch.
+        with self.lock:
+            self.available.append(views)
+
+
+def assemble_batch(images, pool=None):
     """Stack and release per-image arrays on the assembler thread."""
     start = time.perf_counter()
-    views = tuple(np.stack(view) for view in zip(*images, strict=True))
+    if pool is None:
+        views = tuple(np.stack(view) for view in zip(*images, strict=True))
+    else:
+        shapes = [(len(images), *view.shape) for view in images[0]]
+        buffers = pool.acquire(shapes)
+        views = tuple(buffer[: len(images)] for buffer in buffers)
+        for index, view in enumerate(zip(*images, strict=True)):
+            np.stack(view, out=views[index])
     images.clear()
     return views, time.perf_counter() - start
 
@@ -49,12 +77,14 @@ def prepared_stream(
     prefetch_batches=2,
     encoded_budget=256 * 1024**2,
     stats=None,
+    reuse_buffers=False,
+    buffer_factory=None,
 ):
     """Yield (offset, stacked views) from (path, optional SHA256) items; close on early exit.
 
     IO reservations include in-flight reads and bytes held by preparation. Prepared
     images are bounded by (prefetch_batches + 1) * batch_size, plus a stacked batch.
-    Workers never touch the runtime. Shutdown waits for already-running filesystem calls.
+    Preparation workers do not call models or sessions. Shutdown waits for running filesystem calls.
     """
     values = (batch_size, read_workers, prepare_workers, read_window, encoded_budget)
     if any(not isinstance(v, int) or v < 1 for v in values) or not isinstance(prefetch_batches, int) or prefetch_batches < 0:
@@ -65,6 +95,7 @@ def prepared_stream(
     condition = threading.Condition()
     state = dict(stop=False, consumed=0, end=None, error=None)
     batches = {}
+    buffer_pool = BatchBuffers(buffer_factory) if reuse_buffers else None
     source = iter(items)
     capacity = batch_size * (prefetch_batches + 1)
 
@@ -135,7 +166,10 @@ def prepared_stream(
                 end = min(assemble_offset + batch_size, next_index) if exhausted else assemble_offset + batch_size
                 if assembling is None and end > assemble_offset and all(i in ready for i in range(assemble_offset, end)):
                     assembling_count = end - assemble_offset
-                    assembling = assembler.submit(assemble_batch, [ready.pop(i) for i in range(assemble_offset, end)])
+                    images = [ready.pop(i) for i in range(assemble_offset, end)]
+                    assembling = (
+                        assembler.submit(assemble_batch, images, buffer_pool) if buffer_pool else assembler.submit(assemble_batch, images)
+                    )
                 with condition:
                     prepared_count = len(ready) + sum(len(views[0]) for views in batches.values()) + assembling_count
                     stats.update(
@@ -146,6 +180,7 @@ def prepared_stream(
                         prepared_batches=len(batches),
                         assembling=assembling_count,
                         encoded_bytes=reserved,
+                        host_buffer_allocations=buffer_pool.allocations if buffer_pool else None,
                     )
                     stats["peak_encoded_bytes"] = max(stats.get("peak_encoded_bytes", 0), reserved)
                     stats["peak_prepared_images"] = max(stats.get("peak_prepared_images", 0), prepared_count + len(decoding))
@@ -187,6 +222,8 @@ def prepared_stream(
                 stats["input_wait_seconds"] = stats["queue_wait_seconds"]
                 condition.notify_all()
             yield offset, views
+            if buffer_pool is not None:
+                buffer_pool.release(views)
             del views
             offset = end
             with condition:

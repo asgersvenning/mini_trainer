@@ -165,6 +165,7 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         SimpleNamespace(
             SessionOptions=SimpleNamespace,
             GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
+            OrtValue=type("FakeOrtValue", (), {}),
             get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
             InferenceSession=session,
         ),
@@ -493,6 +494,7 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
         SimpleNamespace(
             SessionOptions=SimpleNamespace,
             GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
+            OrtValue=type("FakeOrtValue", (), {}),
             get_available_providers=lambda: ["CUDAExecutionProvider"],
             InferenceSession=create,
         ),

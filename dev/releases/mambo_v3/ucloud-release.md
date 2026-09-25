@@ -529,3 +529,55 @@ python -m dev.releases.mambo_v3.ucloud_summary \
 Monitor `~/.cache/mambo-ucloud/runs-hierarchy/full/torch.log`. Existing output timing
 fields and counters remain available. Requalify all V3 variants; reuse of the
 unchanged V2 evidence is still checked against its original inputs and code.
+
+
+### Reusable buffers and device staging (current campaign)
+
+Collection and deployment streaming now reuse assembled host buffers and two device
+buffer slots. PyTorch uses pinned host buffers and a separate CUDA copy stream to
+stage the next batch during inference. Rank outputs and embeddings share one packed
+CPU transfer and completion wait. ONNX uses reusable device inputs with I/O binding;
+copy overlap depends on its runtime, and this path does not require PyTorch.
+
+Stop the previous campaign and any queued follow-up commands, then pull the change.
+No environment rebuild or dependency installation is required. Inherit batch 256,
+256 readers, 48 preparation workers, a 4096-image window, eight prefetched batches,
+and verified V2 reuse from the existing campaign:
+
+```sh
+source .venv-mambo-runtime/bin/activate
+python -m dev.releases.mambo_v3.ucloud_release qualification \
+  --config ~/.cache/mambo-ucloud/runs-prefetch8/config.json \
+  --new-campaign ~/.cache/mambo-ucloud/runs-transfers &&
+python -m dev.releases.mambo_v3.ucloud_release full \
+  --config ~/.cache/mambo-ucloud/runs-transfers/config.json
+```
+
+After collection succeeds, use the same campaign for all subsequent stages:
+
+```sh
+python -m dev.releases.mambo_v3.metrics \
+  --collection ~/.cache/mambo-ucloud/runs-transfers/full &&
+python -m dev.releases.mambo_v3.ucloud_release benchmark \
+  --config ~/.cache/mambo-ucloud/runs-transfers/config.json &&
+python -m dev.releases.mambo_v3.ucloud_summary \
+  --root ~/.cache/mambo-ucloud/runs-transfers \
+  --output ~/.cache/mambo-ucloud/summary-transfers
+```
+
+Monitor with `python dev/monitor_mambo_release.py ~/.cache/mambo-ucloud/runs-transfers/full`.
+The `pipeline=` counters include host/device buffer allocations and transfer-worker
+time; PyTorch also reports CUDA-event H2D time. Its `phases=` fields now include
+`model_stream_seconds` (CUDA-stream elapsed time around model execution),
+`d2h_device_seconds` (output-copy event time), and `download_host_seconds` (packing,
+allocation and waiting for GPU results). Stream elapsed time is not kernel-only
+time or GPU utilization. These measurements overlap: **do not add them together**.
+Pinned buffers count against host RAM, not GPU memory.
+
+For a controlled staging comparison, pass `--no-device-prefetch` when creating a
+separate new campaign; it applies to both collection and streaming benchmarks.
+Single-request benchmark cells retain their existing execution path.
+
+Local validation covers CUDA buffer reuse and source lifetime, real PyTorch
+predictions with global/regional lists and TTA/embeddings, and real ONNX CUDA
+TTA/embedding collection. B200 throughput is not yet established for this change.

@@ -124,3 +124,48 @@ def test_result_worker_order_bounds_overlap_and_failure():
         worker.submit(-1)
         with pytest.raises(ValueError, match="result failed"):
             worker.pop()
+
+
+def test_reusable_batch_buffers_are_bounded(tmp_path, monkeypatch):
+    items = inputs(tmp_path, 21)
+    stats = {}
+    # Keep the test about ownership/reuse, not expensive image interpolation.
+    monkeypatch.setattr(streaming, "prepare_image", lambda data, tta: (np.full((3, 2, 2), len(data), dtype=np.float32),))
+    pointers = set()
+    count = 0
+    with closing(streaming.prepared_stream(items, 2, prefetch_batches=2, reuse_buffers=True, stats=stats)) as batches:
+        for offset, views in batches:
+            pointers.add(views[0].ctypes.data)
+            assert offset == count
+            count += len(views[0])
+    assert count == 21
+    assert len(pointers) <= 4
+    assert stats["host_buffer_allocations"] <= 4
+
+
+def test_cuda_device_slots_and_pinned_source_lifetime():
+    import torch
+
+    from deployment.mambo_deploy.transfers import device_batches, download_tensors, pinned_factory
+
+    if not torch.cuda.is_available():
+        pytest.skip("Intentional CUDA test; set CUDA_VISIBLE_DEVICES")
+    allocate = pinned_factory("cuda:0")
+    host = allocate((2, 3, 4, 4))
+    assert torch.from_numpy(host).is_pinned()
+
+    def source():
+        for i in range(7):
+            host.fill(i)
+            yield i * 2, (host[:1] if i == 6 else host,)
+
+    stats = {}
+    pointers = set()
+    with closing(device_batches(source(), "torch", "cuda:0", stats)) as batches:
+        for offset, views, count in batches:
+            pointers.add(views[0].data_ptr())
+            result = download_tensors([views[0] * 2])[0]
+            np.testing.assert_array_equal(result, np.full((count, 3, 4, 4), offset, dtype=np.float32))
+    assert len(pointers) == 2
+    assert stats["device_buffer_allocations"] == 2
+    assert stats["h2d_device_seconds"] >= 0

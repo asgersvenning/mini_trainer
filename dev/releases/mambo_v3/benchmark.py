@@ -182,6 +182,7 @@ def benchmark(args):
                             prefetch_batches=args.prefetch_batches,
                             encoded_budget=args.encoded_budget_mib * 1024**2,
                             stats=stream_stats,
+                            device_prefetch=not args.no_device_prefetch,
                         ):
                             pass
 
@@ -232,6 +233,7 @@ def main():
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--bank-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=20260923)
+    parser.add_argument("--no-device-prefetch", action="store_true")
     parser.add_argument("--stream-images", type=int, default=1024)
     parser.add_argument("--stream-workers", type=int, default=4)
     parser.add_argument("--read-workers", type=int, default=32)

@@ -46,7 +46,7 @@ class HierarchyPlan:
             logits.append(values)
         return logits, self.labels, self.indices
 
-    def torch(self, leaf, native=None):
+    def torch_values(self, leaf, native=None):
         import torch
 
         from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
@@ -64,7 +64,13 @@ class HierarchyPlan:
             values = [leaf.index_select(1, selected)]
             for rank, index in enumerate(parents, start=1):
                 values.append(batched_scatter_logsumexp(values[-1], index, dim_size=len(self.indices[rank])))
-        return [value.float().cpu().numpy() for value in values], self.labels, self.indices
+        return values, self.labels, self.indices
+
+    def torch(self, leaf, native=None):
+        from .transfers import download_tensors
+
+        values, labels, indices = self.torch_values(leaf, native)
+        return download_tensors(values), labels, indices
 
 
 def hierarchy(leaf, selected, classes):

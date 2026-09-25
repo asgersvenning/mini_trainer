@@ -196,5 +196,10 @@ independent of model batch size, which the read window must accommodate. A suppl
 `stats={}` receives queue counts, reserved bytes, actual batch-queue waiting and
 background batch-assembly time. Complete batches are assembled off the inference
 thread; background times overlap inference.
+CUDA streaming reuses device buffers and stages the next batch in a transfer worker.
+PyTorch uses pinned host buffers and a separate CUDA copy stream; ONNX uses device
+inputs with I/O binding, with copy overlap determined by the runtime. Set
+`device_prefetch=False` to disable device staging for comparison. PyTorch downloads
+ranks and embeddings together with one completion wait.
 The byte budget is not a total-process memory limit: decoding temporaries, prepared
 views, the model and yielded results also consume memory.
