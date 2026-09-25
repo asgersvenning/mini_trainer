@@ -19,46 +19,42 @@ All code in `mini_trainer` should follow the following core principles:
 * All hyperparameters and system configuration should have smart defaults that are as general as possible
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
 
-# Installation
+## Installation
 
-We recommend using `uv` for package and environment management.
+Use [uv](https://docs.astral.sh/uv/getting-started/installation/) for environment
+and package management. Choose a published package or a source checkout.
 
-> See [Install uv](https://docs.astral.sh/uv/getting-started/installation/) for instructions.
-
-## PyPi
+### PyPI
 
 ```bash
-# Recommended installation (includes logging, visualization, and optional utilities)
+uv venv --python 3.12
+source .venv/bin/activate
 uv pip install "mini_trainer[recommended]" --torch-backend=auto
-# or standard pip
-pip install "mini_trainer[recommended]"
-
-# Installation with all features (timm, transformers, BioCLIP, etc.)
-uv pip install "mini_trainer[all]" --torch-backend=auto
-# or standard pip
-pip install "mini_trainer[all]"
-
-# Minimal installation (core training & inference loop only)
-uv pip install mini_trainer --torch-backend=auto
-# or standard pip
-pip install mini_trainer
 ```
 
-## Local Installation
+| Package choice | Includes |
+| --- | --- |
+| `mini_trainer` | Core training and inference |
+| `mini_trainer[recommended]` | Core plus logging, visualization and optional utilities |
+| `mini_trainer[all]` | Recommended extras plus notebooks, model backends and ONNX export |
+
+Substitute the desired package in the install command. Standard `pip install` also
+works; select its PyTorch CPU/CUDA installation separately for your environment.
+
+### Local installation
+
+Choose one backend: `cpu`, `cu126`, `cu130` or `cu132`. The example selects CUDA 13.0;
+change `TORCH_BACKEND` to match your intended environment before synchronizing.
 
 ```bash
-git clone ssh://git@github.com:asgersvenning/mini_trainer.git
+git clone https://github.com/asgersvenning/mini_trainer.git
 cd mini_trainer
-
-# Sync with recommended extras:
-uv sync --extra recommended --extra [cpu/cu126/cu130/cu132]
-
-# Or sync with all features (timm, transformers, BioCLIP):
-uv sync --extra all --extra [cpu/cu126/cu130/cu132]
-
+TORCH_BACKEND=cu130
+uv sync --extra recommended --extra "$TORCH_BACKEND"
 source .venv/bin/activate
 ```
 
+Replace `recommended` with `all` for the additional backends/export tools above.
 Activate the environment, use its executables directly, or use `uv run --no-sync`.
 An implicit sync can replace the deliberately selected PyTorch backend. Select the
 backend explicitly whenever installing or synchronizing dependencies.
