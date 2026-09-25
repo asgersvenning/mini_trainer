@@ -9,11 +9,14 @@ Global vocabulary; batch 256; no embeddings; four runtime threads. Streaming use
 48 preparation workers, 128 readers, a 4,096-image window, two prefetched batches
 and a 1 GiB encoded-byte budget. Each variant runs in a separate process with three
 warmed repetitions. The error bars show their range, not a confidence interval.
-Request timing processes 256 images per call. Streaming processes the same 4,096
+Updated request timing processes 256 images per call. Streaming processes the same 4,096
 images per pass, including pipeline startup and final result completion. These
-modes must not be pooled. This is warm-storage throughput, not cold WEKA performance.
+modes must not be pooled. The figure retains the earlier CPU and smaller-batch
+GPU request curves, replacing the batch-256 request points and streaming bars.
+Updated points are not joined to older curves. Circles/lines are earlier evidence;
+diamonds/bars are updated. This is warm-storage throughput, not cold WEKA performance.
 
-![Current request and streaming throughput](assets/mambo-hpc-current-speed.svg)
+![CPU and GPU request throughput with updated B200 streaming](assets/mambo-hpc-current-speed.svg)
 
 | Variant | Request images/s | Streaming images/s | Peak host GiB |
 |---|---:|---:|---:|
@@ -34,6 +37,7 @@ No new quality evaluation was performed by this speed check.
 
 ## Earlier CPU and V2 comparisons
 
+CPU and V2 have not been rerun; their values in the combined figure are unchanged.
 The [earlier campaign figure](assets/mambo-indomain-speed.svg),
 [request observations](assets/mambo-indomain-speed.csv),
 [streaming observations](assets/mambo-indomain-streaming-speed.csv), and
@@ -50,7 +54,8 @@ With the extracted B200 archive available locally:
 ```sh
 .venv/bin/python -m dev.releases.mambo_v3.hpc_speed_report \
   --source local-evidence/ucloud-speed-smoke-2026-09-25/b200-full-gather \
-  --output docs/assets
+  --output docs/assets \
+  --baseline docs/assets/mambo-indomain-speed.csv
 ```
 
 The [speed workflow](../dev/releases/mambo_v3/speed-smoke.md) records how to run the

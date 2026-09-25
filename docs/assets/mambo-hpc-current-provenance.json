@@ -192,5 +192,10 @@
       "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5",
       "peak_host_gib": 7.350887298583984
     }
+  },
+  "retained_request_baseline": {
+    "file": "mambo-indomain-speed.csv",
+    "sha256": "604180640f24d7ed180832d0b2ac4fbfea4dbf7a5b8be173edb760388e51820f",
+    "scope": "CPU and smaller GPU batches; earlier campaign, not rerun"
   }
 }

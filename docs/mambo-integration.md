@@ -1,0 +1,109 @@
+# MAMBO integration details
+
+Start with the [deployment quickstart](../deployment/README.md). This page covers
+runtime choices, restricted environments and optional tuning; these are not
+additional steps for the default ONNX/CPU integration.
+
+## Runtime installation
+
+Use an activated Python 3.12+ environment. The candidate wheels must be supplied
+locally until publication. Choose one runtime installation:
+
+| Environment | Installation | Predictor options / CLI |
+|---|---|---|
+| CPU, without PyTorch | `uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
+| NVIDIA GPU, without the training package | `uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx-cuda]'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
+| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl[timm]' ./mambo_deploy-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
+
+For an environment with ONNX Runtime already provisioned, install the base
+`mambo_deploy` wheel without extras. Do not install CPU and GPU ONNX Runtime
+packages together. Use the application's dependency management to select and
+record versions; inference never installs or replaces runtime packages. If you
+use `uv run`, pass `--no-sync` to retain the installed environment.
+
+ONNX removes the training-package dependency and provides the same Python and CLI
+interface on CPU or CUDA. The adapter currently exposes only CPU and NVIDIA CUDA;
+it does not automatically enable other ONNX execution providers. Availability of
+a compatible runtime wheel and adequate memory still matters on edge hardware.
+Linux measurements do not establish support for every OS or accelerator.
+
+CUDA requires a compatible NVIDIA driver and runtime build. The `onnx-cuda` extra
+requests CUDA/cuDNN dependencies; it cannot guarantee that a wheel includes kernels
+for every GPU architecture. The B200 evidence uses ONNX Runtime 1.22.0, recorded in
+[the measured environment](mambo-hpc-evidence.md), not a universal version pin.
+Requested unavailable CUDA raises an error rather than silently switching the
+whole model to CPU; ONNX may place individual operators on CPU.
+
+ONNX/CUDA probes each graph once when first loaded. A GPU-kernel compatibility
+failure triggers a checked retry with graph optimizations disabled and a warning.
+If that also fails, inference stops with an error. Sessions are reused; inspect
+`predictor.onnx_session_info` when diagnosing a runtime problem. This check does
+not guarantee every batch-dependent execution path.
+
+## Restricted and offline environments
+
+Models are cached in `~/.cache/mambo` (or `$XDG_CACHE_HOME/mambo`). Set `MAMBO_CACHE`
+to a writable persistent directory when the default home is unsuitable.
+First use requires outbound access to the public ERDA model files; later calls
+reuse verified assets.
+
+For deployment without network access, provision dependencies beforehand and either:
+
+- Run the intended backend and output mode on a connected machine, copy its model
+  cache, set `MAMBO_CACHE` to that location and set `MAMBO_OFFLINE=1`. Include a call
+  with embeddings if the application will request them; that uses another ONNX graph.
+- Supply a complete release bundle and pass `Predictor(bundle="/path/to/bundle")`,
+  `--bundle /path/to/bundle`, or set `MAMBO_BUNDLE`. Keep each ONNX graph beside its
+  external `model.onnx.data` file. An explicit bundle is read locally.
+
+The same model files serve CPU and CUDA for each backend. No training dataset or
+metadata parquet is required. Prediction results and model caches are separate:
+the API returns results to the application; the CLI writes to its chosen output
+directory. Raw PyTorch checkpoints require the matching architecture/runtime;
+use the release adapter rather than loading them as arbitrary models.
+
+## Moving from V2
+
+For existing callers, `mini_trainer.deploy.Predictor` preserves native result
+containers/device tensors, native/CUDA defaults, callable prediction and
+`class_mask` (`-1` resets it). The portable `mambo_deploy.Predictor` instead defaults
+to ONNX/CPU and returns CPU results. The two entry points share release model assets.
+
+Keep `europe` or `north_europe` for the legacy preset; `_v3` presets deliberately
+change eligibility. Supply original pixels to the portable API, not tensors
+normalized by an old preprocessing pipeline. Match class identities using GBIF
+IDs rather than positions. V3 embeddings have width 1,280; recreate stored
+embeddings if migrating a similarity index from V2. Confidence thresholds are
+model/list specific.
+
+`weights=` is not a V2/V3 selection switch: a native override must match the pinned
+release checkpoint. Keep the V2 runtime/assets separately if you still need to run
+V2. Preserving its calling conventions does not imply identical predictions or a
+shared embedding space.
+
+## Streaming controls
+
+`predict_stream(paths)` yields ordered prediction batches; `embeddings=True` yields
+`(prediction, vectors)` pairs. Consume each batch without retaining it to keep
+output memory bounded. Use `contextlib.closing` when stopping early; shutdown waits
+for filesystem calls already in progress.
+
+Start with defaults, then change the resource relevant to your workload. These
+options belong to `predict_stream`, not the constructor or CLI:
+
+| Option | Default | When it matters |
+|---|---|---|
+| `read_workers` | `32` | Concurrent file reads, useful for storage latency. |
+| `read_window` | `128` images | Maximum lookahead; must accommodate the predictor's `batch_size`. Increase alongside larger batches. |
+| `prepare_workers` | Predictor's `preprocess_workers` | Decoding and image preparation; shares CPU capacity with your application. |
+| `prefetch_batches` | `2` | Prepared input buffer size; trades memory for overlap. |
+| `encoded_budget` | `256 * 1024**2` bytes | Encoded image buffer budget; a larger single file fails explicitly. |
+
+These budgets do not bound total process memory: model weights, decoded images,
+prepared views and results also consume memory. `predict()` and the CLI accumulate
+results for the whole input collection, so submit bounded requests there.
+
+For diagnostics, `stats={}` collects queue/buffer and wait statistics;
+`device_prefetch=False` disables device staging. These are not routine integration
+settings. Calls using one predictor share serialized inference; adding caller
+threads alone does not create concurrent model execution.

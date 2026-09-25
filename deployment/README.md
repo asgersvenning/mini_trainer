@@ -1,136 +1,142 @@
 # MAMBO deployment — release candidate
 
-Run MAMBO with ONNX or PyTorch, on CPU or NVIDIA CUDA. Required model files
-download automatically from public ERDA storage on first use and are verified
-before caching. This candidate has not been publicly released; use the supplied wheel.
+Identify moths and butterflies from images, with species, genus and family
+predictions. V3 adds a standalone ONNX option alongside PyTorch: **no training
+package or GPU is needed for ONNX/CPU**. Both backends use the same API, regional
+lists and output format. The comparisons below show quality and speed against V2,
+including CPU, laptop GPU and server GPU measurements.
+
+This candidate is not yet published; the examples use the supplied release wheels.
+Model files download automatically from public ERDA storage on first use and are
+verified and cached. Reuse one predictor across calls.
 
 ## Quick start
 
-Start with ONNX/CPU for the smallest installation: it needs no training package.
-Create and activate an environment (or activate an existing one), then install
-the supplied wheel. Run your script with `python your_script.py` and reuse one
-predictor across calls.
+Create an environment, or use your application's existing environment. Python 3.12+
+is required. Install ONNX/CPU to start without a CUDA setup:
 
 ```sh
 uv venv --python 3.13 .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 uv pip install './mambo_deploy-0.3.0-py3-none-any.whl[onnx]'
 ```
+
+**Python** — choose the region where your images were collected:
 
 ```python
 from mambo_deploy import Predictor
 
-predictor = Predictor(backend="onnx", device="cpu", model="europe")
-result = predictor.predict(["moth.jpg"])
-print(result[0].label)       # species, genus, family IDs
-print(result[0].confidence)  # confidence at each rank
+predictor = Predictor(model="north_europe")  # ONNX, CPU; use "full" for global
+result = predictor.predict(["moth.jpg", "butterfly.jpg"])
+print(result[0].label)       # (species_id, genus_id, family_id)
+print(result[0].confidence)  # confidence for each of those ranks
+records = result.to_dict()   # list of JSON-serializable records for your application
 ```
 
-**Input/output contract**
+**CLI** — the same defaults, for files or a directory:
 
-- **Inputs:** paths, PIL images, or CHW/BCHW arrays/tensors containing uint8 pixels
-  or floats in [0,1]. Pass original pixels, not normalized model inputs; transpose
-  HWC arrays first. Images become RGB, alpha is discarded, and EXIF rotation is not applied.
-- **Predictions:** CPU results with taxon IDs and confidence in species/genus/family
-  order, one result per image. Each rank is predicted independently.
-- **Embeddings:** `result, vectors = predictor.predict_with_embeddings(images)`;
-  `vectors` is a float32 NumPy array of shape `[N,1280]` with unit-length rows.
-  ONNX requires the bundle's embedding graph.
+```sh
+mambo_predict -i ./images --model north_europe -o ./output --name predictions
+```
 
-For ONNX/CUDA, use `[onnx-cuda]` instead of `[onnx]` and select `device="cuda:0"`.
-This requests ONNX Runtime’s matching CUDA/cuDNN packages; a compatible NVIDIA
-driver is still required. To reuse an already provisioned ONNX/CUDA environment,
-add the base wheel without extras. Runtime versions are selected by your package
-manager, not replaced during inference. For PyTorch, install the matching
-`mini_trainer` wheel with `uv pip install --torch-backend=auto`, then select
-`backend="torch"` and an explicit device. Requested but unavailable CUDA raises an error; individual
-ONNX operators may still execute on CPU. CPU and CUDA are the supported device
-choices; other OS/accelerator combinations remain unqualified.
+This creates `output/predictions/predictions.json` and `mini_metric.csv`;
+`--embeddings` also writes `embeddings.npy`. Choose a new output name for each run.
+For a one-off command without installing into your application environment, replace
+`mambo_predict` with
+`uvx --from './mambo_deploy-0.3.0-py3-none-any.whl[onnx]' mambo_predict`.
 
+| Interface | Inputs | Outputs |
+|---|---|---|
+| Python `predict(images)` | A path, PIL image, CHW array/tensor, or collection of these; BCHW batches also work. Original pixels: uint8 or floats in [0,1]. | One result per image, in input order. `label`, `confidence`, `index` have species/genus/family order; labels are GBIF taxon IDs as strings. `to_dict()` produces ordinary Python records; `save(path)` writes JSON. |
+| Python `predict_with_embeddings(images)` | Same inputs. | `(result, vectors)`; vectors are a float32 NumPy array `[N,1280]` with unit-length rows. |
+| CLI `-i` | One or more image files or directories, searched recursively. | JSON contains `results`, `metadata` and `config`; each result has `label`, `confidence`, `index`. CSV has one row per image/rank for evaluation. |
 
-ONNX/CUDA checks each graph once with a synthetic batch-one input when its session
-first loads. A GPU-kernel compatibility failure triggers a checked retry with graph
-optimizations disabled, with a warning about potentially lower throughput. It does
-not switch to CPU. Sessions are reused, so this adds first-use work, not a probe to
-every prediction. `predictor.onnx_session_info` reports the selected profiles; the
-probe does not guarantee every later batch-dependent execution path.
-
-Models are cached in `~/.cache/mambo` (or `$XDG_CACHE_HOME/mambo`); set
-`MAMBO_CACHE` to choose another location. After the required model files are cached,
-`MAMBO_OFFLINE=1` prevents downloads. For an explicitly managed, offline bundle,
-pass `bundle="/path/to/mambo-bundle"`, `--bundle`, or set `MAMBO_BUNDLE`.
-Keep each ONNX graph beside its `model.onnx.data` file.
+For an RGB HWC NumPy image, pass `image.transpose(2, 0, 1)`; convert OpenCV BGR to
+RGB first. Do not resize or normalize images yourself. Alpha is discarded and EXIF
+orientation is not applied. Predictions at each rank are independent, so the three
+IDs need not form one ancestral path. CSV truth labels are inferred from parent
+folder names; arbitrary image folders do not supply evaluation ground truth.
 
 ## Choose the configuration that matters
 
-**Choose your geographic scope and runtime explicitly.** Start with ONNX/CPU for
-simple integration, or use your existing PyTorch/CUDA environment. Leave
-`precision="auto"` to select the backend/device's default precision, and keep the
-recommended recipe when enabling TTA.
+**Choose a geographic scope; leave the other defaults initially.** ONNX/CPU is the
+simplest dependency footprint and a useful starting point for CPU-only and edge
+applications. For NVIDIA GPU throughput, use PyTorch if it fits your environment,
+or ONNX/CUDA to keep the training package out of your application.
+[Runtime installation and offline use](../docs/mambo-integration.md) covers these
+alternatives. Changing runtime does not change the input/output contract.
 
-Leave TTA off for throughput, or enable `tta=True` when quality matters more:
-expect roughly **one-third the throughput (about 3× slower)** with the default
-three-view recipe; the exact cost depends on the workload. Start with the default
-batch size and worker counts. Tune these on the target machine if speed or memory
-becomes limiting. Request embeddings or extra candidates only when needed.
+**Enable `tta=True` / `--tta` for monitoring images when the quality gain below is
+worth roughly 3× lower throughput.** Keep the default recipe. Its benefit is
+image-domain dependent; the general-photograph comparison below provides context.
 
-Use `predict_stream(paths)` for large path collections and consume each batch as
-it arrives. Split large in-memory collections into smaller `predict()` requests;
-`batch_size` alone does not bound the results retained for a whole request.
+Keep `precision="auto"`. Increase `batch_size` only when processing enough images
+to benefit; reduce it if memory is tight. Adjust CPU workers only if needed to meet
+your application's throughput or CPU budget. Request embeddings or extra candidates
+only when your workflow uses them. No server, dataset metadata or training setup is
+required.
 
-Pass API option values to `Predictor(...)`; prediction-method calls and CLI-only
-options are shown explicitly.
+Pass API settings to `Predictor(...)`, except the prediction methods shown below.
+CLI flags apply to `mambo_predict`.
 
 | Python API | CLI | Default | Role / main trade-off |
 |---|---|---|---|
-| `model=`, `class_list=` | `--model`, `--class-list` | `europe` / no override | Prediction scope: selects eligible species and changes confidence. |
-| `backend=`, `device=` | `--backend`, `--device` | `onnx`, `cpu` | Runtime dependencies, hardware compatibility and throughput. |
-| `tta=True` | `--tta` | Off; enabling selects `rotation30_pad25_3` | Quality versus compute: three views. [Recipe details](../docs/mambo-tta.md). |
-| `batch_size=` | `--batch-size` | `8` | Throughput and working memory: images per model call, not a total-request memory limit. |
-| `threads=` | `--threads` | `2` | CPU allocation: ONNX runtime threads and the default preparation-worker count; does not set PyTorch model threads. |
-| `preprocess_workers=` | `--preprocess-workers` | Follows `threads` | CPU preparation concurrency: decoding and transforms can compete with other application work. |
-| `precision=` | `--precision` | `auto` | Compute speed and numerical precision: selects the backend/device's default mode. |
-| `predict_with_embeddings(images)` | `--embeddings` | Off | Additional output for similarity/search or downstream features. |
-| `predict(images, topk=k)` | `--topk k` | `1` | Number of candidates ranked independently at each taxonomic level; tuples need not form an ancestral path. |
-| CLI only | `--threshold` | `0` | Acceptance cutoff for `mini_metric.csv`, shared across ranks; JSON predictions remain unfiltered. |
+| `model=`, `class_list=` | `--model`, `--class-list` | `europe` / no override | Eligible species; affects predictions and confidence. |
+| `backend=`, `device=` | `--backend`, `--device` | `onnx`, `cpu` | Runtime and hardware: `onnx` or `torch`; `cpu` or `cuda:0`. |
+| `tta=True` | `--tta` | Off | Quality versus throughput; enabling uses the recommended three-view recipe. |
+| `batch_size=` | `--batch-size` | `8` | Images per model call: throughput versus memory. |
+| `threads=` | `--threads` | `2` | ONNX CPU threads and default image-preparation workers; does not set PyTorch's model threads. |
+| `preprocess_workers=` | `--preprocess-workers` | Follows `threads` | Image-preparation CPU allocation. |
+| `precision=` | `--precision` | `auto` | Runtime-selected compute precision; normally leave unchanged. |
+| `predict_with_embeddings(images)` | `--embeddings` | Off | Vectors for similarity/search or downstream features. |
+| `predict(images, topk=k)` | `--topk k` | `1` | Candidates per rank; Python returns a list of candidates per image when `k > 1`. |
+| CLI only | `--threshold` | `0` | Acceptance flag in the evaluation CSV; JSON predictions stay unfiltered. |
 
 ### Geographic scope
 
-Use `predictor.available_presets()` and the bundle's `PRESETS.md` to choose a list;
-the [preset catalogue](../docs/model-presets.md) documents exact scope and construction.
-Presets cover species that **can occur** in a region, including introduced species;
-they are neither native-distribution maps nor exhaustive checklists.
+Use `predictor.available_presets()` to list choices, or read the
+[preset catalogue](../docs/model-presets.md) for their exact scope and construction.
+Presets include species that **can occur** in a region, including introduced
+species; they are neither native-distribution maps nor exhaustive checklists.
+Use `model="full"` if a regional restriction is inappropriate.
 
-`europe` and `north_europe` preserve legacy lists. The `_v3` alternatives use updated
-occurrence requirements and broader eligibility; newer does not necessarily mean
-more accurate. Legacy `north_europe` performed better on Flemming. Choose it for
-comparable northern-European use, not as a universal default for other locations.
-A custom `class_list=["GBIF_SPECIES_ID", ...]` or UTF-8 list file overrides the preset.
-Unknown IDs and empty lists fail; duplicates are removed and model ordering retained.
+`europe` and `north_europe` preserve the V2 lists. Updated `_v3` lists are also
+available; legacy `north_europe` performed better on Flemming and is recommended
+for comparable northern-European use. A custom `class_list=["GBIF_SPECIES_ID", ...]`
+or UTF-8 file with one ID per line overrides the preset (`--class-list species.txt`
+in the CLI). Unknown IDs and empty lists fail; duplicates are removed.
 
-## Command line and migration
+### Integrating with V2 applications
 
-Run once without adding a project dependency:
+The `mini_trainer.deploy.Predictor` compatibility entry point retains native/CUDA
+defaults, callable prediction, `class_mask` and native result containers. It needs
+both release wheels. New integrations can use the smaller `mambo_deploy` interface
+above, with CPU results independent of backend. Both download model assets automatically.
 
-```sh
-uvx --from './mambo_deploy-0.3.0-py3-none-any.whl[onnx]' mambo_predict \
-  -i moth.jpg --backend onnx --device cpu -M europe --tta -o . --name results
+Retain the legacy regional preset for comparison, and match species by taxon ID,
+not numeric index. The V3 vocabulary, scores and embedding width can differ from V2;
+existing thresholds and stored embeddings are not interchangeable.
+[Migration details](../docs/mambo-integration.md#moving-from-v2) describe the remaining
+compatibility boundaries.
+
+### Large image collections
+
+Use streaming for a large collection of paths, consuming results as they arrive:
+
+```python
+from contextlib import closing
+
+with closing(predictor.predict_stream(image_paths)) as batches:
+    for result in batches:
+        records = result.to_dict()
+        # Write records to your database, file or downstream service here.
 ```
 
-Inside the activated environment, use `mambo_predict` directly. If using
-`uv run`, add `--no-sync` to preserve the installed runtime dependencies.
-
-Outputs go to a new `results/` directory: `predictions.json`, `mini_metric.csv`, and
-`embeddings.npy` when `--embeddings` is requested. Directory input is recursive.
-The main controls above have corresponding CLI flags; use `mambo_predict --help`.
-
-Existing callers can use `mini_trainer.deploy.Predictor` with both wheels installed.
-It preserves native/CUDA defaults, callable prediction and `class_mask` (`-1` resets
-it), with native result containers/device tensors. The portable API above defaults
-to ONNX/CPU. Both interfaces download the default release when no bundle is supplied.
-Do not use `weights=` as a model-selection control: overrides must match the pinned
-release checkpoint. Legacy weights and already-preprocessed inputs need migration;
-embedding dimensions may differ from V2.
+Input order is preserved. Add `embeddings=True` to receive `(result, vectors)` pairs.
+For in-memory inputs, split large collections into smaller `predict()` requests;
+that method and the CLI retain results for the whole request. `batch_size` limits
+model calls, not total request memory. [Streaming controls](../docs/mambo-integration.md#streaming-controls)
+are available if the defaults do not fit your workload.
 
 ## Release comparison
 
@@ -185,50 +191,17 @@ that average represent 1.70% / 0.34% / <0.01% of species/genus/family images wit
 thresholds, and 1.88% / 0.38% / <0.01% after calibration. Thresholds and complete
 metrics are in the [in-domain evidence](../docs/mambo-indomain-evidence.md).
 
-![Current B200 request and streaming throughput for V3 with and without TTA](../docs/assets/mambo-hpc-current-speed.svg)
+![EPYC CPU and B200 request throughput, with updated B200 streaming measurements](../docs/assets/mambo-hpc-current-speed.svg)
 
-Latest full-B200 measurements (`503de96`): global vocabulary, batch 256, four runtime
-threads; streaming uses 48 preparation workers and 128 readers. Bars show median
-and range of three repetitions per variant: 256 images per request and 4,096 warm
-images per streaming pass, including pipeline startup. PyTorch uses FP16; ONNX
-uses TF32. These are end-to-end pipeline rates, not GPU throughput ceilings.
+The server comparison retains CPU, GPU request and GPU streaming throughput in
+**images/second**. B200 batch-256 values are updated: PyTorch reaches **1,976 images/s**
+and ONNX **997 images/s** when streaming, or **624 and 396** with TTA. CPU, V2 and
+smaller-batch results retain their earlier measurements; new request points are
+shown separately rather than joined to older scaling curves. These are measured
+application rates, not a promise of GPU saturation.
 
-Streaming reached **1,976 images/s for PyTorch and 997 for ONNX**, or **624 and 396
-with TTA**. Request and streaming results have different boundaries; choose the
-one matching your integration. [Exact timings, memory and provenance](../docs/mambo-hpc-evidence.md)
-include the earlier CPU/V2 comparisons; retain the laptop evidence above for
-consumer-device deployment.
-
-### Streaming image collections
-
-For large path collections, `predict_stream` overlaps reading and preparation with
-inference and yields one prediction batch at a time, without accumulating outputs.
-Ordered result processing also overlaps inference, with at most two result batches
-outstanding:
-
-```python
-from contextlib import closing
-
-with closing(predictor.predict_stream(image_paths)) as batches:
-    for prediction in batches:
-        consume(prediction)
-```
-
-Use `embeddings=True` to yield `(prediction, embeddings)` pairs. Input order,
-class selection and TTA semantics match `predict`. `closing` also releases workers
-when you stop early; shutdown waits for filesystem calls already in progress.
-
-Tune `read_workers` and `read_window` to hide storage latency; tune
-`prepare_workers` for decoding/TTA CPU capacity. `prefetch_batches` bounds prepared
-images and `encoded_budget` bounds reserved encoded bytes (including active reads).
-An individual file larger than that budget fails explicitly. The defaults are
-32 readers, a 128-image window, the predictor's preparation worker count, two
-prefetched batches and 256 MiB encoded storage. These controls are API-only and
-independent of model batch size, which the read window must accommodate. A supplied
-`stats={}` receives queue counts, reserved bytes, input waits and summed preparation
-worker time. CUDA streaming stages inputs while inference runs; the Torch path uses
-pinned uint8 batches and GPU preprocessing. `device_prefetch=False` disables device
-staging. These settings bound pipeline buffers and expose useful tuning controls;
-GPU saturation is not guaranteed.
-The byte budget is not a total-process memory limit: decoding temporaries, prepared
-views, the model and yielded results also consume memory.
+[Timing details and provenance](../docs/mambo-hpc-evidence.md) record measurement
+settings, memory and repeat ranges. Keep the laptop comparison above when choosing
+for consumer devices. ONNX's CPU advantage and independence from the training
+package make it especially relevant when a GPU or the full PyTorch stack is not
+an option; PyTorch remains the faster GPU choice in these measurements.

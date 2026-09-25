@@ -19,19 +19,39 @@ Shared `mini_trainer` changes still require a feature/fix branch and reviewed me
    modules: bundle/download validation; preprocessing/augmentation; backend execution
    in `predictor`; hierarchy/results; and streaming/transfers/result worker. Check
    unused paths and duplicated work against both request and streaming callers.
-   Remove only demonstrably dead or redundant code. Preserve public exports, CLI
-   defaults, result ownership, shutdown/error handling and optional-runtime imports.
+   Remove only demonstrably dead or redundant code. Preserve result ownership,
+   shutdown/error handling and optional-runtime imports.
+   Public API/CLI changes remain possible when they remove a concrete integration
+   obstacle; document their V2 migration impact and validate the affected contract.
+   Do not treat the current public surface as already frozen.
    Profiling and experiment setup remain under `dev/releases/mambo_v3`, outside the
    deployment wheel. Do not redesign the pipeline during freeze preparation.
-2. **Consolidate developer documentation.** The [deployment README](../../../deployment/README.md)
+2. **Consolidate integration documentation and workflow.** Qualify a minimal path:
+   install one runtime → construct a predictor or invoke the CLI → supply ordinary
+   images → consume ordinary records. No training checkout, dataset metadata,
+   campaign config or GPU setup should be needed for ONNX/CPU. Check the documented
+   paths with original images and a custom class list, predictions/embeddings, an
+   existing application environment and an offline bundle. Explain scope/runtime/TTA
+   decisions; leave tuning and kernel diagnostics in linked details.
+
+   Concrete usability items to settle before freezing (not new performance work):
+   the CLI retains whole-collection results; `read_window=128` must be raised for
+   streaming batches above 128; arrays require CHW conversion; native setup needs
+   the `timm` extra. Decide which need a small API/CLI fix versus explicit guidance.
+   Retain V2 entry-point and format compatibility where promised; distinguish that
+   from identical vocabularies, scores or embeddings.
+
+   **Documentation ownership:** The [deployment README](../../../deployment/README.md)
    owns installation, configuration and integration examples. Preset scope belongs
    in [the catalogue](../../../docs/model-presets.md); complete numbers/provenance
    belong in the [Flemming](../../../docs/mambo-deployment-evidence.md),
    [in-domain](../../../docs/mambo-indomain-evidence.md) and
    [current HPC](../../../docs/mambo-hpc-evidence.md) evidence pages. Keep performance
-   figures in the README, long tables in linked evidence, and historical diagnostics
-   out of the integration path. Mark old measurements/instructions as historical
-   rather than erasing their provenance.
+   figures and the configuration table in the README, long evidence tables in linked
+   pages, and historical diagnostics out of the integration path. Mark old measurements/instructions as historical
+   rather than erasing their provenance. Preserve CPU/GPU, request/streaming and
+   V2/V3 comparison categories; update only measured values, and never imply older
+   CPU/laptop or smaller-batch results were rerun.
 3. **Refresh candidate metadata once documentation settles.** The checked-in
    `deployment/mambo_deploy/default_bundle.json` embeds an older README and model
    card. The card still describes full task metrics as outstanding. Update the
