@@ -31,8 +31,10 @@ No complete Windows/macOS/edge-device compatibility claim is made.
 The checksum-verified training console reports the best model at epoch **30**.
 `MODEL_PROVENANCE.toml` identifies the checkpoint, configuration, epoch summary and
 training log with immutable hashes and public source URLs. The retained materials
-do not identify the exact training Git revision or fully establish the upstream
-initialization lineage. The recorded September 11 checkout is packaging provenance,
+do not identify the exact training Git revision or retain the starting checkpoint
+hash. The preparation source initializes a torchvision DEFAULT EfficientNetV2-S
+backbone (ImageNet-1K) and a new hierarchical head with seed 42; this is a source-based
+reconstruction rather than a verified identity for the original starting file. The recorded September 11 checkout is packaging provenance,
 not a claimed training revision. The trained checkpoint itself is identified and
 can be loaded without retraining or downloading an initialization model.
 
@@ -42,6 +44,7 @@ record list construction. Read `NOTICES.md` for code, model and source-data boun
 
 ## Publication status
 
-The model-weight license is awaiting owner designation. The code's MIT license
-must not be presented as a weight/data license. Do not publish this candidate until
-that decision and any required initialization notices have been resolved.
+The candidate weights are prepared under **CC BY-NC-SA 4.0**: attribution,
+non-commercial use and share-alike terms for distributed adaptations. See
+`MODEL_LICENSE.txt` and `NOTICES.md` for the terms and upstream attribution.
+The adapter code remains MIT-licensed. This candidate has not been published.

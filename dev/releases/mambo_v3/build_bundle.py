@@ -19,6 +19,7 @@ def build(source, destination):
     inventory = tomllib.loads((HERE / "inventory.toml").read_text())
     presets = tomllib.loads((HERE / "preset-manifest.toml").read_text())
     definitions = tomllib.loads((HERE / "preset-definitions.toml").read_text())
+    provenance = tomllib.loads((HERE / "model-provenance.toml").read_text())
     if sha256(HERE / "preset-definitions.toml") != presets["definitions_sha256"]:
         raise ValueError("Preset manifest is stale; rebuild presets first")
     files = {item["path"]: item for item in inventory["artifacts"]}
@@ -103,7 +104,7 @@ def build(source, destination):
         ]
         lines += ["", "Exact filters: PRESET_DEFINITIONS.toml. `full` includes all 12,632 model species.", ""]
         (root / "PRESETS.md").write_text("\n".join(lines))
-        for filename in ("MODEL_CARD.md", "NOTICES.md"):
+        for filename in ("MODEL_CARD.md", "NOTICES.md", "MODEL_LICENSE.txt"):
             shutil.copyfile(HERE / filename, root / filename)
         shutil.copyfile(HERE / "model-provenance.toml", root / "MODEL_PROVENANCE.toml")
         profiles = {
@@ -121,6 +122,12 @@ def build(source, destination):
             "package_version": "0.3.0",
             "distribution": "mambo-v3",
             "default_preset": "full",
+            "licenses": {
+                "code": "MIT",
+                "weights": provenance["weights_license"],
+                "weights_text": "MODEL_LICENSE.txt",
+                "notices": "NOTICES.md",
+            },
             "score_semantics": "hierarchical-leaf-logits-logsumexp-v1",
             "profiles": profiles,
             "embedding": {"dimension": 1280, "stage": "normalized preclassification"},

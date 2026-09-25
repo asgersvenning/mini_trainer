@@ -6,6 +6,10 @@ package or GPU is needed for ONNX/CPU**. Both backends use the same API, regiona
 lists and output format. The comparisons below show quality and speed against V2,
 including CPU, laptop GPU and server GPU measurements.
 
+**Weights: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+(non-commercial, share-alike). Adapter code: MIT.**
+[Model notices](../dev/releases/mambo_v3/NOTICES.md) explain attribution and scope.
+
 This candidate is not yet published; the examples use the supplied release wheels.
 Model files download automatically from public ERDA storage on first use and are
 verified and cached. Reuse one predictor across calls.

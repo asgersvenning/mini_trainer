@@ -10,10 +10,11 @@ seed = 42
 training_epochs = 30
 training_world_size = 4
 training_source_revision_status = "Not recorded in retained checkpoint, config, or console log; packaging checkout is not asserted as training source."
-initialization_status = "Training config loads initial_seed42.pt with pretrained=false; upstream initialization lineage is not established by the retained files."
+initialization_status = "Source-based reconstruction: torchvision DEFAULT EfficientNetV2-S backbone and a new normalized hierarchical head, seed 42; original initialization checkpoint/hash and run-specific preparation manifest not retained."
 packaging_checkout = "52954edae5dae31a62ecb639533e6f8573d57055"
 packaging_checkout_role = "Original September 11 export/package environment only"
-weights_license_status = "Awaiting owner designation; repository MIT license covers code only"
+weights_license = "CC-BY-NC-SA-4.0"
+weights_license_status = "Prepared for release following owner preference for non-commercial share-alike weights; code remains MIT"
 
 [checkpoint]
 url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
@@ -30,3 +31,16 @@ sha256 = "be1bf9f00729e3c0afdd56c4b2209a2bfe79e92bb1b0a2aa6013c18798c095b2"
 [configuration]
 url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/run-metadata/config.yaml"
 sha256 = "a10caf8c1abca6b1660c0ca4c6e3cc42687512f1db02501bf1a3e236165c960f"
+
+[initialization_recipe]
+evidence_kind = "Source-based reconstruction, not a retained initial-checkpoint identity"
+source_revision = "53599f5c3e70c8e6ae683a205168e55bca38ab59"
+preparation_source = "dev/ucloud/worker.py:prepare"
+production_source = "dev/ucloud/production.py:generate"
+backbone_factory = "mini_trainer/modeling/architectures/torchvision.py:get_torchvision_model"
+backbone_weights = "EfficientNet_V2_S_Weights.DEFAULT (IMAGENET1K_V1)"
+upstream_weights_url = "https://download.pytorch.org/models/efficientnet_v2_s-dd5fe13b.pth"
+upstream_documentation = "https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.efficientnet_v2_s.html"
+initial_checkpoint_name = "initial_seed42.pt"
+initial_checkpoint_sha256_status = "Not retained"
+seed = 42

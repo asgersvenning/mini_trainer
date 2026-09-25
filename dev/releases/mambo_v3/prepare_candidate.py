@@ -65,7 +65,10 @@ def prepare(source, output):
         "model_id": "MAMBO_v3",
         "publication_performed": False,
         "qualification": "Pending final installed-artifact checks; see qualification records alongside this manifest",
-        "owner_decisions": ["Model-weight license", "Initialization attribution/lineage"],
+        "owner_decisions": [],
+        "provenance_limits": [
+            "Initialization lineage reconstructed from source; starting file hash and training Git revision not retained"
+        ],
         "files": {},
     }
     for path in sorted(output.rglob("*")):

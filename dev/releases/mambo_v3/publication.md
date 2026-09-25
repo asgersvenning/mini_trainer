@@ -24,9 +24,10 @@ qualification or owner decisions have passed.
 
 ## Before any publication
 
-- Resolve the model-weight license and initialization notices in `NOTICES.md`,
-  `MODEL_CARD.md` and `model-provenance.toml`. Training epoch 30 is verified; the
-  packaging checkout must not be substituted for an unknown training Git revision.
+- Review the selected CC BY-NC-SA 4.0 weight license, MIT code license and upstream
+  notices in `NOTICES.md`, `MODEL_CARD.md` and `model-provenance.toml`. Training epoch
+  30 is verified; initialization is reconstructed from source. The missing starting
+  checkpoint hash and training Git revision remain explicit provenance limitations.
 - Qualify these exact installed artifacts, record wheel/bundle hashes and actual
   runtime versions, and verify the README examples and single CLI owner.
 - Confirm PyPI ownership/availability of `mambo-v3` and access to publish the matching
