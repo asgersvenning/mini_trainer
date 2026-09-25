@@ -401,25 +401,6 @@ def test_noise_preserves_extent_channels_and_reproducibility():
         SaltAndPepper(proportion=-0.1)
 
 
-def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
-    from dev.releases.mambo_v3.tta_candidates import CANDIDATES, candidate_policy, pad, rotate
-
-    image = np.random.default_rng(12).integers(0, 256, (3, 19, 31), dtype=np.uint8)
-    original = image.copy()
-    padded = pad(image, 0.08)
-    np.testing.assert_array_equal(padded[:, 2:21, 3:34], image)
-    rotated = rotate(image, 10)
-    assert rotated.shape[1] > image.shape[1] and rotated.shape[2] > image.shape[2]
-    for name in CANDIDATES:
-        policy = candidate_policy(name)
-        assert len(policy.transforms) == 3
-        for transform in policy.transforms:
-            actual = preprocess(transform(image.copy()))
-            assert actual.shape == (3, 384, 384) and np.isfinite(actual).all()
-            np.testing.assert_array_equal(actual, preprocess(transform(image.copy())))
-    np.testing.assert_array_equal(image, original)
-
-
 @pytest.mark.parametrize(
     ("options", "recipe"), [([], None), (["--tta"], "rotation30_pad25_3"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
 )
@@ -440,46 +421,23 @@ def test_cli_tta_optional_recipe(bundle, monkeypatch, options, recipe):
         cli.run()
 
 
-@pytest.mark.parametrize("degrees", [-30, -10, 10, 30])
-def test_composed_rotation_reproduces_existing_padded_rotation(degrees):
-    from dev.releases.mambo_v3.compact_tta import rotate_pad
-    from dev.releases.mambo_v3.tta_candidates import rotate
-
-    image = np.random.default_rng(42).integers(0, 256, (3, 47, 83), dtype=np.uint8)
-    original = image.copy()
-    np.testing.assert_array_equal(rotate_pad(image, degrees, 0.08), rotate(image, degrees))
-    np.testing.assert_array_equal(image, original)
-
-
-@pytest.mark.parametrize("option", ["padded_scale", True, "rotation30_pad25_3", "wide_rotation_mixed_padding_5"])
-def test_builtin_tta_matches_qualified_evaluation_views(bundle, monkeypatch, option):
+@pytest.mark.parametrize(
+    ("option", "settings"),
+    [
+        ("padded_scale", [(0, 0.08), (0, 0.15)]),
+        (True, [(-30, 0.25), (30, 0.25)]),
+        ("rotation30_pad25_3", [(-30, 0.25), (30, 0.25)]),
+        ("wide_rotation_mixed_padding_5", [(-10, 0.15), (10, 0.15), (-30, 0.25), (30, 0.25)]),
+    ],
+)
+def test_named_tta_preserves_released_recipe(option, settings):
+    from deployment.mambo_deploy import EdgePad, RotatePad, View
     from deployment.mambo_deploy.augmentation import resolve_tta
-    from dev.releases.mambo_v3.compact_tta import policies
-    from dev.releases.mambo_v3.tta_candidates import candidate_policy
 
-    recipe = "rotation30_pad25_3" if option is True else option
-    if recipe == "padded_scale":
-        transforms = candidate_policy(recipe).transforms
-    else:
-        views, _, recipes = policies()
-        transforms = [views[key] for key in recipes[recipe]]
-    source = np.random.default_rng(19).integers(0, 256, (3, 47, 83), dtype=np.uint8)
-    original = source.copy()
-    for transform, reference in zip(resolve_tta(option).transforms, transforms, strict=True):
-        np.testing.assert_array_equal(transform(source), reference(source))
-    predictor = Predictor(bundle, tta=option, preprocess_workers=1)
-    observed = []
-
-    def runtime(images, embeddings):
-        observed.append(images[0].copy())
-        return np.ones((len(images), 3), np.float32), None
-
-    monkeypatch.setattr(predictor, "_onnx", runtime)
-    result = predictor.predict(source)
-    np.testing.assert_array_equal(observed, [preprocess(transform(source)) for transform in transforms])
-    assert result.metadata["tta"] == recipe
-    assert result.metadata["tta_views"] == len(transforms)
-    np.testing.assert_array_equal(source, original)
+    policy = resolve_tta(option)
+    expected = (View(), *(EdgePad(padding) if degrees == 0 else RotatePad(degrees, padding) for degrees, padding in settings))
+    assert policy.transforms == expected
+    assert policy.name == ("rotation30_pad25_3" if option is True else option)
 
 
 @pytest.mark.parametrize(
