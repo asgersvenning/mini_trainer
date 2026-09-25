@@ -9,8 +9,8 @@ The plateau comes from **serial, allocation-heavy CPU preprocessing plus a stric
 FP32 convolutional backend that gains little throughput beyond batch 8**. It is
 not a batch-size parameter being ignored. Forward hooks observed exactly
 `[1,3,384,384]`, `[8,3,384,384]` and `[32,3,384,384]` at the native model boundary.
-The released speed charts remain unchanged; the following interventions explain
-them and are not new qualified release variants.
+The interventions below explain that historical baseline; current release timings
+come from the later qualification campaigns.
 
 ## CPU cause: the release image adapter
 
@@ -74,17 +74,13 @@ establish a hardware-counter distinction between arithmetic and memory bandwidth
 limits. Profiler overhead and laptop clock variation are why unprofiled timings
 and reversed-order interventions are reported separately.
 
-## Next implementation step
+## Follow-up
 
-Prioritize pixel-preserving contiguous/crop preparation, then bounded workers and
-CPU/GPU overlap. Qualify exact inputs on the larger retained image subset and
-array-input edge cases, then rerun fresh-process end-to-end timings. These adapter
-changes can stay on the release branch. Any shared-core optimization belongs on a
-feature/fix branch and must be merged through the established release workflow.
-
-FP16 is a separate numerical/runtime variant, not quantization, but is diagnostic
-only here. It needs task-level quality and deployment qualification before becoming
-a supported option. The current PyTorch/ONNX FP32 baseline remains available.
+Contiguous/crop preparation and mixed precision were subsequently implemented and
+qualified in the [accelerated comparison](mambo-accelerated-deployment.md).
+Later concurrency, transfer and hierarchy changes are summarized in the
+[pipeline review](mambo-inference-pipeline-review.md). This diagnosis remains a
+historical explanation of the FP32 baseline, not outstanding implementation work.
 
 ## Reproduce
 

@@ -249,7 +249,8 @@ cost. This priority is a task-specific inference from the literature and current
 measurements, not a universal TTA ranking. A compact mixed policy can be tested
 next on independent validation data. Full Flemming results include the subset
 used for recipe selection and are therefore descriptive, not independent
-validation; UCloud evaluation remains outstanding.
+validation. Subsequent [UCloud evaluation](mambo-indomain-evidence.md) adds
+in-domain evidence for the promoted recipe, not all exploratory candidates.
 
 A portable custom policy can use existing Pillow functionality directly:
 

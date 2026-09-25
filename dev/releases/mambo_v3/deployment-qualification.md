@@ -1,9 +1,9 @@
-# Portable deployment qualification — 2026-09-23
+# Deployment qualification and report reproduction
 
-This increment supplies a local bundle builder, an independent `mambo_deploy`
-wheel, and the `mini_trainer.deploy.Predictor` compatibility entry point. The
-consumer guide is [deployment/README.md](../../../deployment/README.md).
-Shared training, loading and classifier modules are unchanged.
+Current installed-package evidence is in [final qualification](final-qualification.md).
+This page retains the build/check commands, TTA report reproduction and the scope
+of earlier adapter checks. Consumer instructions are in
+[deployment/README.md](../../../deployment/README.md).
 
 ## Reproduce
 
@@ -48,50 +48,30 @@ working directory, blocks Python socket connections, runs both API modes and the
 CLI, and verifies bundle contents remain unchanged. This is not an OS-level
 network isolation test; platform-native runtime networking is outside that guard.
 
-## Initial adapter increment
+## What the early checks established
 
-| Check | Result |
-|---|---|
-| CPU PyTorch / ONNX, four images | 4/4 identical top-1 species/genus/family tuples for full, Europe and shared custom lists |
-| RTX 3080 Ti Laptop GPU, same images | 4/4 identical tuples for those three list modes |
-| Predictions with/without embeddings | Same top-1 tuples within each backend on CPU and GPU |
-| Embeddings | `[4,1280]`, finite, unit length; unaffected by class mask |
-| ONNX CUDA provider | CUDA first in both sessions; individual CPU operators remain allowed |
-| Clean ONNX installation | No torch/training package; relocated read-only bundle, API and CLI passed |
-| Minimal training wheel | Imports, CLI help without deployment extra, training, reload and prediction passed |
-| Focused release suite | 28 tests passed, including eight deployment contracts |
-| Static checks | Ruff, formatting and both import contracts passed; standalone deployment package checked separately |
+The September 23 adapter check used four deterministic images on CPU and an
+RTX 3080 Ti Laptop. Both runtimes agreed on species/genus/family top-1 for
+full/Europe/custom lists, with and without embeddings. Vectors were finite unit
+1280-dimensional embeddings, unchanged by class masks. This qualifies execution
+contracts, not representative accuracy or downstream embedding quality.
 
-The optional broader `dev/check.sh all` run was interrupted while still in
-unrelated benchmark tests after approximately five minutes; it did not establish
-a complete full-suite result. No failure had been reported before interruption.
+The independent ONNX-only CPU install used Python 3.13.7, ORT 1.30.0, NumPy 2.5.3
+and Pillow 12.3.0. CPU backend comparison used PyTorch 2.12.0, ORT 1.29.0,
+NumPy 2.4.6 and Pillow 12.2.0; CUDA used PyTorch cu130 and ORT GPU 1.30.0,
+reusing existing NVIDIA libraries. It was not a clean GPU dependency-resolution
+test. Local reports remain under
+`local-evidence/mambo-v3/*deployment-qualification.json` and
+`portable-install-qualification.json`.
 
-CPU comparison used PyTorch 2.12.0, ONNX Runtime 1.29.0, NumPy 2.4.6 and
-Pillow 12.2.0. GPU qualification used the CUDA 13.0 PyTorch build and ONNX
-Runtime GPU 1.30.0. Its temporary environment reused existing training dependencies;
-it was not a clean GPU dependency-resolution test. The independent CPU-only install
-used ONNX Runtime 1.30.0, NumPy 2.5.3 and Pillow 12.3.0, Python 3.13.7 on Linux.
-Local JSON evidence is under `local-evidence/mambo-v3/*deployment-qualification.json`
-and `portable-install-qualification.json` (ignored).
-
-The shared NumPy preprocessing implements the recorded campaign recipe. A sampled
-comparison to the original torchvision path differed by at most one uint8 level
-at resize rounding boundaries; it is not a byte-exact preprocessing claim.
-
-## Subsequent evaluation and remaining work
-
-The [measured release report](../../../docs/mambo-v3-evaluation.md) supersedes the
-initial subset-only evidence above with full Flemming metrics, CPU/GPU timings
-and a completed broad test suite. The [evaluation workflow](evaluation.md) preserves
-unknown truth and documents the UCloud commands. In-domain inference and its
-mini_metrics presentation have completed; see the [in-domain evidence](../../../docs/mambo-indomain-evidence.md).
-The [freeze preparation](deployment-freeze.md) identifies final installed-artifact
-checks after consolidation; the initial results below do not certify those final wheels.
-
-Four deterministic images establish execution contracts, not representative
-accuracy, embedding quality or speed. Windows/macOS, clean CUDA installations,
-additional architectures, training revision/best-epoch provenance and redistribution
-notices remain unqualified. Nothing has been uploaded, tagged or promoted.
+The original torchvision/NumPy resize comparison differed by at most one uint8
+level at rounding boundaries. Later full-dataset, installed-artifact and TTA
+checks supersede this small initial qualification; see
+[local evaluation](../../../docs/mambo-v3-evaluation.md),
+[in-domain evidence](../../../docs/mambo-indomain-evidence.md) and
+[final qualification](final-qualification.md).
+The latter owns current package identities, notices and remaining limitations;
+early checks do not certify the final wheels or untested operating systems.
 
 ## Enabled-TTA promotion — 2026-09-24
 
@@ -146,21 +126,13 @@ campaigns remain a limitation. Timing does not reuse full-evaluation wall time.
 Resource records retain host peak RSS. New runs cover northern Europe only;
 earlier resource sweeps also covered other presets, so RSS is descriptive.
 
-Promotion checks: 53 focused release checks passed (including the two pinned-metric
-checks run separately), static/import checks passed, and preset transforms match
-the full-study transforms byte-for-byte. The standalone wheel builds offline and
-its enabled default imports without torch or mini_trainer in a clean Python 3.13
-environment. Python 3.14 installation was not qualified: its wheels were absent
-from the offline cache. Older regional/frequency/threshold studies are preserved
-and labelled historical rather than relabelled as new-recipe evidence.
-
-The installed ONNX-only wheel also passed prediction-only/embedding API and CLI
-inference with the selected recipe against a relocated read-only bundle, with
-Python socket connections blocked and model hashes unchanged. Evidence:
-`local-evidence/mambo-promoted-portable.json`. The twelve timing trials completed;
-GPU batch-32 throughput was 50.89 images/s native and 38.27 ONNX. CPU batch-1 was
-2.04 and 3.39 images/s. Trial ranges and input hashes are in
-`docs/assets/mambo-promoted-speed.json`.
+The promoted transforms matched the full-study transforms byte-for-byte.
+The installed ONNX-only wheel passed prediction/embedding API and CLI with TTA
+against a relocated read-only bundle, Python socket calls blocked and unchanged
+model hashes (`local-evidence/mambo-promoted-portable.json`). Python 3.14 was not
+qualified in that offline environment. Timing observations and input hashes remain
+in `docs/assets/mambo-promoted-speed.json`; current results are linked from the
+deployment README rather than repeated here.
 
 ## CUDA optimization compatibility probe — 2026-09-24
 
@@ -170,11 +142,10 @@ optimizations disabled; no CPU-only fallback or retry of unrelated errors occurs
 The selected profile and initialization/probe timings are retained in reports.
 A batch-one check does not establish every batch-dependent execution path.
 
-On the RTX 3080 Ti laptop with ORT GPU 1.30.0, both optimized graphs executed,
-including default TTA and embedding output. Injecting the initial compatibility
-error exercised recovery into real unoptimized CUDA execution for both graphs.
-This validates local recovery mechanics, not resolution of the reported B200
-failure. The installed ONNX-only wheel also passed CPU prediction, embeddings and
-TTA without importing torch. Focused deployment/download/evaluation checks passed
-(64 tests); nine UCloud harness tests passed separately. Static/import checks and
-the standalone deployment lint/format checks passed. No full suite was run.
+On the RTX 3080 Ti Laptop with ORT GPU 1.30.0, both optimized graphs ran,
+including TTA and embeddings. Injecting an initial compatibility error exercised
+real unoptimized CUDA recovery for both graphs. This qualified recovery mechanics,
+not the B200 failure: there, the same wheel also failed an unfused standalone
+Sigmoid. The [UCloud runbook](ucloud-release.md) records the separately qualified
+ORT build used for that environment. Disabling graph optimizations is not a
+general runtime/device compatibility fix.

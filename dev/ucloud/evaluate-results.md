@@ -1,10 +1,13 @@
 # Production evaluation with mini_metrics
 
+This is the original training-campaign CLI evaluation. The later MAMBO comparison
+has its own [release protocol](../releases/mambo_v3/ucloud-release.md), including
+disjoint calibration/reporting partitions.
+
 Run expert evaluation as soon as expert inference has completed:
 
 ```bash
 cd /work/mini_trainer
-git pull --ff-only
 bash dev/ucloud/evaluate-results.sh expert /work/evaluation-1
 ```
 
@@ -47,8 +50,9 @@ hierarchy-wide metrics; per-level metrics are still produced normally.
 No optimal-threshold fitting, subsampling or label filtering is enabled. The
 thresholds recorded in prediction files are retained. These collector files
 contain the selected prediction per level, so they cannot establish top-5
-accuracy. The expert dataset evaluates external performance; it should not be
-used for selecting this model's thresholds or checkpoints.
+accuracy. The expert dataset evaluates external performance. This baseline does not fit
+thresholds or select checkpoints; later calibration analyses must keep their
+calibration and reporting samples disjoint.
 
 Aggregate metric tables and progress are printed live in the terminal and retained
 in the corresponding logs. `pipefail` preserves failures through `tee`.

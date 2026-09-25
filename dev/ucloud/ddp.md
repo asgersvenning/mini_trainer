@@ -1,10 +1,14 @@
 # Four-GPU qualification and production handoff
 
+Reusable procedure from the September training campaign. For its selected production
+recipe, results and recovery lessons see the
+[training post-mortem](../../docs/training-workflow-postmortem.md).
+
 Use one manually allocated UCloud node with **four full B200 GPUs**, the actual
 Parquet and image storage, and internet access. `ddp.json` rejects devices below
 140 GiB each, so this is not a continuation on the fractional-GPU job.
 
-The chosen configuration is floating-point training on `quant`: FP16 AMP, model
+The historical profile selects floating-point training on `quant`: FP16 AMP, model
 compilation, figures, W&B, loss auditing and checkpoints. Optimizer compilation,
 explicit CUDA prefetch, INT8 and EMA remain off. Qualification alone uses the
 Python API. Production will use `mt_htrain` under `torchrun`.
@@ -16,13 +20,13 @@ review the production batch and learning-rate schedule explicitly before trainin
 
 ## Setup and authentication
 
-Clone the repository on branch `quant` into `/work/mini_trainer` (or pull it there).
-Use the same checkout throughout the campaign; preparation hashes the harness.
-With `uv`, `git`, Python and a C++ compiler available:
+Follow [the UCloud setup](README.md#fresh-job-setup) to install uv and clone the
+reviewed harness revision. The profile's historical package pins are deliberate;
+select new pins explicitly for a new campaign. Preparation hashes the harness, so
+keep the checkout unchanged during a campaign. With a C++ compiler available:
 
 ```bash
 cd /work/mini_trainer
-git pull --ff-only
 MT_TEMPLATE=dev/ucloud/ddp.json MT_CONFIG=/work/ddp-b32.json \
   bash dev/ucloud/setup.sh \
   /work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet
@@ -141,66 +145,19 @@ four successful `restore-rank*.json` records, finite train/eval losses, stable
 memory, and working figures/checkpoints after restoration. This tests state
 restoration and continued execution, not bitwise reproduction of augmentation RNG.
 
-## Keep the allocation and hand off immediately
+## Production handoff
 
-Qualification and production run in the **same allocated UCloud job**. Do not
-terminate/release the job, rebuild its environment, or wait for a new allocation
-between them. The separate storage campaign below means a separate harness budget
-and output directory, not another UCloud job. Do not enable the continuous-benchmark
-provisioning/cleanup policy for this production allocation.
+Keep qualification and production in the same allocated UCloud job, with the
+qualified environment and warm caches. Do not apply automated benchmark
+provisioning/cleanup to this allocation. Reserve time for qualification plus
+production and checkpoint/finalization margin; check remaining lifetime before
+launch and resolve any required extension while qualification runs.
 
-Before qualification, prepare the production CLI configuration and verify its paths,
-full-dataset splits, pinned environment, W&B authentication, output location and
-learning-rate/epoch recipe. Leave only measured batch and worker choices to finalize.
-Keep the selected environment and caches warm. Reserve qualification time **in
-addition to** the intended production duration in the UCloud job lifetime, plus
-checkpoint/finalization margin; verify remaining time before launch. If the job
-lifetime is insufficient, resolve its extension or a shorter reviewed training
-budget while qualification runs rather than releasing the allocation.
-
-After the required gates pass, record the selected batch/workers and qualification
-report, finalize the pre-reviewed production configuration, and launch `mt_htrain`
-under four-rank `torchrun` immediately in the existing terminal/tmux session. Do not
-spend the allocation completing optional sweep points once the choice is supported.
-The production configuration is still an explicit prerequisite, not generated or
-validated by these qualification commands.
-
-## Production uses the public CLIs
-
-Do not launch the 24-hour run from this qualification harness. After qualification,
-freeze a reviewed `production.yaml` for the full dataset, selected batch and
-worker count, intended learning-rate schedule, complete taxonomy and preprocessing.
-Record package/dependency pins, W&B run, split provenance and checkpoint hashes.
-The final epoch count and learning-rate recipe need a separate production decision;
-short qualification accuracy does not select them.
-
-The planned command interface is:
-
-```bash
-/work/venvs/mt-quant/bin/python -m torch.distributed.run \
-  --standalone --nnodes=1 --nproc-per-node=4 --max-restarts=0 --no-python \
-  /work/venvs/mt-quant/bin/mt_htrain --config /work/production.yaml --wandb --compile
-
-/work/venvs/mt-quant/bin/mt_hpredict --config /work/evaluation.yaml
-uvx --from "mini_metrics @ git+https://github.com/asgersvenning/mini_metrics.git@$METRICS_SHA" \
-  mm_metrics --files "$PREDICTIONS_CSV" --output-dir /work/production-metrics --output
-
-/work/venvs/mt-quant/bin/mt_export --weights "$BEST_PT" \
-  --output /work/production-onnx --input-shape 3 384 384 \
-  --preprocessing /work/deployment-preprocessing.json
-```
-
-These production/evaluation files and shell variables are **handoff placeholders**,
-not runnable configs yet. `METRICS_SHA` must be a reviewed immutable commit.
-Evaluation must use only the original held-out test split, with matching class
-order and score semantics. Use the existing `mt_hpredict` CLI for this hierarchical
-model; it also provides an explicit flat-head route. Consolidating inference into
-one CLI is [deferred on the roadmap](../../docs/roadmap.md#5-mini_metrics-and-continuous-model-evaluation),
-not a production prerequisite. Verify the deployment preprocessing and real-image
-ONNX parity following [the export guide](../../docs/onnx.md).
-
-A later full `master` training comparison remains optional and separate. This
-qualification deliberately selects and stress-tests one configuration.
+Prepare paths, full supplied splits/taxonomy, W&B authentication and the intended
+learning-rate/epoch recipe in advance. Finalize batch/workers from measured
+throughput and memory, not short qualification accuracy. Generate the reviewed
+configuration and launch the public CLI using the commands below. Do not spend
+the allocation finishing optional sweep points after a choice is supported.
 
 ## Bounded resource-utilization decisions
 
@@ -218,20 +175,16 @@ because their planned duration was sufficient. Changing the epoch horizon also
 changes the learning-rate schedule, so these are throughput trials, not matched
 convergence comparisons.
 
-After selecting a batch, compare workers while holding batch, subset and epoch
-horizon fixed. Start with 8/GPU; try 16/GPU only if loading/throughput evidence
-justifies it. A small timing difference is not enough to select a winner.
+After selecting a batch, hold batch, subset and epoch horizon fixed for a worker
+comparison. Use the resource allocation and phase evidence to choose a meaningful
+increase; the production campaign ultimately needed much higher I/O concurrency
+than the initial 4–16 worker probes (see the post-mortem). A small cached subset
+cannot select production storage concurrency by itself.
 
 ```bash
-BATCH=64  # replace with measured choice
-python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-w8.json \
-  --output /work/results/global-lepi-ddp-4gpu-w8-1 --batch "$BATCH" --workers 8
-run_trial /work/ddp-w8.json
-
-# Optional, after reviewing w8:
-python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-w16.json \
-  --output /work/results/global-lepi-ddp-4gpu-w16-1 --batch "$BATCH" --workers 16
-run_trial /work/ddp-w16.json
+python3 dev/ucloud/scaling.py trial /work/ddp-b32.json /work/ddp-workers.json \
+  --output /work/results/global-lepi-ddp-workers-1 --batch "$BATCH" --workers "$WORKERS"
+run_trial /work/ddp-workers.json
 ```
 
 Use `--workers "$WORKERS"` for both stability and restoration trials once workers
@@ -298,7 +251,7 @@ batches are not automatically assigned a linearly scaled learning rate.
 PRODUCTION_OUTPUT=/work/results  # user-confirmed persistent storage for this job
 
 /work/venvs/mt-quant/bin/python dev/ucloud/production.py \
-  /work/results/global-lepi-ddp-4gpu-b32-2 /work/production.yaml \
+  /work/results/global-lepi-ddp-4gpu-b32-1 /work/production.yaml \
   --output "$PRODUCTION_OUTPUT" --name global-lepi-production-1 \
   --batch "$BATCH" --workers "$WORKERS" --epochs "$EPOCHS"
 ```
@@ -332,3 +285,8 @@ The CLI does not inherit qualification-only finite-loss auditing or timing wrapp
 Inspect the epoch summary and checkpoints during production; the full-dataset run
 has no harness wall-time guard and stops at its configured epoch horizon or when the
 job/process is terminated. Evaluation/export are separate post-training activities.
+
+For held-out prediction/metrics and export after training, use
+[the evaluation runbook](evaluate-results.md) and [ONNX export guide](../../docs/onnx.md).
+Preserve class order, score semantics and preprocessing; a later master-versus-quant
+training comparison remains a separate experiment.

@@ -1,6 +1,10 @@
 # Loading and scheduling after GPU acceleration
 
-**The remaining plateau is partly a loading/scheduling limit.** The synchronous
+Historical diagnostic of the synchronous adapter after its first GPU acceleration.
+Current request/streaming behavior and evidence are in the
+[pipeline review](mambo-inference-pipeline-review.md).
+
+**The plateau in this study was partly a loading/scheduling limit.** The synchronous
 adapter waits for each batch's preparation before inference. Its preparation
 threads do not intentionally run alongside that inference, but the timings include
 both costs. A fixed worker count and a larger batch can leave preparation as a
@@ -44,19 +48,13 @@ but lowers ONNX to 132.7: this is consistent with loading/inference contention, 
 laptop variability also affect this small comparison.
 These lookahead numbers are five warmed repeats within one process per backend.
 
-## Deployment implications
+## Interpretation
 
-Use `preprocess_workers` / `--preprocess-workers` to tune preparation separately
-from ONNX runtime `threads`. It defaults to `threads`, retaining existing behavior.
-Native model CPU threads remain caller-controlled. Start with batch 8–32 and four
-preparation workers on this laptop; measure before increasing either. Hosts with
-fewer cores, quotas, different image sizes or concurrent workloads need their own
-settings. The measured paths use a warm filesystem cache, not cold disk throughput.
-
-Lookahead remains a reproducible experiment, not an automatic production scheduler.
-A production option needs bounded cancellation/error propagation, CPU and TTA
-contention tests, and installed-runtime qualification. The current API makes no
-claim that its synchronous scheduling reaches the model's throughput ceiling.
+Preparation workers and ONNX runtime threads are separate resource budgets. The
+4–8 worker choices here reflect a warm-cache laptop workload, not a recommendation
+for HPC or cold storage. The one-batch lookahead was an experiment at this stage;
+a bounded production streaming API has since been implemented and qualified.
+Use the [deployment guide](../deployment/README.md) for current controls and defaults.
 
 ## Reproduce
 

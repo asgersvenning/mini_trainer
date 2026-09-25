@@ -177,7 +177,8 @@ ONNX Runtime is 1.30.0. Hardware is an i7-12800H / RTX 3080 Ti Laptop GPU (16 GB
 on AC power under Linux/WSL2, with four CPU threads and TF32 disabled.
 
 The earlier [v3 qualification report](mambo-v3-evaluation.md) covers embedding-mode
-consistency, additional timing detail and installed-package checks. In-domain
-comparison remains UCloud work with the original test split. Provenance/licensing
-and broader OS qualification still precede publication. Nothing is published by
-this comparison.
+consistency, additional timing detail and installed-package checks.
+[In-domain comparison](mambo-indomain-evidence.md) has since completed with the
+original test split. [Final qualification](../dev/releases/mambo_v3/final-qualification.md)
+owns current provenance, notices and platform limits; this historical comparison
+does not certify final release packages.

@@ -1,16 +1,16 @@
 # Bounded expert inference staging trial
 
-Stop the stalled full-test prediction and obsolete expert index creation with
-Ctrl+C in their terminals first. Do not run this alongside additional cold-read
-jobs. Saved training weights are unaffected; interrupted prediction currently
-loses in-memory predictions because its collector writes at completion.
+Historical helper for the September training campaign's expert images and weights.
+For current MAMBO release comparisons use [the release runbook](../releases/mambo_v3/ucloud-release.md).
+The [training post-mortem](../../docs/training-workflow-postmortem.md) records the
+completed staging/inference work and lessons.
 
-This helper targets the mounted expert folder and trained weights used in the
-current qualification. Run from the node after pulling the committed helpers:
+Run from the reviewed checkout on the allocated node, without competing cold-read
+jobs. This older collector retains predictions in memory until completion, so
+interruption loses unfinished prediction output.
 
 ```bash
 cd /work/mini_trainer
-git pull --ff-only
 bash dev/ucloud/expert-trial.sh
 ```
 
@@ -33,7 +33,7 @@ Defaults:
   contains only input and weights; output/name are explicit CLI arguments.
 
 `/dev/shm` is RAM-backed. The byte cap limits copied images, not total process or
-loader memory. This assumes the current large-memory allocation. `/tmp` overlay
+loader memory. This assumes the original large-memory allocation. `/tmp` overlay
 storage has not been established as node-local and is not used for this trial.
 
 Watch either phase in another terminal:
@@ -64,7 +64,7 @@ fast. Measure the full expert dataset's encoded size and available job memory
 before raising the cap. This round-robin subset is a storage/functionality trial,
 not the expert benchmark; do not report its accuracy as a full-dataset result.
 Retain the full benchmark's unknown species when subsequently running mini_metrics.
-The full test split remains deferred until throughput is adequate.
+Full test staging uses [its separate helper](test-inference.md).
 
 RAM staging disappears with the job. Predictions, logs, configuration and manifest
 are retained under `/work`. Staged files can be deleted once their corresponding
@@ -80,5 +80,5 @@ bash dev/ucloud/expert-trial.sh /work/expert-staging-trial-4 \
 
 This checks the previous completed manifest and staged file sizes. The source
 paths remain recorded, and the new output receives its own configuration and logs.
-Taxonomy still uses the node's existing GBIF response cache; cache/API failures
-remain distinct from the corrected count-versus-rank selection bug.
+Taxonomy still uses the node's GBIF response cache; cache/API failures are
+separate from filesystem staging failures.

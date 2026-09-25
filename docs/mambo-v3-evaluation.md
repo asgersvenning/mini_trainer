@@ -1,5 +1,9 @@
 # MAMBO_v3 local evaluation — 23 September 2026
 
+Historical **FP32, single-view** reference. Current adoption comparisons are in
+[the deployment README](../deployment/README.md#release-comparison); these timings
+precede AMP and pipeline improvements.
+
 The native PyTorch and standard ONNX candidates produced identical top-1 labels
 on all **58,640 Flemming images**, for species, genus and family, with all five
 lists below. This establishes same-model prediction agreement on this dataset;
@@ -130,7 +134,8 @@ from the benchmark. All ONNX benchmark processes ran without importing PyTorch.
 The [evaluation workflow](../dev/releases/mambo_v3/evaluation.md) provides the
 commands, timing boundaries, pinned metric environment and UCloud handoff.
 The original 632,913 in-domain test identities and taxonomy were checked locally;
-image verification and inference remain for UCloud. No new split is generated.
+image verification, inference and reporting subsequently completed on
+[UCloud](mambo-indomain-evidence.md), preserving the original split.
 
 Local evidence is retained outside Git under `local-evidence/mambo-v3/`:
 `quality-subset-256`, `quality-full`, `performance` and `combined-results`.
@@ -156,7 +161,7 @@ the temporary CUDA environment reused existing NVIDIA libraries and is not a cle
 dependency-installation qualification. Those JSON reports are retained as
 `portable-install-final.json` and `installed-gpu-final.json`.
 
-In-domain results, cross-OS support, a clean CUDA dependency installation,
-training-source/best-epoch provenance and redistribution notices remain open.
-The archived September native predictions are historical context, not a
-MAMBO_v2 quality baseline. Nothing has been published or tagged.
+For current provenance, notices and platform limits see
+[final qualification](../dev/releases/mambo_v3/final-qualification.md).
+These early checks are not final-wheel certification. The archived September
+native predictions are historical context, not a MAMBO_v2 quality baseline.

@@ -1,9 +1,11 @@
 # Full in-domain test inference
 
+Historical training-campaign helper using its production index and source overlay.
+For current V2/V3 release comparisons use [the release runbook](../releases/mambo_v3/ucloud-release.md).
+
 From `/work/mini_trainer`, run in tmux:
 
 ```bash
-git pull --ff-only
 bash dev/ucloud/test-inference.sh /work/test-full-1
 ```
 
@@ -16,8 +18,8 @@ and free-space check apply before copying. Size inspection precedes copy progres
 The normal `mt_hpredict` CLI runs on GPU 0 with input, weights and the staged
 index supplied; other defaults come from the inference CLI and model metadata.
 The existing isolated inference source overlay is used without reinstalling.
-Each stage has a one-hour timeout. Stop any old stalled test inference before
-starting this run. This helper does not terminate unrelated processes.
+Each stage has a one-hour timeout. Use fresh output paths and avoid concurrent
+cold-read workloads. This helper does not terminate unrelated processes.
 
 ```bash
 tail -n 5 /work/test-full-1/stage.log

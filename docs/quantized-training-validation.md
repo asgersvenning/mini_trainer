@@ -2,7 +2,7 @@
 
 This document describes the checks that must remain valid while quantization is
 extended. Current results live in [benchmark findings](benchmarks.md); planned
-work and target acceptance live in the [branch roadmap](quantization-roadmap.md).
+work and target acceptance live in the [quantization roadmap](quantization-roadmap.md).
 Detailed historical runs are retained in the [experiment archive](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
 
 ## Model and dataset coverage

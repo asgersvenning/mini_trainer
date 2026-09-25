@@ -124,8 +124,9 @@ GPU scaling still saturates: preparation and execution remain sequential, and
 classification/result handling also consume time. This increment removes major
 avoidable costs without adding a streaming scheduler or changing model artifacts.
 
-In-domain evaluation on UCloud, other operating systems and publication review
-remain separate release gates. BF16 has subset qualification only. The
+In-domain evaluation has since [completed on UCloud](mambo-indomain-evidence.md).
+[Final qualification](../dev/releases/mambo_v3/final-qualification.md) records current
+platform limits and publication readiness. BF16 in this study has subset qualification only. The
 [original FP32 comparison](mambo-release-comparison.md) remains available as the
 pre-optimization reference. No new model artifacts or quantization are involved.
 
