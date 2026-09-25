@@ -83,8 +83,10 @@ at resize rounding boundaries; it is not a byte-exact preprocessing claim.
 The [measured release report](../../../docs/mambo-v3-evaluation.md) supersedes the
 initial subset-only evidence above with full Flemming metrics, CPU/GPU timings
 and a completed broad test suite. The [evaluation workflow](evaluation.md) preserves
-unknown truth and documents the UCloud commands. In-domain inference still needs
-to run on UCloud with the verified original test split.
+unknown truth and documents the UCloud commands. In-domain inference and its
+mini_metrics presentation have completed; see the [in-domain evidence](../../../docs/mambo-indomain-evidence.md).
+The [freeze preparation](deployment-freeze.md) identifies final installed-artifact
+checks after consolidation; the initial results below do not certify those final wheels.
 
 Four deterministic images establish execution contracts, not representative
 accuracy, embedding quality or speed. Windows/macOS, clean CUDA installations,

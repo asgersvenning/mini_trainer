@@ -74,9 +74,9 @@ three-view recipe; the exact cost depends on the workload. Start with the defaul
 batch size and worker counts. Tune these on the target machine if speed or memory
 becomes limiting. Request embeddings or extra candidates only when needed.
 
-For large collections, call `predict()` on smaller groups and save or discard each
-result before the next call; lowering `batch_size` alone does not limit the memory
-used to retain results for the whole collection.
+Use `predict_stream(paths)` for large path collections and consume each batch as
+it arrives. Split large in-memory collections into smaller `predict()` requests;
+`batch_size` alone does not bound the results retained for a whole request.
 
 Pass API option values to `Predictor(...)`; prediction-method calls and CLI-only
 options are shown explicitly.
@@ -155,7 +155,8 @@ retain rare and predicted-only classes, which can change model rankings.
 
 Measured **images/second**, end to end, on an i7-12800H / RTX 3080 Ti Laptop with
 four preparation/runtime threads. V3 uses automatic precision; compare on your own
-hardware before choosing a batch size. V2 and single-view V3 reuse earlier runs.
+hardware before choosing a batch size. These laptop measurements predate the latest
+pipeline improvements and remain a consumer-hardware baseline.
 
 ![CPU and GPU throughput by batch size, including the new TTA default](../docs/assets/mambo-promoted-speed.svg)
 
@@ -184,14 +185,19 @@ that average represent 1.70% / 0.34% / <0.01% of species/genus/family images wit
 thresholds, and 1.88% / 0.38% / <0.01% after calibration. Thresholds and complete
 metrics are in the [in-domain evidence](../docs/mambo-indomain-evidence.md).
 
-![EPYC CPU and B200 request throughput, with separate streaming measurements](../docs/assets/mambo-indomain-speed.svg)
+![Current B200 request and streaming throughput for V3 with and without TTA](../docs/assets/mambo-hpc-current-speed.svg)
 
-Measured on UCloud (AMD EPYC 9655 / NVIDIA B200), using four runtime threads;
-streaming uses 48 preparation workers and 256 readers. Lines show median and range
-across three process trials. Streaming includes startup over 1,024 images and is
-shown separately from single-request measurements. These are measured pipeline
-rates, not GPU throughput ceilings; preparation remains a bottleneck. Keep the
-laptop results above when assessing consumer-device deployments.
+Latest full-B200 measurements (`503de96`): global vocabulary, batch 256, four runtime
+threads; streaming uses 48 preparation workers and 128 readers. Bars show median
+and range of three repetitions per variant: 256 images per request and 4,096 warm
+images per streaming pass, including pipeline startup. PyTorch uses FP16; ONNX
+uses TF32. These are end-to-end pipeline rates, not GPU throughput ceilings.
+
+Streaming reached **1,976 images/s for PyTorch and 997 for ONNX**, or **624 and 396
+with TTA**. Request and streaming results have different boundaries; choose the
+one matching your integration. [Exact timings, memory and provenance](../docs/mambo-hpc-evidence.md)
+include the earlier CPU/V2 comparisons; retain the laptop evidence above for
+consumer-device deployment.
 
 ### Streaming image collections
 
@@ -219,16 +225,10 @@ An individual file larger than that budget fails explicitly. The defaults are
 32 readers, a 128-image window, the predictor's preparation worker count, two
 prefetched batches and 256 MiB encoded storage. These controls are API-only and
 independent of model batch size, which the read window must accommodate. A supplied
-`stats={}` receives queue counts, reserved bytes, actual batch-queue waiting and
-summed preparation-worker time. Workers fill batch storage directly; preparation
-time overlaps inference and sums concurrent workers, so it is not elapsed time.
-CUDA streaming reuses device buffers and stages the next batch in a transfer worker.
-PyTorch stages compact uint8 images and finishes preprocessing on the GPU, using
-pinned host buffers and a separate CUDA copy stream; ONNX uses device
-inputs with I/O binding, with copy overlap determined by the runtime. Set
-`device_prefetch=False` to disable device staging for comparison. PyTorch downloads
-ranks and embeddings together; the result worker waits for completion while the
-next batch can be submitted. ONNX currently completes its output copy inside the
-runtime call.
+`stats={}` receives queue counts, reserved bytes, input waits and summed preparation
+worker time. CUDA streaming stages inputs while inference runs; the Torch path uses
+pinned uint8 batches and GPU preprocessing. `device_prefetch=False` disables device
+staging. These settings bound pipeline buffers and expose useful tuning controls;
+GPU saturation is not guaranteed.
 The byte budget is not a total-process memory limit: decoding temporaries, prepared
 views, the model and yielded results also consume memory.

@@ -161,7 +161,9 @@ def publish(output):
         "Thresholds are dataset-specific evidence, not new deployment defaults.\n"
     )
     text += (
-        "\n## HPC timing boundaries\n\n"
+        "\n## Historical HPC timing boundaries\n\n"
+        "The latest V3 B200 timings are in the [current HPC evidence](mambo-hpc-evidence.md). "
+        "The observations below predate the pipeline improvements.\n\n"
         "The EPYC 9655/B200 campaign retains 3 fresh-process trials per variant/device, 7 request observations "
         "per cell and 3 streaming observations per cell. Global and northern-Europe timing presets are available. "
         "CPU runtime threads: 4; streaming preparation workers: 48; readers: 256. "

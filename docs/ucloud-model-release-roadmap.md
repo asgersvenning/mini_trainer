@@ -585,15 +585,18 @@ has been exercised. Release notes distinguish model changes from package/API cha
 | D — staged release | Consumer bundles, migration notes, measured trade-offs, offline checks and rollback | A–C; concrete reviewed candidate |
 | E — broader portability | Additional OS/browser profiles and distribution channels | Core release preserved; qualify only new boundaries |
 
-A and B are implemented, and C now has local Flemming and CPU/GPU evidence; see
+A and B are implemented; C now includes full Flemming and in-domain evidence plus
+laptop and full-B200 timings. Throughput optimization is closed for this release.
+The next bounded task is [deployment consolidation and freeze preparation](../dev/releases/mambo_v3/deployment-freeze.md). See
 the [measured release report](mambo-v3-evaluation.md),
 [real-world MAMBO_v2/v3 comparison](mambo-release-comparison.md),
 [deployment qualification](../dev/releases/mambo_v3/deployment-qualification.md)
 and [consumer guide](../deployment/README.md). The
 [UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md) now prepares the
 original in-domain split, public model downloads and five-pipeline CPU/GPU
-comparison with an isolated, locked `uv` environment. Remote qualification and
-full evaluation remain outstanding. D remains preparation only:
+comparison. Remote qualification and full evaluation have completed; the
+[current HPC results](mambo-hpc-evidence.md) include the latest pipeline.
+D remains preparation only:
 training-source/best-epoch provenance, redistribution notices and final publication
 review are open. No model release has been published or tagged.
 
@@ -619,9 +622,10 @@ The release adapter now also supports [outer TTA](mambo-tta.md), with named
 profiles and custom decoded-image transforms, plus independent preparation workers.
 [Class-frequency curves](mambo-frequency-comparison.md) retain both training and
 Flemming support axes. The [worker-scaling study](mambo-loading-scaling.md) confirms
-remaining loading/scheduling limits; one-batch lookahead is experimental and needs
-production cancellation/error and CPU/TTA contention qualification before adoption.
-TTA remains opt-in; `tta=True` and bare `--tta` select the three-view padded-scale
-recipe. The [default comparison](mambo-deployment-defaults.md) records full Flemming
+historical loading/scheduling limits. Bounded streaming is now implemented and
+has ordering, cancellation, error and buffer-lifetime coverage; broader HPC
+scalability remains deferred.
+TTA remains opt-in; `tta=True` and bare `--tta` select `rotation30_pad25_3`. The [default comparison](mambo-deployment-defaults.md) records full Flemming
 metrics and fresh-process CPU/GPU timing against V2 and ordinary V3. The full set
-includes the recipe-selection subset; independent in-domain validation remains open.
+includes the recipe-selection subset. The complementary [in-domain report](mambo-indomain-evidence.md)
+now records the different response to TTA on general photographs.
