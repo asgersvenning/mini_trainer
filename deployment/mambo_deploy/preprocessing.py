@@ -1,5 +1,6 @@
 """Release image geometry with portable CPU and batched Torch finishing."""
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -21,11 +22,11 @@ RECIPE = {
 
 
 def _rgb(item):
-    if isinstance(item, (str, Path)):
-        with Image.open(item) as im:
-            array = np.asarray(im.convert("RGB"), dtype=np.uint8).transpose(2, 0, 1)
-    elif isinstance(item, Image.Image):
-        array = np.asarray(item.convert("RGB"), dtype=np.uint8).transpose(2, 0, 1)
+    if isinstance(item, (str, Path, bytes)):
+        with Image.open(io.BytesIO(item) if isinstance(item, bytes) else item) as im:
+            return _rgb(im)
+    if isinstance(item, Image.Image):
+        array = np.asarray(item if item.mode == "RGB" else item.convert("RGB"), dtype=np.uint8).transpose(2, 0, 1)
     else:
         if hasattr(item, "detach"):
             item = item.detach().cpu().numpy()
@@ -59,13 +60,17 @@ _MEAN = np.array(RECIPE["mean"], dtype=np.float32)[:, None, None]
 _STD = np.array(RECIPE["std"], dtype=np.float32)[:, None, None]
 
 
+def _nearest_indices(length, padding=0):
+    pad = int(np.ceil(length * padding))
+    return np.clip((_GRID * np.float32((length + 2 * pad) / _SIZE)).astype(np.intp) - pad, 0, length - 1)
+
+
 def _square(item, padding=0):
     image = _rgb(item)
     height, width = image.shape[1:]
-    py, px = int(np.ceil(height * padding)), int(np.ceil(width * padding))
-    yy = np.clip((_GRID * np.float32((height + 2 * py) / _SIZE)).astype(np.intp) - py, 0, height - 1)
-    xx = np.clip((_GRID * np.float32((width + 2 * px) / _SIZE)).astype(np.intp) - px, 0, width - 1)
-    return image[:, yy[:, None], xx[None, :]]
+    if height == width == _SIZE and padding == 0:
+        return image
+    return image[:, _nearest_indices(height, padding)[:, None], _nearest_indices(width, padding)[None, :]]
 
 
 def prepare_uint8(item, out=None, *, padding=0):
@@ -91,13 +96,13 @@ def preprocess(item, out=None, *, padding=0):
     return out
 
 
-def prepare_batch(items, pool=None, transform=None, *, compact=False):
+def prepare_batch(items, pool=None, transform=None, *, compact=False, decode=_rgb):
     """Fill one contiguous batch without per-image output allocations and stacking."""
     output = np.empty((len(items), 3, _SIZE, _SIZE), dtype=np.uint8 if compact else np.float32)
     prepare = prepare_uint8 if compact else preprocess
 
     def fill(index):
-        item = items[index]
+        item = decode(items[index])
         if transform is not None:
             item = transform(item.copy())
         prepare(item, out=output[index])
@@ -109,6 +114,28 @@ def prepare_batch(items, pool=None, transform=None, *, compact=False):
         for index in range(len(items)):
             fill(index)
     return output
+
+
+class TorchDecode:
+    """Native CPU JPEG/PNG decoding, using the Torch backend's existing dependency."""
+
+    def __init__(self, torch):
+        from torchvision.io import ImageReadMode, decode_image
+
+        self.torch, self.decode, self.mode = torch, decode_image, ImageReadMode.RGB
+
+    def __call__(self, item):
+        if isinstance(item, (str, Path)):
+            item = Path(item).read_bytes()
+        if isinstance(item, bytes) and item.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")):
+            # Writable encoded storage avoids a read-only tensor view; only compressed
+            # bytes are copied. Decoded pixels stay in native storage shared with NumPy.
+            encoded = self.torch.frombuffer(bytearray(item), dtype=self.torch.uint8)
+            decoded = self.decode(encoded, mode=self.mode, apply_exif_orientation=False)
+            if decoded.dtype == self.torch.uint8:
+                return decoded.numpy()
+            # Preserve Pillow RGB conversion for high-bit-depth PNGs.
+        return _rgb(item)
 
 
 class TorchPreprocess:

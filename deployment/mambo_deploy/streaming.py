@@ -1,7 +1,6 @@
 """Bounded path streaming with independent IO and image preparation concurrency."""
 
 import hashlib
-import io
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -10,7 +9,6 @@ from pathlib import Path
 from queue import Empty, SimpleQueue
 
 import numpy as np
-from PIL import Image
 
 from .augmentation import _prepare_view
 from .preprocessing import RECIPE, _rgb, prepare_uint8, preprocess
@@ -26,9 +24,8 @@ def read_image(path, size, digest):
     return data
 
 
-def prepare_image(data, tta, out=None, *, compact=False):
-    with Image.open(io.BytesIO(data)) as image:
-        decoded = _rgb(image)
+def prepare_image(data, tta, out=None, *, compact=False, decode=_rgb):
+    decoded = decode(data)
     prepare = prepare_uint8 if compact else preprocess
     if out is None:
         return (prepare(decoded),) if tta is None else tuple(_prepare_view(decoded, view, compact=compact) for view in tta.transforms)
@@ -59,6 +56,7 @@ def prepared_stream(
     reuse_buffers=False,
     buffer_factory=None,
     compact=False,
+    decode=_rgb,
 ):
     """Yield ordered (offset, batch views); reusable buffers are leased until next().
 
@@ -82,7 +80,7 @@ def prepared_stream(
 
     def prepare_into(data, target):
         start = time.perf_counter()
-        prepare_image(data, tta, out=target, compact=compact)
+        prepare_image(data, tta, out=target, compact=compact, decode=decode)
         return time.perf_counter() - start
 
     def submit(pool, kind, index, size, function, *args):

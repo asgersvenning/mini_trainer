@@ -65,14 +65,21 @@ Use the ONNX version already qualified on B200 here. This is an environment-spec
 test setup, not a new deployment-wide dependency pin. Existing environments need
 none of these installation commands.
 
-## Streaming ownership and preparation update
+## Current preparation update
 
-Reuse the full B200, its working environments and the same command above with
-`--output /work/mambo-speed/b200-full-admission`. This checks the correction to
-reader admission after `b200-full-streaming` regressed. Compare all four variants
-with both `b200-full-compact` and `b200-full-streaming`; do not repeat the MIG or
-GPU-resident test.
+Reuse the full B200 and its working environments. This checks native Torch decoding
+and direct NumPy rotation sampling against `b200-full-admission`:
+
+```sh
+export MAMBO_CACHE=/work/mambo-cache
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.speed_smoke \
+  --metadata /work/datasets/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet \
+  --onnx-python /tmp/mambo-ort-ptx/bin/python \
+  --output /work/mambo-speed/b200-full-preparation
+```
+
 No environment rebuild, model change or new setting is needed. Keep batch size
-and worker settings unchanged so the pipeline is the variable being compared.
-The existing resident reference at batch 256 is 3,667 images/s; it excludes transfers
-and CPU result construction and remains a reference, not an end-to-end promise.
+and worker settings unchanged. Run the four variants once; do not repeat the MIG,
+quality or GPU-resident tests. The existing resident reference at batch 256 is
+3,667 images/s; it excludes transfers and CPU result construction and remains a
+reference, not an end-to-end promise. Keep prior output directories for comparison.

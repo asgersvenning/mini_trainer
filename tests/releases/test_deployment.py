@@ -636,7 +636,15 @@ def test_virtual_tta_padding_matches_materialized_pixels(compact):
         image = np.random.default_rng(31).integers(0, 256, size=shape, dtype=np.uint8)
         original = image.copy()
         for transform in [View(), EdgePad(0), EdgePad(0.25), RotatePad(-30), RotatePad(30, 0.15)]:
-            expected = prepare(transform(image.copy()))
+            if isinstance(transform, RotatePad):
+                from PIL import Image
+
+                rotated = Image.fromarray(image.transpose(1, 2, 0)).rotate(
+                    transform.degrees, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104)
+                )
+                expected = prepare(EdgePad(transform.padding)(np.asarray(rotated).transpose(2, 0, 1)))
+            else:
+                expected = prepare(transform(image.copy()))
             target = np.empty_like(expected)
             actual = _prepare_view(image, transform, out=target, compact=compact)
             assert actual is target
@@ -656,3 +664,55 @@ def test_builtin_subclass_keeps_custom_transform_copy_isolation():
     actual = _prepare_view(image, MutatingView(), compact=True)
     assert not actual.any()
     assert (image == 255).all()
+
+
+@pytest.mark.parametrize("format", ["JPEG", "PNG", "TIFF"])
+def test_native_decode_matches_portable_inputs(tmp_path, format):
+    import io
+
+    import torch
+    from PIL import Image
+
+    from deployment.mambo_deploy.preprocessing import TorchDecode, _rgb
+
+    decode = TorchDecode(torch)
+    source = np.random.default_rng(12).integers(0, 256, (113, 179, 3), dtype=np.uint8)
+    for image in [Image.fromarray(source), Image.fromarray(source[..., 0])]:
+        encoded = io.BytesIO()
+        image.save(encoded, format=format)
+        data = encoded.getvalue()
+        path = tmp_path / ("image." + format.lower())
+        path.write_bytes(data)
+        expected = _rgb(data)
+        np.testing.assert_array_equal(decode(data), expected)
+        np.testing.assert_array_equal(decode(path), expected)
+        np.testing.assert_array_equal(decode(image), expected if format != "JPEG" else _rgb(image))
+    np.testing.assert_array_equal(decode(source.transpose(2, 0, 1)), source.transpose(2, 0, 1))
+
+
+@pytest.mark.parametrize("angle", [0, 90, 180, -90, -30, 10, 30])
+def test_numpy_rotation_preserves_expansion_fill_and_interpolation(angle):
+    from PIL import Image
+
+    from deployment.mambo_deploy.augmentation import RotatePad
+
+    source = np.random.default_rng(47).integers(0, 256, (3, 41, 68), dtype=np.uint8)
+    expected = np.asarray(
+        Image.fromarray(source.transpose(1, 2, 0)).rotate(angle, resample=Image.Resampling.BILINEAR, expand=True, fillcolor=(124, 116, 104))
+    ).transpose(2, 0, 1)
+    np.testing.assert_array_equal(RotatePad(angle).rotate(source), expected)
+
+
+def test_native_decode_preserves_high_bit_depth_png_conversion():
+    import io
+
+    import torch
+    from PIL import Image
+
+    from deployment.mambo_deploy.preprocessing import TorchDecode, _rgb
+
+    source = np.array([[0, 128, 255, 256, 32768, 65535]], dtype=np.uint16)
+    encoded = io.BytesIO()
+    Image.fromarray(source).save(encoded, format="PNG")
+    data = encoded.getvalue()
+    np.testing.assert_array_equal(TorchDecode(torch)(data), _rgb(data))

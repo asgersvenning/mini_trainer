@@ -16,7 +16,7 @@ from .augmentation import infer_augmented, infer_prepared, prepared_views, resol
 from .bundle import Bundle
 from .download import default_bundle
 from .onnx_session import create_session
-from .preprocessing import RECIPE, TorchPreprocess, image_items, prepare_batch
+from .preprocessing import RECIPE, TorchDecode, TorchPreprocess, _rgb, image_items, prepare_batch
 from .result_worker import ResultWorker
 from .results import HierarchyPlan, Prediction
 from .streaming import prepared_stream
@@ -181,6 +181,10 @@ class Predictor:
         except ImportError as error:
             raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
         return torch, bypass_submodule
+
+    @cached_property
+    def _decode(self):
+        return TorchDecode(self._torch_api[0]) if self.backend == "torch" else _rgb
 
     @cached_property
     def _device_preprocess(self):
@@ -350,7 +354,15 @@ class Predictor:
         compact = self._compact_inputs
         factory = pinned_factory(self.device, compact=compact) if accelerated and self.backend == "torch" else None
         source = prepared_stream(
-            items, batch_size, tta=self.tta, stats=stats, reuse_buffers=True, buffer_factory=factory, compact=compact, **options
+            items,
+            batch_size,
+            tta=self.tta,
+            stats=stats,
+            reuse_buffers=True,
+            buffer_factory=factory,
+            compact=compact,
+            decode=self._decode,
+            **options,
         )
         if accelerated:
             yield from device_batches(source, self.backend, self.device, stats)
@@ -360,7 +372,7 @@ class Predictor:
                     yield offset, views, len(views[0])
 
     def _prepare(self, batch, pool=None):
-        return prepare_batch(batch, pool, compact=self._compact_inputs)
+        return prepare_batch(batch, pool, compact=self._compact_inputs, decode=self._decode)
 
     def _infer(self, images, embeddings=False):
         return (self._torch if self.backend == "torch" else self._onnx)(images, embeddings)
@@ -378,7 +390,7 @@ class Predictor:
                 while batch := list(islice(items, self.batch_size)):
                     if self.backend == "torch":
                         views = (
-                            prepared_views(batch, self.tta, pool, compact=self._compact_inputs)
+                            prepared_views(batch, self.tta, pool, compact=self._compact_inputs, decode=self._decode)
                             if self.tta
                             else (self._prepare(batch, pool),)
                         )

@@ -526,7 +526,7 @@ labels matched at all three ranks. This timing preceded moving metadata lookup i
 readers; it therefore did not validate the implementation subsequently tested on
 B200. It does not establish a speedup. Local evidence is retained under `local-evidence/stream-owner/`.
 
-Use the existing [full-B200 smoke command](../dev/releases/mambo_v3/speed-smoke.md#streaming-ownership-and-preparation-update)
+Use the existing [full-B200 smoke command](../dev/releases/mambo_v3/speed-smoke.md#current-preparation-update)
 with a fresh output directory, keeping the same batch and worker settings. Reuse
 the resident reference and existing environments; no MIG or quality campaign is
 needed for this bounded pipeline comparison.
@@ -566,6 +566,46 @@ CUDA transfer tests skipped. It covers ordering, budgets, buffer ownership, fail
 shutdown and continued metadata progress under byte-budget backpressure. GPU transfer
 and model code did not change; their existing validation is reused.
 
-Performance of the correction remains unmeasured. Run the same four-variant full-B200
-smoke once in `b200-full-admission`, retaining the compact and regressed outputs for
-comparison. Reuse the environments and resident reference; no quality or MIG rerun.
+The `b200-full-admission` run subsequently measured streaming throughput of 1,226.8,
+701.6, 473.5 and 312.9 images/s for Torch, ONNX, Torch + TTA and ONNX + TTA. This
+restored the compact baseline for inference without TTA; TTA improved by about 15%
+and 23%. Request throughput was 853.2, 420.7, 287.2 and 161.8 images/s, respectively;
+peak host memory was 4.47, 5.20, 6.25 and 7.70 GiB. This is recovery from the admission
+regression, not resolution of the Torch streaming gap to the resident reference.
+
+
+### Decode once; sample only the rotation pixels used
+
+The next increment changes preparation work, leaving scheduling, buffers, transfers
+and GPU inference unchanged:
+
+- Torch JPEG/PNG inputs use the existing torchvision native CPU decoder, as the core
+  loader does. Its decoded tensor shares storage with NumPy; there is no full-size
+  Pillow RGB copy/raw-byte export. The decoder is resolved once per predictor before
+  dispatching preparation. Other formats, PIL/array inputs and high-bit-depth PNG
+  conversion retain the portable path. Standalone ONNX does not import Torch.
+- Portable RGB decoding skips `convert("RGB")` when the input is already RGB. Pillow's
+  [conversion implementation](https://github.com/python-pillow/Pillow/blob/main/src/PIL/Image.py)
+  otherwise copies even same-mode images, and its array interface exports raw bytes.
+- Built-in arbitrary-angle TTA operates directly on NumPy arrays. It maps the final
+  nearest-square coordinates through the expanded rotation and interpolates only
+  those pixels, preserving the existing rotate-to-uint8, edge-pad, nearest-sample
+  ordering. Repeated positions from padding/upscaling are evaluated once. Rotation
+  no longer converts arrays to Pillow and back or builds a full-resolution rotated
+  canvas during preparation. Its expansion, fill and pixel-center conventions match
+  the previous [Pillow geometry](https://github.com/python-pillow/Pillow/blob/main/src/libImaging/Geometry.c).
+  Custom transforms retain their original full-resolution inputs and copy isolation.
+- Already square 384-pixel inputs bypass redundant nearest gathering; CPU FP32 and
+  Torch batched finishing retain their existing interpolation/normalization.
+
+This is a modest net production-code increase for a native decoder adapter and an
+array sampler, not a claimed code-count reduction. It removes representation round
+trips and discarded image work without new dependencies, pools, flags or model assets.
+
+Validation was limited to the affected deployment/streaming suite (83 passed, four
+CUDA checks skipped) and focused checks for the subsequent high-bit-depth fallback
+and repeated-pixel sampling. Pixel fixtures compare against the prior Pillow rotation,
+including expanded non-square canvases, thin/large images and cardinal rotations.
+No local throughput sweep, model-quality campaign or GPU-reference rerun was performed.
+B200 throughput remains unmeasured: compare the same smoke in `b200-full-preparation`
+against `b200-full-admission`, preserving all worker settings and environments.
