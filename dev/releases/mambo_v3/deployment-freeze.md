@@ -107,3 +107,8 @@ and correction of a generator stub in the new read-window test. Static checks an
 the required minimal installed training-wheel check passed. The renamed deployment
 wheel builds; final installed ONNX/native bundle checks remain ahead. No performance
 or quality evaluation was rerun.
+
+The automatic model cache now stores verified weight bytes by SHA-256 and reuses
+them across metadata revisions (hard links where possible, ordinary copies
+otherwise). Offline mode can materialize packaged metadata but still forbids
+network downloads. Nine focused cache/download tests pass.

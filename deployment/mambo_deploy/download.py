@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen
@@ -43,13 +44,27 @@ def fetch_file(url, destination, *, size, sha256, offline=False):
     return destination
 
 
+def cached_model_file(url, destination, *, cache, size, sha256, offline=False):
+    """Reuse immutable weight bytes across metadata revisions, without symlinks."""
+    destination = Path(destination)
+    blob = Path(cache) / "blobs" / sha256
+    fetch_file(url, blob, size=size, sha256=sha256, offline=offline)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".model-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "data"
+        try:
+            os.link(blob, staged)
+        except OSError:
+            shutil.copyfile(blob, staged)
+        staged.replace(destination)
+
+
 def default_bundle():
     """Install small packaged metadata; model files are fetched lazily by Bundle."""
     descriptor = json.loads(Path(__file__).with_name("default_bundle.json").read_text())
     revision = hashlib.sha256(json.dumps(descriptor, sort_keys=True).encode()).hexdigest()[:16]
     cache = Path(os.environ.get("MAMBO_CACHE", Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "mambo"))
     root = cache.expanduser() / revision
-    offline = os.environ.get("MAMBO_OFFLINE") == "1"
     for relative, content in descriptor["metadata"].items():
         path = (root / relative).resolve()
         if not path.is_relative_to(root.resolve()):
@@ -59,8 +74,6 @@ def default_bundle():
             if path.read_bytes() != data:
                 raise ValueError(f"Cached metadata differs from this release: {path}")
             continue
-        if offline:
-            raise FileNotFoundError("Default bundle is not cached; download once before setting MAMBO_OFFLINE=1")
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
             temp = Path(stream.name)

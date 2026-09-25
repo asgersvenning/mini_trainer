@@ -108,3 +108,21 @@ For diagnostics, `stats={}` collects queue/buffer and wait statistics;
 `device_prefetch=False` disables device staging. These are not routine integration
 settings. Calls using one predictor share serialized inference; adding caller
 threads alone does not create concurrent model execution.
+
+## Versioning and model identity
+
+The distribution name `mambo-v3` identifies the model generation. Package updates
+within that distribution retain the released V3 weights and existing preset
+identities; changed weights belong to a new model-generation package. Pin
+`mambo-v3==0.3.0` to preserve the adapter implementation too, and retain your
+application's resolved runtime dependencies for reproducibility.
+
+The Python namespace stays `mambo_deploy`. Do not install multiple model-generation
+packages or the older `mambo-deploy` candidate in one environment; use separate
+environments for comparisons. The `model=` argument selects geographic scope,
+not a trained-model release. Result metadata identifies the model and selected
+list. Explicit local bundles are an advanced override, not an automatic upgrade.
+
+Model files are cached by their SHA-256 identity and reused across metadata-only
+updates. Copies placed beside ONNX graphs keep bundles relocatable; there is no
+runtime package installation or mutable remote "latest model" lookup.

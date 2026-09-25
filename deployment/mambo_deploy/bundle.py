@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .download import fetch_file
+from .download import cached_model_file
 
 
 class Bundle:
@@ -42,7 +42,13 @@ class Bundle:
             raise ValueError(f"Unlisted bundle file: {relative}")
         if relative not in self._verified:
             if not path.exists() and self.download and relative in self.manifest.get("origins", {}):
-                fetch_file(self.manifest["origins"][relative], path, **item, offline=os.environ.get("MAMBO_OFFLINE") == "1")
+                cached_model_file(
+                    self.manifest["origins"][relative],
+                    path,
+                    cache=self.root.parent,
+                    **item,
+                    offline=os.environ.get("MAMBO_OFFLINE") == "1",
+                )
             if path.stat().st_size != item["size"]:
                 raise ValueError(f"Bundle size mismatch: {relative}")
             with path.open("rb") as stream:
