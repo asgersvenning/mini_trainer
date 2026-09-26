@@ -59,6 +59,9 @@ Activate the environment, use its executables directly, or use `uv run --no-sync
 An implicit sync can replace the deliberately selected PyTorch backend. Select the
 backend explicitly whenever installing or synchronizing dependencies.
 
+The [examples index](examples/README.md) describes dataset constructors and historical
+notebook demonstrations.
+
 ## Data loading on shared machines
 
 Defaults use process CPU availability, affinity, visible cgroup quotas and Slurm

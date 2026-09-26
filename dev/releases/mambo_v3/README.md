@@ -104,6 +104,18 @@ Keep these historical distinctions when interpreting compatibility:
 - The legacy probability heuristic used a batch-wide sum. This defect and an
   archived CSV schema are not sufficient grounds for promising score or CLI parity.
 
+## Historical dataset quality filter
+
+The [retired filtering script](https://github.com/asgersvenning/mini_trainer/blob/027e5b8a6e82b0356c28ea47672d1b69bdea0a7b/examples/apply_quality_filter.py)
+records this policy: retain images predicted as `Valid` or `Dead` with confidence
+≥0.5, then retain species with ≥50 surviving images. It selects Parquet records by
+matching filename stems to the selected image IDs. This dataset filter is separate
+from the regional preset occurrence thresholds above.
+
+The script was labelled reference-only; its remote I/O is not a maintained rebuild
+workflow, and it does not prove how the supplied Parquet bytes were produced.
+Release construction uses the hashed metadata snapshot in `construction.toml`.
+
 ## Evaluation handoff
 
 Flemming contains 58,640 images / 522 species. Its species-directory and filename
