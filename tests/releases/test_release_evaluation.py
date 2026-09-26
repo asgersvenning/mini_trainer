@@ -118,7 +118,7 @@ def test_threaded_preprocessing_is_byte_identical_and_ordered(tmp_path):
 
     from PIL import Image
 
-    from dev.releases.mambo_v3.evaluate import prepare_batch
+    from deployment.mambo_deploy.preprocessing import prepare_batch
 
     paths = []
     for i in range(5):

@@ -33,9 +33,10 @@ prediction runs, or `benchmark` for isolated timing trials, changing the output
 directory each time. Jobs are sequential; do not overlap timing with other work.
 
 The collector checks hashes and applies full, legacy Europe/northern Europe and
-updated European lists to each inference batch. Qualification also checks a
-custom list equivalent to updated Europe, prediction/embedding agreement and
-1280-dimensional unit embeddings. Embeddings are written incrementally to NPY.
+updated European lists to each inference batch. It checks custom-list equivalence
+to updated Europe and, when requested, finite 1280-dimensional unit embeddings,
+written incrementally to NPY. Use the comparison command below to check label
+agreement between prediction and embedding collections; this is not automatic.
 Streaming controls and current ownership boundaries are described in the
 [pipeline review](../../../docs/mambo-inference-pipeline-review.md).
 
@@ -78,12 +79,15 @@ changes the macro averaging domain. Those later analyses reuse predictions.
 `run_local benchmark` runs three alternating-order fresh-process trials per
 PyTorch/ONNX × CPU/CUDA × predictions/embeddings setting. Four-thread CPU uses
 batches 1/8; GPU adds 32; one-thread CPU adds batch-1 measurements. All cells use
-the same seeded 32-image bank, two warmups and seven observations. Preserve raw
-observations and trial ranges; this is a bounded sweep, not maximum throughput.
+a seeded 32-image bank, two warmups and seven observations for request timings.
+Each largest-batch cell also retains three streaming passes over a separate seeded
+1,024-image selection. The summary below displays request timings; streaming
+observations remain in the source reports. This is a bounded sweep, not maximum throughput.
 
 End-to-end timing covers decoding through completed CPU results, including
 hierarchy reduction and requested embeddings. Prepared-runtime timing omits image
-preparation and hierarchy reduction but includes transfers. Runtime import/setup,
+preparation and hierarchy reduction but includes transfers; it is a single-view
+diagnostic even when request timing uses TTA. Runtime import/setup,
 predictor construction and lazy first call are separate; neither is cold-boot
 latency. Nested startup components must not be summed. Reports retain resolved
 precision, so FP32 reference runs and automatic-precision runs remain distinguishable.

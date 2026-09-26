@@ -12,7 +12,6 @@ import numpy as np
 
 from deployment.mambo_deploy import Predictor
 from deployment.mambo_deploy.augmentation import DEFAULT_TTA, PROFILES
-from deployment.mambo_deploy.preprocessing import prepare_batch as prepare_batch
 from deployment.mambo_deploy.result_worker import ResultWorker
 from deployment.mambo_deploy.results import Prediction
 from dev.benchmarks.inference.onnx_inference import file_hash
