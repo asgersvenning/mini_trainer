@@ -61,8 +61,8 @@ threshold. Fix budgets and quality criteria before comparing changes.
 For real data, a seeded 20% of each class's unique training files forms validation.
 Byte-identical duplicates stay together; training copies of test files are excluded
 from the index and recorded without changing source files or the official test
-split. Conflicting labels for identical content fail validation. Hashing detects
-encoded-byte equality, not perceptual duplicates. Blair's reviewed class mapping
+split. Remaining cross-split byte duplicates fail validation; within-split label
+conflicts are not audited. Hashing is not perceptual. Blair's reviewed class mapping
 must exactly cover training classes and is retained in the manifest.
 
 The final checkpoint is evaluated after a fixed epoch budget; test labels never
