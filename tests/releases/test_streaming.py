@@ -21,19 +21,41 @@ def inputs(tmp_path, count=9):
 
 
 @pytest.mark.parametrize("tta", [None, resolve_tta("rotation30_pad25_3")])
-def test_order_pixels_and_bounds(tmp_path, tta):
+@pytest.mark.parametrize("compact", [False, True])
+def test_order_pixels_and_bounds(tmp_path, tta, compact):
+    if compact:
+        import torch
+
+        from deployment.mambo_deploy.preprocessing import TorchPreprocess
+
+        finish = TorchPreprocess(torch, "cpu")
     items = inputs(tmp_path)
     stats = {}
     batches = list(
         streaming.prepared_stream(
-            items, 2, tta=tta, read_workers=8, prepare_workers=3, read_window=8, prefetch_batches=2, encoded_budget=400, stats=stats
+            items,
+            2,
+            tta=tta,
+            compact=compact,
+            read_workers=8,
+            prepare_workers=3,
+            read_window=8,
+            prefetch_batches=2,
+            encoded_budget=400,
+            stats=stats,
         )
     )
     assert [offset for offset, _ in batches] == [0, 2, 4, 6, 8]
     for offset, views in batches:
         expected = [streaming.prepare_image(p.read_bytes(), tta) for p, _ in items[offset : offset + len(views[0])]]
+        assert len(views) == len(expected[0])
         for i, view in enumerate(views):
-            np.testing.assert_array_equal(view, np.stack([image[i] for image in expected]))
+            reference = np.stack([image[i] for image in expected])
+            if compact:
+                assert view.dtype == np.uint8 and view.nbytes * 4 == reference.nbytes
+                np.testing.assert_allclose(finish(torch.from_numpy(view)).numpy(), reference, atol=1e-6)
+            else:
+                np.testing.assert_array_equal(view, reference)
     assert stats["peak_encoded_bytes"] <= 400
     assert stats["peak_prepared_images"] <= 6
 
@@ -193,22 +215,6 @@ def test_cuda_deferred_download_retains_outputs_after_slot_reuse():
         values, sums = complete()
         np.testing.assert_array_equal(values, np.full((index + 1, 128), index))
         np.testing.assert_array_equal(sums, np.full(8, index * 128))
-
-
-@pytest.mark.parametrize("tta", [None, resolve_tta("rotation30_pad25_3")])
-def test_compact_stream_preserves_views_and_quarters_storage(tmp_path, tta):
-    import torch
-
-    from deployment.mambo_deploy.preprocessing import TorchPreprocess
-
-    finish = TorchPreprocess(torch, "cpu")
-    paths = inputs(tmp_path, 5)
-    for offset, views in streaming.prepared_stream(paths, 2, compact=True):
-        for index, view in enumerate(views):
-            assert view.dtype == np.uint8
-            expected = np.stack([streaming.prepare_image(p.read_bytes(), tta)[index] for p, _ in paths[offset : offset + len(view)]])
-            assert view.nbytes * 4 == expected.nbytes
-            np.testing.assert_allclose(finish(torch.from_numpy(view)).numpy(), expected, atol=1e-6)
 
 
 def test_ready_work_prioritizes_earliest_batch(tmp_path, monkeypatch):
