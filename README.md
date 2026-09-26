@@ -39,7 +39,6 @@ and package management. Choose a published package or a source checkout.
 
 The distribution is `minitrainer`; Python imports remain `mini_trainer`.
 The similarly named `mini-trainer` / `mini_trainer` PyPI project is unrelated.
-Version 0.3.0 is prepared for publication; use the source installation below until published.
 
 ```bash
 uv venv --python 3.12
