@@ -11,14 +11,12 @@ from torchvision.transforms.functional import resize
 
 from mini_trainer.modeling import class_similarity
 
-# --- Constants ---
 MIN_DISPLAY_DIM_HEATMAP = 500
 MAX_DISPLAY_DIM_HEATMAP = 5000
 COLORBAR_RENDER_DPI = 150
 COLORBAR_TARGET_WIDTH_PIXELS = 200  # Approximate width for the colorbar image
 
 
-# --- Helper: Matrix Aggregation ---
 def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> np.ndarray:
     """Aggregates matrix by taking the maximum in blocks.
 
@@ -37,11 +35,9 @@ def _aggregate_matrix_max(matrix: np.ndarray, block_shape: tuple[int, int]) -> n
     new_rows, new_cols = padded_matrix.shape
     target_rows, target_cols = new_rows // block_rows, new_cols // block_cols
 
-    # Efficient reshape and sum for block aggregation
     return padded_matrix.reshape(target_rows, block_rows, target_cols, block_cols).max(axis=3).max(axis=1)
 
 
-# --- Helper: Matrix Scaling ---
 def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     """Resizes matrix: downscales then upscales to fit display dimension constraints."""
     processed_mat = mat
@@ -73,7 +69,6 @@ def _get_scaled_matrix_for_display(mat: np.ndarray) -> np.ndarray:
     return processed_mat.copy() if processed_mat is mat else processed_mat
 
 
-# --- Helper: Heatmap Array Generation ---
 def _generate_heatmap_rgb_array(display_mat: np.ndarray, min_val_display: float | None, cmap_name: str, percent: bool):
     """Generates the RGB heatmap image array using Matplotlib colormaps, and returns norm info."""
 
@@ -108,18 +103,17 @@ def _generate_heatmap_rgb_array(display_mat: np.ndarray, min_val_display: float 
     return rgb, norm, norm_vmin, norm_vmax
 
 
-# --- Helper: Colorbar Ticks ---
 def _get_colorbar_ticks_and_labels(norm_vmin: float, norm_vmax: float, max_ticks: int, percent: bool) -> tuple[list[float], list[str]]:
     """Generates tick values and labels for the colorbar."""
     if not (norm_vmin > 0 and norm_vmax > 0 and norm_vmin < norm_vmax):
         return [], []
 
-    num_decades = math.log10(norm_vmax / norm_vmin) if norm_vmin > 0 and norm_vmax > 0 else 1
+    num_decades = math.log10(norm_vmax / norm_vmin)
     multipliers = [1, 2, 5] if num_decades < 2 else [1, 1.5, 2, 3, 5, 7]  # Fewer for small ranges
 
     tick_cands = {norm_vmin, norm_vmax}
-    start_exp = math.floor(math.log10(norm_vmin)) if norm_vmin > 0 else 0
-    end_exp = math.ceil(math.log10(norm_vmax)) if norm_vmax > 0 else 0
+    start_exp = math.floor(math.log10(norm_vmin))
+    end_exp = math.ceil(math.log10(norm_vmax))
 
     for exp_val in range(start_exp, end_exp + 1):
         for m in multipliers:
@@ -127,32 +121,17 @@ def _get_colorbar_ticks_and_labels(norm_vmin: float, norm_vmax: float, max_ticks
             if norm_vmin <= tick <= norm_vmax:  # Ensure ticks are within actual data range
                 tick_cands.add(tick)
 
-    # Filter again to be absolutely sure, then sort
-    sorted_ticks = sorted(list(t for t in tick_cands if norm_vmin <= t <= norm_vmax))
-
-    if len(sorted_ticks) > max_ticks:  # Subsample if too many
-        indices = np.round(np.linspace(0, len(sorted_ticks) - 1, max_ticks)).astype(int)
-        final_ticks = [sorted_ticks[i] for i in sorted(list(set(indices)))]
-        # Ensure original vmin and vmax are considered if space allows
-        if max_ticks >= 1 and not np.isclose(final_ticks[0], norm_vmin):
-            final_ticks.insert(0, norm_vmin)
-        if max_ticks >= 2 and not np.isclose(final_ticks[-1], norm_vmax):
-            final_ticks.append(norm_vmax)
-        final_ticks = sorted(list(set(t for t in final_ticks if norm_vmin <= t <= norm_vmax)))[:max_ticks]
-    else:
-        final_ticks = sorted_ticks
-
-    # Ensure at least two ticks (min/max) if possible, if list became empty by max_ticks=0 or 1
-    if not final_ticks and len(sorted_ticks) >= 1:
-        final_ticks = [sorted_ticks[0]]
-        if len(sorted_ticks) > 1:
-            final_ticks.append(sorted_ticks[-1])
-        final_ticks = sorted(list(set(final_ticks)))
+    final_ticks = sorted(tick_cands)
+    if max_ticks == 0:
+        # Preserve the legacy zero-limit fallback to both bounds.
+        final_ticks = [norm_vmin, norm_vmax]
+    elif len(final_ticks) > max_ticks:
+        indices = np.round(np.linspace(0, len(final_ticks) - 1, max_ticks)).astype(int)
+        final_ticks = [final_ticks[i] for i in indices]
 
     labels = []
     for v_tick in final_ticks:
         val_fmt = v_tick * 100 if percent else v_tick
-        lab_str = ""
         if percent:
             if abs(val_fmt) < 0.01 and val_fmt != 0:
                 lab_str = f"{val_fmt:.1e}%"
@@ -170,7 +149,6 @@ def _get_colorbar_ticks_and_labels(norm_vmin: float, norm_vmax: float, max_ticks
     return final_ticks, labels
 
 
-# --- Helper: Colorbar Array Generation ---
 def _generate_colorbar_rgb_array(
     norm_obj: mpl.colors.LogNorm,
     cmap_name_str: str,
@@ -216,7 +194,6 @@ def _generate_colorbar_rgb_array(
     return img_rgb
 
 
-# --- Main Plotting Function ---
 def plot_heatmap(
     mat: np.ndarray | torch.Tensor,
     cmap_name: str = "magma",
@@ -228,7 +205,7 @@ def plot_heatmap(
 ):
     """Plots a high-resolution confusion matrix using NumPy and Matplotlib.
 
-    Returns a combined RGB NumPy array (heatmap + colorbar), or None for empty input.
+    Return an RGB uint8 array with an optional colorbar; empty input gives a gray image.
     """
     if isinstance(mat, torch.Tensor):
         mat = mat.cpu().detach().float().numpy()
@@ -237,10 +214,8 @@ def plot_heatmap(
         img = np.full((MIN_DISPLAY_DIM_HEATMAP, MIN_DISPLAY_DIM_HEATMAP + COLORBAR_TARGET_WIDTH_PIXELS, 3), (200, 200, 200), dtype=np.uint8)
         return img
 
-    # 1. Scale matrix for display
     display_mat = _get_scaled_matrix_for_display(mat)
 
-    # 2. Generate heatmap RGB array
     heatmap_rgb_array, norm_obj, vmin, vmax = _generate_heatmap_rgb_array(display_mat, min_val_display, cmap_name, percent)
 
     if not colorbar:
@@ -252,18 +227,13 @@ def plot_heatmap(
         )  # Slightly different gray
         return np.hstack((heatmap_rgb_array, empty_cbar_space))
 
-    # 3. Get colorbar ticks and labels
     tick_values, tick_labels = _get_colorbar_ticks_and_labels(vmin, vmax, max_colorbar_ticks, percent)
 
-    # 4. Generate colorbar RGB array
     colorbar_rgb_array = _generate_colorbar_rgb_array(
         norm_obj, cmap_name, tick_values, tick_labels, target_height_pixels=heatmap_rgb_array.shape[0], font_size_pt=font_size
     )
 
-    # 5. Combine heatmap and colorbar
-    final_rgb_image = np.hstack((heatmap_rgb_array, colorbar_rgb_array))
-
-    return final_rgb_image
+    return np.hstack((heatmap_rgb_array, colorbar_rgb_array))
 
 
 def plot_class_distance_matrix(model: nn.Module, **kwargs):

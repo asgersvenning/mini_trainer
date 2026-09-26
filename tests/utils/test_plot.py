@@ -5,6 +5,7 @@ from mini_trainer.training import raw_confusion_matrix
 from mini_trainer.visualization.plot import (
     MIN_DISPLAY_DIM_HEATMAP,
     _aggregate_matrix_max,
+    _get_colorbar_ticks_and_labels,
     _get_scaled_matrix_for_display,
 )
 
@@ -48,3 +49,16 @@ def test_chunked_heatmap_matches_previous_rgb_pixels(cmap_name, percent):
     np.testing.assert_array_equal(actual, expected)
     np.testing.assert_array_equal(values, original)
     assert (actual_min, actual_max) == (vmin, vmax)
+
+
+@pytest.mark.parametrize("limit", [0, 1, 2, 8])
+@pytest.mark.parametrize("percent", [False, True])
+def test_colorbar_ticks_are_ordered_bounded_and_labeled(limit, percent):
+    ticks, labels = _get_colorbar_ticks_and_labels(0.001, 1.0, limit, percent)
+    assert ticks == sorted(set(ticks))
+    assert len(ticks) == len(labels) == (2 if limit == 0 else limit)
+    assert ticks[0] == 0.001
+    assert all(0.001 <= tick <= 1.0 for tick in ticks)
+    if limit != 1:
+        assert ticks[-1] == 1.0
+    assert all(label.endswith("%") == percent for label in labels)
