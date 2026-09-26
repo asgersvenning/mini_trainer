@@ -9,53 +9,44 @@ both V3 backends with padded-scale TTA. Deployment defaults remain threshold zer
 
 ## Method and interpretation
 
-Every predictive metric, threshold selection and dataset split uses the existing
-`mini_metrics` machinery at revision `70cc69adc05362863439277048e06386c1f885e1`,
-the same revision as the unthresholded comparison. No metric is reimplemented.
+Metrics, splitting and calibration use `mini_metrics` revision
+`70cc69adc05362863439277048e06386c1f885e1`:
 
-- `MetricDF.split((0.9, 0.1), strata=("label",), seed=42)` yields **5,852 calibration
-  images and 52,788 reporting images**. Splitting groups all ranks by image ID.
-  Identity hashes verify identical partitions and truth across all five pipelines.
+- `MetricDF.split((0.9, 0.1), strata=("label",), seed=42)` groups ranks by image ID,
+  yielding **5,852 calibration / 52,788 reporting images**. Identity hashes verify
+  matching truth/partitions across pipelines. Both operating points below use the
+  reporting partition, including unknown truth—not the full 58,640-image population.
 - `OptimalConfidenceThreshold(crit=MacroF1, eps=0.01, use_quantiles=True,
-  n_bootstraps=0)` selects one threshold per rank and pipeline on calibration only.
-  The package uses its exact F1 curve and connected near-optimal plateau selector;
-  “optimized” means the package's tolerance-based selection, not necessarily the
-  exact maximizer. Explicit results match `evaluate_file(optimal=True, seed=42)`.
-- Both threshold-zero and calibrated scores below use **the same reporting partition**,
-  including unknown truth. Do not compare these directly with full-58,640-image
-  scores as though thresholding were the only difference. Full-data threshold-zero
-  scores were separately recomputed and matched the existing comparison.
-- Coverage is `mini_metrics` image-level acceptance fraction, separately at each rank:
-  `confidence >= threshold`. It is not vocabulary coverage. Thresholds are independent
-  per rank; these are simple rank metrics (`hierarchical=False`), not an enforced
-  species-to-family fallback policy.
-- Macro accuracy averages accuracy among accepted predictions within truth taxa,
-  excluding taxa with no accepted predictions. Micro accuracy is accuracy among
-  all accepted images. Recall retains rejected truth as misses; Macro-F1 also
-  penalizes rejection and includes truth-supported or retained predicted-only taxa.
-  Precision uses the package's predicted-class averaging. Always interpret rising
-  accuracy/precision with coverage and recall, especially near total rejection.
+  n_bootstraps=0)` fits each pipeline/rank on calibration only. Its exact F1 curve
+  and connected near-optimal plateau selector need not select the exact maximum.
+  Results match `evaluate_file(optimal=True, seed=42)`; full-data threshold-zero
+  checks separately reproduce the earlier comparison.
+- Coverage is the fraction accepted at each rank (`confidence >= threshold`),
+  distinct from vocabulary coverage. Independent thresholds and
+  `hierarchical=False` do not implement species-to-family fallback.
 
-This is a single image-level split, not observation/site-level validation or a
-threshold stability study. TTA was selected earlier using a subset of Flemming;
-this split does not make the entire model/TTA selection independently validated.
-Threshold values are specific to these pipelines, confidence definitions and this
-preset. They are candidate operating points, not universal deployment defaults.
+Macro accuracy averages accepted-prediction accuracy within truth taxa, excluding
+those with no accepted predictions; micro accuracy averages all accepted images.
+Recall counts rejection as misses. Macro-F1 penalizes rejection and includes
+truth-supported and predicted-only taxa; precision averages predicted-class groups.
+Interpret accuracy/precision together with recall and coverage.
+
+This single image-level split is not site/observation-level or stability validation.
+Prior TTA selection used Flemming, so it is not independent model/TTA validation
+either. Thresholds are specific to these pipelines, scores and preset; deployment
+still defaults to zero.
 
 ## Effect on the model comparison
 
-Calibration improves Macro-F1 for every pipeline at every rank, with reduced
-coverage and recall. At species level, ordinary V3 moves ahead of V2 in Macro-F1;
-with threshold zero, its F1 was slightly lower. TTA improves species and genus
-Macro-F1 further. **Family reverses the unthresholded F1 ranking: V2 leads all V3
-variants after calibration** (0.6545 versus about 0.581 without TTA and 0.607 with
-TTA). V3 + TTA retains more family recall than V2, so this is a trade-off rather
-than uniform dominance. These operating points need not have equal coverage.
-The [family-level audit](mambo-family-precision.md) traces the reversal to 7
-predicted-only families surviving V3 thresholds versus 3 for V2. Precision within
-the same 22 truth-present predicted families is actually higher for V3.
+Calibration raises Macro-F1 at every rank while lowering coverage and recall.
+V3 overtakes V2 at species level; TTA further improves species/genus F1. At family
+level the ranking reverses: V2 leads calibrated F1, while V3 + TTA retains more
+recall. The [family audit](mambo-family-precision.md) explains how rare predicted-only
+groups cause that reversal. Compare coverage alongside scores.
 
 ![Macro-F1 and coverage before and after calibration](assets/mambo-threshold-comparison.svg)
+
+Coverage at threshold zero is 100%; all other columns except the before/after F1 pair use calibrated thresholds.
 
 ### Species
 
@@ -67,8 +58,6 @@ the same 22 truth-present predicted families is actually higher for V3.
 | V3 PyTorch + TTA | 0.7393 | 0.3001 → 0.5239 | 78.32% | 86.59% | 82.57% | 0.6695 | 0.6393 |
 | V3 ONNX + TTA | 0.8280 | 0.3011 → 0.5431 | 74.05% | 87.55% | 83.56% | 0.7363 | 0.6076 |
 
-Coverage at threshold zero is 100%; all other columns except the before/after F1 pair use calibrated thresholds.
-
 ### Genus
 
 | Pipeline | Threshold | Macro-F1 zero → calibrated | Coverage | Macro accuracy | Micro accuracy | Macro precision | Macro recall |
@@ -78,8 +67,6 @@ Coverage at threshold zero is 100%; all other columns except the before/after F1
 | V3 ONNX | 0.8302 | 0.3245 → 0.6043 | 75.37% | 95.52% | 90.86% | 0.7523 | 0.6746 |
 | V3 PyTorch + TTA | 0.8699 | 0.3601 → 0.6655 | 77.73% | 96.28% | 91.16% | 0.8167 | 0.7031 |
 | V3 ONNX + TTA | 0.8709 | 0.3605 → 0.6655 | 77.69% | 96.30% | 91.18% | 0.8169 | 0.7032 |
-
-Coverage at threshold zero is 100%; all other columns except the before/after F1 pair use calibrated thresholds.
 
 ### Family
 
@@ -91,8 +78,6 @@ Coverage at threshold zero is 100%; all other columns except the before/after F1
 | V3 PyTorch + TTA | 0.9648 | 0.2970 → 0.6073 | 78.74% | 99.56% | 99.82% | 0.7394 | 0.7002 |
 | V3 ONNX + TTA | 0.9665 | 0.2971 → 0.6065 | 78.47% | 99.56% | 99.83% | 0.7395 | 0.6987 |
 
-Coverage at threshold zero is 100%; all other columns except the before/after F1 pair use calibrated thresholds.
-
 ## TTA backend threshold sensitivity
 
 The selected species threshold differs substantially between PyTorch (0.7393)
@@ -103,65 +88,51 @@ and ONNX (0.8280). Applying **each threshold to both backends** isolates the eff
 | 0.7393 | 0.5239 / 78.32% | 0.5238 / 78.30% |
 | 0.8280 | 0.5433 / 74.06% | 0.5431 / 74.05% |
 
-Both thresholds are within 0.01 of each backend's calibration maximum Macro-F1
-(about 0.6347). The package's near-optimal selector chooses different operating
-points, while performance at shared thresholds is almost identical. The apparent
-ONNX advantage in the calibrated species table is therefore chiefly a threshold
-selection effect, not evidence of a better ONNX model. We retain the actual selected
-values rather than choosing a new winner using the reporting data. This check
-illustrates why threshold stability deserves validation before setting defaults.
+Both thresholds are within 0.01 of each backend's calibration maximum F1
+(about 0.6347). Shared-threshold results nearly coincide: the apparent ONNX
+advantage chiefly reflects near-optimal threshold selection. Keep the selected
+values rather than choosing a new winner on reporting data; validate threshold
+stability before adopting defaults.
 
 ## Precision–recall and accuracy–coverage curves
 
 ![Five-pipeline precision–recall and accuracy–coverage curves](assets/mambo-threshold-curves.svg)
 
-Left: macro precision versus macro recall for all five pipelines at each rank.
-Right: accepted-image micro accuracy versus image coverage. ONNX curves are dashed.
-Circles denote threshold
-zero; stars denote the calibration-selected thresholds, evaluated on reporting data.
-Comparing at similar coverage helps distinguish discrimination from more aggressive
-rejection. The operating points optimize Macro-F1, not a common coverage target.
+Left: macro precision/recall; right: accepted-image micro accuracy/coverage.
+Dashed lines are ONNX; circles mark threshold zero, stars the calibrated points.
+Similar coverage helps distinguish discrimination from stronger rejection;
+calibration optimizes Macro-F1, not a shared coverage target.
 
-These are **top-prediction rejection curves**, not one-vs-rest curves built from
-every class probability, and no average-precision/AUC claim is made. Each plotted
-point comes from `evaluate_file` on the reporting partition. The sampled grid uses
-51 evenly spaced confidence thresholds, 21 calibration-confidence quantiles per
-rank, and each selected threshold, with duplicates removed. Lines connect points
-in threshold order without smoothing or a monotonic envelope; class membership
-changes can make macro precision irregular. The optimizer itself uses the exact
-calibration F1 curve, not this plotting grid. Undefined package results remain null.
+These are **top-prediction rejection curves**, not one-vs-rest PR curves or AP/AUC
+estimates. Each point uses `evaluate_file` on reporting data. The grid combines
+51 uniform thresholds, 21 calibration-confidence quantiles per rank and selected
+thresholds, deduplicated. Lines follow threshold order without smoothing or a
+monotonic envelope; changing class domains can make macro precision irregular.
+Calibration uses the exact F1 curve, not this plotting grid. Undefined results stay null.
 
-## Tail-truncated supplementary metrics
-
-The [tail-truncated comparison](mambo-tail-metrics.md) averages classes with more
-than 5, 10 or 20 truth instances and accepted predictions, using a common class set
-across all five pipelines, alongside an untruncated support >−1 baseline that retains
-each model’s full class domain. It retains coverage/support counts and the full-support
-comparison: excluding rare and predicted-only families changes the interpretation.
+The [tail comparison](mambo-tail-metrics.md) supplements full-support results with
+common-class support >5/10/20 averages. Excluding rare and predicted-only families
+changes the question; retain the untruncated comparison.
 
 ## Evidence and reproduction
 
-The [metric table](assets/mambo-threshold-metrics.csv) contains all/known-truth
-reporting scores before and after thresholding, calibration scores, threshold
-values, Theil U and coverage. Known-only scores reuse thresholds calibrated on all
-truth; they do not recalibrate on a different population. The [compact evidence](assets/mambo-threshold-comparison.json)
-also retains every curve point, source CSV hashes, partition hashes and full-data
-threshold-zero checks. Predictions and inference speed are unchanged.
+The [CSV](assets/mambo-threshold-metrics.csv) retains all/known-truth reporting
+scores, calibration scores, thresholds, Theil U and coverage. Known-only results
+reuse all-truth calibration. The [JSON](assets/mambo-threshold-comparison.json)
+retains curve points, source/partition hashes and full-data checks.
+
+Collect from the retained prediction directories in
+[`SOURCES`](../dev/releases/mambo_v3/threshold_report.py), or regenerate charts
+directly from committed evidence without predictions or inference:
 
 ```sh
 /path/to/pinned-metrics-env/bin/python -m dev.releases.mambo_v3.threshold_report \
   --evidence local-evidence --output local-evidence/mambo-threshold-study
 .venv/bin/python -m dev.releases.mambo_v3.threshold_report \
-  --data local-evidence/mambo-threshold-study/mambo-threshold-comparison.json \
+  --data docs/assets/mambo-threshold-comparison.json \
   --output /tmp/mambo-threshold-charts
 ```
 
-The collector uses the retained prediction directories named in `SOURCES` in
-[the analysis script](../dev/releases/mambo_v3/threshold_report.py); those local
-model outputs are not shipped in Git. The committed compact evidence can regenerate
-the charts without predictions or model inference using `--data`.
-
-Before enabling calibrated thresholds in deployment, validate the intended
-coverage/recall trade-off on the target workflow and define per-rank abstention or
-fallback behavior. The current deployment CLI exposes one scalar threshold; these
-three independently calibrated thresholds should not be silently substituted for it.
+Before adoption, validate coverage/recall in the target workflow and define abstention
+or fallback. The deployment CLI accepts one scalar threshold, not these three
+independently calibrated rank thresholds.
