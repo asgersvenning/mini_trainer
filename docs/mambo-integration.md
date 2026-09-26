@@ -16,7 +16,7 @@ locally until publication. Choose one runtime installation:
 | PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl' ./mambo_v3-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
 
 For an environment with ONNX Runtime already provisioned, install the base
-`mambo_deploy` wheel without extras. Do not install CPU and GPU ONNX Runtime
+`mambo-v3` wheel without extras. Do not install CPU and GPU ONNX Runtime
 packages together. Use the application's dependency management to select and
 record versions; inference never installs or replaces runtime packages. If you
 use `uv run`, pass `--no-sync` to retain the installed environment.
@@ -100,9 +100,10 @@ options belong to `predict_stream`, not the constructor or CLI:
 | `encoded_budget` | `256 * 1024**2` bytes | Encoded image buffer budget; a larger single file fails explicitly. |
 
 These budgets do not bound total process memory: model weights, decoded images,
-prepared views and results also consume memory. `predict()` accumulates results for the whole input collection; submit bounded
-requests there. The CLI streams predictions and embeddings to disk and publishes
-the output directory only when the complete run succeeds.
+prepared views and results also consume memory. `predict()` accumulates results
+for the whole input collection; submit bounded requests there. The CLI streams
+predictions and embeddings to disk and publishes the output directory only when
+the complete run succeeds.
 
 For diagnostics, `stats={}` collects queue/buffer and wait statistics;
 `device_prefetch=False` disables device staging. These are not routine integration

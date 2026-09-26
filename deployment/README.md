@@ -110,19 +110,6 @@ for comparable northern-European use. A custom `class_list=["GBIF_SPECIES_ID", .
 or UTF-8 file with one ID per line overrides the preset (`--class-list species.txt`
 in the CLI). Unknown IDs and empty lists fail; duplicates are removed.
 
-### Integrating with V2 applications
-
-The `mini_trainer.deploy.Predictor` compatibility entry point retains native/CUDA
-defaults, callable prediction, `class_mask` and native result containers. It needs
-both release wheels. New integrations can use the smaller `mambo_deploy` interface
-above, with CPU results independent of backend. Both download model assets automatically.
-
-Retain the legacy regional preset for comparison, and match species by taxon ID,
-not numeric index. The V3 vocabulary, scores and embedding width can differ from V2;
-existing thresholds and stored embeddings are not interchangeable.
-[Migration details](../docs/mambo-integration.md#moving-from-v2) describe the remaining
-compatibility boundaries.
-
 ### Large image collections
 
 Use streaming for a large collection of paths, consuming results as they arrive:
@@ -138,24 +125,31 @@ with closing(predictor.predict_stream(image_paths)) as batches:
 
 Input order is preserved. Add `embeddings=True` to receive `(result, vectors)` pairs.
 For in-memory inputs, split large collections into smaller `predict()` requests;
-that method retains results for the whole request. The CLI writes results batch by batch. `batch_size` limits
-model calls, not total request memory. [Streaming controls](../docs/mambo-integration.md#streaming-controls)
-are available if the defaults do not fit your workload.
+that method retains results for the whole request. The CLI writes results batch by
+batch. `batch_size` limits model calls, not total request memory.
+[Streaming controls](../docs/mambo-integration.md#streaming-controls) are available
+if the defaults do not fit your workload.
 
 ## Changes from MAMBO V2
 
-- Global (`full`) is now the default scope. Select `europe` or `north_europe` to
-  retain those geographic restrictions; the legacy lists remain available.
-- Install the model-generation package **`mambo-v3`**; its Python import remains
-  `mambo_deploy`. Maintenance releases of this package retain the V3 trained model.
-  Pin the package version for reproducible application builds. Use a separate
-  environment for V2 or an older deployment candidate.
-- `mambo_predict` is owned by the deployment package alone and defaults to ONNX/CPU.
-  Existing native CLI workflows must specify `--backend torch --device cuda:0`.
-  The Python `mini_trainer.deploy.Predictor` facade retains native/CUDA defaults.
-- V3 uses EfficientNetV2-S, adds ONNX, expanded regional presets, optional TTA and
-  streaming output. Raw inputs and result formats are documented above; old
-  preprocessed tensors, numeric class positions and embeddings need migration.
+- **Installation:** use `mambo-v3` (Python import `mambo_deploy`). Its maintenance
+  releases retain the V3 trained model; pin the package version for reproducible
+  builds. Keep V2 or older deployment candidates in a separate environment.
+- **Defaults:** global (`full`) scope and ONNX/CPU. Select `europe` or `north_europe`
+  to retain the V2 lists. Native CLI workflows must specify
+  `--backend torch --device cuda:0`; only the deployment package installs `mambo_predict`.
+- **Existing Python callers:** `mini_trainer.deploy.Predictor` retains native/CUDA
+  defaults, callable prediction, `class_mask` and native result containers. Install
+  both release wheels. New integrations can use `mambo_deploy` for CPU results
+  independent of backend; both entry points download model assets automatically.
+- **Model and features:** EfficientNetV2-S, ONNX, expanded presets, optional TTA and
+  streaming. Supply original pixels and match classes by GBIF ID rather than numeric
+  index. V3's vocabulary, scores and embedding width differ from V2; thresholds and
+  stored embeddings need migration.
+
+[Migration details](../docs/mambo-integration.md#moving-from-v2) cover compatibility
+boundaries; [versioning](../docs/mambo-integration.md#versioning-and-model-identity)
+explains how package, model and preset identities relate.
 
 ### Beyond Python
 
@@ -202,6 +196,7 @@ to your accuracy and processing-budget requirements.
 
 The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
 exact metric tables, calibrated thresholds, timing ranges and limitations.
+
 ### Complementary in-domain and HPC results
 
 The original global-lepi test split adds a comparison on general photographs using
