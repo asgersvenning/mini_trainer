@@ -31,54 +31,21 @@ class CleanupOnFailure:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None and self.paths_to_clean:
-            print("\nCleaning up partial/corrupted files due to interruption or failure...")
+        if exc_type is None or not self.paths_to_clean:
+            return
+        print("\nCleaning up partial/corrupted files due to interruption or failure...")
 
-            # Use a running count since we don't know exactly how many files made it to disk
-            with tqdm(desc="Cleaning up", unit="item") as pbar:
-                for path in self.paths_to_clean:
-                    if os.path.islink(path):
-                        try:
-                            os.remove(path)
-                            pbar.update(1)
-                        except OSError as e:
-                            print(f"\nError deleting link {path}: {e}")
-                        continue
-                    if not os.path.exists(path):
-                        continue
+        def report_error(function, path, error):
+            print(f"\nError deleting {path}: {error}")
 
-                    if os.path.isdir(path):
-                        # Walk the directory bottom-up so empty subdirectories can be removed
-                        for root, dirs, files in os.walk(path, topdown=False):
-                            # 1. Delete all files in the current folder
-                            for name in files:
-                                try:
-                                    os.remove(os.path.join(root, name))
-                                    pbar.update(1)
-                                except OSError as e:
-                                    print(f"\nError deleting file {name}: {e}")
-
-                            # 2. Delete all now-empty subdirectories in the current folder
-                            for name in dirs:
-                                try:
-                                    os.rmdir(os.path.join(root, name))
-                                    pbar.update(1)
-                                except OSError as e:
-                                    print(f"\nError deleting directory {name}: {e}")
-
-                        # 3. Finally, remove the top-level directory itself
-                        try:
-                            os.rmdir(path)
-                            pbar.update(1)
-                        except OSError as e:
-                            print(f"\nError deleting root directory {path}: {e}")
-                    else:
-                        # Standard single-file deletion
-                        try:
-                            os.remove(path)
-                            pbar.update(1)
-                        except OSError as e:
-                            print(f"\nError deleting file {path}: {e}")
+        for path in tqdm(self.paths_to_clean, desc="Cleaning up", unit="path"):
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path, onexc=report_error)
+                elif os.path.lexists(path):
+                    os.remove(path)
+            except OSError as error:
+                report_error(None, path, error)
 
 
 def download_with_progress(url, dst, max_workers=8):
