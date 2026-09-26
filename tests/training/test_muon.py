@@ -39,3 +39,25 @@ def test_muon_step_reduces_quadratic_loss():
     optimizer.step()
     assert torch.isfinite(parameter).all()
     assert parameter.square().sum() < loss.detach()
+
+
+@pytest.mark.parametrize("name,use_muon", [("head", True), ("head_nomuon", False)])
+def test_composite_routes_parameters_and_exposes_child_groups(name, use_muon):
+    from mini_trainer.training.muon import MuonAuxAdamW
+
+    matrix = torch.nn.Parameter(torch.eye(4))
+    bias = torch.nn.Parameter(torch.ones(4))
+    optimizer = MuonAuxAdamW([{"name": name, "params": [matrix, bias]}], lr=0.01)
+    expected = {"muon": [matrix], "adamw": [bias]} if use_muon else {"adamw": [matrix, bias]}
+    assert list(optimizer.optimizers) == list(expected)
+    for child_name, parameters in expected.items():
+        child = getattr(optimizer, child_name)
+        assert [id(p) for group in child.param_groups for p in group["params"]] == [id(p) for p in parameters]
+        assert all(any(group is exposed for exposed in optimizer.param_groups) for group in child.param_groups)
+    # Scheduler changes through the composite must reach every child optimizer.
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    (matrix.sum() + bias.sum()).backward()
+    optimizer.step()
+    scheduler.step()
+    assert optimizer._step_count == 1
+    assert all(getattr(optimizer, child).param_groups[0]["lr"] == 0.005 for child in expected)

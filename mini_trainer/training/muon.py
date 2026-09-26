@@ -1,6 +1,7 @@
-# Forward-compatibility with Muon optimizer (will be in PyTorch later)
-# From: https://github.com/pytorch/pytorch/blob/main/torch/optim/_muon.py
-"""Implementation of the Muon optimizer."""
+"""Muon and a composite Muon/AdamW optimizer.
+
+Adapted from https://github.com/pytorch/pytorch/blob/main/torch/optim/_muon.py.
+"""
 
 import math
 from collections.abc import Callable, MutableMapping, Sequence
@@ -10,22 +11,11 @@ from typing import Any
 import torch
 from torch import Tensor
 from torch.optim import AdamW
-from torch.optim.optimizer import Optimizer, ParamsT, _disable_dynamo_if_unsupported, _params_doc
+from torch.optim.optimizer import Optimizer, ParamsT, _disable_dynamo_if_unsupported
 
 
 def _to_scalar(x: float | torch.Tensor):
-    r"""This function converts a hyperparameter to a 0-dimension (scalar) tensor
-    if it is a nonzero-dimensions 1-element tensor. If it is not a tensor, it is
-    kept as is.
-
-    Args:
-        x (float or Tensor): A hyperparameter of the optimizer.
-            If it is Tensor, it is needed to be 1-element.
-
-    Returns:
-        float or Tensor:
-            a scalar tensor if x is Tensor otherwise Python scalar (float) value.
-    """
+    """Squeeze tensor hyperparameters; leave non-tensors unchanged."""
     if isinstance(x, torch.Tensor) and x.dim() != 0:
         return x.squeeze()
     else:
@@ -44,16 +34,11 @@ DEFAULT_NS_STEPS = 5
 
 
 def _zeropower_via_newtonschulz(grad: Tensor, ns_coefficients: tuple[float, float, float], ns_steps: int, eps: float) -> Tensor:
-    """Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
-    quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
-    of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
-    zero even beyond the point where the iteration no longer converges all the way to one everywhere
-    on the interval. This iteration therefore does not produce UV^T but rather something like US'V^T
-    where S' is diagonal with S_{ii}' ~ Uniform(0.5, 1.5), which turns out not to hurt model
-    performance at all relative to UV^T, where USV^T = G is the SVD.
+    """Approximate the matrix polar factor with a BF16 quintic iteration.
 
-    Implementation reference: https://github.com/KellerJordan/Muon/blob/master/muon.py
-    with suggestions by @jxbz, @leloykun, and @YouJiacheng.
+    The default finite iteration does not force every singular value to one.
+    Reference: https://github.com/KellerJordan/Muon/blob/master/muon.py,
+    with suggestions by @jxbz, @leloykun and @YouJiacheng.
     """
     if ns_steps >= 100:
         raise ValueError("Number of steps must be less than 100 for computational efficiency")
@@ -91,7 +76,26 @@ def _adjust_lr(lr: float, adjust_lr_fn: str | None, param_shape: torch.Size) -> 
     return lr * adjusted_ratio
 
 
-class Muon(Optimizer):  # noqa: D101
+class Muon(Optimizer):
+    """Optimize dense real 2D parameters with momentum and Newton-Schulz updates.
+
+    The momentum buffer interpolates toward the gradient with weight
+    ``1 - momentum``. Nesterov mode blends the current gradient with that buffer
+    before orthogonalization. Decoupled weight decay uses the base learning rate;
+    the orthogonalized update uses the shape-adjusted rate.
+
+    ``adjust_lr_fn=None`` or ``"original"`` scales the update rate by
+    ``sqrt(max(1, rows / columns))``; ``"match_rms_adamw"`` uses
+    ``0.2 * sqrt(max(rows, columns))``. ``ns_coefficients`` and ``ns_steps`` control
+    the quintic iteration, and ``eps`` floors its normalization denominator.
+    Defaults are in the constructor signature. Use a separate optimizer for
+    non-matrix parameters, or ``MuonAuxAdamW`` for automatic routing.
+
+    References:
+        https://kellerjordan.github.io/posts/muon/
+        https://arxiv.org/pdf/2502.16982
+    """
+
     def __init__(  # noqa: D107
         self,
         params: ParamsT,
@@ -203,86 +207,6 @@ class Muon(Optimizer):  # noqa: D101
         return loss
 
 
-Muon.__doc__ = (
-    r"""Implements Muon algorithm.
-
-    .. math::
-       \begin{aligned}
-            &\rule{110mm}{0.4pt} \\
-            &\textbf{input}      : \gamma \text{ (lr)},\ \lambda \text{ (weight decay)},\
-               \mu \text{ (momentum)},\ \textit{nesterov}\in\{True,False\},\\
-            &\hspace{13mm}(a,b,c)\ \text{ (NS coefficients)},\
-               \varepsilon \text{ (epsilon)},\ k \text{ (NS steps)},\
-               \theta_0 \text{ (params)},\ f(\theta) \text{ (objective)} \\
-            &\textbf{initialize} : B_0 \leftarrow 0 \text{ (momentum buffer)} \\[-1.ex]
-            &\rule{110mm}{0.4pt} \\
-            &\textbf{for}\ t=1\ \textbf{to}\ \ldots\ \textbf{do} \\[0.25ex]
-            &\hspace{5mm} g_t \leftarrow \nabla_{\theta} f_t(\theta_{t-1}) \\[0.25ex]
-            &\hspace{5mm} B_t \leftarrow \mu B_{t-1} + g_t \\[0.25ex]
-            &\hspace{5mm} \widetilde{B}_t \leftarrow
-                \begin{cases}
-                   g_t + \mu B_t, & \text{if nesterov}=True \\
-                   B_t,           & \text{if nesterov}=False
-                \end{cases} \\[1.0ex]
-            &\hspace{5mm} O_t \leftarrow \mathrm{NS}^{(a,b,c)}_{k}\!\big(\widetilde{B}_t;\ \varepsilon\big) \\[0.5ex]
-            &\hspace{5mm} \theta_t \leftarrow \theta_{t-1} - \gamma\,\lambda\,\theta_{t-1}
-               \quad\text{(decoupled weight decay)} \\[0.25ex]
-
-            &\hspace{5mm} \gamma \leftarrow \mathrm{AdjustLR}\!\big(\gamma;\ \mathrm{shape}\!\big(\theta_t \big) \big) \\[0.25ex]
-            &\hspace{5mm} \theta_t \leftarrow \theta_t - \gamma\, O_t \\
-            &\rule{110mm}{0.4pt} \\[-1.ex]
-            &\mathbf{return}\ \theta_t \\[-1.ex]
-            &\rule{110mm}{0.4pt}s
-       \end{aligned}
-
-    Here, :math:`\mathrm{NS}^{(a,b,c)}_{k}(\cdot;\varepsilon)` denotes :math:`k` iterations of the
-    Newton–Schulz orthogonalization operator parameterized by coefficients :math:`(a,b,c)`
-    with numerical stabilization :math:`\varepsilon`.
-
-    The purpose for :math:`\mathrm{AdjustLR}\!\big(\gamma;\ \mathrm{shape}\!\big(\theta_t \big) \big)`
-    is to make the orthogonalized update have a consistent :math:`RMS` across rectangular matrices.
-
-    Keller's original implementation scales the update by :math:`\sqrt{\max\!\left(1, \frac{A}{B}\right)}`,
-    where :math:`A` and :math:`B` are dimension of the matrix being optimized.
-
-    Moonshot's implementation also focuses on matching :math:`RMS` of AdamW. The adjustment is computed as:
-    :math:`\gamma \leftarrow {0.2}\gamma\,\sqrt{\max\!\left({A}, {B}\right)}`
-    The method is adopted from `Muon is Scalable for LLM Training`_. Research
-    results show that with this adjustment Muon can directly reuse the learning rate
-    and weight decay tuned for AdamW.
-
-    We provide two options for the learning rate adjustment: "original", which follows Keller's
-    implementation, and "match_rms_adamw", which refers to Moonshot's implementation. This gives users the
-    flexibility to choose between the two. If `adjust_lr_fn` is not specified, the default is "original".
-
-    For further details regarding the algorithm we refer to `Muon: An optimizer for hidden layers in neural networks`_
-    and `Muon is Scalable for LLM Training`_.
-    """  # noqa: E501
-    + rf"""
-    Args:
-        {_params_doc}. Note that Muon is an optimizer for 2D parameters of neural network hidden layers. Other
-            parameters, such as bias, and embedding, should be optimized by a standard method such as AdamW.
-        lr (float, Tensor, optional): learning rate (default: 1e-3).
-        weight_decay (float, optional): weight decay (L2 penalty). (default: 0.1)
-        momentum (float, optional): momentum factor (default: 0.95)
-        nesterov (bool, optional): enables Nesterov momentum. Only applicable
-            when momentum is non-zero
-        ns_coefficients (tuple of three floats, optional): coefficients \(a,b,c\) for the
-            Newton–Schulz orthogonalization polynomial (default: ({DEFAULT_A}, {DEFAULT_B}, {DEFAULT_C}))
-        eps (float, optional): term added to the denominator for numerical stability. (default: {EPS})
-        ns_steps (int, optional): number of Newton–Schulz iteration steps. (default: {DEFAULT_NS_STEPS})
-        adjust_lr_fn (str, optional): function to adjust learning rate. One of "original" and "match_rms_adamw".
-            If not specified, we will default to use "original". (default: None)
-
-    .. _Muon\: An optimizer for hidden layers in neural networks:
-        https://kellerjordan.github.io/posts/muon/
-    .. _Muon is Scalable for LLM Training:
-        https://arxiv.org/pdf/2502.16982
-
-    """
-)
-
-
 def _single_tensor_muon(
     params: list[Tensor],
     grads: list[Tensor],
@@ -336,16 +260,11 @@ def muon(
     adjust_lr_fn: str | None,
     has_complex: bool,
 ):
-    r"""Functional API that performs Muon algorithm computation.
-
-    See :class:`~torch.optim.Muon` for details.
-    """
+    """Apply this module's Muon update; foreach execution is unsupported."""
     if foreach is not None and foreach:
         raise RuntimeError("Foreach is not supported for Muon yet")
 
-    func = _single_tensor_muon
-
-    func(
+    _single_tensor_muon(
         params,
         grads,
         muon_momentum_bufs,
@@ -361,11 +280,16 @@ def muon(
     )
 
 
-# Mixed Muon-AdamW optimizer:
-# - 2D parameters (i.e. matrices, such as dense layers) -> Muon
-# - ND parameters (e.g. 1D parameters, such as biases) -> AdamW
-# (Force AdamW by using "nomuon" in parameter group name)
 class MuonAuxAdamW(Optimizer):
+    """Route named groups to Muon for matrices and AdamW for other parameters.
+
+    A group name containing ``nomuon`` forces all its parameters onto AdamW.
+    Exposed parameter groups reference the child groups, allowing schedulers to
+    update both optimizers. Checkpoints contain child states keyed by optimizer
+    name; the outer step counter tracks successful composite calls, not resume
+    history. Default Muon rate adjustment is ``match_rms_adamw``.
+    """
+
     def __init__(self, params: ParamsT, **kwargs):
         self._init = True
         self.opt_args = {"muon": {"adjust_lr_fn": "match_rms_adamw", "momentum": 0.95}, "adamw": {"betas": (0.9, 0.999)}}
@@ -425,16 +349,10 @@ class MuonAuxAdamW(Optimizer):
                 raise ValueError("param_group['params'] must be a non-empty sequence")
             base = {k: v for k, v in param_group.items() if k != "params"}
 
-            def _opt_check(opt):
-                match opt:
-                    case "muon":
-                        return lambda x: x.ndim == 2
-                    case "adamw":
-                        return lambda x: x.ndim != 2
-                    case _:
-                        raise NotImplementedError("Only Muon and AdamW are accepted optimizers for `MuonAuxAdamW`")
-
-            grps = {opt: {"params": list(filter(_opt_check(opt), params)), **base} for opt in ["muon", "adamw"]}
+            grps = {
+                "muon": {"params": [p for p in params if p.ndim == 2], **base},
+                "adamw": {"params": [p for p in params if p.ndim != 2], **base},
+            }
         for name, grp in grps.items():
             if len(grp["params"]) == 0:
                 continue
