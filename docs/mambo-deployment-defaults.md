@@ -74,16 +74,20 @@ sweep; PyTorch allocated GPU bytes are not total VRAM or an ONNX measurement.
 First use excludes interpreter launch and explicit runtime setup. V2 CPU used
 the documented float32 input cast. Use the current README for adoption decisions.
 
-## Reproduce the historical presentation
+## Reproduce the regional figure and metric table
 
-All retired per-rank/regional, speed and memory plots can be regenerated from the
-retained JSON without inference or recalculating metrics:
+Regenerate the retained figure and complete exports without inference or
+recalculating metrics:
 
 ```sh
 python -m dev.releases.mambo_v3.defaults_report \
   --data docs/assets/mambo-defaults-comparison.json \
   --output /tmp/mambo-historical-defaults
 ```
+
+Retired per-rank, speed and memory plots remain reproducible with the
+[historical generator](https://github.com/asgersvenning/mini_trainer/blob/e80c170c99921374e49dac68ace7e9186c16e340/dev/releases/mambo_v3/defaults_report.py)
+and retained JSON.
 
 The [release comparison runbook](../dev/releases/mambo_v3/release-comparison.md)
 describes collecting new evidence. Pin `padded_scale` explicitly when reproducing

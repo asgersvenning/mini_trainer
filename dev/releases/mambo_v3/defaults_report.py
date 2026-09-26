@@ -1,4 +1,4 @@
-"""Release overview: V2, automatic V3 and the enabled-TTA default on full Flemming."""
+"""Historical padded-scale evidence: regional effect, complete metrics and provenance."""
 
 import argparse
 import csv
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.acceleration_report import METRICS, aggregate
-from dev.releases.mambo_v3.comparison_charts import REGION_LABELS, REGIONS, completed
+from dev.releases.mambo_v3.comparison_charts import completed
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.metrics import REVISION
 
@@ -86,78 +86,8 @@ def render(data, output):
     output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"svg.fonttype": "none", "svg.hashsalt": "mambo-defaults-v1", "axes.spines.top": False, "axes.spines.right": False})
 
-    for level, rank in enumerate(("species", "genus", "family")):
-        for scope in ("all", "known"):
-            fig, axes = plt.subplots(2, 2, figsize=(13, 8))
-            for ax, (metric, title) in zip(
-                axes.flat,
-                (
-                    ("accuracy", "Macro accuracy (%)"),
-                    ("f1", "Macro-F1"),
-                    ("precision", "Macro precision"),
-                    ("micro_accuracy", "Micro accuracy (%)"),
-                ),
-                strict=True,
-            ):
-                factor = 100 if "accuracy" in metric else 1
-                for i, (model, label, color) in enumerate(SERIES):
-                    values = [
-                        next(r for r in data["quality"] if (r["model"], r["preset"]) == (model, preset))["scores"][scope][metric][
-                            str(level)
-                        ]
-                        * factor
-                        for preset in REGIONS
-                    ]
-                    bars = ax.bar(np.arange(3) + (i - 2) * 0.16, values, 0.16, label=label, color=color)
-                    ax.bar_label(bars, fmt="%.1f" if factor == 100 else "%.3f", rotation=60, fontsize=8, padding=3)
-                upper = 105 if factor == 100 else min(1, max(bar.get_height() for bar in ax.patches) * 1.35)
-                ax.set(title=title, xticks=np.arange(3), xticklabels=REGION_LABELS, ylim=(0, upper))
-                ax.grid(axis="y", alpha=0.15)
-                ax.set_axisbelow(True)
-            fig.suptitle(f"MAMBO release comparison · {rank} metrics · {scope} truth", fontsize=16)
-            fig.legend(*axes[0, 0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.95), ncol=3, frameon=False)
-            fig.text(
-                0.02,
-                0.015,
-                "All: 58,640 images. Known: species 50,598; genus 58,639–58,640 by preset; family 58,640.\n"
-                "TTA: original + two padded views; selected on a Flemming subset, not independently validated.\n"
-                "Same legacy vocabularies across releases; tables also retain updated European lists and both truth populations.",
-                fontsize=9,
-            )
-            fig.tight_layout(rect=(0, 0.10, 1, 0.88))
-            suffix = "" if rank == "species" else f"-{rank}"
-            save_figure(fig, output, f"mambo-defaults-quality{suffix}-{scope}")
-
     scores = {(r["model"], r["preset"]): r["scores"]["all"] for r in data["quality"]}
     rank_metrics = (("accuracy", "Macro accuracy (%)", 100), ("f1", "Macro-F1", 1))
-    labels = ["V2", "V3\nPyTorch", "V3\nONNX", "V3 PyTorch\n+ TTA", "V3 ONNX\n+ TTA"]
-    fig, axes = plt.subplots(3, 2, figsize=(11, 10))
-    for level, rank in enumerate(("species", "genus", "family")):
-        for col, (metric, title, factor) in enumerate(rank_metrics):
-            ax = axes[level, col]
-            values = [scores[model, "north_europe"][metric][str(level)] * factor for model, _, _ in SERIES]
-            bars = ax.bar(range(5), values, color=[color for _, _, color in SERIES])
-            ax.bar_label(bars, fmt="%.2f" if factor == 100 else "%.4f", padding=3, fontsize=9)
-            ax.set(
-                title=f"{rank.title()} · {title}",
-                xticks=range(5),
-                xticklabels=labels,
-                ylim=(0, 100 if factor == 100 else max(values) * 1.2),
-            )
-            ax.grid(axis="y", alpha=0.15)
-            ax.set_axisbelow(True)
-    fig.suptitle("V2 vs V3 vs V3 + TTA · legacy northern Europe", fontsize=16)
-    fig.text(
-        0.02,
-        0.015,
-        "All truth: 58,640 images; 522 species / 322 genera / 23 families. Pinned mini_metrics; threshold 0.\n"
-        "Macro accuracy weights truth taxa equally; macro-F1 also includes predicted-only taxa. V3 uses automatic GPU precision.\n"
-        "TTA: original + two padded views; recipe selected on a subset of Flemming, not independently validated.",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.09, 1, 0.96))
-    save_figure(fig, output, "mambo-defaults-ranks-all")
-
     fig, axes = plt.subplots(3, 2, figsize=(11, 9))
     steps = (("full", "europe"), ("europe", "north_europe"))
     for level, rank in enumerate(("species", "genus", "family")):
@@ -207,73 +137,6 @@ def render(data, output):
     )
     fig.tight_layout(rect=(0, 0.10, 1, 0.89))
     save_figure(fig, output, "mambo-defaults-regional-effect")
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
-    for ax, device, batches in zip(axes, ("cpu", "cuda:0"), ((1, 8), (1, 8, 32)), strict=True):
-        for model, label, color in SERIES:
-            rows = [
-                next(r for r in data["speed"] if (r["model"], r["device"], r["preset"], r["batch"]) == (model, device, "north_europe", b))
-                for b in batches
-            ]
-            values = np.array([r["images_per_second"] for r in rows])
-            lo = np.array([r["trial_min_ips"] for r in rows])
-            hi = np.array([r["trial_max_ips"] for r in rows])
-            ax.errorbar(
-                range(len(batches)),
-                values,
-                yerr=[values - lo, hi - values],
-                marker="o",
-                capsize=3,
-                color=color,
-                label=label,
-                linestyle="--" if model.endswith("tta") else "-",
-            )
-        ax.set(
-            title="CPU · FP32" if device == "cpu" else "GPU · automatic precision",
-            xlabel="Images per batch",
-            ylabel="End-to-end images / second",
-            xticks=range(len(batches)),
-            xticklabels=batches,
-            ylim=(0, None),
-        )
-        ax.grid(axis="y", alpha=0.2)
-    fig.suptitle("Complete-pipeline throughput · northern Europe", fontsize=16)
-    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.94), ncol=3, frameon=False)
-    fig.text(
-        0.02,
-        0.015,
-        "i7-12800H / RTX 3080 Ti Laptop, WSL2; four CPU/preparation threads; same image bank.\n"
-        "Three fresh processes × seven observations; bars show trial-median range. Decode through CPU results included.\n"
-        "V2 and unaugmented V3 reuse recorded measurements; laptop conditions vary between campaigns. V2 CPU uses input cast.",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.16, 1, 0.85))
-    save_figure(fig, output, "mambo-defaults-speed")
-
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
-    for ax, device in zip(axes, ("cpu", "cuda:0"), strict=True):
-        values = [next(r for r in data["resources"] if (r["model"], r["device"]) == (m, device))["rss_mib"] for m, _, _ in SERIES]
-        bars = ax.bar(range(5), values, color=[color for _, _, color in SERIES])
-        ax.bar_label(bars, fmt="%.0f", padding=3)
-        ax.set(
-            title="CPU execution" if device == "cpu" else "GPU execution",
-            ylabel="Peak host RSS (MiB)",
-            xticks=range(5),
-            xticklabels=["V2", "V3\ntorch", "V3\nONNX", "torch\n+ TTA", "ONNX\n+ TTA"],
-            ylim=(0, max(values) * 1.15),
-        )
-        ax.grid(axis="y", alpha=0.2)
-        ax.set_axisbelow(True)
-    fig.suptitle("Process memory · median of three fresh processes", fontsize=15)
-    fig.text(
-        0.02,
-        0.02,
-        "Host memory, not GPU VRAM; includes loading and complete CPU 1/8 or GPU 1/8/32 batch sweep.\n"
-        "TTA retains original decoded images for each batch; memory depends on source dimensions.",
-        fontsize=9,
-    )
-    fig.tight_layout(rect=(0, 0.12, 1, 0.93))
-    save_figure(fig, output, "mambo-defaults-memory")
 
     with (output / "mambo-defaults-metrics.csv").open("w", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")
