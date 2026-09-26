@@ -20,6 +20,14 @@ except ImportError:
     wandb = None
 
 
+def _require_wandb():
+    if wandb is None:
+        raise ImportError(
+            "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
+            "`uv sync --extra recommended`, or `uv add wandb`."
+        )
+
+
 class WandbLogger(_Logger):
     """Weights & Biases logger."""
 
@@ -34,7 +42,6 @@ class WandbLogger(_Logger):
         run_id: str | None = None,
     ):
         """Wandb logger."""
-        global wandb
         if steps is None:
             raise TypeError(f"Initializing {WandbLogger} with `steps=None` is invalid.")
 
@@ -66,11 +73,7 @@ class WandbLogger(_Logger):
             if config and "input" in config:
                 dataset = os.path.basename(config["input"])
 
-        if wandb is None:
-            raise ImportError(
-                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
-                "`uv sync --extra recommended`, or `uv add wandb`."
-            )
+        _require_wandb()
         if wandb.run is None:
             tags = []
             if machine:
@@ -88,33 +91,25 @@ class WandbLogger(_Logger):
 
             tags = [t for t in tags if t]
 
-            display_name = run_name or name
+            options = {}
             if is_dist_avail_and_initialized():
                 run_id = run_id or "".join(c if c.isalnum() or c in "-_" else "_" for c in name)[:64]
-                settings = wandb.Settings(
+                options["settings"] = wandb.Settings(
                     mode="shared",
                     x_primary=(get_rank() == 0),
                     x_update_finish_state=(get_rank() == 0),
                     x_label=f"rank_{get_rank()}",
                 )
-                wandb.init(
-                    project=project,
-                    name=display_name,
-                    id=run_id,
-                    dir=output,
-                    config=config,
-                    tags=tags if tags else None,
-                    settings=settings,
-                )
-            else:
-                wandb.init(
-                    project=project,
-                    name=display_name,
-                    **({"id": run_id} if run_id is not None else {}),
-                    dir=output,
-                    config=config,
-                    tags=tags if tags else None,
-                )
+            if run_id is not None:
+                options["id"] = run_id
+            wandb.init(
+                project=project,
+                name=run_name or name,
+                dir=output,
+                config=config,
+                tags=tags if tags else None,
+                **options,
+            )
 
         self._internal_step = 0
         self._statistics: dict[str, _Statistic] = dict()
@@ -170,11 +165,7 @@ class WandbLogger(_Logger):
 
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int = 0, **kwargs):
         """Log a rank-zero figure immediately with its epoch."""
-        if wandb is None:
-            raise ImportError(
-                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
-                "`uv sync --extra recommended`, or `uv add wandb`."
-            )
+        _require_wandb()
         if get_rank() > 0 or wandb.run is None:
             return
 
@@ -213,11 +204,7 @@ class WandbLogger(_Logger):
 
     def step(self):
         """Step wandb logger."""
-        if wandb is None:
-            raise ImportError(
-                "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
-                "`uv sync --extra recommended`, or `uv add wandb`."
-            )
+        _require_wandb()
         if wandb.run is not None and self._current_step_logs:
             if get_rank() == 0:
                 if self._internal_step < len(self.global_steps):
