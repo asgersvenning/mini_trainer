@@ -89,7 +89,7 @@ def preflight(config, branch, *, verify=False):
     import mini_trainer
 
     try:
-        distribution = importlib.metadata.distribution("minitrainer")
+        distribution = importlib.metadata.distribution("mt-trainer")
     except importlib.metadata.PackageNotFoundError:
         # Historical pinned comparison commits predate the distribution rename.
         distribution = importlib.metadata.distribution("mini_trainer")

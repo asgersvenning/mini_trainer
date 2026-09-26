@@ -1,5 +1,5 @@
 [project]
-name = "minitrainer"
+name = "mt-trainer"
 version = "0.3.0"
 default-optional-dependency-keys = ["recommended"]
 dependencies = [
@@ -87,12 +87,12 @@ recommended = [
   "wandb",
 ]
 all = [
-  "minitrainer[recommended]",
-  "minitrainer[notebook]",
-  "minitrainer[timm]",
-  "minitrainer[bioclip]",
-  "minitrainer[transformers]",
-  "minitrainer[export]",
+  "mt-trainer[recommended]",
+  "mt-trainer[notebook]",
+  "mt-trainer[timm]",
+  "mt-trainer[bioclip]",
+  "mt-trainer[transformers]",
+  "mt-trainer[export]",
 ]
 quantization = ["torchao>=0.17,<0.18"]
 export = ["onnx>=1.17", "onnxscript>=0.3", "onnxruntime>=1.20"]

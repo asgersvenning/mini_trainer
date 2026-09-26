@@ -28,9 +28,7 @@ def get_timm_model(
         import timm
         from timm.data import create_transform, resolve_model_data_config
     except ImportError as e:
-        e.add_note(
-            "The `timm` module was not found in the current Python environment. Please install with `pip install minitrainer[timm]`."
-        )
+        e.add_note("The `timm` module was not found in the current Python environment. Please install with `pip install mt-trainer[timm]`.")
         raise
 
     backbone_model = timm.create_model(model, pretrained=pretrained, **kwargs)

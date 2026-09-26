@@ -6,7 +6,7 @@ Ordinary CI covers `master` and every `release/**` branch.
 
 | Product | Preparation branch | GitHub Release tag | Workflow |
 | --- | --- | --- | --- |
-| Training package | `release/packages/minitrainer` | `packages/minitrainer/vVERSION` | `publish.yml` |
+| Training package | `release/packages/mt-trainer` | `packages/mt-trainer/vVERSION` | `publish.yml` |
 | Model package and assets | `release/models/PRODUCT` | `models/PRODUCT/vVERSION` | `publish-model.yml` |
 | Demo only | `release/demos/PRODUCT` | No package/model release | `publish-demo.yml` |
 

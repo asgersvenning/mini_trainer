@@ -12,7 +12,7 @@ from mini_trainer.modeling.quantized_training import IntegerLinear, prepare_quan
 @pytest.mark.parametrize("gradient_scale", [1.0, 1e-6])
 def test_integer_training_gradients_and_saved_storage(gradient_scale):
     if importlib.util.find_spec("torchao") is None:
-        pytest.skip("Install minitrainer[quantization]")
+        pytest.skip("Install mt-trainer[quantization]")
     if os.environ.get("RUN_CUDA_TESTS") != "1":
         pytest.skip("Set RUN_CUDA_TESTS=1 for the native INT8 training kernel test")
     if not torch.cuda.is_available():

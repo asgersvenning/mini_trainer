@@ -75,7 +75,7 @@ def _dependencies():
         import onnxruntime
         import onnxscript  # noqa: F401
     except ImportError as error:
-        raise ImportError("ONNX export requires optional dependencies. Install minitrainer[export].") from error
+        raise ImportError("ONNX export requires optional dependencies. Install mt-trainer[export].") from error
     return onnx, onnxruntime
 
 
@@ -268,7 +268,7 @@ def export_onnx(
             "preprocessing": {"in_graph": False, "recipe": preprocessing, "requires_configuration": preprocessing is None},
             "opset": opset_version,
             "versions": {
-                name: version("minitrainer" if name == "mini_trainer" else name)
+                name: version("mt-trainer" if name == "mini_trainer" else name)
                 for name in ("mini_trainer", "torch", "torchvision", "onnx", "onnxscript", "onnxruntime")
             },
             "verification": {

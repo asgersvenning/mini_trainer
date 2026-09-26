@@ -9,7 +9,7 @@ from torch import nn
 
 from mini_trainer.modeling.quantized_training import load_training_weights, prepare_quantized_training, restore_quantized_training
 
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("torchao") is None, reason="Install minitrainer[quantization]")
+pytestmark = pytest.mark.skipif(importlib.util.find_spec("torchao") is None, reason="Install mt-trainer[quantization]")
 
 
 def test_selection_preserves_ties_and_reports_float_operations():

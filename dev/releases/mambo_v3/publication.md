@@ -2,19 +2,19 @@
 
 Preparation does not publish anything. The owner performs the steps below after
 reviewing the candidate and its qualification records. Packages and weights have
-separate identities: training **`minitrainer==0.3.0`** (Python `mini_trainer`),
+separate identities: training **`mt-trainer==0.3.0`** (Python `mini_trainer`),
 deployment **`mambo-v3==0.3.0`** (Python `mambo_deploy`), model **`MAMBO_v3`**.
 `mini-trainer` on PyPI is an unrelated project; never publish or install it here.
 
 ## 1. Configure accounts and environments
 
-Claim/create the PyPI projects `minitrainer` and `mambo-v3`. The names had no public
-project during preparation, but this does not reserve them. Create pending trusted
-publishers with owner `asgersvenning`, repository `mini_trainer` and these settings:
+Configure pending trusted publishers for `mt-trainer` and `mambo-v3`. The owner
+confirmed PyPI accepts `mt-trainer`; a pending publisher does not reserve its name
+until publication. Use owner `asgersvenning`, repository `mini_trainer` and these settings:
 
 | Project | Workflow filename | GitHub environment |
 | --- | --- | --- |
-| `minitrainer` | `publish.yml` | `pypi-training` |
+| `mt-trainer` | `publish.yml` | `pypi-training` |
 | `mambo-v3` | `publish-model.yml` | `pypi-model-mambo-v3` |
 
 Create those GitHub environments plus `model-assets-mambo-v3` and `model-demo-mambo-v3`, with owner
@@ -76,16 +76,16 @@ prediction archives, credentials or datasets belong in the upload directories.
 ## 3. Publish training, then the model
 
 At the reviewed commit, create and **publish a GitHub Release** with tag
-`packages/minitrainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
+`packages/mt-trainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
 `publish.yml` builds, installs and exercises the wheel, then publishes the exact
 retained wheel and the source distribution to PyPI. Model/Space jobs do not run.
-Verify `minitrainer==0.3.0` is publicly available under the intended ownership.
+Verify `mt-trainer==0.3.0` is publicly available under the intended ownership.
 
 Then publish the GitHub Release tagged **`MAMBO_v3`** at the reviewed model commit.
 The model workflow prepares and qualifies its candidate before the public gates:
 
 1. `pypi-model-mambo-v3` publishes only `mambo-v3` distributions. It first checks that the
-   intended `minitrainer` version is public and points to this repository.
+   intended `mt-trainer` version is public and points to this repository.
 2. `model-assets-mambo-v3` attaches the offline bundle, deployment distributions, evidence,
    inventory and checksums to GitHub; it uploads the model repository and creates
    an immutable Hugging Face `v0.3.0` tag at that upload's commit.

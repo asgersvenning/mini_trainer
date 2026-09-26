@@ -7,7 +7,7 @@ from dev.release_route import resolve
 
 @pytest.fixture
 def repo(tmp_path):
-    (tmp_path / "pyproject.toml").write_text('[project]\nname="minitrainer"\nversion="0.3.0"\n')
+    (tmp_path / "pyproject.toml").write_text('[project]\nname="mt-trainer"\nversion="0.3.0"\n')
     (tmp_path / "deployment").mkdir()
     (tmp_path / "deployment/pyproject.toml").write_text('[project]\nname="mambo-v3"\nversion="0.3.0"\n')
     (tmp_path / ".github").mkdir()
@@ -17,7 +17,7 @@ def repo(tmp_path):
     return tmp_path
 
 
-@pytest.mark.parametrize("kind,product", [("packages", "minitrainer"), ("models", "mambo-v3"), ("demos", "mambo-v3")])
+@pytest.mark.parametrize("kind,product", [("packages", "mt-trainer"), ("models", "mambo-v3"), ("demos", "mambo-v3")])
 def test_branch_and_manual_preparation_select_only_the_requested_product(repo, kind, product):
     result = resolve(repo, kind, "push", f"refs/heads/release/{kind}/{product}", {})
     assert result["enabled"] == "true" and result["product"] == product
@@ -29,10 +29,10 @@ def test_branch_and_manual_preparation_select_only_the_requested_product(repo, k
 @pytest.mark.parametrize(
     "kind,tag,enabled",
     [
-        ("packages", "packages/minitrainer/v0.3.0", "true"),
+        ("packages", "packages/mt-trainer/v0.3.0", "true"),
         ("models", "MAMBO_v3", "true"),
         ("packages", "MAMBO_v3", "false"),
-        ("models", "packages/minitrainer/v0.3.0", "false"),
+        ("models", "packages/mt-trainer/v0.3.0", "false"),
         ("models", "unrelated-release", "false"),
         ("demos", "MAMBO_v3", "false"),
     ],
@@ -42,7 +42,7 @@ def test_release_routes_are_independent(repo, kind, tag, enabled):
 
 
 def test_mismatched_or_unknown_product_release_is_rejected(repo):
-    for tag in ("packages/minitrainer/v0.4.0", "packages/another/v0.3.0"):
+    for tag in ("packages/mt-trainer/v0.4.0", "packages/another/v0.3.0"):
         with pytest.raises(ValueError):
             resolve(repo, "packages", "release", f"refs/tags/{tag}", {"release": {"tag_name": tag}})
     (repo / "deployment/pyproject.toml").write_text('[project]\nname="mambo-v3"\nversion="0.3.1"\n')
