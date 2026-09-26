@@ -5,19 +5,14 @@ not a change to inference, classifier weights, or the prototype viewer.
 
 ## Decision
 
-There is no universal winning “linearization” for this matrix. **Keep the original
-weights as the general-purpose representation; offer PCA as task-specific
-preprocessing, and full-rank PCA whitening as an optional metric transform.**
-A stereographic export is convenient when an explicitly unconstrained spherical
-chart and analytic inverse are required, but it did not generally improve the
-classical tasks tested here. Its convenience should not be confused with an
-empirical downstream advantage.
+**Keep original weights as the general-purpose representation.** PCA helps
+Gaussian naive Bayes; full-rank whitening offers a modest neighbour-prediction
+improvement. Stereographic coordinates are useful when an unrestricted chart
+with an analytic inverse is required, but did not generally improve these tasks.
 
-The clearest improvement was **PCA before Gaussian naive Bayes**. Selecting the
-number of components using validation data raised held-out family macro recall
-from 73.89% to 81.00% on average. The three splits selected 256, 768 and 512
-components, respectively. This is evidence for task-specific decorrelation and
-regularization, not a guarantee that a particular global dimension is optimal.
+Validation-selected PCA raised held-out family macro recall from 73.89% to
+81.00%, selecting 256, 768 and 512 components across the three splits. This
+supports task-specific preprocessing, not one globally optimal dimension.
 
 ## Data and evaluation
 
@@ -71,38 +66,27 @@ the proposed radial-warp idea implemented as a deliberately simple control.
 
 ## What the downstream evidence supports
 
-1. **Linear family prediction:** original weights retain 95.40% micro accuracy.
-   Stereographic coordinates have the highest chart macro recall (80.15%), only
-   0.34 percentage points above original weights, while losing micro accuracy.
-   This small, split-dependent trade-off does not justify declaring them superior.
-   Aggressive dimensional reduction loses discriminative information.
-2. **Gaussian-model classification:** PCA is useful. Fixed 512-component PCA
-   reaches 81.07% macro recall; validation-selected PCA reaches 81.00%. Merely
-   applying log/stereographic coordinates leaves macro recall around 74%.
-   Whitening the PCA coordinates does not materially change Gaussian NB here:
-   its learned per-coordinate variances already absorb coordinate rescaling.
-3. **Genus neighbour prediction:** full-rank whitening gives 79.77% versus 78.88%
-   for original weights. That modest improvement is a candidate for retrieval
-   workflows, not evidence that whitening preserves the original metric. Charts
-   remain around 79%; truncation and the tested kernel features generally lose.
-4. **Clustering:** 32-PC mini-batch k-means gives mean held-out family ARI 0.170
-   on original weights, 0.178 on log coordinates and 0.183 on stereographic
-   coordinates. This is a small coarse-clustering improvement, not an overall
-   winner or a validated species-clustering result. Cluster count is fixed to
-   the number of eligible families, not selected using test labels.
-5. **Reconstruction and neighbourhoods:** original-space PCA at 128 dimensions
-   reconstructs at about 70° mean angular error; chart-PCA is roughly 78–81°.
-   Stereographic coordinates preserve about 84% of original ten-neighbour sets,
-   log coordinates about 89%, and the Lambert radial formula about 92%.
-   These are approximate coordinates, not geometry-preserving replacements.
+- **Linear family prediction:** stereographic macro recall exceeds the original
+  weights by 0.34 percentage points but loses micro accuracy. That small,
+  split-dependent trade-off does not establish superiority; aggressive dimension
+  reduction loses discriminative information.
+- **Gaussian NB:** PCA helps; charts alone do not. Whitening does not materially
+  change Gaussian NB here because its learned coordinate variances absorb scaling.
+- **Genus neighbours:** full-rank whitening modestly improves prediction by
+  changing the metric. Truncation and the tested kernel features generally lose.
+- **Clustering:** 32-PC mini-batch k-means gives mean held-out family ARI 0.170 for
+  original weights, 0.178 for log coordinates and 0.183 for stereographic
+  coordinates. Cluster count is the number of eligible families, not selected
+  using test labels. This does not establish species-clustering performance.
+- **Reconstruction and neighbourhoods:** PCA at 128 dimensions gives about 70°
+  mean angular reconstruction error in original space versus 78–81° for charts.
+  Original ten-neighbour overlap is about 84% for stereographic, 89% for log and
+  92% for Lambert coordinates; none preserves the original geometry exactly.
 
-The covariance explains why simply removing a radial constraint does not rescue
-low-dimensional PCA. On the first training split, two PCs explain **0.39%** of
-variance, 32 explain **5.20%**, 128 explain **17.76%**, and 512 explain **54.42%**.
-The information is spread across many dimensions. This does not mean that the
-vectors lack useful taxonomic structure: the full-dimensional linear classifier
-extracts it very well. A poor two-dimensional PCA picture and useful
-high-dimensional linear prediction can coexist.
+On the first training split, 2, 32, 128 and 512 PCs explain **0.39%, 5.20%,
+17.76% and 54.42%** of variance. Information is spread across many dimensions:
+a poor two-dimensional PCA view does not rule out useful high-dimensional
+linear prediction.
 
 ## Principles, simplicity, cost and insertion/inversion
 
@@ -117,74 +101,51 @@ high-dimensional linear prediction can coexist.
 | Nyström RBF features | Approximate nonlinear kernel feature space for linear tools; 512 training landmarks. | O(md + m²) with dense normalization; approximate learned preimage, no guaranteed inverse. | Five tested kernel widths give no overall advantage here. |
 | Radial quantile warp | Distribution-specific heuristic; radial normality does not imply multivariate Gaussianity. | O(d) plus quantile lookup; our clamped interpolation loses extreme held-out radii. | No demonstrated gain; do not promote this control into an export default. |
 
-CPU observations on an Intel i7-12800H, with four BLAS threads: mean-anchor charts
-fit in about 0.02 s and insert/invert one vector in roughly 11–23 μs. The 40-step
-intrinsic-mean estimate takes about 5 s in a dedicated measurement and still has
-mean-log residual norm 0.00034; it is not a converged global-mean claim. PCA fitting
-ranges from about 0.4 s for this full-covariance solver to 2 s for the separate
-randomized 512-component solver. Those timings use different algorithms and are
-not a monotonic dimension-scaling comparison. PCA-512 insertion is about 0.2 ms.
-Fast PNS-128 takes about 9.4 s including initial reduction and about 1.8 ms per
-insertion. The narrow-kernel follow-up takes about 0.5 s including its fitted
-preimage and about 1.1–1.2 ms per insertion. These are host-specific observations,
-not deployment guarantees or carefully isolated throughput benchmarks.
+CPU observations (Intel i7-12800H, four BLAS threads): mean-anchor charts fit
+in about 0.02 s and insert/invert a vector in 11–23 μs. The 40-step intrinsic-mean
+estimate takes about 5 s with residual mean-log norm 0.00034; this does not certify
+a global mean. PCA fits take about 0.4 s for the full-covariance solver versus
+2 s for randomized 512-component PCA, so these are not dimension-scaling timings.
+PCA-512 insertion takes about 0.2 ms; PNS-128 takes 9.4 s to fit including reduction
+and 1.8 ms per insertion. The narrow-kernel follow-up takes about 0.5 s including
+preimage fitting and 1.1–1.2 ms per insertion. These are host-specific observations,
+not isolated throughput benchmarks or deployment guarantees.
 
-The PNS implementation follows the fast approximation in Monem, Dryden & George
-(2025, §3.3), with three initializations and a bounded optimizer per subsphere.
-All selected optimizer stages reported convergence, and held-out reduced-sphere
-inversion passed. This does not certify globally optimal axes or establish how
-full 1,279-dimensional PNS would perform. Its cost/state scales quadratically in
-dimension, making it a higher-investment option than the demonstrated benefit
-currently warrants. A known-small-circle numerical check validates the core
-subsphere fit; this is not cross-validation against the authors' R package.
+Fast PNS uses Monem, Dryden & George (2025, §3.3), three initializations and a
+bounded optimizer per subsphere. Selected stages reported convergence and
+held-out reduced-sphere inversion passed; a known-small-circle check validates
+the core fit. This does not certify global optima, agreement with the authors' R
+package, or full 1,279-dimensional PNS, whose cost/state scales quadratically.
 
-Kernel widths 0.01, 0.1, 1, 5 and 20 were evaluated. Broad kernels were better;
-narrow kernels largely failed to transfer beyond training landmarks. The table
-shows γ=0.01 explicitly, not a claim of globally optimized kernels. At the same
-512-coordinate count, PCA substantially outperforms this Nyström representation
-for the linear family task. Approximate kernel preimages are not exact inverses.
+Kernel widths 0.01, 0.1, 1, 5 and 20 were tested. Broad kernels transferred better;
+narrow kernels largely failed beyond training landmarks. The table shows γ=0.01,
+not globally optimized kernels. At 512 coordinates, PCA substantially outperformed
+Nyström for linear family prediction; kernel preimages remain approximate.
 
 ## Recommended next use
 
-- Retain the original matrix for linear classifiers, original angular similarity
-  and fidelity-sensitive work.
-- For Gaussian or diagonal-covariance models, fit PCA on the analysis training
-  split and select the retained dimension using that task's validation data.
-  The tested 256–768 range is useful guidance, not a universal fixed setting.
-- Consider full-rank whitening for an explicitly changed nearest-neighbour metric.
-- Supply a stereographic companion only when consumers need its unrestricted chart
-  and analytic inverse. Save the anchor, row norms, transform conventions and
-  numerical error; do not label it a generally improved representation.
-- Do not invest in full PNS, custom normalizing flows or autoencoders yet. The
-  reduced PNS experiment does not earn that escalation. Flows and autoencoders
-  are untested alternatives, not empirically rejected methods.
-- Image embedding insertion, domain shift, calibrated densities and time-series
-  filtering need task-specific data before making performance claims. The present
-  evidence answers which approaches help the **available prototype tasks**.
+- Fit PCA on analysis training data and choose dimension on validation data;
+  the observed 256–768 range is guidance, not a fixed default.
+- Use whitening only when a changed neighbour metric is intended. A stereographic
+  companion should retain its anchor, row norms, conventions and numerical error.
+- Reduced PNS results do not justify escalating to full PNS or custom flows and
+  autoencoders; the latter are untested, not empirically rejected.
+- Image embeddings, domain shift, calibrated densities and time-series filtering
+  need their own data. These recommendations concern the available prototype tasks.
 
 ## Evidence and references
 
-The [research directory](../publication/experiments/prototype_linearization/README.md)
-contains the protocol, source references and executable scripts. The local study
-bundle `/tmp/prototype-linearization-study-20260915` originally contained raw per-split results,
-split indices, executed source, environment information, a comparison figure and
-checksums. No model, dataset or large generated matrices are added to Git.
+The [reproduction guide](../publication/experiments/prototype_linearization/README.md)
+owns the protocol, source references and commands. The original local bundle
+`/tmp/prototype-linearization-study-20260915` held per-split results, indices,
+executed source, environment details, a figure and checksums. It was absent when
+checked on 2026-09-23. **The numerical
+results above are retained historical findings, not independently reverified
+results.** Reproduction requires the checksum-matched input and four fresh stages;
+the scripts do not archive the raw evidence.
 
-Repository consolidation on 2026-09-23 confirmed that this temporary bundle is
-no longer present at that path. The results above are retained from the original
-study and were not independently reverified during consolidation. Reproducing
-them requires the original input matching the recorded checksum and a fresh run
-of the four stages; the scripts alone do not archive the raw evidence.
-
-Numerical checks: three focused tests pass for chart inversion and single-point
-insertion, a known small-circle PNS fit with held-out inversion, and the radial
-control's endpoint failure. Every benchmark stage completed on the real matrix.
-The same comparison is not rerun merely for formatting/documentation edits.
-
-Foundational sources:
-
-- [Fletcher et al., 2004: Principal Geodesic Analysis](https://doi.org/10.1109/TMI.2004.831793).
-- [Jung, Dryden & Marron, 2012: Analysis of Principal Nested Spheres](https://www.statistics.pitt.edu/sungkyu/papers/Biometrika-2012-Jung-551-68.pdf).
-- [Monem, Dryden & George, 2025: Principal Nested Spheres for High-Dimensional Data](https://arxiv.org/html/2511.08398v1).
-- [Williams & Seeger, 2000: Nyström approximation](https://proceedings.neurips.cc/paper/2000/file/19de10adbaa1b2ee13f77f679fa1483a-Paper.pdf).
-- [Mika et al., 1998: Kernel PCA and the preimage problem](https://proceedings.neurips.cc/paper/1998/hash/226d1f15ecd35f784d2a20c3ecf56d7f-Abstract.html).
+The original study recorded completion on the real matrix and three passing
+numerical checks: chart inversion/insertion, a small-circle PNS fit with held-out
+inversion, and radial endpoint failure. Documentation cleanup does not rerun or
+extend that qualification. No model, dataset or large generated matrices are
+tracked.
