@@ -68,6 +68,7 @@ def qualify(candidate, dataset=None):
         for tta in ("none", "rotation30_pad25_3"):
             run(HERE / "qualify_bundle.py", candidate / "mambo-v3-bundle", dataset, "--tta", tta, "--output", reports / f"cpu-{tta}.json")
         subprocess.run(["uv", "pip", "install", "--python", str(python), "gradio==6.28.0"], check=True)
+        env["MAMBO_BUNDLE"] = str(candidate / "mambo-v3-bundle")
         run(HERE / "qualify_demo.py", ROOT / "deployment/demo/app.py", image, reports / "demo.json")
         subprocess.run(["uv", "pip", "check", "--python", str(python)], check=True)
         packages = subprocess.check_output(["uv", "pip", "freeze", "--python", str(python)], text=True)
