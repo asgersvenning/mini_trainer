@@ -160,15 +160,32 @@ def test_setup_rejects_wrong_metadata_before_downloads(tmp_path, monkeypatch):
 def test_legacy_archive_uses_repository_root_from_any_working_directory(tmp_path, monkeypatch):
     import subprocess
 
-    from dev.releases.mambo_v3.setup_ucloud_release import COMMIT, HERE, prepare_legacy_source
+    from dev.releases.mambo_v3 import setup_ucloud_release as setup
 
+    repository = tmp_path / "repository"
+    package = repository / "mini_trainer"
+    package.mkdir(parents=True)
+    expected = b"# Pinned legacy package\n"
+    (package / "__init__.py").write_bytes(expected)
+    (package / "deploy.py").write_text("# Legacy deployment\n")
+    subprocess.run(["git", "init", str(repository)], check=True, capture_output=True)
+    subprocess.run(["git", "add", "mini_trainer"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.org", "-c", "commit.gpgsign=false", "commit", "-m", "Legacy"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
+    monkeypatch.setattr(setup, "HERE", repository / "dev/releases/mambo_v3")
+    monkeypatch.setattr(setup, "COMMIT", commit)
+    (package / "__init__.py").write_text("# Uncommitted change must not be exported\n")
     monkeypatch.chdir(tmp_path)
-    source = tmp_path / "legacy" / COMMIT
-    prepare_legacy_source(source)
-    expected = subprocess.check_output(["git", "show", f"{COMMIT}:mini_trainer/__init__.py"], cwd=HERE.parents[2])
+    source = tmp_path / "legacy" / commit
+    setup.prepare_legacy_source(source)
     assert (source / "mini_trainer/__init__.py").read_bytes() == expected
     assert (source / "mini_trainer/deploy.py").is_file()
-    prepare_legacy_source(source)  # Reuse the completed extraction on setup retries.
+    setup.prepare_legacy_source(source)  # Reuse the completed extraction on setup retries.
 
 
 def test_configuration_preserves_virtual_environment_interpreter(tmp_path):

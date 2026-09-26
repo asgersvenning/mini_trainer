@@ -341,9 +341,9 @@ def run(
         "versions": {
             name: version(name)
             for name in (
-                ("torch", "torchvision", "numpy", "mini_trainer", "torchao")
+                ("torch", "torchvision", "numpy", "mt-trainer", "torchao")
                 if quantization_recipe
-                else ("torch", "torchvision", "numpy", "mini_trainer")
+                else ("torch", "torchvision", "numpy", "mt-trainer")
             )
         },
         "dataset_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),

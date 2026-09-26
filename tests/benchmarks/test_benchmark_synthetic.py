@@ -34,6 +34,8 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
         second = run(tmp_path / "second", cache="RAM", cache_workers=0)
     finally:
         torch.set_num_threads(threads)
+    assert "mt-trainer" in first["versions"]
+    assert "mini_trainer" not in first["versions"]
     assert first["cache"] == second["cache"] == "CPU"
     assert len(first["phase_measurements"]) == 24
     assert [phase["phase"] for phase in first["phase_measurements"]] == ["train", "eval"] * 12
