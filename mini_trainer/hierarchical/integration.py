@@ -349,7 +349,7 @@ class HierarchicalResultCollector(BaseResultCollector):
         results = {}
         for level in range(self._levels):
             lvl_results = named_confusion_matrix(
-                results={k: v[level] if k in ["preds", "confs", "labels"] else v for k, v in data.items()},
+                results={k: [row[level] for row in v] if k in ("preds", "confs", "labels") else v for k, v in data.items()},
                 cls2idx=self.cls2idx[str(level)],
                 verbose=self.verbose,
             )
