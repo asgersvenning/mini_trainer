@@ -59,20 +59,21 @@ The prepared README uses links to the planned `MAMBO_v3` tag, so those links bec
 publicly resolvable only after the reviewed tag exists. Do not silently retarget them
 to a moving branch. Review the GitHub-rendered README/figures before announcement.
 
-## Intended consumer commands after publication
+## Consumer checks after publication
+
+Follow the [deployment quick start](../../../deployment/README.md#quick-start),
+replacing the local wheel with the published package:
 
 ```sh
-uv venv --python 3.13 .venv
-source .venv/bin/activate
 uv pip install 'mambo-v3[onnx]==0.3.0'
 mambo_predict -i images --name results
 ```
 
-Or an isolated CLI: `uvx --from 'mambo-v3[onnx]==0.3.0' mambo_predict -i images`.
-Native users can install `mambo-v3[torch]==0.3.0` with an explicitly selected PyTorch
-backend and pass `--backend torch --device cuda:0`. Offline users install the
-provided wheels/dependencies and supply the extracted bundle with `--bundle`.
-No repository checkout or dataset metadata is required for these consumer paths.
+Also check the isolated CLI:
+`uvx --from 'mambo-v3[onnx]==0.3.0' mambo_predict -i images`.
+Native PyTorch and offline installation follow the same
+[runtime guidance](../../../docs/mambo-integration.md); neither requires a
+repository checkout or dataset metadata.
 
 ## Rollback and maintenance
 
