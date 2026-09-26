@@ -10,7 +10,8 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-from dev.releases.mambo_v3.build_bundle import build
+from deployment.mambo_deploy.download import fetch_file
+from dev.releases.mambo_v3.build_bundle import INPUTS, build
 from dev.releases.mambo_v3.package_download_metadata import distribution_readme, package
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,6 +21,14 @@ HERE = Path(__file__).resolve().parent
 def digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def fetch_inputs(source):
+    inventory = tomllib.loads((HERE / "inventory.toml").read_text())
+    needed = {f"{inventory['production']}/{name}" for name in INPUTS.values()}
+    for item in inventory["artifacts"]:
+        if item["path"] in needed:
+            fetch_file(item["url"], source / item["path"], size=item["size"], sha256=item["sha256"])
 
 
 def prepare(source, output):
@@ -63,6 +72,7 @@ def prepare(source, output):
         "distribution": "mambo-v3",
         "package_version": tomllib.loads((ROOT / "deployment/pyproject.toml").read_text())["project"]["version"],
         "model_id": "MAMBO_v3",
+        "training_distribution": {key: tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][key] for key in ("name", "version")},
         "publication_performed": False,
         "qualification": "Pending final installed-artifact checks; see qualification records alongside this manifest",
         "owner_decisions": [],
@@ -86,5 +96,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True, help="Verified input inventory directory")
     parser.add_argument("--output", type=Path, required=True, help="New local artifact directory")
+    parser.add_argument("--download", action="store_true", help="Fetch only pinned release inputs from ERDA")
     args = parser.parse_args()
+    if args.download:
+        fetch_inputs(args.source.resolve())
     prepare(args.source.resolve(), args.output.resolve())

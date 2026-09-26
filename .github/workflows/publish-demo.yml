@@ -1,0 +1,63 @@
+name: Prepare or update MAMBO demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Deploy the reviewed demo to Hugging Face
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-mambo-v3-space
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv venv --python 3.13 .venv-release
+      - run: uv pip install --python .venv-release/bin/python numpy pillow
+      - name: Stage only the demo
+        run: |
+          .venv-release/bin/python -c 'from pathlib import Path; from dev.releases.mambo_v3.publication_assets import stage_space; stage_space(Path("space"))'
+      - name: Check the installed public demo dependencies
+        env:
+          GRADIO_ANALYTICS_ENABLED: "False"
+        run: |
+          uv pip install --python .venv-release/bin/python -r space/requirements.txt
+          .venv-release/bin/python -c 'import runpy; app=runpy.run_path("space/app.py"); app["build_app"]()'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mambo-v3-space
+          path: space/
+          if-no-files-found: error
+
+  publish:
+    needs: prepare
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    environment: model-demo
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: mambo-v3-space
+          path: space/
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv venv --python 3.13 .venv-release
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=0.36,<2'
+      - name: Deploy demo only
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: .venv-release/bin/python -m dev.releases.mambo_v3.publish_assets space space "$HF_SPACE_REPO"

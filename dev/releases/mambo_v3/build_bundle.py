@@ -12,6 +12,16 @@ from deployment.mambo_deploy.preprocessing import RECIPE
 from dev.releases.mambo_v3.audit import HERE, sha256
 from dev.releases.mambo_v3.package_download_metadata import distribution_readme
 
+INPUTS = {
+    "models/pytorch/best.pt": "models/pytorch/best.pt",
+    "models/onnx/model.onnx": "models/onnx-fp32/model.onnx",
+    "models/onnx/model.onnx.data": "models/onnx-fp32/model.onnx.data",
+    "models/onnx/manifest.json": "models/onnx-fp32/manifest.json",
+    "models/onnx-embedding/model.onnx": "viewer/browser-model/model.onnx",
+    "models/onnx-embedding/model.onnx.data": "viewer/browser-model/model.onnx.data",
+    "models/onnx-embedding/manifest.json": "viewer/browser-model/manifest.json",
+}
+
 
 def build(source, destination):
     if destination.exists():
@@ -24,21 +34,13 @@ def build(source, destination):
         raise ValueError("Preset manifest is stale; rebuild presets first")
     files = {item["path"]: item for item in inventory["artifacts"]}
     production = inventory["production"]
-    copies = {
-        "models/pytorch/best.pt": "models/pytorch/best.pt",
-        "models/onnx/model.onnx": "models/onnx-fp32/model.onnx",
-        "models/onnx/model.onnx.data": "models/onnx-fp32/model.onnx.data",
-        "models/onnx/manifest.json": "models/onnx-fp32/manifest.json",
-        "models/onnx-embedding/model.onnx": "viewer/browser-model/model.onnx",
-        "models/onnx-embedding/model.onnx.data": "viewer/browser-model/model.onnx.data",
-        "models/onnx-embedding/manifest.json": "viewer/browser-model/manifest.json",
-    }
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="mambo-bundle-", dir=destination.parent) as temp:
         root = Path(temp) / "bundle"
         root.mkdir()
         origins = {}
-        for target, relative in copies.items():
+        for target, relative in INPUTS.items():
             item = files[f"{production}/{relative}"]
             path = source / item["path"]
             if path.stat().st_size != item["size"] or sha256(path) != item["sha256"]:

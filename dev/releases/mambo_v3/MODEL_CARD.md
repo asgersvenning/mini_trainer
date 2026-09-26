@@ -14,10 +14,25 @@ tags:
 
 # MAMBO V3
 
-Unpublished release candidate: EfficientNetV2-S trained on global-lepi in September
+EfficientNetV2-S trained on global-lepi in September
 2026. Predicts 12,632 species, 4,476 genera and 104 families, identified by GBIF taxon
 IDs. Native PyTorch and standard floating-point ONNX artifacts share this vocabulary.
 No quantized model is included. Embeddings have 1,280 dimensions and unit length.
+
+[Try one image](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) ·
+[Python package](https://pypi.org/project/mambo-v3/) ·
+[Integration and comparison figures](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md)
+
+```python
+from mambo_deploy import Predictor
+result = Predictor().predict("moth.jpg")
+print(result[0].label, result[0].confidence)
+```
+
+Install with `uv pip install 'mambo-v3[onnx]==0.3.0'`. The package downloads verified
+weights from ERDA automatically. For a Hub snapshot, use its `bundle/` directory
+with `Predictor(bundle="/path/to/snapshot/bundle")`; this is not a Transformers
+`from_pretrained` model. `CITATION.cff` identifies the release citation.
 
 Use the release README for installation, input/output formats and configuration.
 Global is the default. Region presets and custom class lists constrain eligible
@@ -58,9 +73,9 @@ can be loaded without retraining or downloading an initialization model.
 vocabulary and documentation. `PRESET_DEFINITIONS.toml` and `PRESET_UPDATES.toml`
 record list construction. Read `NOTICES.md` for code, model and source-data boundaries.
 
-## Publication status
+## License
 
-The candidate weights are prepared under **CC BY-NC-SA 4.0**: attribution,
+The model weights use **CC BY-NC-SA 4.0**: attribution,
 non-commercial use and share-alike terms for distributed adaptations. See
 `MODEL_LICENSE.txt` and `NOTICES.md` for the terms and upstream attribution.
-The adapter code remains MIT-licensed. This candidate has not been published.
+The adapter code remains MIT-licensed.

@@ -13,11 +13,12 @@ remains MIT. Final artifact identities and installed checks are recorded in
   Both lockfiles preserve dependency versions. Isolated installed-wheel imports,
   CLI, training, checkpoint reload and inference passed.
 - Training publication now accepts `minitrainer-vVERSION` release events only;
-  manual dispatch prepares artifacts without publication. Model/demo workflows
-  and final publication-routing qualification remain to be completed.
+  manual dispatch prepares artifacts without publication. Model and demo publication
+  have separate workflows, environment gates and verified upload inventories.
 - The CPU Space uses the release API with runtime, scope, custom-list, TTA and
-  top-K controls. Final staging, readable-name assets and installed-candidate
-  qualification remain pending. Browser reuse is assessed separately below.
+  top-K controls and names for all 17,212 taxa. Runtime reuse is qualified on a
+  real image; final installed-candidate qualification is recorded with its artifacts.
+  Browser reuse is assessed separately below.
 - Complete publication documentation, model/Space staging, final rebuilt artifact
   qualification and the human publishing handoff before calling this freeze ready.
 

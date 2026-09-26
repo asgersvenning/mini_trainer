@@ -10,10 +10,11 @@ including CPU, laptop GPU and server GPU measurements.
 (non-commercial, share-alike). Adapter code: MIT.**
 [Model notices](../dev/releases/mambo_v3/NOTICES.md) explain attribution and scope.
 
-Publication is being prepared; the commands below target the public release.
-Release reviewers can install the supplied wheels instead.
 Model files download automatically from public ERDA storage on first use and are
 verified and cached. Reuse one predictor across calls.
+
+[Package](https://pypi.org/project/mambo-v3/) · [Model card and weights](https://huggingface.co/asgersvenning/MAMBO-v3) ·
+[Try one image](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) · [Citation](CITATION.cff)
 
 ## Quick start
 

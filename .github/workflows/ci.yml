@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "release/mambo-v3"]
     # Only agent documents are exempt; source, public docs and workflow edits run checks.
     paths-ignore:
       - 'AGENTS.md'
       - '.agents/**/*.md'
       - '.agents/.gitignore'
   pull_request:
-    branches: ["master"]
+    branches: ["master", "release/mambo-v3"]
 
 permissions:
   contents: read
