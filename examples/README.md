@@ -19,10 +19,13 @@ Constructors accept `--output_dir` and use a `.complete` marker; without it they
 remove partial split directories before rebuilding. Use a dedicated destination.
 The iNaturalist destination additionally appends `mini` or `full`.
 
-The notebooks are historical demonstrations with saved illustrations, not qualified
-end-to-end workflows. They contain IPython shell cells, paths relative to
-`examples/`, CUDA/Spark assumptions and manual inference code predating the current
-API. Dataset construction above runs from the root; do not execute notebook cells
-by concatenating them as plain Python. For maintained training/evaluation examples,
-use the [benchmark workflow](../dev/benchmarks/training.md); for model integration,
+Open notebooks with the existing environment's Python kernel, starting in the
+repository root or `examples/`. The first cell constructs data from the root, then
+sets `examples/` as the working directory. Choose either single-node or Spark
+training; those cells retain their CUDA assumptions and are not a fresh training
+qualification. Batched Python inference uses checkpoint mappings and actual image
+paths, with CPU fallback. Saved plots are historical illustrations, not new results.
+
+For maintained training/evaluation benchmarks use the
+[benchmark workflow](../dev/benchmarks/training.md); for MAMBO model integration,
 use the [deployment guide](../deployment/README.md).
