@@ -36,7 +36,7 @@ A resident-batch reference reached 3,667 / 3,781 / 3,818 images/s at batches
 256 / 512 / 1,024 with almost continuous kernels. This justified prioritizing the
 host pipeline over ever-larger batches. It excludes transfer and CPU results,
 predates final normalization changes and is not a measured application ceiling.
-See the [resident probe](../dev/releases/mambo_v3/gpu-ceiling.md).
+See the [resident probe](../dev/releases/mambo_v3/pipeline-probe.md#measure-resident-gpu-throughput).
 
 ## Current implementation and ownership
 
