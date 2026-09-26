@@ -31,19 +31,10 @@ from mini_trainer.utils import (
 
 
 class BaseBuilder:
-    """The base builder used in the `mini_trainer` training pipeline.
+    """Construction hooks for training and inference.
 
-    Subclass this builder and override the relevant functions to alter the `mini_trainer` training pipeline.
-
-    Methods:
-        **`spec_model_dataloader`** : Parses or builds the model specification from the class index or input directory.
-        **`build_model`**: Builds the model.
-        **`build_dataloader`**: Builds the training and validation dataloaders.
-        **`build_augmentation`**: Builds the augmentation method(s).
-        **`build_optimizer`**: Builds the model optimizer method (e.g. SGD/ADAM).
-        **`build_criterion`**: Builds the optimization criterion (i.e. loss function).
-        **`build_lr_scheduler`**: Builds the learning rate scheduler (shape only, magnitude defined by optimizer).
-        **`build_logger`**: Builds the training diagnostics logger(s).
+    Subclass and override individual methods to customize components while keeping
+    the entry point's construction, checkpoint and training lifecycle.
     """
 
     def __init__(self):  # noqa: D107
@@ -51,11 +42,10 @@ class BaseBuilder:
 
     @staticmethod
     def build_class_spec(path: str | None = None, dir: str | None = None, species: bool = False, *args, **kwargs):
-        """TODO.
+        """Load a class-specification dictionary or derive one from ``dir``.
 
-        Returns:
-            (extra_model_kwargs, extra_dataloader_kwargs):
-                Extra keyword arguments for the model and dataloader building functions.
+        ``dir`` accepts class directories or supported metadata Parquet files.
+        When ``path`` is supplied, write the resulting specification there.
         """
         if args or kwargs:
             raise ValueError(
@@ -69,15 +59,11 @@ class BaseBuilder:
     def build_model(
         fine_tune: bool = False, cls: type[Classifier] = Classifier, fine_tune_dtype: torch.dtype = torch.bfloat16, **kwargs: Any
     ) -> tuple[nn.Module, Callable[[torch.Tensor], torch.Tensor]]:
-        """TODO.
+        """Build ``cls`` and return its model and preprocessing callable.
 
-        The mandatory keyword arguments depend on the class of `cls`,
-          but are likely to be ["model_type", "weights", "device", "dtype" and "num_classes"]
-          or a superset containing these.
-
-        Returns:
-            (model, model_preprocess) (`tuple[torch.nn.Module, Callable[[torch.Tensor], torch.Tensor]]`):
-                The loaded model and an appropriate preprocessing function (e.g. RGB[0,1] normalizer).
+        Remaining keywords are forwarded to ``cls.build``. Fine-tuning freezes the
+        backbone parameters and converts it and preprocessing to ``fine_tune_dtype``;
+        it does not independently freeze running-statistic buffers.
         """
         if fine_tune:
             kwargs["preprocess_dtype"] = fine_tune_dtype
@@ -87,7 +73,6 @@ class BaseBuilder:
             _backbone.requires_grad_(False)
             _backbone.to(dtype=fine_tune_dtype)
             for param in _backbone.parameters():
-                # param.to(dtype=fine_tune_dtype)
                 param.requires_grad_(False)
 
         return model, model_preprocess
@@ -112,10 +97,11 @@ class BaseBuilder:
         hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
         **kwargs,
     ):
-        """TODO.
+        """Return training labels followed by one loader per requested split.
 
-        Returns:
-            (train_label_cls, train_loader, validation_loader): The training and validation dataloaders.
+        Load ``data_index`` or derive metadata from ``input_dir`` on the primary
+        rank, then broadcast it. Split names select matching prefixes in metadata.
+        Remaining keywords pass to ``get_dataset_dataloader``.
         """
 
         def _resolve_metadata():
@@ -199,16 +185,11 @@ class BaseBuilder:
         """
         return tt.Compose(
             [
-                # tt.AugMix(severity=3),
                 SaltAndPepper(proportion=(0.001, 0.05), probability=0.75),
                 tt.RandomHorizontalFlip(),
                 tt.RandomVerticalFlip(),
                 tt.RandomRotation(15),
                 tt.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-                # # tt.RandomResizedCrop(size=(224, 224), scale=(0.9, 1.0)),
-                # tt.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                # # Convert back to tensor (in case some augmentations convert to PIL Image)
-                # tt.ToTensor()
             ]
         )
 
@@ -220,11 +201,12 @@ class BaseBuilder:
         head_weight_decay: float,
         backbone_weight_decay: float,
     ) -> list[dict[str, Any]]:
-        """Groups all model parameters into 'head' and 'backbone'.
+        """Group trainable parameters by head/backbone, decay and Muon eligibility.
 
-        The 'head' is identified by the attribute name stored in `model._backbone_output_name`.
-        All other parameters are considered 'backbone'.
-        This method does not filter by requires_grad; it groups all parameters.
+        ``model._backbone_output_name`` identifies the head. Head parameter names
+        containing ``linear`` or ``layer`` select the no-Muon group; normalization
+        parameters, weight parametrizations and biases receive no weight decay.
+        Frozen parameters are excluded.
         """
         if not hasattr(model, "_backbone_output_name"):
             raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
@@ -257,13 +239,11 @@ class BaseBuilder:
         }
 
         n_params = 0
-        for name, p in model.named_parameters():  # Iterate through all parameters the model exposes
+        for name, p in model.named_parameters():
             if not p.requires_grad:
                 continue
             grp_name = "head" if id(p) in head_module_param_ids else "backbone"
-            # Heuristic to detect last-layer-weights:
-            #   Parameters in classification module with "linear" or "layer" in name
-            # If using the Muon optimizer it is important not to use it on the final layer(s)!
+            # Keep final classifier layers on the auxiliary optimizer, not Muon.
             if grp_name == "head" and ("linear" in name or "layer" in name):
                 new_grp_name = f"{grp_name}_nomuon"
                 if new_grp_name not in param_groups:
@@ -298,10 +278,10 @@ class BaseBuilder:
         backbone_weight_decay: float | None = None,
         **optimizer_kwargs,  # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
-        """Builds an optimizer with separate parameter groups for head and backbone.
+        """Construct the optimizer from named head/backbone parameter groups.
 
-        All parameters of the model are assigned to groups.
-        Requires `model` to have `_backbone_output_name` attribute.
+        Only trainable parameters participate; ``model._backbone_output_name``
+        identifies the head. Forward remaining keywords to ``optimizer_cls``.
         """
         head_lr = lr
         backbone_lr = backbone_lr or head_lr / 3
@@ -325,7 +305,7 @@ class BaseBuilder:
 
         # Default LR for the optimizer itself (used if a group has no LR or if not using groups)
         if "lr" not in optimizer_kwargs:
-            optimizer_kwargs["lr"] = head_lr  # A sensible default
+            optimizer_kwargs["lr"] = head_lr
 
         return optimizer_cls(params=final_params_for_optimizer, **optimizer_kwargs)
 
@@ -411,10 +391,10 @@ class BaseBuilder:
         dtype: torch.dtype | None = None,
         **kwargs,
     ):
-        """TODO.
+        """Build smoothed cross entropy, or EMLA when weighted labels are supplied.
 
-        Returns:
-            The loss function for optimization (e.g. `torch.nn.CrossEntropyLoss` for classification).
+        Label smoothing defaults to ``1 / num_classes``. The EMLA branch counts
+        labels in class-index order, including zero-count classes.
         """
         if label_smoothing is None:
             label_smoothing = 1 / num_classes
@@ -450,11 +430,12 @@ class BaseBuilder:
         start_factor: float = 1e-4,
         pretrained_backbone: bool = True,
     ) -> torch.optim.lr_scheduler.LRScheduler:
-        """Only the *shape* of the LR curve is defined here; the *magnitude* should be set in the optimizer.
-        I suggest using `torch.optim.lr_scheduler.LambdaLR`.
+        """Build per-step cosine schedules with warmup for named parameter groups.
 
-        Returns:
-            The learning rate scheduler (shape only).
+        Head groups warm up from ``start_factor``. A pretrained backbone stays at
+        zero learning rate during head warmup, then starts its own cosine decay.
+        The optimizer supplies the base learning rates; both schedules end at
+        ``min_factor`` times those rates.
         """
         warmup_steps = round(warmup_epochs * steps_per_epoch)
         head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
@@ -477,7 +458,7 @@ class BaseBuilder:
         else:
             backbone_schedule = head_schedule
 
-        lr_lambdas = []  # [head_schedule for _ in optimizer.param_groups]
+        lr_lambdas = []
         for grp in optimizer.param_groups:
             lr_lambdas.append(head_schedule if "head" in grp.get("name", "head") else backbone_schedule)
 
