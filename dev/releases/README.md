@@ -11,7 +11,10 @@ Ordinary CI covers `master` and every `release/**` branch.
 | Demo only | `release/demos/PRODUCT` | No package/model release | `publish-demo.yml` |
 
 Manual dispatch also prepares a selected revision; model/demo dispatch requires
-`product`. Only a non-prerelease GitHub Release can reach package/model publication.
+`product`. Only a non-prerelease GitHub Release initiates package/model publication.
+After a publisher fix, model dispatch may set `resume_run` to that original release
+run: it validates and reuses retained qualified artifacts, skips building/PyPI, and
+finishes assets/demo under the existing environment approvals.
 Demo-only publication requires manual `publish=true`. Human environment approvals
 remain the last gate. Release routing uses the tag, not `target_commitish`: the
 latter may be a commit SHA and does not reliably identify a branch.
@@ -33,7 +36,7 @@ flow into the release automatically. Future model branches can follow the
 `release/models/PRODUCT` convention for automatic preparation on push.
 
 Each model module owns `prepare_candidate`, `qualify_candidate`,
-`publication_assets` and `publish_assets`, using the command interfaces shown in
+`publication_assets`, `publish_assets` and `recover_publication`, using the command interfaces shown in
 the workflows. This keeps model-specific input inventories, fixture policy, bundle
 layout and immutable-upload handling with the release that knows those contracts.
 Demo staging exports `stage_space(output)` and its pinned requirements. Shared

@@ -112,14 +112,14 @@ prediction archives, credentials or datasets belong in the upload directories.
 
 ## 3. Publish training, then the model
 
-At the reviewed commit from `release/mambo-v3`, create and **publish a GitHub Release** with tag
+At the reviewed training-package commit on `master`, create and **publish a GitHub Release** with tag
 `packages/mt-trainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
 `publish.yml` builds, installs and exercises the wheel, then publishes the exact
 retained wheel and the source distribution to PyPI. Model/Space jobs do not run.
 Verify `mt-trainer==0.3.0` is publicly available under the intended ownership.
 
-Then publish the GitHub Release tagged **`MAMBO_v3`** at that same reviewed commit
-from `release/mambo-v3`. Select this branch as the target when creating the tags
+Then publish the GitHub Release tagged **`MAMBO_v3`** at the qualified model commit
+from `release/mambo-v3`. Select this branch as the target when creating the model tag
 in GitHub, verifying its HEAD still matches the qualified SHA; do not accept the
 default `master` target. Publication checks out the tagged revision, so later
 changes to either branch cannot change that release's source.
@@ -128,9 +128,14 @@ The model workflow prepares and qualifies its candidate before the public gates:
 1. `pypi-model-mambo-v3` publishes only `mambo-v3` distributions. It first checks that the
    intended `mt-trainer` version is public and points to this repository.
 2. `model-assets-mambo-v3` attaches the offline bundle, deployment distributions, evidence,
-   inventory and checksums to GitHub; it uploads the model repository and creates
-   an immutable Hugging Face `v0.3.0` tag at that upload's commit.
+   inventory and checksums to GitHub; it uploads the model repository and attaches
+   `hf-model-revision.json` with its immutable Hub commit and publication checksum.
+   Pin that commit with `revision=...` when downloading from Hugging Face.
 3. `model-demo-mambo-v3` deploys the staged Space after package/model publication succeeds.
+   Its commit is recorded in the job summary and the `hf-space-revision` Action artifact.
+
+Hub commit SHAs identify the published contents directly. Publication uses trusted
+publishing for uploads and does not require the separate HF tag-creation endpoint.
 
 Prereleases prepare artifacts but do not publish packages or activate the demo.
 Training versions and model versions need not advance together. Future trained
@@ -165,13 +170,27 @@ without public writes. Set `publish=true` and approve `model-demo-mambo-v3` to d
 This workflow uploads no package or model weights. It requires the public package
 release to exist and pins that package and its CPU runtime dependencies.
 
-For partial publication, rerun the failed jobs from the same workflow run so they
-reuse the prepared artifacts. PyPI skips identical existing distributions; GitHub
-compares existing asset bytes and refuses replacements; Hugging Face compares the
-recorded immutable revision and refuses a different payload. Do not rebuild and
-silently replace already-published files. A different release payload needs a new
-reviewed version/identity. If Space upload succeeded but tag creation failed,
-retrying records the same payload and revision.
+For partial publication with unchanged publisher code, rerun the failed jobs from
+the same workflow run. To apply a publisher fix after the release is already tagged,
+push the fix to `release/mambo-v3`, then dispatch **Prepare and publish model** from
+that branch with `product=mambo-v3` and **`resume_run=<original publication run ID>`**.
+For the initial interrupted V3 publication, that ID is `36270921011`.
+
+Recovery checks that the original run belongs to this publication workflow, its
+preparation and package jobs succeeded, and its source still matches the public
+release tag. It downloads that run's `model-publication` artifact and verifies its
+hashes, product/version and qualified source identity. Preparation and PyPI jobs
+are skipped. The corrected publisher code comes from the selected branch; all
+public model/demo contents still come from the original release artifacts.
+Environment approvals remain required. Leaving `resume_run` blank only prepares.
+
+GitHub compares existing asset bytes and refuses replacements. Hugging Face retries
+compare the existing manifest at a resolved commit and reuse a matching upload,
+including an upload whose old tag step failed. A changed model payload is rejected;
+Space updates may advance to a newly reviewed source, with an expected-parent check
+to reject concurrent changes. Receipts and job summaries record the exact Hub SHAs.
+Do not rebuild, move the release tag, or replace already-published files to recover.
+A different model payload needs a separately reviewed release identity.
 
 Retain the reviewed Action artifacts externally before their 30-day expiry. To
 withdraw a defective release, stop recommending it and publish a corrective

@@ -101,4 +101,9 @@ jobs:
           test -n "$HF_TOKEN"
           echo "::add-mask::$HF_TOKEN"
           export HF_TOKEN
-          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space space "$HF_SPACE_REPO"
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space space "$HF_SPACE_REPO" --receipt "$RUNNER_TEMP/hf-space-revision.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hf-space-revision
+          path: ${{ runner.temp }}/hf-space-revision.json
+          if-no-files-found: error

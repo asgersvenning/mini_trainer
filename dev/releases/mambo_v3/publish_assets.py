@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -24,9 +25,13 @@ def verified_payload(folder):
 
 def github(folder, repository, tag):
     verified_payload(folder)
+    github_files(sorted(folder.iterdir()), repository, tag)
+
+
+def github_files(paths, repository, tag):
     release = json.loads(subprocess.check_output(["gh", "api", f"repos/{repository}/releases/tags/{tag}"], text=True))
     existing = {item["name"]: item for item in release["assets"]}
-    for path in sorted(folder.iterdir()):
+    for path in paths:
         if not path.is_file():
             raise ValueError("GitHub release assets must be flat files")
         if asset := existing.get(path.name):
@@ -47,30 +52,67 @@ def github(folder, repository, tag):
 
 def hub(folder, repository, kind):
     from huggingface_hub import HfApi, hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError
 
     payload = verified_payload(folder)
     api = HfApi(token=os.environ["HF_TOKEN"])
-    tag = f"v{payload['package_version']}" if kind == "model" else f"source-{payload['source_commit']}"
-    # Account/repository creation is a separate owner task, not implicit here.
-    tags = {ref.name for ref in api.list_repo_refs(repository, repo_type=kind).tags}
-    if tag in tags:
-        existing = Path(hf_hub_download(repository, "publication.json", repo_type=kind, revision=tag, token=api.token))
-        if json.loads(existing.read_text()) != payload:
-            raise ValueError(f"Refusing to replace published {kind} revision: {tag}")
-        print(f"Already published: {repository}@{tag}")
-        return
-    commit = api.upload_folder(repo_id=repository, repo_type=kind, folder_path=folder, commit_message=f"Publish {tag}")
-    api.create_tag(repo_id=repository, repo_type=kind, tag=tag, revision=commit.oid)
+    # Resolve main once, then read at that immutable commit. Missing repositories
+    # and authorization failures must propagate; only a missing manifest is new.
+    revision = api.repo_info(repository, repo_type=kind).sha
+    existing = None
+    if revision:
+        try:
+            manifest = hf_hub_download(repository, "publication.json", repo_type=kind, revision=revision, token=api.token)
+        except EntryNotFoundError:
+            pass
+        else:
+            existing = json.loads(Path(manifest).read_text())
+    if existing != payload:
+        if existing is not None and (kind == "model" or existing["source_commit"] == payload["source_commit"]):
+            raise ValueError(f"Refusing to replace published {kind} payload")
+        commit = api.upload_folder(
+            repo_id=repository,
+            repo_type=kind,
+            folder_path=folder,
+            commit_message=f"Publish {payload['model_id']} from {payload['source_commit']}",
+            parent_commit=revision,
+        )
+        revision = commit.oid
+    if not revision or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Hub did not return an immutable commit SHA")
+    receipt = {
+        "repository": repository,
+        "repo_type": kind,
+        "revision": revision,
+        "source_commit": payload["source_commit"],
+        "model_id": payload["model_id"],
+        "package_version": payload["package_version"],
+        "publication_sha256": digest(folder / "publication.json"),
+    }
+    prefix = "spaces/" if kind == "space" else ""
+    url = f"https://huggingface.co/{prefix}{repository}/tree/{revision}"
+    print(f"Published and pinned: {url}")
+    if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with Path(summary).open("a") as stream:
+            stream.write(f"\nHugging Face {kind}: [{revision}]({url})\n")
+    return receipt
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kind", choices=("github", "model", "space"))
+    parser.add_argument("kind", choices=("github", "github-receipt", "model", "space"))
     parser.add_argument("folder", type=Path)
     parser.add_argument("repository")
     parser.add_argument("--tag", default="MAMBO_v3")
+    parser.add_argument("--receipt", type=Path, help="Write the immutable Hub revision outside the payload directory")
     args = parser.parse_args()
     if args.kind == "github":
         github(args.folder.resolve(), args.repository, args.tag)
+    elif args.kind == "github-receipt":
+        github_files([args.folder.resolve()], args.repository, args.tag)
     else:
-        hub(args.folder.resolve(), args.repository, args.kind)
+        if args.receipt and args.receipt.resolve().is_relative_to(args.folder.resolve()):
+            parser.error("Receipt must be outside the publication payload")
+        receipt = hub(args.folder.resolve(), args.repository, args.kind)
+        if args.receipt:
+            args.receipt.write_text(json.dumps(receipt, indent=2) + "\n")
