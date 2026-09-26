@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -35,6 +37,19 @@ def bundle(tmp_path):
         manifest["files"][name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
     (tmp_path / "release.json").write_text(json.dumps(manifest))
     return tmp_path
+
+
+@pytest.fixture
+def ort(monkeypatch):
+    runtime = SimpleNamespace(
+        SessionOptions=SimpleNamespace,
+        GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
+        OrtValue=type("FakeOrtValue", (), {}),
+        get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        InferenceSession=None,
+    )
+    monkeypatch.setitem(sys.modules, "onnxruntime", runtime)
+    return runtime
 
 
 def test_mask_recomputes_parent_scores_and_normalization():
@@ -173,10 +188,7 @@ def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeyp
 
 
 @pytest.mark.parametrize(("precision", "use_tf32"), [("fp32", 0), ("auto", 1)])
-def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32):
-    import sys
-    from types import SimpleNamespace
-
+def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32, ort):
     predictor = Predictor(bundle, device="cuda:0", precision=precision)
     monkeypatch.setattr(predictor.bundle, "profile", lambda key: bundle / "unused.onnx")
     captured = {}
@@ -185,17 +197,7 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         captured["providers"] = providers
         return SimpleNamespace(disable_fallback=lambda: None, get_providers=lambda: ["CPUExecutionProvider"])
 
-    monkeypatch.setitem(
-        sys.modules,
-        "onnxruntime",
-        SimpleNamespace(
-            SessionOptions=SimpleNamespace,
-            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
-            OrtValue=type("FakeOrtValue", (), {}),
-            get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
-            InferenceSession=session,
-        ),
-    )
+    ort.InferenceSession = session
     with pytest.raises(RuntimeError, match="refusing CPU-only fallback"):
         predictor._onnx(np.zeros((1, 3, 384, 384), dtype=np.float32), False)
     assert captured["providers"][0][1]["use_tf32"] == use_tf32
@@ -443,10 +445,7 @@ def test_named_tta_preserves_released_recipe(option, settings):
 @pytest.mark.parametrize(
     "failure", [None, "cudaErrorNoKernelImageForDevice", "cudaErrorInvalidDeviceFunction", "CUDA out of memory", "baseline"]
 )
-def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
-    import sys
-    from types import SimpleNamespace
-
+def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure, ort):
     p = Predictor(bundle, device="cuda:0")
     monkeypatch.setattr(p.bundle, "profile", lambda key: bundle / key)
     sessions, calls = [], []
@@ -468,17 +467,7 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
             run=run, disable_fallback=lambda: None, get_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "onnxruntime",
-        SimpleNamespace(
-            SessionOptions=SimpleNamespace,
-            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
-            OrtValue=type("FakeOrtValue", (), {}),
-            get_available_providers=lambda: ["CUDAExecutionProvider"],
-            InferenceSession=create,
-        ),
-    )
+    ort.InferenceSession = create
     batch = np.zeros((2, 3, 384, 384), dtype=np.float32)
     if failure in ("CUDA out of memory", "baseline"):
         with pytest.raises(RuntimeError, match="out of memory" if failure != "baseline" else "baseline compatibility"):
@@ -505,10 +494,11 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
 
 
 @pytest.mark.parametrize("tta", ["none", "rotation30_pad25_3"])
-def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
+@pytest.mark.parametrize("batch_size", [2, 129])
+def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta, batch_size):
     from PIL import Image
 
-    predictor = Predictor(bundle, batch_size=2, tta=tta)
+    predictor = Predictor(bundle, batch_size=batch_size, tta=tta)
 
     def infer(images, embeddings=False):
         values = images.mean(axis=(2, 3))
@@ -525,15 +515,26 @@ def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
     np.testing.assert_array_equal(np.concatenate([v for _, v in observed]), vectors)
     np.testing.assert_array_equal(np.concatenate([r.indices for r, _ in observed]), expected.indices)
     np.testing.assert_array_equal(np.concatenate([r.confidence for r, _ in observed]), expected.confidence)
+    assert [len(result) for result, _ in observed] == [min(batch_size, len(paths) - start) for start in range(0, len(paths), batch_size)]
+    with pytest.raises(ValueError, match="read_window must cover"):
+        list(predictor.predict_stream(paths, read_window=1))
 
 
 @pytest.mark.parametrize("topk", [1, 2])
-def test_top1_fast_path_preserves_stable_ties(topk):
-    raw = [np.array([[2, 2, -1], [-3, -3, -3], [0, 2, 1]], dtype=np.float32)] * 3
-    labels = [["a", "b", "c"]] * 3
-    result = Prediction(raw, labels, [np.arange(3)] * 3, topk)
-    expected = np.stack([np.argsort(-v, axis=1, kind="stable")[:, :topk] for v in raw], axis=-1)
-    np.testing.assert_array_equal(result.indices, expected)
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param([[2, 2, -1], [-3, -3, -3], [0, 2, 1]], id="finite"),
+        pytest.param([[1, np.nan, 2], [np.nan, np.nan, np.nan], [np.inf, 2, -np.inf]], id="nonfinite"),
+    ],
+)
+def test_prediction_preserves_stable_ties_and_nonfinite_order(topk, raw):
+    raw = np.array(raw, dtype=np.float32)
+    with np.errstate(invalid="ignore"):
+        result = Prediction([raw] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk)
+        expected = np.argsort(-raw, axis=1, kind="stable")[:, :topk]
+    np.testing.assert_array_equal(result.indices, np.stack([expected] * 3, axis=-1))
+    np.testing.assert_array_equal(np.isnan(result.confidence).any(axis=(1, 2)), ~np.isfinite(raw).all(axis=1))
 
 
 @pytest.mark.parametrize("selected", [[0, 1, 2], [0, 2], [1]])
@@ -696,16 +697,6 @@ def test_square_gather_preserves_pixels_across_decoded_and_strided_layouts():
                 np.testing.assert_array_equal(target, expected)
 
 
-@pytest.mark.parametrize("topk", [1, 2])
-def test_prediction_nonfinite_ordering_matches_stable_sort(topk):
-    raw = np.array([[1, np.nan, 2], [np.nan, np.nan, np.nan], [np.inf, 2, -np.inf]], dtype=np.float32)
-    with np.errstate(invalid="ignore"):
-        result = Prediction([raw] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk)
-        expected = np.argsort(-raw, axis=1, kind="stable")[:, :topk]
-    np.testing.assert_array_equal(result.indices, np.stack([expected] * 3, axis=-1))
-    assert np.isnan(result.confidence).all()
-
-
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
     from deployment.mambo_deploy import preprocessing as p
@@ -736,26 +727,9 @@ def test_default_scope_is_global_including_legacy_facade(bundle, monkeypatch):
     assert Predictor(bundle, model="europe").class_list == ["a", "b"]
 
 
-def test_stream_window_default_accommodates_large_batches(bundle, monkeypatch):
-    predictor = Predictor(bundle, batch_size=256)
-    captured = {}
-
-    def prepare(*args, **kwargs):
-        captured.update(kwargs)
-        yield from ()
-
-    monkeypatch.setattr(predictor, "prepared_batches", prepare)
-    assert list(predictor.predict_stream([])) == []
-    assert captured["read_window"] == 256
-    assert list(predictor.predict_stream([], read_window=1024)) == []
-    assert captured["read_window"] == 1024
-
-
 @pytest.mark.parametrize("embeddings", [False, True])
 def test_cli_streams_ordered_results_and_publishes_only_complete_output(bundle, tmp_path, monkeypatch, embeddings):
     import csv
-    import sys
-    from types import SimpleNamespace
 
     from deployment.mambo_deploy import cli
 
