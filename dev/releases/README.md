@@ -24,10 +24,13 @@ not need another model-name condition. An explicit tag override requires a match
 `tag_version`, preventing accidental reuse for a maintenance version.
 
 **MAMBO V3 keeps `MAMBO_v3` as its explicit release tag**, preserving prepared
-public links. Its existing `release/mambo-v3` branch still receives CI and can use
-manual preparation with `product=mambo-v3`; no branch rename is required. Use
-`release/models/mambo-v3` for automatic model preparation on push. These are the
-same product, not two independently publishable release identities.
+public links. `release/mambo-v3` is its stable source and maintenance branch;
+select it for manual preparation with `product=mambo-v3` and tag the qualified
+commit there. No branch rename is required. Workflows must also exist on `master`
+for manual dispatch discovery, but preparation checks out the selected revision
+and publication checks out the release tag. Ongoing `master` development does not
+flow into the release automatically. Future model branches can follow the
+`release/models/PRODUCT` convention for automatic preparation on push.
 
 Each model module owns `prepare_candidate`, `qualify_candidate`,
 `publication_assets` and `publish_assets`, using the command interfaces shown in
@@ -38,7 +41,8 @@ workflows orchestrate these steps and retain their exact qualified artifacts.
 
 Training uses `pypi-training`. Model environments are scoped per product:
 `pypi-model-PRODUCT`, `model-assets-PRODUCT` and `model-demo-PRODUCT`. Configure
-model/Space destinations and narrowly scoped credentials there. Both demo paths
+model/Space destination variables there and register trusted publishers on the
+corresponding services; no stored publishing tokens are required. Both demo paths
 share a per-product deployment concurrency group. A future model needs its own
 accounts/environments; it cannot inherit another model's destinations implicitly.
 

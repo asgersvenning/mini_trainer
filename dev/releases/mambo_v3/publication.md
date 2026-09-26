@@ -6,6 +6,13 @@ separate identities: training **`mt-trainer==0.3.0`** (Python `mini_trainer`),
 deployment **`mambo-v3==0.3.0`** (Python `mambo_deploy`), model **`MAMBO_v3`**.
 `mini-trainer` on PyPI is an unrelated project; never publish or install it here.
 
+**`release/mambo-v3` is the source and maintenance branch for this model release.**
+Prepare from that branch and tag its reviewed commit. `master` may develop
+independently; do not routinely merge it back into the release branch. Bring in
+only reviewed, release-relevant fixes and qualify the affected behavior. Shared
+core fixes still originate on a feature/fix branch or `master` before integration.
+Published tags and artifacts remain immutable even as the maintenance branch advances.
+
 ## 1. Configure accounts and environments
 
 Configure pending trusted publishers for `mt-trainer` and `mambo-v3`. The owner
@@ -65,12 +72,15 @@ environment secrets and revoke tokens created solely for these workflows.
 `release/mambo-v3` branch can stay in place and use manual preparation; it has no
 special publication permission. `MAMBO_v3` is an explicit descriptor tag override.
 
-Make the reviewed workflow changes available on the repository's default branch
-before using manual Actions dispatch. Push the release source through the normal
-review/merge process; no release tag is needed for preparation.
+Make the reviewed workflow changes available on `master` so GitHub exposes manual
+Actions dispatch. This registers the workflows; it does not make `master` the
+release source. No release tag is needed for preparation.
 
-Run **Prepare and publish model** (`publish-model.yml`) manually on the intended
-release revision with `product=mambo-v3`. Manual dispatch only downloads pinned inputs, builds artifacts,
+Run **Prepare and publish model** (`publish-model.yml`) with **Branch:
+`release/mambo-v3`** and **`product=mambo-v3`**. Record the run's commit SHA; use
+that same reviewed commit when creating the release tags. If the branch changes
+before publication, either retain the qualified commit or prepare the new revision.
+Manual dispatch only downloads pinned inputs, builds artifacts,
 qualifies installed CPU runtimes and uploads downloadable Action artifacts;
 it does not run any publication job. Download and review:
 
@@ -102,13 +112,17 @@ prediction archives, credentials or datasets belong in the upload directories.
 
 ## 3. Publish training, then the model
 
-At the reviewed commit, create and **publish a GitHub Release** with tag
+At the reviewed commit from `release/mambo-v3`, create and **publish a GitHub Release** with tag
 `packages/mt-trainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
 `publish.yml` builds, installs and exercises the wheel, then publishes the exact
 retained wheel and the source distribution to PyPI. Model/Space jobs do not run.
 Verify `mt-trainer==0.3.0` is publicly available under the intended ownership.
 
-Then publish the GitHub Release tagged **`MAMBO_v3`** at the reviewed model commit.
+Then publish the GitHub Release tagged **`MAMBO_v3`** at that same reviewed commit
+from `release/mambo-v3`. Select this branch as the target when creating the tags
+in GitHub, verifying its HEAD still matches the qualified SHA; do not accept the
+default `master` target. Publication checks out the tagged revision, so later
+changes to either branch cannot change that release's source.
 The model workflow prepares and qualifies its candidate before the public gates:
 
 1. `pypi-model-mambo-v3` publishes only `mambo-v3` distributions. It first checks that the
@@ -146,7 +160,7 @@ that public endpoints were exercised during local preparation.
 ## Demo updates and recovery
 
 For a UI-only update, dispatch **Prepare or update model demo** (`publish-demo.yml`)
-on a reviewed revision with `product=mambo-v3`. The default `publish=false` builds/checks a staged Space
+on a reviewed `release/mambo-v3` revision with `product=mambo-v3`. The default `publish=false` builds/checks a staged Space
 without public writes. Set `publish=true` and approve `model-demo-mambo-v3` to deploy it.
 This workflow uploads no package or model weights. It requires the public package
 release to exist and pins that package and its CPU runtime dependencies.
