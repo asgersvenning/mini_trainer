@@ -37,6 +37,13 @@ class CleanupOnFailure:
             # Use a running count since we don't know exactly how many files made it to disk
             with tqdm(desc="Cleaning up", unit="item") as pbar:
                 for path in self.paths_to_clean:
+                    if os.path.islink(path):
+                        try:
+                            os.remove(path)
+                            pbar.update(1)
+                        except OSError as e:
+                            print(f"\nError deleting link {path}: {e}")
+                        continue
                     if not os.path.exists(path):
                         continue
 
