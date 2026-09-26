@@ -33,7 +33,9 @@ Matched-coverage thresholds use reporting confidences without labels and retain
 ties. They are diagnostic operating points, distinct from thresholds optimized
 on the calibration split. Support >5 results in this study intersect eleven
 pipelines and therefore differ from the current five-pipeline comparison.
-No rows are removed when truncating the class macro average.
+No rows are removed when truncating the class macro average. Compare all three
+ranks in the [exploratory figure](assets/mambo-composed-tta.svg) and
+[complete metric table](assets/mambo-composed-tta.csv).
 
 ## Provenance
 
@@ -44,7 +46,8 @@ Collection timings are not speed benchmarks: the native and ONNX jobs overlapped
 
 For replay, use [composed_full.py](../dev/releases/mambo_v3/composed_full.py),
 [composed_metrics.py](../dev/releases/mambo_v3/composed_metrics.py) and
-[composed_report.py](../dev/releases/mambo_v3/composed_report.py).
+[composed_report.py](../dev/releases/mambo_v3/composed_report.py) for the figure.
+The CSV retains the full tables; this selection page is maintained separately.
 The [historical report](https://github.com/asgersvenning/mini_trainer/blob/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/docs/mambo-composed-tta.md)
 records exact commands and the native run's older nested precision-metadata caveat;
 its top-level `effective_precision=fp16` describes actual execution.

@@ -1,4 +1,4 @@
-"""Readable full-data composed-TTA report from pinned metric evidence."""
+"""Exploratory composed-TTA figure from retained metric evidence."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from .figure_export import save_figure
 SERIES = (
     ("v2", "MAMBO v2", "#8064a2"),
     ("torch", "V3 single view", "#777777"),
-    ("torch-tta", "Current padded scale", "#098e92"),
+    ("torch-tta", "Previous padded scale", "#098e92"),
     ("torch:rotation30_pad15_3", "±30° / pad15 · 3 views", "#2d6cc0"),
     ("torch:rotation30_pad25_3", "±30° / pad25 · 3 views", "#e8872e"),
     ("torch:wide_rotation_mixed_padding_5", "Mixed padding · 5 views", "#98440b"),
@@ -77,58 +77,6 @@ def render(data, output):
     save_figure(fig, output, "mambo-composed-tta", dpi=150)
 
 
-def tables(data, output):
-    text = "# Full composed-TTA comparison\n\n"
-    text += (
-        "All quality results below use the same **52,788 reporting images**, with thresholds fitted on\n"
-        "5,852 separate calibration images. Every model uses legacy northern Europe and all truth,\n"
-        "including out-of-vocabulary labels. Metrics come from pinned `mini_metrics`. Recipe selection\n"
-        "used this dataset, including a reporting subset; this is not independent validation.\n\n"
-        "Metric cells show **full support / common support >5**. The latter requires more than five\n"
-        "truth instances and accepted predictions in every compared pipeline, separately per operating\n"
-        "point. Classes can differ between operating points. No evaluation rows are dropped.\n\n"
-    )
-    for scope, title in (("zero", "No confidence threshold"), ("optimized", "Recipe-specific calibrated thresholds")):
-        text += f"## {title}\n\n"
-        for level, rank in enumerate(("species", "genus", "family")):
-            k = str(level)
-            text += (
-                f"### {rank.title()}\n\n| Pipeline | Macro accuracy: full / >5 | Macro-F1: full / >5 | Coverage |\n|---|---:|---:|---:|\n"
-            )
-            for model, label, _ in SERIES:
-                point = data["models"][model]["operating_points"][scope]
-                full, tail = point["full"], point["tail"][k]["metrics"]
-                text += (
-                    f"| {label} | {full['accuracy'][k]:.2%} / {tail['accuracy']:.2%} "
-                    f"| {full['f1'][k]:.4f} / {tail['f1']:.4f} | {full['coverage'][k]:.2%} |\n"
-                )
-            text += "\n"
-    text += "![Calibrated, unthresholded and matched-coverage comparison](assets/mambo-composed-tta.svg)\n\n"
-    text += (
-        "## Support excluded from the averaging domain\n\n"
-        "| Setting | Rank | Common classes | Truth images outside / % |\n|---|---|---:|---:|\n"
-    )
-    for scope in ("zero", "optimized", "coverage_70", "coverage_80", "coverage_90"):
-        for k, rank in enumerate(("species", "genus", "family")):
-            row = data["models"]["torch"]["operating_points"][scope]["tail"][str(k)]
-            missing = 52788 - row["truth_images"]
-            text += f"| {scope} | {rank} | {row['class_count']} | {missing:,} / {missing / 52788:.2%} |\n"
-    text += (
-        "\nPredicted-only classes have zero truth images and can still strongly affect macro-F1.\n"
-        "These are not rejection counts. Coverage is unchanged by support truncation.\n\n"
-        "## Evidence and interpretation\n\n"
-        "The [CSV](assets/mambo-composed-tta.csv) includes both backends, all ranks, macro accuracy,\n"
-        "precision, recall, F1, micro accuracy, Theil U, coverage, thresholds and retained-support counts.\n"
-        "The [JSON](assets/mambo-composed-tta.json) also records exact class sets, source hashes and\n"
-        "partition identities. Its ONNX entries include native-threshold comparisons to distinguish\n"
-        "backend differences from calibration differences.\n\n"
-        "Matched-coverage thresholds are selected from reporting confidence scores without using truth\n"
-        "labels; their realized coverage is computed by mini_metrics and may differ slightly because of\n"
-        "ties. They are diagnostic operating points, not deployment-calibrated thresholds.\n"
-    )
-    (output / "mambo-composed-tta.md").write_text(text)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -136,4 +84,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     data = json.loads(args.data.read_text())
     render(data, args.output)
-    tables(data, args.output)

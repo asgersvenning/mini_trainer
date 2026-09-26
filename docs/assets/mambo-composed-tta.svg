@@ -397,7 +397,7 @@ L 427.785521 187.007742
       </g>
      </g>
      <g id="text_9">
-      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="190.806961" transform="rotate(-0 127.842187 190.806961)">Current padded scale</text>
+      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="190.806961" transform="rotate(-0 127.842187 190.806961)">Previous padded scale</text>
      </g>
     </g>
     <g id="ytick_4">
@@ -1345,7 +1345,7 @@ L 427.785521 405.407742
       </g>
      </g>
      <g id="text_45">
-      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="409.206961" transform="rotate(-0 127.842187 409.206961)">Current padded scale</text>
+      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="409.206961" transform="rotate(-0 127.842187 409.206961)">Previous padded scale</text>
      </g>
     </g>
     <g id="ytick_20">
@@ -2245,7 +2245,7 @@ L 427.785521 623.807742
       </g>
      </g>
      <g id="text_83">
-      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="627.606961" transform="rotate(-0 127.842187 627.606961)">Current padded scale</text>
+      <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end" x="127.842187" y="627.606961" transform="rotate(-0 127.842187 627.606961)">Previous padded scale</text>
      </g>
     </g>
     <g id="ytick_38">
