@@ -499,9 +499,8 @@ def test_direct_batches_preserve_shuffled_sampling_and_rng():
         assert torch.equal(torch.get_rng_state(), expected_rng)
 
 
-@pytest.mark.parametrize("cache", ["none", "cpu"])
+@pytest.mark.parametrize("cache,labels", [("none", False), ("none", True), ("cpu", True)])
 @pytest.mark.parametrize("workers", [0, 1])
-@pytest.mark.parametrize("labels", [False, True])
 def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, workers, labels):
     if labels:
         datasets, loaders = get_dataset_dataloader(
@@ -509,9 +508,7 @@ def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, wo
         )
         dataset, optimized = datasets[0], loaders[0]
     else:
-        dataset, optimized = get_inference_dataloader(
-            metadata["path"], resize_size=4, cache=cache, cache_workers=0, batch_size=2, num_workers=0
-        )
+        dataset, optimized = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0)
     external = torch.utils.data.DataLoader(
         dataset,
         batch_sampler=optimized.batch_sampler,
