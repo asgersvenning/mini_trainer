@@ -1,58 +1,69 @@
 import importlib.util
 import os
+import sys
+from types import ModuleType
 
 import pytest
 import torch
 
-from mini_trainer.modeling import get_model, list_supported_backbones
+from mini_trainer.modeling import BackboneInfo, get_model, list_supported_backbones
+from mini_trainer.modeling.architectures import load
 from mini_trainer.modeling.classifier import Classifier
 
-# Skip all tests in this file if RUN_SLOW_TESTS is not 1
-pytestmark = pytest.mark.skipif(
+slow = pytest.mark.skipif(
     os.environ.get("RUN_SLOW_TESTS") != "1",
     reason="Slow architecture tests skipped by default. Set RUN_SLOW_TESTS=1 to run.",
 )
 
 
-def test_list_supported_backbones():
-    from mini_trainer.modeling import BackboneInfo
+@pytest.mark.parametrize("available", [False, True])
+def test_list_supported_backbones(available, monkeypatch):
+    import torchvision
 
-    backbones = list_supported_backbones()
-    assert isinstance(backbones, list)
-    assert len(backbones) > 0
-    for b in backbones:
-        assert isinstance(b, BackboneInfo)
-        # Test attribute-based access
-        assert hasattr(b, "model")
-        assert isinstance(b.model, str)
-        assert isinstance(b.backend, str)
-        assert isinstance(b.availability, bool)
+    monkeypatch.setattr(torchvision.models, "list_models", lambda: ["shared", "tv-only"])
+    monkeypatch.setattr(load, "get_bioclip_models", lambda: ["local", "blocked"])
+    monkeypatch.setattr(load, "load_blacklist", lambda: {"timm": ["shared"], "bioclip": ["blocked"]})
+    names = (
+        "open_clip",
+        "timm",
+        "transformers",
+        "transformers.models",
+        "transformers.models.auto",
+        "transformers.models.auto.configuration_auto",
+        "transformers.models.auto.modeling_auto",
+    )
+    modules = {name: ModuleType(name) for name in names}
+    modules["timm"].list_models = lambda: ["shared", "timm-only"]
+    supported, unsupported = object(), object()
+    modules[names[-2]].CONFIG_MAPPING = {"vit": supported, "not-an-image-model": unsupported, "swin": supported}
+    modules[names[-1]].MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING = {supported: object()}
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module if available else None)
 
-        # Test tuple sequence properties (ordering)
-        assert len(b) == 4
-        assert b[0] == b.model
-        assert b[1] == b.backend
-        assert b[2] == b.availability
-        assert b[3] == b.blacklisted
-
-        # Test unpacking (guaranteed ordering)
-        model, backend, availability, blacklisted = b
-        assert model == b.model
-        assert backend == b.backend
-        assert availability == b.availability
-        assert blacklisted == b.blacklisted
-
-        # Test asdict support
-        d = b._asdict()
-        assert d["model"] == b.model
-        assert d["backend"] == b.backend
-        assert d["availability"] == b.availability
-        assert d["blacklisted"] == b.blacklisted
-
-    backends = {b.backend for b in backbones}
-    assert "torchvision" in backends
+    rows = list_supported_backbones()
+    assert all(isinstance(row, BackboneInfo) for row in rows)
+    assert rows[:4] == [
+        ("shared", "torchvision", True, False),
+        ("tv-only", "torchvision", True, False),
+        ("bioclip:local", "bioclip", available, False),
+        ("bioclip:blocked", "bioclip", available, True),
+    ]
+    if available:
+        assert rows[4:] == [
+            ("timm:shared", "timm", True, True),
+            ("timm:timm-only", "timm", True, False),
+            ("hf-hub:microsoft/swin-tiny-patch4-window7-224", "transformers", True, False),
+            ("hf-hub:google/vit-base-patch16-224", "transformers", True, False),
+        ]
+    else:
+        # Missing optional libraries still advertise examples, without promising availability.
+        assert {row.backend for row in rows[4:]} == {"timm", "transformers"}
+        for row in rows[4:]:
+            assert not row.availability and not row.blacklisted
+            assert row.model.startswith("timm:" if row.backend == "timm" else "hf-hub:")
 
 
+@slow
 def test_torchvision_model():
     model, classifier_name, preprocess_fn, embed_dim, _ = get_model("resnet18")
     assert classifier_name == "fc"
@@ -73,6 +84,7 @@ has_timm = importlib.util.find_spec("timm") is not None
 has_transformers = importlib.util.find_spec("transformers") is not None
 
 
+@slow
 @pytest.mark.skipif(not has_timm, reason="timm package not installed")
 def test_timm_model():
     # Explicit prefix
@@ -97,6 +109,7 @@ def test_timm_model():
     assert isinstance(embed_dim, int)
 
 
+@slow
 @pytest.mark.skipif(not has_transformers, reason="transformers package not installed")
 def test_transformers_model():
     # Load vit model offline to avoid hitting the internet

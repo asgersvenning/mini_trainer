@@ -16,11 +16,7 @@ from .transformers import get_transformers_model
 
 
 class BackboneInfo(NamedTuple):
-    """Data container for a supported backbone model.
-
-    Provides statically typed, attribute-based access (e.g. info.model)
-    and guaranteed ordering as a named tuple.
-    """
+    """Backbone identifier, backend, dependency availability and blacklist status."""
 
     model: str
     backend: str
@@ -184,86 +180,43 @@ def get_model(
 
 
 def list_supported_backbones() -> list[BackboneInfo]:
-    """Generates a list of supported models, showing backend and availability status."""
+    """List backend models, retaining unavailable examples and blacklist flags."""
+    import torchvision
+
     rows = []
     blacklist = load_blacklist()
 
-    # 1. Torchvision
-    import torchvision
+    def append(backend, names, available, prefix=""):
+        rows.extend(BackboneInfo(prefix + name, backend, available, name in blacklist.get(backend, [])) for name in names)
 
-    tv_models = []
-    if hasattr(torchvision.models, "list_models"):
-        tv_models = torchvision.models.list_models()
-    for m in tv_models:
-        rows.append(
-            BackboneInfo(
-                model=m,
-                backend="torchvision",
-                availability=True,
-                blacklisted=m in blacklist.get("torchvision", []),
-            )
-        )
+    tv_models = torchvision.models.list_models() if hasattr(torchvision.models, "list_models") else []
+    append("torchvision", tv_models, True)
 
-    # 2. BioCLIP
-    has_open_clip = False
     try:
         import open_clip  # noqa: F401
-
-        has_open_clip = True
     except ImportError:
-        pass
-    bioclip_versions = get_bioclip_models()
-    for version in bioclip_versions:
-        rows.append(
-            BackboneInfo(
-                model=f"bioclip:{version}",
-                backend="bioclip",
-                availability=has_open_clip,
-                blacklisted=version in blacklist.get("bioclip", []),
-            )
-        )
+        has_open_clip = False
+    else:
+        has_open_clip = True
+    append("bioclip", get_bioclip_models(), has_open_clip, "bioclip:")
 
-    # 3. Timm
-    has_timm = False
     try:
         import timm
-
-        has_timm = True
     except ImportError:
-        pass
-
-    if has_timm:
-        timm_models = timm.list_models()
-        for m in timm_models:
-            rows.append(
-                BackboneInfo(
-                    model=f"timm:{m}",
-                    backend="timm",
-                    availability=True,
-                    blacklisted=m in blacklist.get("timm", []),
-                )
-            )
+        timm_models = ["vit_tiny_patch16_224", "resnet10t", "efficientnet_b0", "convnext_tiny"]
+        has_timm = False
     else:
-        popular_timm = ["vit_tiny_patch16_224", "resnet10t", "efficientnet_b0", "convnext_tiny"]
-        for m in popular_timm:
-            rows.append(
-                BackboneInfo(
-                    model=f"timm:{m}",
-                    backend="timm",
-                    availability=False,
-                    blacklisted=m in blacklist.get("timm", []),
-                )
-            )
+        timm_models = timm.list_models()
+        has_timm = True
+    append("timm", timm_models, has_timm, "timm:")
 
-    # 4. Transformers
-    has_transformers = False
     try:
         from transformers.models.auto.configuration_auto import CONFIG_MAPPING
         from transformers.models.auto.modeling_auto import MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
-
-        has_transformers = True
     except ImportError:
-        pass
+        has_transformers = False
+    else:
+        has_transformers = True
 
     popular_transformers = {
         "vit": "google/vit-base-patch16-224",
@@ -273,31 +226,12 @@ def list_supported_backbones() -> list[BackboneInfo]:
         "deit": "facebook/deit-tiny-patch16-224",
         "dinov2": "facebook/dinov2-base",
     }
-
     if has_transformers:
-        supported_types = []
-        for model_type, config_cls in CONFIG_MAPPING.items():
-            if config_cls in MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING:
-                supported_types.append(model_type)
-        for m in sorted(supported_types):
-            repo = popular_transformers.get(m, f"google/{m}-base-patch16-224")
-            rows.append(
-                BackboneInfo(
-                    model=f"hf-hub:{repo}",
-                    backend="transformers",
-                    availability=True,
-                    blacklisted=repo in blacklist.get("transformers", []),
-                )
-            )
+        supported_types = sorted(
+            model_type for model_type, config_cls in CONFIG_MAPPING.items() if config_cls in MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
+        )
+        transformer_models = [popular_transformers.get(m, f"google/{m}-base-patch16-224") for m in supported_types]
     else:
-        for m, repo in sorted(popular_transformers.items()):
-            rows.append(
-                BackboneInfo(
-                    model=f"hf-hub:{repo}",
-                    backend="transformers",
-                    availability=False,
-                    blacklisted=repo in blacklist.get("transformers", []),
-                )
-            )
-
+        transformer_models = [repo for _, repo in sorted(popular_transformers.items())]
+    append("transformers", transformer_models, has_transformers, "hf-hub:")
     return rows
