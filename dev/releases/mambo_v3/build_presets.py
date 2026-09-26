@@ -258,15 +258,9 @@ def build(metadata, evidence_root, write=False):
             "",
             "## Interpretation and reproducibility",
             "",
-            "Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. "
-            "Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. "
-            "Arctic uses latitude at least 60°N across all countries, including the boundary; "
-            "missing, malformed or out-of-range latitudes are excluded. This broad northern scope includes subarctic areas. "
             "Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.",
             "",
-            "Blank geographic fields match no predicate unless another selected field matches. The Tasmania preset excludes "
-            "Australian records with blank or different state values. "
-            "Overlapping presets are expected; membership in one does not exclude another.",
+            "Blank geographic fields match no predicate unless another selected field matches.",
             "",
             "Run from the repository root with the existing PyArrow environment and the previously downloaded model manifest:",
             "",

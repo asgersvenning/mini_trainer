@@ -118,8 +118,8 @@ image-bank measurements; laptop conditions can vary between campaigns.
 
 The [timing evidence](assets/mambo-promoted-speed.json) retains trial ranges
 and process-memory measurements. The [earlier comparison](mambo-deployment-defaults.md)
-and [frequency curves](mambo-frequency-comparison.md) use the previous
-padded-scale TTA and remain historical evidence, not measurements of the new recipe.
+uses the previous padded-scale TTA; the [frequency curves](mambo-frequency-comparison.md)
+compare single-view models only. Neither measures the new recipe.
 The [loading study](mambo-loading-scaling.md) explains scheduling limits;
 `preprocess_workers` / `--preprocess-workers` tunes preparation separately from
 ONNX runtime `threads` and defaults to it.

@@ -38,17 +38,17 @@ training-pipeline RNG or noise-placement equivalence.
 These are convenience profiles, not restrictions on the interface. `TTA` accepts
 an ordered finite sequence of arbitrary callables. `View` implements fractional
 crops, quarter-turn rotations and reflection; arbitrary rotations, scales, color
-transforms or other policies can be supplied by a caller. Each callable receives
+transforms or other policies can be supplied by a caller. Each custom callable receives
 its own uint8 RGB CHW copy of the decoded image. It can return a CHW array or PIL
 image accepted by the existing preprocessing function. Random custom transforms
 are the caller's responsibility; built-ins are deterministic. Give custom policies
 a descriptive name for output provenance.
 
-For each image batch, the outer layer decodes once, prepares one view at a time,
-and invokes the ordinary runtime. Runtime batches never grow by the view count.
-It retains the decoded batch and the current prepared view, not all prepared views.
-Host memory also depends on original image dimensions; use smaller batches for
-large source images. Species logits are averaged in FP32, then the ordinary class mask, hierarchy and
+Images are decoded once; each view uses ordinary inference with the configured
+batch size. The request API prepares one view at a time; streaming buffers all
+views of its prefetched batches. Memory therefore grows with source dimensions,
+batch size and streaming prefetch; reduce those settings when needed.
+Species logits are averaged in FP32, then the ordinary class mask, hierarchy and
 confidence normalization are applied. This is **logit averaging**, not voting or
 averaging already-normalized probabilities. Preset and custom-list semantics stay
 aligned. Output metadata records the policy name and view count.
