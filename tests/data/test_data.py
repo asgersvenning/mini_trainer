@@ -169,3 +169,24 @@ def test_folder_resolution_uses_level_count_not_deepest_rank(tmp_path, monkeypat
     labels, paths = metadata_module.auto_find_images(str(tmp_path), cls2idx={"0": {"111": 0}, "1": {"222": 0}, "2": {"333": 0}}, labels={})
     assert labels == [("1775152", "genus-id", "family-id")]
     assert paths == [str(folder / "image.jpg")]
+
+
+@pytest.mark.parametrize("hierarchical", [False, True])
+def test_metadata_explicit_folder_labels_preserve_order_and_class_indices(tmp_path, hierarchical):
+    for name in ("b", "a", "unselected"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "image.jpg").write_bytes(b"\xff\xd8\xff")
+    labels = [["b", "parent"], ["a", "parent"]] if hierarchical else ["b", "a"]
+    mapping = OrderedDict(zip(("b", "a"), labels))
+    class_spec = {"0": {"a": 0, "b": 1}, "1": {"parent": 0}} if hierarchical else {"a": 0, "b": 1}
+    expected = {
+        "path": [str(tmp_path / name / "image.jpg") for name in ("b", "a")],
+        "class": [[1, 0], [0, 0]] if hierarchical else [1, 0],
+        "split": ["train", "train"],
+        "label": [("b", "parent"), ("a", "parent")] if hierarchical else labels,
+    }
+    for supplied in (labels, mapping):
+        result = metadata_module.create_metadata(tmp_path, cls2idx=class_spec, labels=supplied, train_proportion=1, seed=42)
+        assert result == expected
+    assert list(mapping) == ["b", "a"]
+    assert list(mapping.values()) == labels
