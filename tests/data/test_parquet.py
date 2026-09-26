@@ -16,8 +16,6 @@ def test_combine_dicts():
     assert combined["b"] == [2, 4]
 
 
-def test_get_keys():
-    row = {k: str(i) for i, k in enumerate(KCOLUMNS)}
-    keys = get_keys(row)
-    assert len(keys) == len(KCOLUMNS)
-    assert keys[0] == "0"
+def test_get_keys_normalizes_ids_in_taxonomic_order():
+    row = {k: f" 00{i} " for i, k in reversed(list(enumerate(KCOLUMNS)))}
+    assert get_keys(row) == [str(i) for i in range(len(KCOLUMNS))]
