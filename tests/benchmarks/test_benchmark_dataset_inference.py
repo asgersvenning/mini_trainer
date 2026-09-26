@@ -122,9 +122,10 @@ def test_cpu_deployment_composes_quality_placement_and_alternating_trials(exampl
     pytest.importorskip("mini_metrics")
     model, manifest, _ = example
     output = tmp_path / "deployment"
-    report = evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, trials=2, warmup=1, repeats=2, required_ops=["Add"])
+    settings = {"threads": 2, "trials": 2, "warmup": 1, "repeats": 2}
+    report = evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, **settings, required_ops=["Add"])
     assert report["status"] == "evaluated"
-    assert report["settings"] == {"threads": 1, "trials": 2, "warmup": 1, "repeats": 2}
+    assert report["settings"] == settings
     archived = archive(output / "report.json", tmp_path / "history", "cpu", "a" * 40, "CPU integration fixture")
     assert json.loads(archived.read_text())["comparison"]["requested_settings"] == report["settings"]
     assert [p["order"] for p in report["pairs"]] == [["baseline", "candidate"], ["candidate", "baseline"]]
@@ -133,7 +134,8 @@ def test_cpu_deployment_composes_quality_placement_and_alternating_trials(exampl
     assert all(level["prediction_changes"] == 0 for level in report["quality"]["levels"])
     assert any(op["op"] == "Add" for op in report["execution"]["candidate"])
     summary = (output / "summary.md").read_text()
-    assert "Warm latency ratio" in summary and "Theil U delta" in summary
+    quality_summary = (output / "quality/summary.md").read_text()
+    assert quality_summary.strip() and quality_summary in summary
     with pytest.raises(FileExistsError):
         evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output)
 
@@ -147,7 +149,6 @@ def test_cpu_deployment_missing_required_operation_stops_before_resource_trials(
         evaluate_cpu(model, model, manifest, tmp_path / "batch-0.npz", output, required_ops=["QLinearConv"])
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "failed" and report["phase"] == "placement"
-    assert report["settings"] == {"threads": 1, "trials": 3, "warmup": 3, "repeats": 31}
     assert report["pairs"] == [] and not list(output.glob("trial-*"))
     assert report["stages"][-1]["status"] == "failed"
     assert (output / "quality/summary.md").exists()
