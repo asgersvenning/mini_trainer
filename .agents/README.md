@@ -12,6 +12,7 @@ The root [AGENTS.md](../AGENTS.md) is the instruction entry point and takes prec
 | [Contribution rule](rules/code-contribution.md) | Focused change/review guidance | Making repository changes |
 | [Worktree coordination](rules/worktrees.md) | Ownership, environment isolation and integration | Using worktrees or coordinating concurrent agents |
 | [skills/mini-trainer-maintenance/](skills/mini-trainer-maintenance/) | Repeatable maintenance procedure | Editing or validating the package |
+| [skills/hf-cli/](skills/hf-cli/SKILL.md) | Hugging Face CLI reference and publication context | Working with Hub repositories, authentication or Spaces |
 | [notes/](notes/README.md) | Selected handoffs, decisions and research | A note matches the task |
 | `local/` (ignored) | Scratch plans, logs, session state and temporary experiments | Only in the current local workflow |
 
