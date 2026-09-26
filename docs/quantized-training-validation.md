@@ -52,7 +52,6 @@ A few points of degradation may be acceptable when justified by a material
 speed/cost or memory benefit. Record the per-profile acceptance limits before
 qualification; integer execution alone is not acceptance.
 
-The intended execution targets remain HPC GPU training on A40/A100/B300-class
-systems with EPYC hosts, local training/fine-tuning and ONNX GPU inference on Spark
-or the intended RTX desktop, and ONNX CPU inference on Raspberry Pi/ARM.
-Support claims require evidence from the corresponding hardware and workload.
+Target hardware and workload acceptance are maintained in the
+[quantization roadmap](quantization-roadmap.md#supported-scope-and-decision-criteria).
+Support claims require evidence from the corresponding target.

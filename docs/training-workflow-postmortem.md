@@ -31,37 +31,32 @@ diagnostics separately rather than using the total source-row count as epoch siz
 
 ## Lessons that change the next run
 
-**Prepare the whole workflow before allocation.** The successful training started
-about 97 minutes after allocation began. It finished around 12:35 the next day;
-test inference completed at 16:11, metrics around 16:44 and archive verification
-at 17:13, shortly before 17:24 expiry. These timestamps locate critical-path costs,
-not a causal profile or proof that all qualification time was waste.
+**Prepare evaluation and recovery before allocation.** Training started about
+97 minutes after allocation and finished at 12:35 the next day. Test inference,
+metrics and archive verification finished at 16:11, 16:44 and 17:13 respectively,
+against a 17:24 expiry. These timestamps show critical-path costs, not their causes.
 
-Commands were vulnerable to wrong working directories, missing YAML, torchrun
-argument parsing, mixed checkout/package/PYTHONPATH identities and refused retries
-into partial directories. One stage had weights/finite metrics but timed out during
-remaining work. Record phase completion separately from process exit; a checkpoint
-alone does not prove clean logger/export/teardown completion. Logs and atomic
-completion records must survive terminal loss.
+Wrong working directories, missing YAML, torchrun parsing and mixed checkout/
+package/PYTHONPATH identities caused interventions. Partial directories complicated
+retries; one stage saved weights and finite metrics but timed out afterward.
+A checkpoint therefore cannot stand in for completion of logging, export or teardown.
 
-**Separate storage latency from compute.** Cold workers waited in `D` state /
-`folio_wait_bit_common`; one 211-second window spent 146–150 seconds waiting for
-input, and initial test inference reached only 69/2,473 batches after 43 minutes.
-Repeated reads of an expert subset fell from hundreds of seconds to below one
-second on WEKA. A disjoint-sample sweep favored 512 readers (~117 images/s median
-confirmation); a larger-file workload provisionally favored 64. These are evidence
-for latency hiding and cache sensitivity, not universal reader defaults or a
-filesystem-internal diagnosis.
+**Hide storage latency with bounded concurrency.** Cold workers waited in `D`
+state / `folio_wait_bit_common`; a 211-second window spent 146–150 seconds waiting
+for input. Initial test inference reached only 69/2,473 batches after 43 minutes.
+Repeated expert-subset reads fell from hundreds of seconds to below one second on
+WEKA. A disjoint-sample sweep favored 512 readers (~117 images/s median confirmation);
+a larger-file workload provisionally favored 64. These support aggressive latency
+hiding, not universal defaults or a filesystem-internal diagnosis.
 
-Production eventually stabilized near 650 training and 2,000–2,500 evaluation
-images/s/GPU with 32 loader workers/rank. After staging, expert inference finished
-in 2:49 and full test inference in 30:02. Separate encoded-byte read concurrency
-from decode processes and CUDA transfer. Try meaningfully high bounded concurrency
-when latency is evident, retaining errors, bytes, file sizes, sample coverage and
-startup/drain costs. Disjoint paths are not guaranteed cold shared-cache data;
-never clear shared caches to manufacture a benchmark.
+Production stabilized near 650 training and 2,000–2,500 evaluation images/s/GPU
+with 32 loader workers/rank. After staging, expert inference finished in 2:49 and
+full test inference in 30:02. Allocate encoded-byte readers, decode processes and
+CUDA transfer separately. Report errors, bytes/file sizes, sample coverage and
+startup/drain costs. Disjoint paths do not guarantee cold shared-cache data; never
+clear shared caches to manufacture a benchmark.
 
-**Use the qualified floating compute baseline.** Four-GPU warmed qualification:
+**Start from the qualified floating baseline.** Four-GPU warmed qualification:
 
 | Batch/rank | Aggregate images/s | Peak allocated bytes (reported maximum) |
 | --- | ---: | ---: |
@@ -70,76 +65,64 @@ never clear shared caches to manufacture a benchmark.
 | 128 | 2,272.305 | 30,251,580,416 |
 | 256 | 2,517.928 | 59,508,456,960 |
 
-128 → 256 gained ~10.8% throughput for nearly twice the allocation. Spare memory
-invites a bounded test, not an assumption that larger global batches preserve
-updates/schedule or improve convergence. Earlier single-GPU model compilation
-reduced later-epoch time/allocation by roughly a third; optimizer compilation added
-startup without steady-state gain, explicit prefetch had no convincing gain, and
-combined INT8 runs timed out. Preserve these negative results; repeat only for a
-changed mechanism/target. FP16 was tested, not proven superior to all BF16 recipes.
+128 → 256 gained ~10.8% throughput for nearly twice the allocation. Larger batches
+also change update/schedule behavior; spare memory alone is not a convergence case.
+Earlier single-GPU model compilation reduced later-epoch time/allocation by roughly
+a third. Optimizer compilation added startup without steady-state gain, explicit
+prefetch had no convincing gain, and combined INT8 runs timed out. Revisit these
+negative results only for a changed mechanism or target. FP16 was tested, not
+established as superior to all BF16 recipes.
 
-**Qualify required diagnostics and lifecycle together.** At 12,632 species,
-confusion generation took ~8–13 s and warmed dendrogram rendering ~12–13 s; first
-label resolution took roughly a minute in one run. Keep full-head figures and W&B
-in the topology smoke, along with validation and save/reload. Preserve whole-matrix
-inspection and explicit hierarchy-level selection instead of disabling useful
-figures. A separate storage probe answers cold-IO questions.
+**Include diagnostics and failure handling in qualification.** At 12,632 species,
+confusion generation took ~8–13 s, warmed dendrogram rendering ~12–13 s, and first
+label resolution roughly a minute in one run. Include full-head figures, W&B,
+validation and save/reload in the topology smoke; storage calibration is separate.
+Keep whole-matrix inspection and hierarchy-level selection.
 
-**Triage warnings without expanding the campaign.** Early loss NaNs occurred in
-both baselines and optional-feature trials; the final production audit was finite.
-That weakens feature-specific attribution without proving harmlessness. Capture
-first occurrence with sample/phase, dtype, features and finiteness; trigger bounded
-replay only when needed. Compiler specialization, hierarchy scalar extraction and
-DDP stride warnings merit changes when traces show meaningful repeated cost, not
-simply to clean logs. EMA repair is separate work.
-
-**Keep inference and packaging responsibilities clear.** Discovery must not filter
-truth by model vocabulary or depend on training partitions. Distinguish taxonomy
-transport failures from rank/index mapping errors. Derive inference configuration
-from weights where reliable, with explicit legacy overrides. Preflight the metrics
-environment and export tools before training; overlap independent preparation within
-resource budgets. Package a small deployment subset separately from evidence and
-optional resume history, retaining ONNX external tensors and explicit omissions.
-Checksums establish integrity, not quality or complete provenance.
+Early loss NaNs occurred in both controls and optional-feature trials; the final
+production audit was finite. This weakens feature-specific attribution without
+proving harmlessness. Capture the first occurrence's sample, phase, dtype and
+feature/finiteness state for bounded replay. Compiler specialization, hierarchy
+scalar extraction and DDP stride warnings justify changes when traces establish
+repeated cost. EMA repair remains separate.
 
 ## Next-run minimum (planned)
 
-Build on existing `dev/ucloud` setup/comparison/scaling/production helpers and normal
-CLIs. Use a small manifest referencing current outputs, not a new workflow engine.
+Extend the existing `dev/ucloud` helpers and normal CLIs; use a small stage manifest,
+not another workflow engine. This work is still planned:
 
-1. **Durable state/recovery:** resolved absolute commands, interpreters, package and
-   harness identities, input hashes, stage times/logs, exit cause and completion
-   checks. Reuse finished stages only when identities match; retain partial evidence.
-2. **Preallocated preparation:** a tiny installed train → predict → mini_metrics →
-   export → package fixture verifies dependencies and paths before renting GPUs.
-   Keep W&B authentication interactive and secrets out of manifests.
-3. **Separate qualification:** report startup, warm training, first-pass IO,
-   validation/figures and teardown. Use one relevant topology smoke plus bounded
-   storage calibration. Distinguish allocation deadline, stage limits and cleanup
-   reserve; preserve the configured learning-rate schedule.
+1. **Durable recovery:** record absolute commands, interpreter/package/harness
+   identities, input hashes, phase times/logs, exit cause and atomic completion
+   records. Keep plans/status inspectable and logs durable across terminal loss.
+   Reuse completed stages only when identities match. Preserve partial evidence,
+   explicit retry/resume, operator batch/worker overrides and checkpoint stop/
+   continue controls. Do not promise arbitrary-batch exact resume without RNG and
+   sampler state.
+2. **Preallocated preparation:** run a tiny installed train → predict → mini_metrics
+   → export → package fixture before renting GPUs. Keep authentication interactive.
+   Inference discovery must preserve all truth regardless of vocabulary or training
+   partition; distinguish taxonomy transport failures from mapping errors. Derive
+   configuration from weights with explicit legacy overrides. Separate deployment
+   assets, including ONNX external tensors, from evidence and optional resume history.
+3. **Bounded qualification:** separate startup, warm training, first-pass IO,
+   validation/figures and teardown. Use one relevant topology smoke and storage
+   calibration; preserve the learning-rate schedule and distinguish allocation
+   deadline, stage limits and cleanup reserve. Overlap independent work within
+   resource budgets.
 
-Acceptance includes interruption after preparation, failed child exit, timeout
-after saving, logger teardown failure and completed-stage reuse. Keep normal CLI
-execution, inspectable plans/status, explicit retry/resume, operator batch/worker
-choices and a supported-checkpoint stop/continue decision. Do not promise
-arbitrary-batch exact resume without RNG/sampler state.
+Acceptance must exercise interruption after preparation, failed child exit, timeout
+after saving, logger teardown failure and reuse of completed stages. Track operator
+interventions, time to useful work, evaluation turnaround and repeated/failed work.
+Use tiny fixtures for workflow contracts and target runs for hardware claims.
 
-Next, improve bounded read/staging calibration. Only build the
-[optional prepared dataset](roadmap.md#optional-dataset-preparation-for-scalable-loading)
-when total preparation plus expected reuse pays off. Preserve bytes, labels,
-splits/order and failures; do not silently turn a partial prototype into the default.
+Improve read/staging calibration before building the
+[optional prepared dataset](roadmap.md#optional-dataset-preparation-for-scalable-loading).
+Include preparation cost and expected reuse; preserve encoded bytes, labels,
+splits/order and failures. PTQ/native integer and target-performance work belongs
+in the [quantization roadmap](quantization-roadmap.md).
 
-Measure operator interventions, time to productive training, cold/warm throughput,
-evaluation turnaround, repeated/failed stages and artifact size. Use tiny fixtures
-for workflow contracts and target runs for hardware claims. Expand experiments only
-when they change a decision; a production matrix is not a default test suite.
-Unresolved PTQ/native integer and target-performance work belongs in the
-[quantization roadmap](quantization-roadmap.md), not this operational plan.
-
-The completed campaign's hard-coded expert/test staging and evaluation launchers
-are retained only in
+The campaign-specific staging/evaluation launchers remain in
 [Git at 852bf71](https://github.com/asgersvenning/mini_trainer/tree/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/dev/ucloud).
-They used a source overlay pinned to `0c572ca` and job-specific `/work` paths;
-they are not maintained next-run infrastructure. The original 512-reader,
-RAM-staging evidence above remains valid. New workflow work should use the public
-CLIs and the recovery requirements here rather than revive those launchers.
+They used a source overlay pinned to `0c572ca` and job-specific `/work` paths.
+Use maintained CLIs for new work; retiring those launchers does not invalidate the
+512-reader and RAM-staging evidence above.
