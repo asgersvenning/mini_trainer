@@ -775,3 +775,20 @@ def test_cli_streams_ordered_results_and_publishes_only_complete_output(bundle, 
     assert not (tmp_path / "failed").exists()
     assert not list(tmp_path.glob(".mambo-results-*"))
     assert len(closed) == 2
+
+
+def test_reconfigure_keeps_runtime_and_rejects_invalid_state(bundle):
+    predictor = Predictor(bundle)
+    session = object()
+    predictor._sessions["onnx"] = session
+    predictor.configure(model="europe", tta=True)
+    assert predictor.class_list == ["a", "b"] and predictor.tta is not None
+    predictor.configure(class_list=["c"])
+    assert predictor.preset == "custom" and predictor.class_list == ["c"]
+    assert predictor.tta is not None and predictor._sessions["onnx"] is session
+    with pytest.raises(ValueError, match="Unknown species"):
+        predictor.configure(class_list=["missing"], tta=False)
+    assert predictor.class_list == ["c"] and predictor.tta is not None
+    predictor.configure(model="full", tta=False)
+    assert predictor.class_list == ["a", "b", "c"] and predictor.tta is None
+    assert predictor._sessions["onnx"] is session

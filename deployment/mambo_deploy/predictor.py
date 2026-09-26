@@ -164,6 +164,32 @@ class Predictor:
     def available_presets(self):
         return {"full": {"count": len(self.bundle.classes["labels"][0]), "scope": "All model species"}, **self.bundle.regions}
 
+    def configure(self, *, model=None, class_list=None, tta=None):
+        """Change scope/TTA between calls while retaining loaded runtime sessions.
+
+        Omitted options remain unchanged. ``model="full"`` resets a custom list;
+        ``tta=False`` disables augmentation. Invalid options leave state unchanged.
+        """
+        if model is not None and class_list is not None:
+            raise ValueError("Choose a preset or a custom class list, not both")
+        with self._lock:
+            augmentation = self.tta if tta is None else resolve_tta(tta)
+            preset, labels = self.preset, None
+            if class_list is not None:
+                preset, labels = "custom", self._read_list(class_list)
+            elif model is not None:
+                preset = self._preset_name(model)
+                labels = (
+                    self.bundle.classes["labels"][0]
+                    if preset == "full"
+                    else self.bundle.file(self.bundle.regions[preset]["path"]).read_text().splitlines()
+                )
+            if labels is not None:
+                self._select_labels(labels)
+                self._hierarchy_plans.clear()
+            self.preset, self.tta = preset, augmentation
+        return self
+
     @cached_property
     def _onnx_api(self):
         try:
