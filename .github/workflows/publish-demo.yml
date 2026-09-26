@@ -76,6 +76,9 @@ jobs:
       group: deploy-space-${{ needs.route.outputs.product }}
       cancel-in-progress: false
     environment: model-demo-${{ needs.route.outputs.product }}
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -86,9 +89,16 @@ jobs:
           path: space/
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
-      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=0.36,<2'
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
       - name: Deploy demo only
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
-        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space space "$HF_SPACE_REPO"
+          HF_OIDC_RESOURCE: spaces/${{ vars.HF_SPACE_REPO }}
+        shell: bash
+        run: |
+          : "${HF_SPACE_REPO:?Set the repository variable in this GitHub environment}"
+          HF_TOKEN="$(.venv-release/bin/hf auth token)"
+          test -n "$HF_TOKEN"
+          echo "::add-mask::$HF_TOKEN"
+          export HF_TOKEN
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space space "$HF_SPACE_REPO"

@@ -111,6 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: model-assets-${{ needs.route.outputs.product }}
     permissions:
+      id-token: write
       contents: write
     steps:
       - uses: actions/checkout@v6
@@ -122,7 +123,7 @@ jobs:
           path: publication/
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
-      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=0.36,<2'
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
       - name: Publish GitHub assets without replacing existing files
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,9 +131,16 @@ jobs:
         run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets github publication/github "$GH_REPOSITORY" --tag "$RELEASE_TAG"
       - name: Publish model and immutable Hugging Face revision
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_MODEL_REPO: ${{ vars.HF_MODEL_REPO }}
-        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets model publication/model "$HF_MODEL_REPO"
+          HF_OIDC_RESOURCE: ${{ vars.HF_MODEL_REPO }}
+        shell: bash
+        run: |
+          : "${HF_MODEL_REPO:?Set the repository variable in this GitHub environment}"
+          HF_TOKEN="$(.venv-release/bin/hf auth token)"
+          test -n "$HF_TOKEN"
+          echo "::add-mask::$HF_TOKEN"
+          export HF_TOKEN
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets model publication/model "$HF_MODEL_REPO"
 
   demo:
     env:
@@ -143,6 +151,9 @@ jobs:
       group: deploy-space-${{ needs.route.outputs.product }}
       cancel-in-progress: false
     environment: model-demo-${{ needs.route.outputs.product }}
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -153,9 +164,16 @@ jobs:
           path: publication/
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
-      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=0.36,<2'
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
       - name: Deploy the reviewed Space
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
-        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space publication/space "$HF_SPACE_REPO"
+          HF_OIDC_RESOURCE: spaces/${{ vars.HF_SPACE_REPO }}
+        shell: bash
+        run: |
+          : "${HF_SPACE_REPO:?Set the repository variable in this GitHub environment}"
+          HF_TOKEN="$(.venv-release/bin/hf auth token)"
+          test -n "$HF_TOKEN"
+          echo "::add-mask::$HF_TOKEN"
+          export HF_TOKEN
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space publication/space "$HF_SPACE_REPO"

@@ -22,14 +22,41 @@ review before public writes. No PyPI API token is needed. Create the Hugging Fac
 model repository and Gradio Space, both named `asgersvenning/MAMBO-v3` in their
 respective namespaces. Choose CPU Basic initially; the demo does not need a GPU.
 
-- `model-assets-mambo-v3`: variable `HF_MODEL_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
-  with write access limited to that model repository.
-- `model-demo-mambo-v3`: variable `HF_SPACE_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
-  with write access limited to that Space.
+All four GitHub environments use trusted publishing; **none needs a stored token
+or secret**. Set only these environment variables:
+
+| GitHub environment | Variable | Value |
+| --- | --- | --- |
+| `model-assets-mambo-v3` | `HF_MODEL_REPO` | `asgersvenning/MAMBO-v3` |
+| `model-demo-mambo-v3` | `HF_SPACE_REPO` | `asgersvenning/MAMBO-v3` |
+
+In each Hugging Face repository's **Settings → Trusted Publishers**, register
+GitHub Actions with `repository=asgersvenning/mini_trainer` and the workflow below.
+The Space needs two registrations because either workflow can deploy it:
+
+| Hugging Face settings | `workflow` claim |
+| --- | --- |
+| [Model](https://huggingface.co/asgersvenning/MAMBO-v3/settings) | `publish-model.yml` |
+| [Space](https://huggingface.co/spaces/asgersvenning/MAMBO-v3/settings) | `publish-model.yml` |
+| Same Space | `publish-demo.yml` |
+
+Leave the optional branch claim unset: model publication runs from a release tag,
+and demo updates run from a reviewed manually selected revision. Keep GitHub
+**required-reviewer environment gates** enabled; restrict allowed deployment
+branches/tags there to the reviewed release refs. Repository and workflow claims
+must both match; do not authorize the whole GitHub repository without a workflow.
+
+The publishing jobs use the official `hf auth token` exchange with
+`huggingface-hub>=1.19`: a short-lived, destination-scoped token is masked and passed
+only to the upload process. Preparation jobs cannot request OIDC credentials.
+GitHub release uploads use the automatic `github.token`; no personal token is
+needed. See [Hugging Face trusted publishing](https://huggingface.co/docs/hub/trusted-publishers).
 
 These are the destinations linked in the public documentation. If using another
-namespace, update those public links before final preparation as well as the
-variables. Do not put tokens in source, release assets or CLI arguments.
+namespace, update those public links as well as the variables and publisher
+registrations. The variables and registrations are non-secret configuration;
+keep account recovery codes securely backed up. Remove any obsolete `HF_TOKEN`
+environment secrets and revoke tokens created solely for these workflows.
 
 ## 2. Review and prepare without publishing
 
