@@ -8,20 +8,16 @@ from torch import nn
 
 
 def average_checkpoints(inputs, map_location=None, weights_only=True):
-    """Loads checkpoints from inputs and returns a model with averaged weights.
+    """Average tensor entries under each checkpoint's ``model`` key.
 
-    Original implementation taken from:
+    Inputs must be a nonempty path sequence with identical ordered model keys.
+    Floating entries use arithmetic means; integer entries use floor division.
+    Other checkpoint fields, including optimizer state, come from the first input.
+    Non-tensor model metadata is not supported. Loading defaults to CPU;
+    map_location and weights_only are forwarded to torch.load.
+
+    Based on:
     https://github.com/pytorch/fairseq/blob/a48f235636557b8d3bc4922a6fa90f3a0fa57955/scripts/average_checkpoints.py#L16
-
-    Args:
-        inputs: An iterable of string paths of checkpoints to load from.
-        map_location: If not specified attempts a sensible default, otherwise passed directly to ``torch.load``.
-        weights_only: Passed to ``torch.load``.
-
-    Returns:
-        A dict of string keys mapping to various values. The 'model' key
-            from the returned dict should correspond to an OrderedDict mapping
-            string parameter names to torch Tensors.
     """
     params_dict = OrderedDict()
     params_keys = None
@@ -62,54 +58,22 @@ def average_checkpoints(inputs, map_location=None, weights_only=True):
 
 
 def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=True):
-    """This method can be used to prepare weights files for new models. It receives as
-    input a model architecture and a checkpoint from the training script and produces
-    a file with the weights ready for release.
+    """Validate checkpoint weights against a copy of model and save its state dict.
 
-    Examples:
-        from torchvision import models as M
+    Load checkpoint_path on CPU with weights_only=True, selecting checkpoint_key
+    (default ``model``) and forwarding strict to load_state_dict. For ``model_ema``,
+    remove the averaging counter and ``module.`` prefix before loading.
 
-        # Classification
-        model = M.mobilenet_v3_large(weights=None)
-        print(store_model_weights(model, './class.pth'))
-
-        # Quantized Classification
-        model = M.quantization.mobilenet_v3_large(weights=None, quantize=False)
-        model.fuse_model(is_qat=True)
-        model.qconfig = torch.ao.quantization.get_default_qat_qconfig('qnnpack')
-        _ = torch.ao.quantization.prepare_qat(model, inplace=True)
-        print(store_model_weights(model, './qat.pth'))
-
-        # Object Detection
-        model = M.detection.fasterrcnn_mobilenet_v3_large_fpn(weights=None, weights_backbone=None)
-        print(store_model_weights(model, './obj.pth'))
-
-        # Segmentation
-        model = M.segmentation.deeplabv3_mobilenet_v3_large(weights=None, weights_backbone=None, aux_loss=True)
-        print(store_model_weights(model, './segm.pth', strict=False))
-
-    Args:
-        model: The model on which the weights will be loaded for validation purposes.
-        checkpoint_path: The path of the checkpoint we will load.
-        checkpoint_key: The key of the checkpoint where the model weights are stored.
-            Default: "model".
-        strict: whether to strictly enforce that the keys
-            in :attr:`state_dict` match the keys returned by this module's
-            :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
-
-    Returns:
-        The location where the weights are saved.
+    Return the absolute path to ``weights-<sha256[:8]>.pth`` beside the checkpoint.
+    The caller's model is unchanged. With strict=False, missing parameters retain
+    the supplied model's values.
     """
-    # Store the new model next to the checkpoint_path
     checkpoint_path = os.path.abspath(checkpoint_path)
     output_dir = os.path.dirname(checkpoint_path)
 
-    # Deep copy to avoid side effects on the model object.
     model = copy.deepcopy(model)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 
-    # Load the weights to the model to validate that everything works
-    # and remove unnecessary weights (such as auxiliaries, etc.)
     if checkpoint_key == "model_ema":
         del checkpoint[checkpoint_key]["n_averaged"]
         torch.nn.modules.utils.consume_prefix_in_state_dict_if_present(checkpoint[checkpoint_key], "module.")
@@ -120,7 +84,6 @@ def store_model_weights(model, checkpoint_path, checkpoint_key="model", strict=T
 
     sha256_hash = hashlib.sha256()
     with open(tmp_path, "rb") as f:
-        # Read and update hash string value in blocks of 4K
         for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
         hh = sha256_hash.hexdigest()
@@ -138,7 +101,12 @@ def set_weight_decay(
     norm_classes: list[type] | None = None,
     custom_keys_weight_decay: list[tuple[str, float]] | None = None,
 ):
-    """Set weight decay on parameter groups."""
+    """Return trainable parameter groups with per-group weight decay.
+
+    Custom keys take precedence over normalization-module and default decay.
+    A key containing a dot matches a full parameter path; other keys match local
+    parameter names. The first matching custom key wins.
+    """
     if not norm_classes:
         norm_classes = [
             torch.nn.modules.batchnorm._BatchNorm,

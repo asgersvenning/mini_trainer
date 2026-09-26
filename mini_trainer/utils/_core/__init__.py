@@ -27,7 +27,6 @@ __all__ = [
     "string_to_device",
     "string_to_dtype",
     "make_empty_ndarray",
-    "get_logger",
     "setup_logging",
     "TQDM",
     "validate_type",

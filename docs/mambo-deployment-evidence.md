@@ -98,7 +98,7 @@ summarizes global → Europe → northern Europe across pipelines and ranks usin
 the earlier padded-scale TTA; the new recipe has been fully evaluated only for northern Europe.
 We recommend legacy `north_europe` here: the updated list adds 222 species but
 no Flemming species coverage, and lowers measured accuracy/F1. It remains available
-as `north_europe_v3` for broader eligibility; the API default stays `europe`.
+as `north_europe_v3` for broader eligibility; the V3 API/CLI default is now global (`full`).
 
 Speed remains **images per second**, measured end to end on an i7-12800H / RTX
 3080 Ti Laptop, with four preparation/runtime CPU threads. CPU uses FP32.
@@ -118,13 +118,15 @@ image-bank measurements; laptop conditions can vary between campaigns.
 
 The [timing evidence](assets/mambo-promoted-speed.json) retains trial ranges
 and process-memory measurements. The [earlier comparison](mambo-deployment-defaults.md)
-and [frequency curves](mambo-frequency-comparison.md) use the previous
-padded-scale TTA and remain historical evidence, not measurements of the new recipe.
+uses the previous padded-scale TTA; the [frequency curves](mambo-frequency-comparison.md)
+compare single-view models only. Neither measures the new recipe.
 The [loading study](mambo-loading-scaling.md) explains scheduling limits;
 `preprocess_workers` / `--preprocess-workers` tunes preparation separately from
 ONNX runtime `threads` and defaults to it.
 
 Use ordinary V3 for throughput and enable TTA when its accuracy/cost trade-off fits.
 Recipe exploration used this Flemming dataset, so these results are descriptive,
-not independent validation. In-domain UCloud evaluation, other operating systems,
-and publication/license review remain open. See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).
+not independent validation. The complementary [in-domain evaluation](mambo-indomain-evidence.md) is complete.
+[Installed qualification](../dev/releases/mambo_v3/final-qualification.md) records
+runtime/platform limits and the selected license; publication remains separate.
+See the [evaluation workflow](../dev/releases/mambo_v3/evaluation.md).

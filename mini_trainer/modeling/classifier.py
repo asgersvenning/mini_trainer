@@ -3,32 +3,27 @@ import warnings
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from functools import lru_cache
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch._prims_common import DeviceLikeType
+from torch.nn.utils.parametrizations import weight_norm
 
 from mini_trainer import get_logger
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
 from .architectures import get_model
-from .prior import prior_from_labels
+from .context import EmbeddingContext
 from .quantized_training import load_training_weights, restore_quantized_training
 
-try:
-    from torch.nn.utils.parametrizations import weight_norm
-except Exception:  # fallback for older installs
-    from torch.nn.utils import weight_norm
 
-from functools import lru_cache
+class Classifier(nn.Module):
+    """Classification head with optional hidden layer, normalization and class masking."""
 
-from .context import EmbeddingContext
-
-
-class Classifier(nn.Module):  # noqa: D101 TODO
     _version = 1
 
     @classmethod
@@ -69,9 +64,7 @@ class Classifier(nn.Module):  # noqa: D101 TODO
 
     @staticmethod
     def extract_metadata(state: dict[str, Any]) -> dict[str, Any]:
-        """Scans the state dictionary for Classifier metadata.
-        Returns the config dict if found, otherwise None.
-        """
+        """Return a copy of stored classifier metadata, or an empty dictionary."""
         for key, value in state.items():
             if key.endswith("._extra_state") and isinstance(value, dict):
                 if "mini_trainer_version" in value:
@@ -94,7 +87,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         **metadata,
     ):
         super().__init__()
-        # Input sanitization and checking
         if not isinstance(in_features, int) or not isinstance(out_features, int):
             raise TypeError(
                 f"Supplied classification head input and output dimensions {in_features}x{out_features} "
@@ -116,7 +108,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         if not isinstance(normalized, bool):
             raise TypeError(f"Normalized should be a `bool`, not `{normalized}` ({type(normalized)}).")
 
-        # Store metadata
         metadata.update(
             {
                 "mini_trainer_version": self._version,
@@ -131,16 +122,12 @@ class Classifier(nn.Module):  # noqa: D101 TODO
         )
         self._metadata = metadata
 
-        # Create one hidden layer
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
-        # Create a dropout layer (if hidden)
         self.dropout = hidden and nn.Dropout(p=droprate)
 
-        # Create a BatchNormalization layer
         self.batch_norm = nn.BatchNorm1d(self.preclassification_size)
 
-        # Create linear classification layer
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.normalized = normalized
         self.linear = self._normalize_layer(layer, True) if self.normalized else layer
@@ -149,7 +136,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 data=self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype
             )
 
-        # Prepare class masking buffer
         if active_indices is not None:
             self.register_buffer("active_indices", active_indices, persistent=True)
         else:
@@ -231,10 +217,8 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             x = self.hidden(x)  # type: ignore
             x = F.leaky_relu(x)
         if self.normalized:
-            # Output is unit vectors
             return F.normalize(x, 2, -1)
         else:
-            # Output is MVN
             return self.batch_norm(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -262,8 +246,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 f"into current code version {self._version}. This may result in unexpected behavior.",
                 UserWarning,
             )
-
-        # Implement migration logic here if it becomes relevant
 
         self._metadata.update(state)
 
@@ -319,7 +301,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
                 raise NotImplementedError(
                     "DEPRECATED: This method of logit adjustment is currently defunct. Please use EMLACrossEntropy instead."
                 )
-                kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
         with device:
             architecture.add_module(architecture_output_name, cls(**kwargs))
         for k, v in cfg.items():
@@ -471,7 +452,6 @@ class Classifier(nn.Module):  # noqa: D101 TODO
             if v != kwargs[k]:
                 get_logger().debug(f"Model configuration option '{k}' overridden by value stored in config: {kwargs[k]} ==> {v}")
                 kwargs[k] = v
-        # Rebuild (and load) integrated backbone and classifier
         model_type_str = model_type if isinstance(model_type, str) else class_path(model_type)
         model = cls.load(model_type_str, head_name, architecture, state, device, dtype, **kwargs)
         return model, model_preprocess
@@ -479,16 +459,13 @@ class Classifier(nn.Module):  # noqa: D101 TODO
 
 @dataclass
 class PredictionItem:
-    """Simple data container.
-    Auto-converts inputs to native Python types on initialization.
-    """
+    """Prediction record with native Python label, confidence and index values."""
 
     label: str
     confidence: float
     index: int
 
     def __post_init__(self):
-        # Factory coercion: ensures native types immediately
         self.label = str(self.label)
         self.confidence = float(self.confidence)
         self.index = int(self.index)
@@ -501,14 +478,8 @@ class PredictionItem:
         return {"label": self.label, "confidence": self.confidence, "index": self.index}
 
 
-T = TypeVar("T", bound=PredictionItem)
-I = TypeVar("I")  # noqa: E741
-
-
 class BasePrediction[T: PredictionItem, I]:
-    """Standard PyTorch Prediction class.
-    Assumes inputs are Tensors. Subclass to handle other types.
-    """
+    """Prediction container; subclasses define score processing and label mapping."""
 
     ITEM_CLASS: type[T] = PredictionItem  # type: ignore
     items: list[T]
@@ -535,7 +506,6 @@ class BasePrediction[T: PredictionItem, I]:
                 for lab, conf, idx in zip(self.labels, self.confidence, self.indices)
             ]
 
-    # --- Standard Implementations (override) ---
     @property
     def idx2cls(self):
         raise NotImplementedError()
@@ -549,7 +519,6 @@ class BasePrediction[T: PredictionItem, I]:
     def _extract_confidence(self, raw_prediction: I):
         raise NotImplementedError()
 
-    # --- Convenience & Serialization (do not override) ---
     def __len__(self):
         return len(self.items)
 
@@ -591,22 +560,11 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
         return torch.topk(raw_prediction, k)
 
     def _translate(self):
-        if self.idx2cls:
-            _idx2cls = self.idx2cls.copy()
-
-            def fmt_idx(i: int | torch.Tensor):
-                if isinstance(i, torch.Tensor):
-                    i = int(i.item())
-                return _idx2cls[i]
-
-        else:
-
-            def fmt_idx(i: int | torch.Tensor):
-                if isinstance(i, torch.Tensor):
-                    i = int(i.item())
-                return str(i)
-
-        return [[fmt_idx(i) for i in idxs] for idxs in self.indices]
+        indices = self.indices.tolist()
+        mapping = self.idx2cls
+        if mapping:
+            return [[mapping[i] for i in row] for row in indices]
+        return [[str(i) for i in row] for row in indices]
 
     def _extract_confidence(self, raw_prediction):
         if not (
@@ -624,13 +582,7 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
 
 @contextmanager
 def bypass_submodule(model: nn.Module, submodule_path: str):
-    """Temporarily replaces a submodule with nn.Identity() for a forward pass.
-
-    Args:
-        model: The parent PyTorch module.
-        submodule_path: The dotted path to the submodule (e.g., 'backbone.layer3.conv1').
-    """
-    # 1. Traverse the dotted path to find the direct parent of the target
+    """Replace a dotted-path submodule with Identity, restoring it on context exit."""
     parts = submodule_path.split(".")
     parent = model
     for part in parts[:-1]:
@@ -638,16 +590,13 @@ def bypass_submodule(model: nn.Module, submodule_path: str):
 
     target_name = parts[-1]
 
-    # 2. Keep a reference to the original submodule
     original_module = getattr(parent, target_name)
 
     try:
-        # 3. Swap in the no-op module
         setattr(parent, target_name, nn.Identity())
         yield
 
     finally:
-        # 4. Guarantee restoration, even if an error is thrown during the yield
         setattr(parent, target_name, original_module)
 
 
@@ -684,8 +633,7 @@ def backbone(model: nn.Module):
 
 
 def classification_module(model: nn.Module):
-    """Retrieve the classification module of a model created with `mini_trainer.classifier.Classifier.build()`."""
-    # Unwrap torch.compile (OptimizedModule) and DDP wrappers
+    """Find the classification head, unwrapping torch.compile and DDP wrappers."""
     if hasattr(model, "_orig_mod"):
         _orig = model._orig_mod
         assert isinstance(_orig, nn.Module)

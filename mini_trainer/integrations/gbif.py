@@ -346,13 +346,11 @@ def cls2idx_from_labels(labels: OrderedDict[str, tuple[str, ...]]):  # noqa: D10
         raise RuntimeError("Varying hierarchy levels found in image directory structure:", list(sorted(nlvl)))
     nlvl = list(nlvl)[0]
     cls2idx: dict[str, dict[str, int]] = {str(lvl): dict() for lvl in range(nlvl)}
-    classes = {str(lvl): set() for lvl in range(nlvl)}
     for lab in labels.values():
         for lvl, cls in enumerate(lab):
-            if cls in classes[str(lvl)]:
-                continue
-            classes[str(lvl)].add(cls)
-            cls2idx[str(lvl)][cls] = len(classes[str(lvl)]) - 1
+            mapping = cls2idx[str(lvl)]
+            if cls not in mapping:
+                mapping[cls] = len(mapping)
     return cls2idx
 
 

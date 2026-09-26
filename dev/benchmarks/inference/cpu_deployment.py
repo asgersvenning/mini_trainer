@@ -1,12 +1,11 @@
 """Compose CPU deployment quality, placement and isolated resource measurements."""
 
 import json
-import os
-import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+from ._stage import run_stage
 from .inference_pair import run_pair
 from .onnx_inference import file_hash
 
@@ -40,27 +39,7 @@ def evaluate(
 
     def child(name, module, arguments, expected):
         command = [sys.executable, "-m", f"dev.benchmarks.inference.{module}", *map(str, arguments), "--output", str(output / name)]
-        stage = {"name": name, "command": command, "status": "running", "log": f"{name}.log"}
-        report["stages"].append(stage)
-        save()
-        with (output / stage["log"]).open("w") as log:
-            process = subprocess.run(
-                command,
-                cwd=Path(__file__).resolve().parents[3],
-                env={**os.environ, "PYTHONHASHSEED": "0"},
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-        stage["returncode"] = process.returncode
-        if process.returncode:
-            raise RuntimeError(f"{name} failed; see {output / stage['log']}")
-        result_path = output / name / "report.json"
-        result = json.loads(result_path.read_text())
-        if result["status"] != expected:
-            raise RuntimeError(f"Unexpected {name} status: {result['status']}")
-        stage.update(status=expected, report_sha256=file_hash(result_path))
-        return result
+        return run_stage(output, report, name, command, expected)
 
     try:
         report["phase"] = "quality"

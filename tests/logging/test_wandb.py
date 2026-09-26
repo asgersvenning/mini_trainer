@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -6,80 +6,73 @@ import mini_trainer.logging.wandb as wandb_module
 from mini_trainer.logging import BaseStatistic, WandbLogger
 
 
-def test_wandb_logger_not_installed():
-    with patch.object(wandb_module, "wandb", None):
-        with pytest.raises(ImportError, match="wandb is not installed"):
-            WandbLogger(steps=[0, 1], output=None)
+@pytest.fixture
+def sdk(monkeypatch):
+    sdk = MagicMock()
+    monkeypatch.setattr(wandb_module, "wandb", sdk)
+    return sdk
 
 
-def test_wandb_logger_init():
-    mock_wandb = MagicMock()
-    mock_wandb.run = None
-    with (
-        patch.object(wandb_module, "wandb", mock_wandb),
-        patch("socket.gethostname", return_value="dummy_host"),
-        patch("os.getcwd", return_value="CWD"),
-    ):
-        WandbLogger(steps=[0, 1], output="dummy_dir", name="test", project="test_proj")
-        mock_wandb.init.assert_called_once_with(project="test_proj", name="test", dir="dummy_dir", config=None, tags=["dummy_host", "CWD"])
+@pytest.mark.parametrize(
+    ("method", "kwargs"),
+    [("__init__", {"steps": [0], "output": None}), ("step", {}), ("add_figure", {"name": "plot", "figure": None})],
+)
+def test_wandb_logger_not_installed(monkeypatch, method, kwargs):
+    monkeypatch.setattr(wandb_module, "wandb", None)
+    with pytest.raises(ImportError, match="wandb is not installed"):
+        getattr(WandbLogger.__new__(WandbLogger), method)(**kwargs)
 
-    # Test initialization with steps=None
+
+@pytest.mark.parametrize("rank", [None, 0, 1], ids=["local", "primary", "secondary"])
+@pytest.mark.parametrize(("run_id", "run_name"), [(None, None), ("", "batch64"), ("shared-trial", "batch64")])
+def test_new_run_identity_and_finish_owner(sdk, monkeypatch, tmp_path, rank, run_id, run_name):
+    sdk.run = None
+    monkeypatch.setattr(wandb_module.socket, "gethostname", lambda: "host")
+    monkeypatch.setattr(wandb_module.os, "getcwd", lambda: "CWD")
+    monkeypatch.setattr(wandb_module, "is_dist_avail_and_initialized", lambda: rank is not None)
+    monkeypatch.setattr(wandb_module, "get_rank", lambda: rank)
+    WandbLogger(steps=[0, 1], output=str(tmp_path), name="model trial/1", project="project", run_name=run_name, run_id=run_id)
+    expected = dict(project="project", name=run_name or "model trial/1", dir=str(tmp_path), config=None, tags=["host", "CWD"])
+    if rank is not None:
+        sdk.Settings.assert_called_once_with(mode="shared", x_primary=rank == 0, x_update_finish_state=rank == 0, x_label=f"rank_{rank}")
+        expected.update(id=run_id or "model_trial_1", settings=sdk.Settings.return_value)
+    else:
+        sdk.Settings.assert_not_called()
+        if run_id is not None:
+            expected["id"] = run_id
+    sdk.init.assert_called_once_with(**expected)
+
+
+@pytest.mark.parametrize("distributed", [False, True])
+def test_existing_run_is_adopted(sdk, monkeypatch, distributed):
+    monkeypatch.setattr(wandb_module, "is_dist_avail_and_initialized", lambda: distributed)
+    WandbLogger(steps=[0, 1], output=None, run_id="must-not-replace-existing")
+    sdk.init.assert_not_called()
+    sdk.Settings.assert_not_called()
     with pytest.raises(TypeError):
         WandbLogger(steps=None, output=None)
 
 
-def test_wandb_logger_add_stat():
-    mock_wandb = MagicMock()
-    with patch.object(wandb_module, "wandb", mock_wandb):
-        logger = WandbLogger(steps=[0, 1], output=None)
-        logger.add_stat("loss", BaseStatistic)
-        assert "loss" in logger.statistics
-        assert isinstance(logger.statistics["loss"], BaseStatistic)
+def test_wandb_logger_update_and_step(sdk):
+    logger = WandbLogger(steps=[0, 10], output=None)
+    logger.add_stat("loss", BaseStatistic)
+    assert isinstance(logger.statistics["loss"], BaseStatistic)
+    logger.update("loss", 1.5)
+    logger.step()
+    sdk.log.assert_called_once_with({"loss/main": 1.5, "global_step": 0})
+    assert logger._internal_step == 1
+    assert logger._current_step_logs == {}
 
 
-@pytest.mark.parametrize("rank", [0, 1])
-def test_distributed_trial_id_and_finish_owner(rank):
-    sdk = MagicMock()
-    sdk.run = None
-    with (
-        patch.object(wandb_module, "wandb", sdk),
-        patch.object(wandb_module, "is_dist_avail_and_initialized", return_value=True),
-        patch.object(wandb_module, "get_rank", return_value=rank),
-    ):
-        WandbLogger(steps=[0, 1], output=None, name="model", run_name="batch64", run_id="shared-trial")
-    assert sdk.init.call_args.kwargs["id"] == "shared-trial"
-    assert sdk.init.call_args.kwargs["name"] == "batch64"
-    assert sdk.Settings.call_args.kwargs["x_update_finish_state"] is (rank == 0)
-
-
-def test_wandb_logger_update_and_step():
-    mock_wandb = MagicMock()
-    mock_wandb.run = MagicMock()
-    mock_wandb.run.step = 0
-    with patch.object(wandb_module, "wandb", mock_wandb):
-        logger = WandbLogger(steps=[0, 10], output=None)
-        logger.add_stat("loss", BaseStatistic)
-
-        logger.update("loss", 1.5)
-        assert logger._current_step_logs["loss/main"] == 1.5
-
-        logger.step()
-        mock_wandb.log.assert_called_once_with({"loss/main": 1.5, "global_step": 0})
-        assert logger._internal_step == 1
-        assert logger._current_step_logs == {}
-
-
-def test_wandb_logger_add_figure():
+def test_wandb_logger_add_figure(sdk):
     import matplotlib.pyplot as plt
 
-    mock_wandb = MagicMock()
-    mock_wandb.run = MagicMock()
-    mock_wandb.run.step = 0
-    with patch.object(wandb_module, "wandb", mock_wandb):
-        logger = WandbLogger(steps=[0, 10], output=None)
-        fig = plt.figure()
-
+    logger = WandbLogger(steps=[0, 10], output=None)
+    fig = plt.figure()
+    try:
         logger.add_figure("my_plot", fig, epoch=1)
         logger.step()
-        mock_wandb.Image.assert_called_once_with(fig)
-        mock_wandb.log.assert_called_once_with({"my_plot/main": mock_wandb.Image.return_value, "epoch": 1})
+        sdk.Image.assert_called_once_with(fig)
+        sdk.log.assert_called_once_with({"my_plot/main": sdk.Image.return_value, "epoch": 1})
+    finally:
+        plt.close(fig)

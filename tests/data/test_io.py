@@ -6,7 +6,6 @@ import torch
 
 from mini_trainer.data.io import (
     CACHE_MODE,
-    _normalize_to_tuple,
     generate_indices,
     guess_cache_mode,
     is_image,
@@ -69,9 +68,3 @@ def test_generate_indices():
     assert len(indices) == 6
     assert indices.count(0) == 2
     assert indices.count(1) == 4
-
-
-def test_normalize_to_tuple():
-    assert _normalize_to_tuple(1) == (1,)
-    assert _normalize_to_tuple([1]) == [1]
-    assert _normalize_to_tuple((1,)) == (1,)

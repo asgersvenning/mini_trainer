@@ -1,210 +1,109 @@
-# Isolate pipeline overhead with model execution mocked
+# Diagnose deployment pipeline costs
 
-`pipeline_probe.py` runs three short Torch CUDA cases. It creates synthetic global
-species/genus/family scores once and substitutes them for backbone/head execution.
-No model weights are loaded. Actual batched GPU preprocessing, output transfers,
-score validation and `Prediction` construction remain in the path.
+These optional tools isolate costs before changing the pipeline. Use the existing
+CUDA environment from the [repository setup](../../../README.md#local-installation)
+or [UCloud speed workflow](speed-smoke.md), run from the repository root, and choose
+fresh output directories. They do not require another quality evaluation.
 
-| Mode | Input boundary | What remains |
-|---|---|---|
-| `resident` | One prepared uint8 batch already on GPU | GPU preprocessing and complete result path |
-| `host` | One prepared pinned host batch | Above plus existing two-slot H2D staging |
-| `stream` | Real image paths | Complete deployed preparation/transfer/result pipeline |
+| Tool | Measured boundary | Use when |
+| --- | --- | --- |
+| `pipeline_probe` | Synthetic scores replace model execution; real preprocessing, transfers and public results remain | Locating non-model overhead and contention |
+| `pipeline_stages` | Isolated preparation, result construction and CUDA operator trace | Inspecting a specific operation or allocation |
+| `gpu_ceiling` | Resident inputs through the deployed Torch model; outputs stay on-device | Comparing streaming throughput with sustained model execution |
 
-All cases use the same score tensors and vocabulary. The first two deliberately
-reuse one real prepared batch; streaming consumes the selected files. Each case
-has one excluded warmup and one timed pass. The script verifies the returned count,
-including the partial final batch, and that no real model was instantiated.
+Current decisions, failed approaches and remaining targets belong in the
+[pipeline review](../../../docs/mambo-inference-pipeline-review.md); published
+measurements and provenance belong in [HPC evidence](../../../docs/mambo-hpc-evidence.md).
+Further throughput work is deferred for the release freeze.
 
-Example using existing local assets, without changing the environment:
+## Profile without model execution
 
 ```sh
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.releases.mambo_v3.pipeline_probe \
   --bundle local-evidence/mambo-bundle-presets-v2 \
   --manifest local-evidence/mambo-v3/flemming-manifest.json \
   --root /home/asger/data/flemming \
-  --output local-evidence/pipeline-probe-initial \
+  --output local-evidence/pipeline-probe-new \
   --count 1025 --batch-size 64 --workers 4
 ```
 
-Use a fresh output directory. The report includes sample paths/hashes, settings,
-GPU identity, throughput, input/transfer counters, submission elapsed time, result
-worker elapsed time and caller time blocked retrieving results. These counters
-**overlap**; do not sum them or equate host waits with GPU idle time.
+Substitute actual local paths. No weights are loaded. All modes use the same fixed
+synthetic species/genus/family scores and vocabulary:
 
-The first local run (1,025 Flemming images, batch 64, four preparation workers):
+- `resident`: a prepared uint8 batch is already on the GPU.
+- `host`: the same batch starts in pinned host memory and uses two-slot H2D staging.
+- `stream`: real image paths exercise the complete preparation pipeline.
 
-| Mode | Images/s | Elapsed s | Caller result wait s |
-|---|---:|---:|---:|
-| Resident | 7,771 | 0.132 | 0.036 |
-| Host | 7,627 | 0.134 | 0.042 |
-| Stream | 699 | 1.466 | 0.002 |
+Each mode has one excluded warmup and one timed pass. The probe verifies result
+count, including the partial tail, and that no model was instantiated. `report.json`
+retains sample hashes, settings, GPU identity, throughput, transfer/input counters,
+submission/result-worker durations and caller waits.
 
-Streaming accumulated 1.391 s waiting for prepared host inputs in the background
-transfer worker. Host-side inference/result submission increased from 0.078 s in
-resident mode to 0.452 s with preparation active, consistent with host contention.
-Results did not throttle this local streaming case. The raw report is retained
-uncommitted at `local-evidence/pipeline-probe-initial/report.json`.
+Removing model latency changes overlap and backpressure. This is **not an HPC
+emulator**: laptop crops and four workers do not reproduce large photos and 48
+workers. Durations overlap; do not sum them or interpret host waits as GPU idle time.
+Use a profile to locate expensive work and an unprofiled run to measure it.
 
-This is a diagnostic, not a deployment benchmark or B200 emulation: removing model
-latency changes overlap, contention and backpressure, and synthetic scores omit
-real forward dispatch. Small Flemming images, the laptop CPU and four workers do
-not reproduce UCloud's large images and 48-worker setup. The short prepared-input
-cases establish a large local separation, not a precise throughput difference
-between their two modes. Use one same-environment probe when that distinction
-would change the next implementation; do not introduce a worker sweep or campaign.
-
-
-## Profile-driven pixel gathering change
-
-A native `py-spy` profile located the preparation hotspot in `_square`: the
-broadcast three-axis NumPy expression repeatedly entered `mapiter_get` and buffered
-iterator code. Sampling at 200 Hz with native stacks fell behind and substantially
-perturbed execution; its timings are **not** performance evidence. It was used only
-to locate the hot operation. The profile and a small selector comparison are under
-`local-evidence/pipeline-profile/`.
-
-Deployment now gathers complete RGB pixels with `take`. Large contiguous decoded
-images use flat pixel indices, avoiding a full-width row intermediate. Small or
-strided images gather rows and then columns, avoiding a source-sized flattening
-copy. Coordinates, padding, output layout and caller-owned buffers are preserved.
-This changes both Torch and ONNX preparation, without new configuration or queues.
-
-Unprofiled probe comparison with the original 1,025-image run, same batch/workers:
-
-| Measurement | Before | After |
-|---|---:|---:|
-| Streaming images/s | 699 | 957 |
-| Preparation worker elapsed seconds (summed) | 4.883 | 3.423 |
-| Background input wait seconds | 1.391 | 0.987 |
-| Caller result wait seconds | 0.0024 | 0.0026 |
-| Prepared resident images/s | 7,771 | 7,557 |
-| Prepared host images/s | 7,627 | 7,221 |
-
-The final report is `local-evidence/pipeline-profile/after-layout-gather/report.json`.
-This is a useful local +37% end-to-end diagnostic improvement, not an expected B200
-speedup. Preparation/submission contention remains; this does not establish GPU
-saturation. Static checks and the affected deployment/streaming tests cover the
-change. Use the existing four-variant speed smoke for the next B200 measurement.
-
-
-## Stack submission and result work before the next B200 test
-
-The same captured profile exposed additional work beyond pixel gathering:
-
-- `hierarchy_plan` repeatedly converted the entire selected vocabulary into Python
-  integers and hashed that tuple on the submission thread. Lookup now hashes native
-  contiguous index bytes and reuses each resolved plan within `_ranked_views`.
-  Selection order and content still determine the cache key.
-- `Prediction` eagerly rebuilt all class-name dictionaries for each batch. It now
-  snapshots names and constructs `cls2idx` only on access, including serialization.
-  Each result retains its own mutable dictionary, independent of later selections.
-- Confidence normalization allocated separate shifted-logit and exponential arrays.
-  Floating-point scores now use one scratch array; raw logits remain untouched.
-
-The unprofiled combined probe used the same 1,025 images, batch 64 and four workers:
-
-| Measurement | Pixel gather only | Plus submission/result changes |
-|---|---:|---:|
-| Resident images/s | 7,557 | 11,806 |
-| Host images/s | 7,221 | 9,598 |
-| Stream images/s | 957 | 928 |
-| Resident submission seconds | 0.077 | 0.031 |
-| Resident result-worker seconds | 0.128 | 0.079 |
-| Stream preparation-worker seconds (summed) | 3.423 | 3.492 |
-
-Raw report: `local-evidence/pipeline-profile/after-host-overhead/report.json`.
-These short single passes show reduced overhead with prepared inputs, but **no
-additional local file-streaming improvement**. Streaming still waits on preparation;
-submission elapsed time there also includes contention with preparation workers.
-The combined streaming rate remains above the original 699 images/s baseline.
-Do not convert these diagnostic differences into projected B200 gains.
-
-Other sampled work includes copying gathered pixels into batch storage, GPU
-preprocessing, packing/downloading rank scores, and required score validation.
-These remain possible limits after preparation improves. The profile does not
-establish transfer-bandwidth saturation or a need for more queues: its prominent
-owner-thread `events.get()` frame is a blocking wait. No additional scheduler,
-transfer pool or result API is introduced for this stack.
-
-Validation: static/import checks, deployment Ruff checks, and affected deployment,
-streaming and evaluation tests (92 passed, six optional tests skipped). The CUDA
-probe retained actual transfers/preprocessing but mocked model execution. The next
-HPC check is the existing four-variant full-B200 smoke, once for the complete stack.
-
-
-## Further stage simplification
-
-A bounded synthetic stage check removes filesystem/cache latency, decoding and
-model execution from attribution. It uses decoded interleaved RGB at 256×256 and
-2048×2048, and three score matrices with 30,000/4,000/500 classes at batches 64 and
-256. CPU timings are collected outside the profiler. A separate CUDA trace records
-actual preprocessing and asynchronous result download, with operator counts,
-allocations and output strides. Reproduce it only when investigating those stages:
+## Isolate preparation and result stages
 
 ```sh
 CUDA_VISIBLE_DEVICES=0 .venv/bin/python -m dev.releases.mambo_v3.pipeline_stages \
-  --output local-evidence/pipeline-stages-check
+  --output local-evidence/pipeline-stages-new
 ```
 
-The implementation changes are:
+The probe uses decoded 256-square/2048-square RGB images and synthetic scores,
+excluding filesystem, decoding and model execution. CPU stage timings go to
+`report.json`; `trace.json` and `operators.txt` record CUDA operators, allocations
+and strides. **CUDA trace timings are diagnostic, not unprofiled throughput.**
 
-- CPU bilinear preparation uses native `take` operations and reuses interpolation
-  scratch and caller-owned FP32 output storage. It avoids separate multiplication,
-  sum and final-output temporaries. Pre-clamped indices permit `mode="clip"`;
-  NumPy documents that the default `raise` mode always buffers `out`
-  ([reference](https://numpy.org/doc/stable/reference/generated/numpy.take.html)).
-  This benefits ONNX preparation and Torch CPU preparation, including each TTA view.
-- Top-1 result construction reuses the maximum selected by `argmax`. NaN detection
-  checks that one selected score per image instead of allocating and scanning a
-  full score-sized boolean array, while retaining the stable-sort fallback.
-  Confidence normalization reuses the same maximum, removing another full scan.
-- Torch finishing uses `addcmul` for broadcast normalization. Rounding remains
-  unchanged; rounding plus normalization now requires two kernels instead of four.
-  Output is contiguous 384×384 storage instead of a view retaining 438×438 storage.
-  This applies to every CUDA Torch view without compilation or a new dependency.
+Prior profiling justified native RGB gathering, reused interpolation/score scratch,
+lazy vocabulary maps and fused normalization. Output-copy pooling did not justify
+its added complexity. Native sampling perturbed execution and was used only to
+locate costs. Detailed local evidence is ignored under
+`local-evidence/pipeline-profile/` and `local-evidence/pipeline-stages/` (stage baseline
+`c497a9d`, RTX 3080 Ti Laptop); these paths are not guaranteed on another checkout.
+The linked HPC evidence qualifies the combined implementation.
 
-Local stage comparison (before = `c497a9d`, RTX 3080 Ti Laptop GPU):
+## Measure resident GPU throughput
 
-| Stage | Before | After |
-|---|---:|---:|
-| CPU preparation, 32 small images / four workers | 60.6 ms | 35.0 ms |
-| CPU preparation, 32 large images / four workers | 65.6 ms | 37.7 ms |
-| Result construction, batch 64 | 6.69 ms | 4.32 ms |
-| Result construction, batch 256 | 31.8 ms | 18.2 ms |
-| GPU preparation, batch 64, unprofiled paired median | 3.95 ms | 2.32 ms |
+Reuse a completed Torch/no-TTA speed-smoke report and its working environment:
 
-Raw stage reports/traces are in `local-evidence/pipeline-stages/`; the paired CUDA
-event timings are in `gpu-unprofiled.json`. Profiler durations are used to locate
-work, not as the timing comparison. Fewer full-array passes and compact output
-storage are structural improvements; the percentages above are local measurements,
-not predicted B200 gains. They also do not establish pipeline GPU saturation.
+```sh
+.venv-mambo-runtime/bin/python -m dev.releases.mambo_v3.gpu_ceiling \
+  --baseline /work/mambo-speed/b200-full-compact/torch/report.json \
+  --output /work/mambo-speed/b200-resident
+```
 
-The final short mocked-model pipeline pass (`after-stage-simplification/report.json`
-under `local-evidence/pipeline-profile/`) measured resident/host/stream at
-12,110/15,055/1,068 images/s, versus 11,806/9,598/928 before this increment. Its very
-short prepared-input runs remain sensitive to scheduling; the host-versus-resident
-ordering must not be read as a benefit from transferring inputs. It is an
-integration check, not the basis for choosing the changes.
+The probe verifies the bundle and first 1,024 sample images, prepares them once,
+and keeps uint8 inputs on the GPU. Calls include deployed GPU preprocessing,
+backbone, classifier and global hierarchy logits. Loading, H2D/D2H, CPU results,
+embeddings and TTA are excluded; precision follows the baseline report.
 
-Output packing remained about 44 microseconds for batch 64 in the CUDA traces,
-versus roughly 0.66 milliseconds for the resulting 8.4 MiB D2H copy. The snapshot
-also protects deferred results against later device-slot writes. Direct-copy or
-buffer-pooling changes are not justified by this evidence. Transfer leases and
-stream synchronization remain intact; PyTorch requires explicit synchronization
-and lifetime handling across streams
-([reference](https://docs.pytorch.org/docs/2.14/notes/cuda.html#cuda-streams)).
-The compact CPU path still copies selected RGB pixels into planar batch slots;
-that is bounded to 384×384 pixels, rather than another source-sized image copy.
+Batches 256, 512 and 1,024 each receive warmup and approximately 20 seconds of
+sustained inference, synchronized at block boundaries. Smaller-batch results survive
+an out-of-memory failure. Expect roughly 2–4 minutes plus cold-storage delays;
+keep other GPU workloads idle. For a small local check, use `--batches 8 16 --seconds 1`.
 
-Validation covers output storage, stable ties/NaNs, immutable raw scores, exact CPU
-interpolation against the prior equation, the original FP64 fixture hashes and
-CUDA image geometry. The FP64 fixture now evaluates its frozen equation directly
-instead of monkeypatching the optimized production function's scratch dtype;
-expected hashes and tolerances are unchanged. Initial failures of two such fixture
-cases were resolved by separating that reference. All 96 focused CPU cases pass
-across the initial run and targeted rerun; six optional cases were skipped. The
-intentional CUDA geometry case passed separately. Static/import checks pass.
+| Output | Interpretation |
+| --- | --- |
+| `summary.csv`, `report.json` | Throughput, timing windows, sample/bundle hashes, runtime/device and Torch allocated/reserved peaks, including the resident bank |
+| `gpu.csv` | 200 ms utilization/power/memory/clock samples; match device identity because nvidia-smi may see other GPUs |
+| `trace.json.gz` | Separate eight-call trace at the fastest batch; profiler failure is recorded without discarding timings |
 
-Run the existing four-variant full-B200 smoke once for the whole stack. This adds
-no campaign, environment setup, scheduler or tuning option.
+Return the complete folder. A throughput plateau plus continuously occupied kernels
+supports a practical reference for this implementation, not a hardware maximum.
+Compare matching batch sizes; the prepared-input smoke diagnostic has a different
+boundary. Neither these timings nor the mocked modes are additive pipeline phases.
+
+## Qualify a change
+
+Inspect service demand and ownership before adding queues or workers. An owner
+blocked in `events.get()` is waiting, not necessarily consuming CPU. Preserve
+geometry, rounding, tie/NaN behavior, raw scores, custom transforms, ordering,
+partial batches and buffer lifetimes. Cross-stream copies need completion and
+lifetime handling as well as `non_blocking=True`.
+
+Use existing preprocessing/result/streaming tests for changed contracts, then the
+[four-variant speed smoke](speed-smoke.md) when target throughput remains unresolved.
+Do not infer HPC gains from isolated local timings or rerun a full evaluation
+campaign for unchanged prediction behavior.

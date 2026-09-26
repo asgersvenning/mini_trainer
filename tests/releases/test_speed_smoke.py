@@ -68,3 +68,24 @@ def test_four_variants_reuse_sample_and_route_interpreters(tmp_path, monkeypatch
     assert len((args.output / "summary.csv").read_text().splitlines()) == 5
     with pytest.raises(FileExistsError):
         speed_smoke.run(args)
+
+
+def test_automatic_runtime_installation_stays_outside_active_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAMBO_CACHE", str(tmp_path))
+    calls = []
+
+    def install(command, **kwargs):
+        calls.append(command)
+        if command[1] == "venv":
+            interpreter = Path(command[-1]) / "bin/python"
+            interpreter.parent.mkdir(parents=True)
+            interpreter.touch()
+
+    monkeypatch.setattr(speed_smoke.subprocess, "run", install)
+    interpreter = speed_smoke.prepare_onnx_runtime()
+    assert interpreter.is_relative_to(tmp_path)
+    assert str(interpreter) != speed_smoke.sys.executable
+    assert calls[-1][calls[-1].index("--python") + 1] == str(interpreter)
+    calls.clear()
+    assert speed_smoke.prepare_onnx_runtime() == interpreter
+    assert all(c[1:3] == ["pip", "install"] for c in calls)

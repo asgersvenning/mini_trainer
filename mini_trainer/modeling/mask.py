@@ -36,22 +36,18 @@ def restrict_class_labels(model: nn.Module, labels: list[str]) -> dict:
 
 
 def set_classification_mask(model: nn.Module, indices: list[int] | torch.Tensor | np.ndarray | None = None):
-    """Mask a selection of output features (classes).
+    """Retain selected output indices of a Classifier-built model.
 
-    Args:
-        model: A model created with `mini_trainer.classifier.Classifier.build()`.
-        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    Pass None to restore all classes. Indices refer to original weight rows.
     """
     classification_module(model).set_active_features(indices)
 
 
 @contextmanager
 def mask_classifier(model: nn.Module, indices: list[int] | torch.Tensor | np.ndarray | None = None):
-    """Mask a selection of output features (classes).
+    """Temporarily select output indices, restoring the previous mask on exit.
 
-    Args:
-        model: A model created with `mini_trainer.classifier.Classifier.build()`.
-        indices: Indices to (reversibly) mask in forward pass. If None the mask is disabled.
+    Indices refer to original weight rows; None temporarily enables all classes.
     """
     classifier = classification_module(model)
     orig_indices = classifier.active_indices

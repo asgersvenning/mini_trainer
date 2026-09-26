@@ -243,12 +243,7 @@ def test_inference_batched_fetch_keeps_tensor_output(metadata):
 
 @pytest.mark.parametrize("cache", ["none", "cpu"])
 def test_cuda_transfer_batches_are_pinned(metadata, cache):
-    import os
-
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to validate pinned CUDA transfer batches")
-    if not torch.cuda.is_available():
-        pytest.fail("CUDA checks requested but no CUDA device is accessible")
+    _require_cuda()
     device = torch.device("cuda:0")
     _, loaders = get_dataset_dataloader(metadata, resize_size=4, modes=("val",), cache=cache, batch_size=2, num_workers=0, device=device)
     images, labels = next(iter(loaders[0]))
@@ -269,12 +264,7 @@ def test_cache_worker_override_reaches_dataset(metadata, monkeypatch):
 
 
 def test_bounded_cuda_cache_matches_cpu_cache(metadata):
-    import os
-
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to validate CUDA cache construction")
-    if not torch.cuda.is_available():
-        pytest.fail("CUDA checks requested but no CUDA device is accessible")
+    _require_cuda()
     device = torch.device("cuda:0")
     _, cpu_loaders = get_dataset_dataloader(
         metadata, resize_size=4, modes=("val",), cache="cpu", cache_workers=0, num_workers=0, batch_size=5
@@ -296,17 +286,17 @@ def test_cuda_prefetch_rejects_cpu_target(metadata):
         get_inference_dataloader(metadata["path"], resize_size=4, num_workers=0, cuda_prefetch=True)
 
 
-def _require_prefetch_cuda():
+def _require_cuda():
     import os
 
     if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 to verify CUDA transfer streams")
+        pytest.skip("Set RUN_CUDA_TESTS=1 to verify CUDA loader contracts")
     assert torch.cuda.is_available()
 
 
 @pytest.mark.parametrize("workers", [0, 1])
 def test_cuda_prefetch_order_epochs_tail_and_lifetime(metadata, workers):
-    _require_prefetch_cuda()
+    _require_cuda()
     from torch.utils.data import DataLoader
 
     datasets, loaders = get_dataset_dataloader(
@@ -345,7 +335,7 @@ def test_cuda_prefetch_order_epochs_tail_and_lifetime(metadata, workers):
 
 
 def test_cuda_prefetch_inference_empty_and_failure(metadata):
-    _require_prefetch_cuda()
+    _require_cuda()
     from mini_trainer.data._prefetch import CUDAPrefetchLoader
 
     _, loader = get_inference_dataloader(
@@ -377,7 +367,7 @@ def test_cuda_prefetch_inference_empty_and_failure(metadata):
 
 
 def test_cuda_prefetch_nested_cuda_source():
-    _require_prefetch_cuda()
+    _require_cuda()
     from mini_trainer.data._prefetch import CUDAPrefetchLoader
 
     class Mixed(torch.utils.data.Dataset):
@@ -397,7 +387,7 @@ def test_cuda_prefetch_nested_cuda_source():
 
 
 def test_pinned_cache_gather_storage_and_indices(metadata):
-    _require_prefetch_cuda()
+    _require_cuda()
     datasets, loaders = get_dataset_dataloader(
         metadata,
         modes=("val",),
@@ -509,9 +499,8 @@ def test_direct_batches_preserve_shuffled_sampling_and_rng():
         assert torch.equal(torch.get_rng_state(), expected_rng)
 
 
-@pytest.mark.parametrize("cache", ["none", "cpu"])
+@pytest.mark.parametrize("cache,labels", [("none", False), ("none", True), ("cpu", True)])
 @pytest.mark.parametrize("workers", [0, 1])
-@pytest.mark.parametrize("labels", [False, True])
 def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, workers, labels):
     if labels:
         datasets, loaders = get_dataset_dataloader(
@@ -519,9 +508,7 @@ def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, wo
         )
         dataset, optimized = datasets[0], loaders[0]
     else:
-        dataset, optimized = get_inference_dataloader(
-            metadata["path"], resize_size=4, cache=cache, cache_workers=0, batch_size=2, num_workers=0
-        )
+        dataset, optimized = get_inference_dataloader(metadata["path"], resize_size=4, batch_size=2, num_workers=0)
     external = torch.utils.data.DataLoader(
         dataset,
         batch_sampler=optimized.batch_sampler,

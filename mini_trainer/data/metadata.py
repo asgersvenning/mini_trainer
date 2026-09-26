@@ -344,9 +344,6 @@ def label_to_class_idx(
     return cls2idx_flat.get(str(label), None) if str(label) in cls2idx_flat else cls2idx_flat.get(label, None)
 
 
-# TODO: Unfortunately, this function has some functionality for the hierarchical submodule
-# even though the core mini_trainer module and the hierarchical submodule are
-# supposed to be entirely compartmentalized. Difficulty to fix: very high.
 def create_metadata(
     directory: str | Path | dict | list[str | Path | dict],
     cls2idx: dict[str, int] | dict[str, dict[str, int]] | None = None,
@@ -360,7 +357,13 @@ def create_metadata(
     seed: int | None = None,
     **kwargs,
 ) -> dict[str, list]:
-    """Create or generate dataset metadata / data index."""
+    """Build path/class/split/label columns, optionally writing a JSON index.
+
+    Lists and OrderedDict labels select and order class folders; ordinary dicts
+    remap labels on collected samples. Supplied splits are retained (validation
+    becomes test when explicitly requesting two splits); otherwise partition each
+    class using the requested proportions, minimum frequencies and seed.
+    """
     if isinstance(directory, (str, Path)) and str(directory).endswith(".parquet"):
         return get_metadata_from_parquet(str(directory), cls2idx=cls2idx or {})
 
@@ -378,14 +381,8 @@ def create_metadata(
         labels = labels_from_taxonomy(tax)
 
     if isinstance(labels, list):
-        dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
-        labels_map = OrderedDict([(lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels])
-        samples = [
-            (img, tuple(cls) if isinstance(cls, list) else cls, None)
-            for d, cls in labels_map.items()
-            for img in find_images(os.path.join(dir_str, str(d)))
-        ]
-    elif isinstance(labels, OrderedDict):
+        labels = OrderedDict((lab[0] if isinstance(lab, (list, tuple)) else lab, lab) for lab in labels)
+    if isinstance(labels, OrderedDict):
         dir_str = str(directory) if isinstance(directory, (str, Path)) else "."
         samples = [
             (img, tuple(cls) if isinstance(cls, list) else cls, None)
@@ -528,13 +525,8 @@ def parse_class_spec(path: str | None = None, dir: str | None = None, species: b
             else:
                 raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not "{dir}".')
         else:
-            cls2idx = {
-                cls: i
-                for i, cls in enumerate(
-                    sorted(filter(lambda f: os.path.isdir(os.path.join(dir, f)), map(os.path.basename, os.listdir(dir))))
-                )
-            }
-            data = {"cls2idx": cls2idx, "num_classes": len(cls2idx)}
+            classes = sorted(name for name in os.listdir(dir) if os.path.isdir(os.path.join(dir, name)))
+            data = {"cls2idx": {cls: i for i, cls in enumerate(classes)}, "num_classes": len(classes)}
     if species:
         cls2idx = data["cls2idx"]
         assert isinstance(cls2idx, dict)

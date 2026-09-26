@@ -1,4 +1,4 @@
-"""Behavioral contracts for deliberately overlapping deployment regions."""
+"""Legacy reconstruction and deliberately overlapping deployment region contracts."""
 
 import tomllib
 
@@ -6,27 +6,61 @@ import pytest
 
 from dev.releases.mambo_v3.audit import HERE
 from dev.releases.mambo_v3.build_presets import ordered_membership, select_region
+from dev.releases.mambo_v3.reconstruct_presets import membership, region_counts
 
 pa = pytest.importorskip("pyarrow")
-RULES = tomllib.loads((HERE / "preset-definitions.toml").read_text())["presets"]
+DEFINITIONS = tomllib.loads((HERE / "preset-definitions.toml").read_text())
+RULES = DEFINITIONS["presets"]
+
+
+def test_continent_is_not_inferred_from_country_and_threshold_is_strict():
+    table = pa.table(
+        {
+            "speciesKey": ["continental"] * 26 + ["boundary"] * 25 + ["island"] * 30,
+            "countryCode": ["ES"] * 81,
+            "continent": ["EUROPE"] * 51 + ["AFRICA"] * 30,
+        }
+    )
+    counts = region_counts(table, "continent", ["EUROPE"])
+    assert counts == {"continental": 26, "boundary": 25}
+    assert membership(counts, 25) == {"continental"}
+    assert membership(region_counts(table, "countryCode", ["ES"]), 25) == {"continental", "island"}
+
+
+def test_country_union_counts_rows_across_splits_without_deduplication():
+    table = pa.table(
+        {
+            "speciesKey": ["shared", "shared", "shared", "outside"],
+            "countryCode": ["DE", "NL", "DE", "GB"],
+            "set": ["0", "1", "1", "0"],
+            "gbifID": ["same", "other", "same", "third"],
+        }
+    )
+    assert region_counts(table, "countryCode", ["DE", "NL"]) == {"shared": 3}
+
+
+def test_missing_species_identity_fails():
+    table = pa.table({"speciesKey": pa.array([None], type=pa.string()), "countryCode": ["DE"]})
+    with pytest.raises(ValueError, match="null species"):
+        region_counts(table, "countryCode", ["DE"])
 
 
 @pytest.mark.parametrize("legacy", ["europe", "north_europe"])
 def test_updated_european_lists_preserve_geography_and_legacy_membership(legacy):
-    definitions = tomllib.loads((HERE / "preset-definitions.toml").read_text())
     updated = f"{legacy}_v3"
     descriptive = {"label", "scope", "minimum_regional_rows", "minimum_global_rows"}
     assert {k: v for k, v in RULES[legacy].items() if k not in descriptive} == {
         k: v for k, v in RULES[updated].items() if k not in descriptive
     }
-    assert RULES[updated].get("minimum_regional_rows", definitions["minimum_regional_rows"]) == 3
-    assert RULES[updated].get("minimum_global_rows", definitions["minimum_global_rows"]) == 25
+    assert RULES[updated].get("minimum_regional_rows", DEFINITIONS["minimum_regional_rows"]) == 3
+    assert RULES[updated].get("minimum_global_rows", DEFINITIONS["minimum_global_rows"]) == 25
     old = (HERE / "presets" / f"{legacy}.classes").read_text().splitlines()
     new = (HERE / "presets" / f"{updated}.classes").read_text().splitlines()
-    assert set(old) < set(new)
-    assert [label for label in new if label in set(old)] == old
+    old_members = set(old)
+    assert old_members < set(new)
+    assert [label for label in new if label in old_members] == old
     changes = tomllib.loads((HERE / "preset-updates.toml").read_text())["updates"][updated]
-    assert changes["added"] == [label for label in new if label not in set(old)]
+    assert changes["added"] == [label for label in new if label not in old_members]
     assert changes["removed"] == []
 
 

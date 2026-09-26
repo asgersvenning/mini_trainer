@@ -10,10 +10,10 @@ from pathlib import Path
 import numpy as np
 
 from deployment.mambo_deploy import Predictor
-from deployment.mambo_deploy.preprocessing import preprocess
+from deployment.mambo_deploy.preprocessing import prepare_batch, preprocess
 from deployment.mambo_deploy.results import Prediction, hierarchy
 from dev.benchmarks.inference.onnx_inference import file_hash
-from dev.releases.mambo_v3.evaluate import prepare_batch, runtime_settings
+from dev.releases.mambo_v3.evaluate import runtime_settings
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, PRESETS, canonical_rows, load_records, write_json
 
 

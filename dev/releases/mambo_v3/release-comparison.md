@@ -1,18 +1,17 @@
-# Compare MAMBO_v2 and MAMBO_v3
+# Historical V2/V3 comparison workflow
 
-This comparison keeps northern Europe first, then Europe and global. It uses the
-legacy geographic lists for the primary release comparison and separately shows
-v3's updated Europe/northern-Europe lists. Full quality uses the existing Flemming
-manifest, including out-of-vocabulary truth, and the same pinned metric policy.
+Reproduce the original Flemming comparison of V2's published pipeline and V3
+FP32. It predates acceleration/TTA; use [current results](../../../deployment/README.md#release-comparison)
+for adoption and the [UCloud runbook](ucloud-release.md) for a new campaign.
+Run from the repository root. Replaying collection against today's adapter
+measures a different pipeline; figures can be rebuilt directly from retained data.
 
 ## Historical model identity
 
-The three MAMBO_v2 heads in `inventory.toml` have identical learned tensors and
-metadata; only regional active indices differ. Their cached external BioCLIP-2
-backbone is also required. `legacy_evaluation.py` verifies every historical Python
-source file against commit `32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`, validates head
-hashes, checks shared parameters and pins both external backbone files by SHA-256.
-The head hashes are observed retrieval hashes, not independent historical signatures.
+The V2 runner verifies source commit `32b3cd661778356b2e8c4cff5b10fa9061aa6f5d`,
+head hashes from [inventory.toml](inventory.toml), and external BioCLIP-2 hashes.
+Heads share learned tensors and differ only by regional masks, allowing shared
+features during collection. Head hashes record retrieval, not independent signatures.
 
 Export the original source without switching this release branch:
 
@@ -21,25 +20,18 @@ mkdir -p /path/to/v2-source
 git archive 32b3cd661778356b2e8c4cff5b10fa9061aa6f5d mini_trainer | tar -x -C /path/to/v2-source
 ```
 
-Use a separate Python 3.13 environment. The measured environment reuses the
-existing PyTorch 2.12.0+cu130 / torchvision 0.27.0 runtime and adds
-`open_clip_torch==3.3.0`, `timm==1.0.25`, `huggingface_hub==0.36.2`,
-`safetensors==0.6.2`, `ftfy==6.3.1`, `regex==2026.9.10`, and
-`requests==2.34.2` with its dependencies. This is an isolated comparison environment,
-not a recovered historical dependency lock or clean installation qualification.
-Do not sync the repository environment or replace its CUDA wheels.
+Use a separate runtime and preserve the existing CUDA environment. The original
+comparison used Python 3.13, PyTorch 2.12.0+cu130 / torchvision 0.27.0 and
+open_clip_torch 3.3.0; the historical runbook linked below retains the full version
+list. This was a contemporary comparison environment, not V2's original lock.
 
-The local offline Hugging Face cache points `imageomics/bioclip-2` to snapshot
-`2957b322090f9cb17ae72c71981c7218a28d81e0`. Required files:
-
-| File | SHA-256 |
-|---|---|
-| `open_clip_config.json` | `1bf947e96e943fe50efd5c3e26c37f843a2fa3c358967719a68c8a6d17ce68c8` |
-| `open_clip_model.safetensors` | `b7b2bf6fbc95799e42630e394cf95803892ab447c1a8ab629dbc82fbeaf7dfef` |
-
-Keep `HF_HUB_OFFLINE=1` and select that cache using `HF_HUB_CACHE`. No downloads
-belong in startup timing. Run the original source first on `PYTHONPATH` and use
-`python -P`; otherwise the current checkout can silently shadow it.
+The offline Hugging Face cache must contain `imageomics/bioclip-2` snapshot
+`2957b322090f9cb17ae72c71981c7218a28d81e0`. The runner's
+[backbone verification](legacy_evaluation.py) pins both configuration and weights
+by SHA-256. Download before timing, then set `HF_HUB_OFFLINE=1` and `HF_HUB_CACHE`.
+Put the original source first on `PYTHONPATH` and use `python -P` so the current
+checkout cannot shadow it. The [UCloud setup](ucloud-release.md#setup-with-uv)
+automates source extraction and asset retrieval for that workflow.
 
 ## Qualification and full quality
 
@@ -52,21 +44,15 @@ PYTHONPATH=/path/to/v2-source:/path/to/mini_trainer \
   --output /path/to/new-qualification
 ```
 
-The 256-image qualification compares the shared-backbone collection path against
-original API calls for every list and image. Full collection verifies the first
-batch again. The original backbone and head computations remain unchanged;
-features are reused across masks only after equality of the learned states is
-established. Image bytes are checked against the manifest. Every original truth
-label remains in the canonical CSVs.
+Qualification compares shared-backbone outputs with original API calls on 256
+images for each list. Full collection rechecks its first batch and verifies image
+hashes. Replace `qualification` with `full`, using output
+`/path/to/v2-full-phase/v2-full` for the chart aggregator's layout.
 
-Replace `qualification` with `full` for the full dataset, using
-`--output /path/to/v2-full-phase/v2-full` for the chart aggregator's directory layout.
-Alternatively, use `release_comparison full` with the shared arguments shown below.
-For every list, run the
-pinned metric environment using `dev.releases.mambo_v3.metrics --source ... --output ...`
-as described in [evaluation.md](evaluation.md). `compare_quality.compare` with
-`presets=["north_europe", "europe", "full"]` verifies paired v2/v3 identities,
-truth and coverage and produces accuracy changes and label agreement.
+Use the [pinned metric workflow](evaluation.md#metrics), retaining unknown truth.
+[Metric definitions](../../../docs/mambo-release-comparison.md#prediction-quality)
+cover macro/micro averages and all/known populations. Verify paired sample identity
+and truth before interpreting changes.
 
 ## Speed and memory
 
@@ -82,37 +68,25 @@ python -m dev.releases.mambo_v3.release_comparison benchmark \
   --output /path/to/new-comparison-timings
 ```
 
-Do not overlap timing with other heavy work. Each configuration uses the same
-seeded 32-image bank, four CPU threads, two warmups and seven observations per cell.
-CPU batches are 1/8; GPU batches are 1/8/32. Calls include decoding, preprocessing,
-hierarchy reduction and completed CPU results. Timings cover predictions only;
-existing v3 embedding-mode evidence remains in the separate local report.
+The historical protocol uses the same seeded 32-image bank, four CPU threads,
+two warmups and seven observations per cell: CPU batches 1/8, GPU 1/8/32,
+predictions only. Do not overlap trials with other heavy work. The added V3 trials
+cover legacy Europe and both northern lists, complementing the original
+global/updated-Europe sweep. Keep adapter revisions consistent across those inputs.
 
-The first unadapted v2 CPU attempt is retained as failed evidence: its bfloat16
-preprocessed input meets float32 convolution weights and raises
-`RuntimeError: expected scalar type BFloat16 but found Float` in this environment.
-The ancillary CPU benchmark uses `--cpu-float32`, a caller-side wrapper that casts
-the original preprocessor's output to float32. It preserves its values and leaves
-all historical source and learned weights unchanged. The orchestrator selects this
-flag only for CPU, records it explicitly, and the CPU charts label the adapter.
-It is not a shipped core fix. GPU and full quality use the original path.
+Two distinctions are essential for interpreting the comparison:
 
-V2 uses the original public API for GPU timing: an initial 512-pixel resize, BioCLIP
-preprocessing to 224 pixels, and CUDA float16 autocast. V3 uses the qualified
-384-pixel recipe and FP32. Both disable TF32. This is the intended real-world comparison of the models and pipelines shipped
-in the two versions. Their resolution and precision choices explain the results. V2 has no qualified ONNX
-variant in this comparison. The original source's loader warnings and expensive
-classifier initialization are preserved; no core fix is applied here.
+- V2 CPU needed `--cpu-float32` because its bfloat16 inputs met float32 weights.
+  The orchestrator selects this value-preserving input cast only for CPU;
+  historical source/weights and the CUDA path remain unchanged.
+- V2 uses an initial 512-pixel resize, BioCLIP's 224-pixel preprocessing and CUDA
+  FP16 autocast; V3 uses 384 pixels and FP32. Both disable TF32. This compares
+  release pipelines, not isolated backbones. V2 has no qualified ONNX variant.
 
-Reuse the unchanged earlier v3 global/updated-Europe results. The new v3 trials
-add legacy Europe and both northern-Europe lists. Each plotted timing has three
-trials; whiskers show trial-median range. RSS is the process high-water mark during
-load and the batch sweep, using full-list-containing sweeps for all runtimes.
-It is host memory, including initialization transients, not just weights or VRAM.
-Native CUDA allocator peaks are separate; ONNX snapshots are not equivalent peaks.
-Startup includes predictor construction and first completed call, with local cached
-files. Process launch and explicit runtime setup are excluded; lazy imports during
-model construction remain included. It is not a cold-boot measurement.
+[Shared timing boundaries](evaluation.md#timing-and-summary) define end-to-end,
+startup and memory measurements. RSS uses full-list-containing sweeps; startup
+includes construction and the first completed call with cached assets. Collection
+wall time is not a backend speed comparison.
 
 ## Rebuild the charts
 
@@ -123,54 +97,44 @@ python -m dev.releases.mambo_v3.comparison_charts \
   --added-performance /path/to/new-comparison-timings --output /path/to/charts
 ```
 
-Aggregation rejects unfinished runs, changed CSVs, different quality populations
-or metric revisions, mismatched timing image banks and missing timing trials.
-The resulting compact JSON excludes image identities and per-class predictions;
-it records measurement summaries and source hashes. Regenerate shareable SVGs from
-that JSON alone with `comparison_charts --data /path/to/mambo-release-comparison.json
---output /path/to/charts`. Keep raw evidence outside Git; charts and compact source
-data are intentional release documentation assets.
+Aggregation requires complete runs, unchanged metric inputs, matching populations,
+metric revisions and image banks, and three timing trials per cell. It copies
+`mini_metrics` scores at all ranks and both scopes; it computes no predictive
+metrics. Keep raw predictions/observations outside Git and retain their hashes.
 
-In-domain comparison remains UCloud work using the original test split. This local
-comparison neither changes thresholds/presets from test results nor publishes a
-release. Core loading optimizations require a separate feature/fix branch.
+To regenerate retained figures and the complete metric CSV without private inputs:
 
-The local run retains full v2 quality under
-`local-evidence/mambo-release-comparison-quality/v2-full/` and successful timing
-trials under `local-evidence/mambo-release-comparison-performance-cpu-adapter/`.
-The original unadapted CPU failure remains in
-`local-evidence/mambo-release-comparison-performance/trial-0-v2-cpu/report.json`.
-Earlier v3 quality and timing inputs remain under `local-evidence/mambo-v3/`.
+```sh
+.venv/bin/python -m dev.releases.mambo_v3.comparison_charts \
+  --data docs/assets/mambo-release-comparison.json --output /tmp/mambo-fp32-figures
+```
 
-All 18 additional timing processes completed. An interrupted final v2 GPU trial
-is retained separately and excluded; its successful replacement is
-`trial-2-v2-cuda-0-retry1`. Every reported timing cell contains exactly three
-successful trials. The original interrupted plan remains as `interrupted-plan.json`.
+## Evidence and regression coverage
 
-The revised charts use images/second throughout, with a shared GPU vertical scale.
-Predictive scores come exclusively from mini_metrics (`micro_accuracy`, rather
-than its macro `accuracy` field). All/known populations and macro-F1 class support
-are defined in the report. Old metric JSON is retained beside its replacement as
-`metrics-before-mini-metrics-only.json`; all 13 full-data extractions preserve the
-previous accuracy and F1 values. Component timings are reaggregated from existing
-benchmark evidence; no inference rerun is needed for these reporting corrections.
+The original local evidence remains under:
 
-Run the metric integration regression with the pinned environment available:
+| Evidence | Ignored location |
+| --- | --- |
+| Full V2 quality | `local-evidence/mambo-release-comparison-quality/v2-full/` |
+| Successful additional timings | `local-evidence/mambo-release-comparison-performance-cpu-adapter/` |
+| Unadapted V2 CPU failure | `local-evidence/mambo-release-comparison-performance/trial-0-v2-cpu/report.json` |
+| Original V3 quality and timings | `local-evidence/mambo-v3/` |
+
+These paths describe the retained local archive, not files shipped in the package.
+Interrupted processes are excluded; each reported timing cell has three successful
+trials. The [historical runbook](https://github.com/asgersvenning/mini_trainer/blob/b24a559b26849a57e83770335e6af00b08822807/dev/releases/mambo_v3/release-comparison.md)
+retains individual retry and metric-migration details. Use the
+[evidence policy](evidence-policy.md) when extending comparisons.
+
+For changes to metric extraction, the focused integration regression checks
+imbalanced classes, excluded truth, macro/micro averages and F1 through the real
+pinned `mini_metrics` API:
 
 ```sh
 MAMBO_METRICS_PYTHON=/path/to/metrics-env/bin/python \
-  bash dev/check.sh all tests/releases
+  bash dev/check.sh test tests/releases/test_release_evaluation.py \
+  -k pinned_metrics_distinguish_micro_macro_and_known_truth
 ```
 
-It exercises imbalanced classes and excluded truth to distinguish micro accuracy,
-macro accuracy, all/known filtering and macro-F1 through the real mini_metrics API.
-
-The expanded baseline leads with macro accuracy/F1 and retains macro precision,
-recall, micro accuracy, Theil U and coverage for all three ranks and both
-all/known-truth scopes. `mambo-release-metrics.csv` contains the complete compact
-baseline, including updated presets. All values are copied from pinned mini_metrics
-outputs; no predictive metric is calculated by the chart renderer.
-
-The [batch-scaling diagnosis](../../../docs/mambo-batch-scaling.md) provides the
-sequential profiling workflow, controlled precision/layout/preprocessing probes,
-recorded causes and boundaries for subsequent implementation.
+For performance changes use the [pipeline review](../../../docs/mambo-inference-pipeline-review.md)
+and [small speed check](speed-smoke.md), not a repeated full historical campaign.

@@ -76,9 +76,7 @@ def jobs(config, phase):
     bank_size = max(32, *config["cpu_batches"], *config["gpu_batches"], config.get("v3_batch_size", 1))
     planned = []
     for trial in range(3 if timing else 1):
-        variants = list(VARIANTS)
-        if trial == 1:
-            variants.reverse()
+        variants = VARIANTS[::-1] if trial == 1 else VARIANTS
         devices = config["timing_devices"] if timing else [config["quality_device"]]
         for device in devices:
             for variant in variants:
@@ -101,25 +99,20 @@ def jobs(config, phase):
                     module = "benchmark" if timing else "evaluate"
                     interpreter = config.get("onnx_python", config["v3_python"]) if variant.startswith("onnx") else config["v3_python"]
                     command = [interpreter, "-m", f"dev.releases.mambo_v3.{module}"]
+                    preparation = [
+                        "--stream-workers" if timing else "--decode-workers",
+                        str(config.get("decode_workers", config["threads"])),
+                        "--prefetch-batches",
+                        str(config.get("prefetch_batches", 2)),
+                    ]
                     if not timing:
-                        command += [
-                            "collect",
-                            "--decode-workers",
-                            str(config.get("decode_workers", config["threads"])),
-                            "--prefetch-batches",
-                            str(config.get("prefetch_batches", 2)),
-                        ]
+                        command += ["collect", *preparation]
                     if not config.get("device_prefetch", True):
                         command.append("--no-device-prefetch")
                     for key, default in (("read_workers", 32), ("read_window", 128), ("encoded_budget_mib", 256)):
                         command += ["--" + key.replace("_", "-"), str(config.get(key, default))]
                     if timing:
-                        command += [
-                            "--stream-workers",
-                            str(config.get("decode_workers", config["threads"])),
-                            "--prefetch-batches",
-                            str(config.get("prefetch_batches", 2)),
-                        ]
+                        command += preparation
                     command += [
                         "--bundle",
                         config["bundle"],
@@ -311,11 +304,11 @@ def run(config, phase, resume=False):
                     PYTHONPATH=f"{config['legacy_source']}:{ROOT}" if job["legacy"] else str(ROOT),
                 )
                 print(job["name"], flush=True)
-                with (output / f"{job['name']}.log").open("w") as stream:
+                log = output / f"{job['name']}.log"
+                with log.open("w") as stream:
                     try:
                         subprocess.run(job["command"], cwd=ROOT, env=env, check=True, stdout=stream, stderr=subprocess.STDOUT)
                     except subprocess.CalledProcessError:
-                        log = output / f"{job['name']}.log"
                         print(f"Job failed; log: {log}\n" + "\n".join(log.read_text(errors="replace").splitlines()[-25:]), flush=True)
                         raise
             report = validated_report(directory)

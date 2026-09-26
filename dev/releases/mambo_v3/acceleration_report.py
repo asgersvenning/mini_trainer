@@ -13,6 +13,8 @@ from dev.releases.mambo_v3.comparison_charts import COLORS, REGION_LABELS, REGIO
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.metrics import METRIC_SCHEMA
 
+from .figure_export import save_figure
+
 METRICS = ("accuracy", "precision", "recall", "f1", "micro_accuracy", "theilU", "coverage")
 
 
@@ -142,11 +144,7 @@ def render(data, output):
 
     def save(fig, name, note):
         fig.text(0.02, 0.02, note, fontsize=9, color="#555555")
-        svg = output / f"{name}.svg"
-        fig.savefig(svg, bbox_inches="tight", metadata={"Date": None})
-        svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
-        fig.savefig(output / f"{name}.png", bbox_inches="tight", dpi=160)
-        plt.close(fig)
+        save_figure(fig, output, name)
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     for col, backend in enumerate(("torch", "onnx")):

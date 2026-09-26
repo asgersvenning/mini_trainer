@@ -51,7 +51,7 @@ def get_transformers_model(
     resize_size: int | None = None,
     **kwargs: Any,
 ) -> tuple[Any, Any, int | None]:
-    """Load Hugging Face transformers classification model and resolve its default transform."""
+    """Return (wrapped backbone, image processor, preferred size) for a Hugging Face model."""
     try:
         from transformers import AutoConfig, AutoImageProcessor, AutoModelForImageClassification
     except ImportError as e:
@@ -61,7 +61,6 @@ def get_transformers_model(
         )
         raise
 
-    # 1. DRY Fallback with strict exception handling and state immutability
     def _load_with_fallback(hf_class: Any, **load_kwargs: Any) -> Any:
         try:
             return hf_class.from_pretrained(model, **load_kwargs)
@@ -81,23 +80,20 @@ def get_transformers_model(
     hub_keys = {"local_files_only", "revision", "cache_dir", "force_download", "proxies", "token"}
     hub_kwargs = {k: v for k, v in kwargs.items() if k in hub_keys}
 
-    # --- 1. Model / Config Loading ---
     if pretrained:
         hf_model = _load_with_fallback(AutoModelForImageClassification, **kwargs)
     else:
         config = _load_with_fallback(AutoConfig, **hub_kwargs)
         hf_model = AutoModelForImageClassification.from_config(config)
 
-    # --- 2. Classification Head Resolution ---
     classifier_name = None
 
-    # Semantic Search: Use tuples instead of lists for faster instantiation
     for name in ("classifier", "logits", "head"):
         if hasattr(hf_model, name):
             classifier_name = name
             break
 
-    # Structural Search: Reverse iterate to guarantee we grab the final layer, not an intermediate one
+    # Fall back to the last top-level Linear layer.
     if classifier_name is None:
         for name, child in reversed(list(hf_model.named_children())):
             if isinstance(child, torch.nn.Linear):
@@ -107,24 +103,19 @@ def get_transformers_model(
     if classifier_name is None:
         raise AttributeError(f"Could not structurally determine the classification head for {model}.")
 
-    # Assuming TransformersBackboneWrapper is defined elsewhere
     backbone_model = TransformersBackboneWrapper(hf_model, classifier_name)
 
-    # --- 3. Processor Loading ---
     if default_transform is None:
         default_transform = _load_with_fallback(AutoImageProcessor, backend="torchvision", **hub_kwargs)
 
-        # Safe structural type checking
         if resize_size is not None and getattr(default_transform, "size", None):
             if isinstance(default_transform.size, dict):
                 for key in ("height", "width", "shortest_edge"):
                     if key in default_transform.size:
                         default_transform.size[key] = resize_size
 
-        # Assuming TransformersPreprocessor is defined elsewhere
         default_transform = TransformersPreprocessor(default_transform)
 
-    # --- 4. Preferred Size Resolution ---
     cfg = getattr(hf_model, "config", None)
     preferred_size = getattr(cfg, "image_size", None) if cfg is not None else None
 

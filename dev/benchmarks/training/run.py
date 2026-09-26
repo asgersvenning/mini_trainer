@@ -408,36 +408,7 @@ def main():
     if args.output.exists():
         parser.error("Output directory must be new.")
     try:
-        result = run(
-            args.output,
-            args.seed,
-            args.epochs,
-            device=args.device,
-            dtype=args.dtype,
-            cache=args.cache,
-            num_workers=args.num_workers,
-            dataset=args.dataset,
-            data_root=args.data_root,
-            class_spec=args.class_spec,
-            cuda_prefetch=args.cuda_prefetch,
-            quantized_training=args.quantized_training,
-            compile=args.compile,
-            compile_mode=args.compile_mode,
-            compile_optimizer=args.compile_optimizer,
-            optimizer_cudagraphs=args.optimizer_cudagraphs,
-            hidden=args.hidden,
-            backbone=args.backbone,
-            head=args.head,
-            normalized=args.normalized,
-            image_size=args.image_size,
-            pretrained=args.pretrained,
-            fine_tune=args.fine_tune,
-            batch_size=args.batch_size,
-            cache_workers=args.cache_workers,
-            model_profile=args.model_profile,
-            optimizer=args.optimizer,
-            learning_rate=args.learning_rate,
-        )
+        result = run(**{key: value for key, value in vars(args).items() if key not in ("threads", "allow_nondeterministic")})
     except Exception as error:
         args.output.mkdir(parents=True, exist_ok=True)
         failure = {

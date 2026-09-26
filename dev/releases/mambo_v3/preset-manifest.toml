@@ -1,8 +1,8 @@
 schema_version = 2
-qualification_status = "provisional; pending final release decision"
+qualification_status = "selected for MAMBO_v3; metadata row-count policy"
 source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
 model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
-definitions_sha256 = "4f6f269417c3c3aa1dbba184230c8bf1d34bd839bda149375bd0fec390630e97"
+definitions_sha256 = "d89e62e5ee9d91aea0e46ccd60edbc49bd0378017cf6d8b8f70870e4f7673be6"
 minimum_regional_rows = 3
 minimum_global_rows = 25
 

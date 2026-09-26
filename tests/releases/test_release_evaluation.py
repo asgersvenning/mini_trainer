@@ -118,7 +118,7 @@ def test_threaded_preprocessing_is_byte_identical_and_ordered(tmp_path):
 
     from PIL import Image
 
-    from dev.releases.mambo_v3.evaluate import prepare_batch
+    from deployment.mambo_deploy.preprocessing import prepare_batch
 
     paths = []
     for i in range(5):
@@ -242,3 +242,20 @@ print(json.dumps({'thresholds':t, 'coverage':finite_json(r)['coverage']}))
     assert result["thresholds"] == [0.5, 0.5, 0.5]
     # A shared score must not be arbitrarily split to manufacture exact target coverage.
     assert result["coverage"] == {"0": 0.75, "1": 0.75, "2": 0.75}
+
+
+@pytest.mark.parametrize("revision", [None, "", "different-revision", "pinned"])
+def test_metric_environment_requires_recorded_git_revision(monkeypatch, revision):
+    from types import SimpleNamespace
+
+    from dev.releases.mambo_v3 import metrics
+
+    commit = metrics.REVISION if revision == "pinned" else revision
+    metadata = json.dumps({"vcs_info": {"commit_id": commit}}) if revision is not None else None
+    distribution = SimpleNamespace(read_text=lambda name: metadata)
+    monkeypatch.setattr(metrics.importlib.metadata, "distribution", lambda name: distribution)
+    if revision == "pinned":
+        metrics.require_pinned_metrics()
+    else:
+        with pytest.raises(ValueError, match=metrics.REVISION):
+            metrics.require_pinned_metrics()

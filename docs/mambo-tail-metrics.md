@@ -3,33 +3,26 @@
 **Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
 contains the current rotation-and-padding default comparison.
 
-These supplementary metrics summarize classes with **more than 5, 10 or 20**
-truth instances **and accepted predictions**, at each taxonomic rank. Main results
-use the intersection of qualifying classes across all five pipelines, so each
-pipeline is averaged over the same classes. Exact-boundary counts do not qualify.
-The **support >−1 baseline is untruncated**: it includes the union of truth and
-accepted-prediction classes for each model, including zero-support classes in either
-domain. It reproduces the original full-support metrics. Unlike the truncated rows,
-it does not intersect class sets across models, which would hide model-specific
-predicted-only families. Baseline class counts are listed in model-column order;
-each metric retains mini_metrics’ own handling of undefined class groups.
+These metrics change the **class averaging domain**, not the evaluation images:
 
-The dataset, legacy northern-Europe preset, 52,788-image reporting partition,
-calibrated thresholds and pinned `mini_metrics` revision are unchanged from the
-[threshold study](mambo-confidence-thresholds.md). Classes are selected from
-reporting support; this is descriptive analysis, not independent validation.
+- Support **>5, >10 or >20** requires strictly more than that many truth instances
+  **and accepted predictions**. Main tables intersect qualifying classes across all
+  five pipelines; exact-boundary counts do not qualify.
+- Support **>−1** is the untruncated baseline: each model's union of truth and
+  accepted-prediction classes, including zero support in either domain. It does not
+  intersect models, which would hide model-specific predicted-only families.
+  Baseline class counts follow model-column order; undefined groups keep the
+  package's own treatment.
 
-Per-class accuracy, precision, recall and F1 are computed on the **complete reporting
-partition** using `mini_metrics`. Its own aggregator then averages the retained
-class groups. No image rows are dropped: mistakes from excluded truth classes into
-retained predictions still contribute false positives, and mistakes from retained
-truth classes into excluded predictions still contribute false negatives.
+The legacy northern-Europe preset, 52,788 reporting images, calibration and pinned
+`mini_metrics` revision match the [threshold study](mambo-confidence-thresholds.md).
+Per-class accuracy/precision/recall/F1 use that **complete partition**; the package's
+aggregator then averages selected groups. Cross-domain mistakes still contribute
+false positives/negatives. **No image rows are dropped or acceptance decisions changed.**
 
-Positive-cutoff truncation excludes predicted-only classes and rare supported classes from the
-average. It therefore intentionally hides the rare-family failure mode studied
-[in the family audit](mambo-family-precision.md). Keep these results alongside the
-full-support metrics. The class sets may differ between threshold zero and calibrated
-thresholds; comparisons across those sections are not on a fixed class domain.
+Classes are selected using reporting support, so this is descriptive analysis.
+Domains can differ between threshold zero and calibration. Positive cutoffs hide
+the [rare-family failure mode](mambo-family-precision.md); retain full-support scores.
 
 ## Calibrated thresholds
 
@@ -50,16 +43,10 @@ Macro-F1: full-support baseline, followed by the shared truncated class sets.
 | Family | 10 | 19 | 0.8021 | 0.8161 | 0.8174 | 0.8536 | 0.8524 |
 | Family | 20 | 15 | 0.8074 | 0.8138 | 0.8154 | 0.8548 | 0.8533 |
 
-Within these commonly represented classes, V3 improves family Macro-F1 over V2,
-and TTA improves it further. With support >5, all five pipelines are averaged over
-19 families: F1 is 0.8021 for V2, 0.8161–0.8174 for ordinary V3 and 0.8524–0.8536
-with TTA. This is compatible with V2 leading the **full-support** family Macro-F1;
-the averaging domains answer different questions.
-
-The TTA species backend ordering also changes in this view. Their separately
-selected thresholds have different coverage; shared-threshold testing in the
-[threshold study](mambo-confidence-thresholds.md#tta-backend-threshold-sensitivity)
-shows closely aligned backend predictions.
+V3 leads family F1 on these commonly represented classes, despite V2 leading full
+support: the domains answer different questions. Separately calibrated TTA backends
+also have different coverage; [shared-threshold results](mambo-confidence-thresholds.md#tta-backend-threshold-sensitivity)
+show closely aligned predictions.
 
 ## Threshold zero
 
@@ -80,14 +67,12 @@ shows closely aligned backend predictions.
 
 ## Coverage, complete results and reproduction
 
-Truncating the averaging domain does not change which images the pipeline accepts.
-The [CSV](assets/mambo-tail-metrics.csv) retains overall acceptance coverage, the
-number of truth images and accepted predictions belonging to retained classes,
-and macro accuracy/precision/recall/F1. These support counts are not interchangeable
-with acceptance coverage. Positive cutoffs include both common-class and per-model class sets;
-use the common sets for truncated comparisons. The >−1 baseline includes only
-per-model sets, preserving all original class groups. The [JSON](assets/mambo-tail-metrics.json)
-additionally records every retained class ID. Empty class domains produce null metrics.
+The [CSV](assets/mambo-tail-metrics.csv) retains macro accuracy/precision/recall/F1,
+overall acceptance coverage, and truth-image/accepted-prediction counts within
+retained classes. Those support counts are not acceptance coverage. Positive
+cutoffs include common and per-model domains; these tables use common domains.
+The baseline remains per-model. The [JSON](assets/mambo-tail-metrics.json) also
+records every class ID; empty domains yield null metrics.
 
 ```sh
 /path/to/pinned-metrics-env/bin/python -m dev.releases.mambo_v3.tail_report \
@@ -97,5 +82,4 @@ additionally records every retained class ID. Empty class domains produce null m
 
 [The collector](../dev/releases/mambo_v3/tail_report.py) verifies source hashes and
 reporting-partition identity, uses public per-class calls and the pinned package's
-`_aggregate_groups` implementation, and retains the original thresholds. No deployment
-default or existing headline metric is changed.
+`_aggregate_groups` implementation, and retains the original thresholds.

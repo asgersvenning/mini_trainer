@@ -64,7 +64,9 @@ Full support / >5 values use the same reporting rows. >5 requires truth and acce
 
 Machine-readable [metrics](assets/mambo-indomain-tail.csv), [thresholds and split identities](assets/mambo-indomain-thresholds.json), and [class domains](assets/mambo-indomain-support.json) retain provenance and supplementary metrics. Thresholds are dataset-specific evidence, not new deployment defaults.
 
-## HPC timing boundaries
+## Historical HPC timing boundaries
+
+The latest V3 B200 timings are in the [current HPC evidence](mambo-hpc-evidence.md). The observations below predate the pipeline improvements.
 
 The EPYC 9655/B200 campaign retains 3 fresh-process trials per variant/device, 7 request observations per cell and 3 streaming observations per cell. Global and northern-Europe timing presets are available. CPU runtime threads: 4; streaming preparation workers: 48; readers: 256. Request, streaming and prepared-input diagnostics have different boundaries; do not pool them. The short streaming bank contains 1,024 images and includes pipeline startup. Prepared-input diagnostics exclude decoding/hierarchy reduction but include transfers, and remain supplementary.
 

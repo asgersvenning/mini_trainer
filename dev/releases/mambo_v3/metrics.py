@@ -27,14 +27,19 @@ def finite_json(value):
     return value
 
 
-def measure(source):
-    from mini_metrics.data import MetricDF
-    from mini_metrics.metrics import evaluate_file
-
+def require_pinned_metrics():
+    """Reject metric environments without the campaign's recorded Git revision."""
     distribution = importlib.metadata.distribution("mini_metrics")
     provenance = json.loads(distribution.read_text("direct_url.json") or "{}")
     if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
         raise ValueError(f"Require mini_metrics git revision {REVISION} in a separate environment")
+
+
+def measure(source):
+    from mini_metrics.data import MetricDF
+    from mini_metrics.metrics import evaluate_file
+
+    require_pinned_metrics()
     data = MetricDF.from_source(source)
     if np.any(data.threshold != 0) or not np.isfinite(data.confidence).all():
         raise ValueError("Evaluation requires finite, unthresholded predictions")

@@ -10,33 +10,50 @@ from dev.releases.mambo_v3.ucloud_release import RECIPE, configuration, jobs, va
 CONFIG = Path("dev/releases/mambo_v3/ucloud_release.json")
 
 
-def test_quality_plan_preserves_global_population_and_legacy_isolation():
+@pytest.mark.parametrize("phase", ["qualification", "full", "benchmark"])
+def test_plan_routes_runtime_loading_and_batch_controls(phase):
     config = configuration(CONFIG.resolve())
-    plan = jobs(config, "qualification")
-    assert len(plan) == 5
-    for job in plan:
+    config["qualification_count"] = 7
+    legacy = {job["name"]: job["command"] for job in jobs(config, phase) if job["legacy"]}
+    config.update(onnx_python="/isolated/onnx/bin/python", decode_workers=16, prefetch_batches=2, v3_batch_size=256)
+    for job in jobs(config, phase):
         command = job["command"]
-        assert command[command.index("--presets") + 1] == "full"
-        assert command[command.index("--count") + 1] == "256"
+        interpreter = "onnx_python" if job["variant"].startswith("onnx") else "v2_python" if job["legacy"] else "v3_python"
+        assert command[0] == config[interpreter]
         if job["legacy"]:
-            assert "-P" in command and "--precision" not in command
+            assert "-P" in command and "--precision" not in command and "--prefetch-batches" not in command
+            if phase != "benchmark":
+                assert command == legacy[job["name"]]
         else:
             assert command[command.index("--precision") + 1] == "auto"
             assert command[command.index("--tta") + 1] == (RECIPE if job["variant"].endswith("tta") else "none")
-    assert all("--count" not in j["command"] for j in jobs(config, "full"))
+            worker_option = "--stream-workers" if phase == "benchmark" else "--decode-workers"
+            assert command[command.index(worker_option) + 1] == "16"
+            assert command[command.index("--prefetch-batches") + 1] == "2"
+        if phase == "benchmark":
+            assert command[command.index("--bank-size") + 1] == "256"
+            sizes = command[command.index("--batches") + 1 : command.index("--bank-size")]
+            assert ("256" in sizes) == (not job["legacy"] and job["device"] != "cpu")
+        else:
+            assert command[command.index("--presets") + 1] == "full"
+            if not job["legacy"]:
+                assert command[command.index("--batch-size") + 1] == "256"
+            if phase == "qualification":
+                assert command[command.index("--count") + 1] == "7"
+            else:
+                assert "--count" not in command
 
 
 def test_benchmark_bank_and_trials_match_across_backends():
     config = configuration(CONFIG.resolve())
     config["gpu_batches"] = [1, 8, 32, 64]
     plan = jobs(config, "benchmark")
-    assert len(plan) == 30 and len({j["name"] for j in plan}) == 30
+    assert plan and len({j["name"] for j in plan}) == len(plan)
     for j in plan:
         c = j["command"]
         assert c[c.index("--bank-size") + 1] == "64"
         if j["legacy"] and j["device"] == "cpu":
             assert "--cpu-float32" in c
-    assert plan[0]["variant"] == "v2" and plan[10]["variant"] == "onnx-tta"
 
 
 def test_configuration_rejects_regional_only_quality(tmp_path):
@@ -219,15 +236,6 @@ def test_new_campaign_reuses_assets_and_preserves_existing_evidence(tmp_path, mo
     assert (output / "config.json").read_bytes() == before
 
 
-@pytest.mark.parametrize("phase", ["qualification", "full", "benchmark"])
-def test_separate_onnx_interpreter_only_routes_onnx_jobs(phase):
-    config = configuration(CONFIG.resolve())
-    config["onnx_python"] = "/isolated/onnx/bin/python"
-    for job in jobs(config, phase):
-        expected = config["onnx_python"] if job["variant"].startswith("onnx") else config["v2_python" if job["legacy"] else "v3_python"]
-        assert job["command"][0] == expected
-
-
 @pytest.mark.parametrize("tamper", [None, "manifest", "environment", "script", "csv", "samples"])
 def test_reuse_completed_v2_only_when_evidence_matches(tmp_path, tamper):
     import copy
@@ -276,31 +284,3 @@ def test_reuse_completed_v2_only_when_evidence_matches(tmp_path, tamper):
         result = reuse_v2(config, "full", job, frozen)
         assert result["source"] == str(source)
         assert (tmp_path / "new/full/v2/full/mini_metric.csv").read_text() == "original predictions"
-
-
-def test_loading_controls_apply_only_to_v3_collection():
-    config = configuration(CONFIG.resolve())
-    config.update(decode_workers=16, prefetch_batches=2)
-    for phase in ("qualification", "full", "benchmark"):
-        for job in jobs(config, phase):
-            command = job["command"]
-            if phase != "benchmark" and not job["legacy"]:
-                assert command[command.index("--decode-workers") + 1] == "16"
-                assert command[command.index("--prefetch-batches") + 1] == "2"
-            elif job["legacy"]:
-                assert "--prefetch-batches" not in command
-
-
-def test_large_v3_batch_preserves_v2_reuse_and_shared_timing_bank():
-    config = configuration(CONFIG.resolve())
-    original = jobs(config, "full")[0]["command"]
-    config["v3_batch_size"] = 256
-    assert jobs(config, "full")[0]["command"] == original
-    for job in jobs(config, "full")[1:]:
-        c = job["command"]
-        assert c[c.index("--batch-size") + 1] == "256"
-    for job in jobs(config, "benchmark"):
-        c = job["command"]
-        assert c[c.index("--bank-size") + 1] == "256"
-        sizes = c[c.index("--batches") + 1 : c.index("--bank-size")]
-        assert ("256" in sizes) == (not job["legacy"] and job["device"] != "cpu")

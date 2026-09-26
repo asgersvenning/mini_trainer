@@ -5,18 +5,16 @@ from collections import Counter
 
 
 def prior_logit_adjustment(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> list[float]:
-    """Computes dimension-independent biases based on Bayesian Logit Adjustment.
-    Formula: b_i = -C * log(K * p_i)
+    """Return mean-centered biases from b_i = -C * log(K * p_i).
 
-    Ref: https://arxiv.org/abs/2007.07314
+    Frequencies are clamped below by eps before taking logs.
+    Reference: https://arxiv.org/abs/2007.07314
     """
     total_samples = sum(counts)
     ncls = len(counts)
 
     biases = [-C * math.log(ncls * max(c / total_samples, eps)) for c in counts]
 
-    # Optional but recommended: Center the biases so their mean is 0.
-    # This keeps the initial Softmax logits numerically stable.
     mean_bias = sum(biases) / ncls
     centered_biases = [b - mean_bias for b in biases]
 
@@ -24,15 +22,14 @@ def prior_logit_adjustment(counts: list[int], C: float = 1.0, eps: float = 1e-7)
 
 
 def prior_ldam_shift(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> list[float]:
-    """Computes dimension-independent biases using LDAM generalization bounds.
-    Formula: b_i = C * (N_i^{-1/4} - N_max^{-1/4})
+    """Return mean-centered biases from C * (N_i**(-1/4) - N_max**(-1/4)).
 
-    Ref: https://arxiv.org/abs/1906.07413
+    Counts are clamped below by eps in the first term.
+    Reference: https://arxiv.org/abs/1906.07413
     """
     n_max = max(counts)
     biases = [C * ((max(c, eps) ** -0.25) - (n_max**-0.25)) for c in counts]
 
-    # Again, centering helps network initialization stability
     mean_bias = sum(biases) / len(biases)
     centered_biases = [b - mean_bias for b in biases]
 
@@ -40,13 +37,10 @@ def prior_ldam_shift(counts: list[int], C: float = 1.0, eps: float = 1e-7) -> li
 
 
 def prior_scratch(counts: list[int], **kwargs):
-    """Computes dimension-independent biases using Z-scored negative log-frequencies.
-    Formula: b_i = -(log(N_i) - mu) / sigma
+    """Return negative standardized log-counts (sample standard deviation).
 
-    Note: This is an experimental ad-hoc method. It standardizes the log-counts
-    to have a mean of 0 and a variance of 1. While it correctly penalizes majority
-    classes, it can become numerically unstable if the dataset is perfectly balanced
-    (sigma approaches 0) and maps zero-counts to the same value as singletons (since log(1) == 0).
+    Experimental: zero counts map to log(1), and equal log-counts or a single
+    class cause division by zero.
     """
     prior = [math.log(c) if c > 0 else 0 for c in counts]
     pmu = sum(prior) / len(prior)

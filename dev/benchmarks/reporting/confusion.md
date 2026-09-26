@@ -1,85 +1,64 @@
 # Whole-matrix confusion diagnostics
 
-Confusion figures retain every model output index on both axes, including
-prediction-only and unobserved classes, in the same order across epochs. Rows
-are true classes and columns are predicted classes. Class names can be resolved
-from the saved model/config classifier metadata. No taxonomy regrouping or
-selected-pair view replaces the full matrix.
-
-The specialized reporting logic lives in `mini_trainer/logging/confusion.py`:
-rank reduction, whole-matrix overviews, palette encoding and numerical artifacts.
-The existing `visualization/plot.py` retains generic heatmap/colorbar rendering;
-its byte-color mapping now uses bounded chunks with regression checks against
-the previous RGB pixels. No new runtime dependencies or background service are
-introduced.
+Confusion figures keep every model output index on both axes, including
+prediction-only and unobserved classes. Rows are truth and columns predictions;
+resolve names from saved classifier metadata. Class order stays fixed across epochs.
+[logging/confusion.py](../../../mini_trainer/logging/confusion.py) owns distributed
+reduction, previews and numerical artifacts; generic heatmaps remain in
+`visualization/plot.py`.
 
 ## Dashboard images and local detail
 
-TensorBoard/W&B receive RGB previews with a matrix side of at most 1,536 pixels,
-plus a 200-pixel legend and a 24-pixel caption. Each preview covers the entire
-matrix. For N classes its block width is `ceil(N / 1536)`; a preview cell is the
-arithmetic mean of the row-normalized probabilities in that block. Partial edge
-blocks use their actual cell counts. This is an overview of probabilities, not
-an aggregated or renormalized confusion matrix. The caption, `/overview_mean`
-tag and metadata explicitly identify the reduction. Small images enlarge with
-nearest-neighbor sampling; there are no cell borders or spatial smoothing.
-Isolated errors may become less visible in the mean overview; native-resolution
-images and numerical matrices retain them.
+TensorBoard/W&B receive an RGB whole-matrix preview with at most 1,536 cells per
+side, plus a legend and caption. For N classes, block width is `ceil(N / 1536)`.
+Each preview cell is the arithmetic mean of row-normalized probabilities in its
+block; edge blocks use their actual counts. This is not a regrouped or renormalized
+confusion matrix. The `/overview_mean` tag and metadata identify the reduction.
+Small previews enlarge with nearest-neighbor sampling. Means may obscure isolated
+errors; full-resolution images and numerical data retain them.
 
-Soft images use 128 positive logarithmic color levels over probabilities
-`[1e-6, 1]`, plus dedicated black zero and magenta invalid/negative colors. Values
-below the positive floor use the lowest positive color, never the zero color.
-Hard images retain the 256-color magma mapping on the same fixed scale. Scales
-remain comparable across epochs. Posterization changes displayed colors only;
-raw values are retained. The full soft PNG is indexed (palette mode), without
-dithering. The matching discrete colorbar is saved separately, so its text does
-not expand the matrix palette. Dashboard previews include the legend.
+Both palettes use a fixed logarithmic `[1e-6, 1]` probability scale across epochs:
+soft images have 128 positive levels; hard images use 256-color magma. Black means
+exact zero, magenta means invalid/negative, and positive values below the floor
+use the lowest positive color. Soft PNGs use an indexed palette without dithering.
+Rendering does not change raw values; a separate colorbar preserves the matrix palette.
 
-Each epoch saves the following under
-`model/logs/figures/epoch-NNNN/Confusion_matrix_lvlL/` and
-`Soft_confusion_matrix_lvlL/`:
+Each epoch writes beneath `model/logs/figures/epoch-NNNN/Confusion_matrix_lvlL/`
+and `Soft_confusion_matrix_lvlL/`:
 
-- `matrix.png`: one pixel per original class pair, without the old 5,000-class
-  maximum-pooling limit. The separate colorbar does not change matrix dimensions.
-- `counts.npz` for hard matrices: exact integer COO arrays `rows`, `columns`,
-  `counts`, plus `shape`. Absent entries are zero.
-- `probability_sums.npy` for soft matrices: the original accumulated float32
-  probability sums, before normalization, clipping or posterization.
-- `row_support.npy`: hard true-label counts or the soft row probability mass
-  used for normalization. Empty rows remain zero.
-- `metadata.json`: original class indices, orientation, normalization, palette,
-  invalid-cell count and preview block shape; and `colorbar.png`.
+| Artifact | Meaning |
+| --- | --- |
+| `matrix.png` | One pixel per original class pair, with no class-count pooling limit |
+| `counts.npz` (hard) | Exact integer COO `rows`, `columns`, `counts` and `shape`; omitted entries are zero |
+| `probability_sums.npy` (soft) | Accumulated float32 sums before normalization, clipping or palette mapping |
+| `row_support.npy` | Hard truth counts or soft row probability mass used for normalization; empty rows stay zero |
+| `metadata.json` | Class indices, orientation, normalization, palette, invalid-cell count and preview block shape |
+| `colorbar.png` | Matching legend, also included in dashboard previews |
 
-The soft NPY is deliberately uncompressed to avoid spending logging time
-compressing high-entropy floats. It is about 100 MB for 5,000 classes and 400 MB
-for 10,000 classes per saved epoch/level. Local storage therefore increases even
-though dashboard traffic decreases. NumPy can inspect it with `mmap_mode='r'`.
-Storage throughput on the production filesystem needs qualification. Accumulation
-and exact matrix storage still scale quadratically with class count. Full-size
-PNGs remain large decoded images; the bounded preview is what protects dashboard
-responsiveness. This increment does not add a tile server or custom viewer.
+Soft sums are uncompressed to avoid compression cost during logging: about 100 MB
+at 5,000 classes or 400 MB at 10,000, per saved epoch/level. Inspect with NumPy
+`mmap_mode='r'`. Accumulation/storage remain quadratic, and full PNGs are large when
+decoded. Bounded previews reduce dashboard traffic; production storage throughput
+still needs qualification.
 
 ## Distributed reporting
 
-Every rank participates in confusion collection. Small shape descriptors allow
-even a rank with no validation samples to participate; count and probability
-matrices are summed onto rank zero in bounded chunks. NCCL uses temporary CUDA
-chunks rather than placing the entire matrix on the GPU. Only rank zero renders,
-writes artifacts and forwards preview images. Soft accumulation buffers are not
-mutated, so repeated reporting does not double counts. Counts include validation
-sampler padding, matching the samples actually reported; sample-ID deduplication
-is outside this change.
+All ranks participate, including ranks without validation samples. Shape descriptors
+coordinate bounded reductions onto rank zero; NCCL uses temporary CUDA chunks.
+Only rank zero renders, writes and forwards images. Soft buffers remain unchanged
+across repeated reports. Counts include validation sampler padding; no sample-ID
+deduplication is performed.
 
-CPU two-process tests cover an empty rank, prediction-only classes and repeated
-collection. CUDA/NCCL and live TensorBoard/W&B uploads remain target-job checks.
+[CPU two-process tests](../../../tests/logging/test_confusion.py) cover an empty
+rank, prediction-only classes and repeated collection. CUDA/NCCL and live dashboard
+uploads require target-job checks.
 
 ## Reproduce rendering measurements
 
-The benchmark uses seeded dense soft probabilities with 20 large diagonal blocks
-and a diagonal signal. Timing includes normalization, image rendering and file
-writes. The new path also writes the exact matrix and full-resolution PNG, which
-the old path did not retain. RSS includes imports and the input matrix; it is not
-training's peak memory. Run each case in a fresh process:
+The seeded workload has dense soft probabilities, 20 diagonal blocks and a diagonal
+signal. Timing includes normalization, rendering and file writes; the new path also
+saves exact data and full-resolution PNGs absent from the old path. RSS includes
+imports and inputs. Use a fresh process and output directory for each case:
 
 ```bash
 git show d521cef:mini_trainer/visualization/plot.py > /tmp/heatmap-before.py
@@ -92,31 +71,29 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLBACKEND=Agg \
 # Repeat with --classes 10000 and new output directories.
 ```
 
-Representative local CPU results (decimal MB for file sizes):
+Recorded local CPU results (decimal MB for file sizes):
 
 | Classes | Old/new seconds | Old/new peak RSS MiB | Old/new dashboard PNG MB |
 | --- | ---: | ---: | ---: |
 | 5,000 | 9.58 / 2.77 | 2,994 / 907 | 47.18 / 1.34 |
 | 10,000 | 12.12 / 6.62 | 3,236 / 1,258 | 33.00 / 1.11 |
 
-The new full-resolution soft PNGs are 15.78 MB and 62.67 MB respectively. The old
-10,000-class dashboard was already pooled to 5,000 cells per side; the new local
-PNG preserves all 10,000. These are synthetic, host-specific measurements,
-excluding distributed reduction and remote dashboard upload.
+New full-resolution soft PNGs occupy 15.78 and 62.67 MB respectively. The old
+10,000-class dashboard was pooled to 5,000 cells per side; new local PNGs preserve
+all classes. These synthetic host-specific measurements exclude distributed
+reduction and remote upload, and do not establish training peak memory.
 
-The existing browser benchmark also accepts PNGs. With the disposable browser
-environment described in [dendrogram.md](dendrogram.md), run:
+For PNG browser measurements, use the disposable environment in
+[dendrogram.md](dendrogram.md):
 
 ```bash
 /tmp/svg-browser-env/bin/python dev/benchmarks/reporting/svg_browser.py \
     /tmp/confusion-before/dashboard.png /tmp/confusion-after/dashboard.png \
-    --output /tmp/confusion-browser
+    --repeats 3 --output /tmp/confusion-browser
 ```
 
-For the final 5,000-class dashboard PNGs, headless Chromium's median decode plus
-forced raster time (three interleaved runs per image/size, fresh contexts) was
-1,132 ms before versus 52.6 ms after at a 1,200-pixel display, and 1,242 ms versus
-170 ms at 4,800 pixels. This compares the old large dashboard image with the new
-captioned whole-matrix preview; it does not imply that the full-resolution local
-PNG is cheap to display. Timings exclude Python/browser startup, network transfer
-and PNG encoding. Live TensorBoard/W&B end-to-end performance was not measured.
+At 5,000 classes, headless Chromium's median decode plus forced raster time was
+1,132 / 52.6 ms (old/new) at 1,200 pixels and 1,242 / 170 ms at 4,800 pixels.
+These were three interleaved trials per image/size in fresh contexts, comparing the
+old dashboard with the new captioned preview. Startup, network and PNG encoding
+are excluded. This does not measure full-resolution PNG or live dashboard performance.

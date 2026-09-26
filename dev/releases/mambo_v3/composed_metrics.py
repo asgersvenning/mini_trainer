@@ -2,7 +2,6 @@
 
 import argparse
 import csv
-import importlib.metadata
 import json
 from collections import Counter
 from pathlib import Path
@@ -12,7 +11,7 @@ import numpy as np
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.composed_full import SHORTLIST
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
 from dev.releases.mambo_v3.tail_report import eligible_classes
 from dev.releases.mambo_v3.threshold_report import identity
 
@@ -26,9 +25,7 @@ def collect(args):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import MacroAccuracy, MacroF1, MacroPrecision, MacroRecall, OptimalConfidenceThreshold, evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json"))
-    if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
-        raise ValueError("Require pinned mini_metrics")
+    require_pinned_metrics()
     args.output.mkdir(parents=True, exist_ok=True)
     baseline = json.loads(args.baseline.read_text())
     sources = {model: row["source"] for model, row in baseline["models"].items()}

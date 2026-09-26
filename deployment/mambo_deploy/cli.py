@@ -2,6 +2,9 @@
 
 import argparse
 import csv
+import json
+import tempfile
+from contextlib import closing
 from pathlib import Path
 
 import numpy as np
@@ -51,6 +54,11 @@ def run(default_backend="onnx", default_device="cpu"):
             if path.is_dir()
             else [path]
         )
+    destination = args.output / args.name
+    if destination.exists():
+        parser.error(f"Output already exists: {destination}; choose a new --name")
+    if not paths:
+        parser.error("No images found")
     predictor = Predictor(
         args.bundle,
         backend=args.backend,
@@ -64,14 +72,6 @@ def run(default_backend="onnx", default_device="cpu"):
         tta=args.tta,
         preprocess_workers=args.preprocess_workers,
     )
-    result = predictor.predict_with_embeddings(paths, args.topk) if args.embeddings else predictor.predict(paths, args.topk)
-    if args.embeddings:
-        result, embeddings = result
-    destination = args.output / args.name
-    destination.mkdir(parents=True, exist_ok=False)
-    result.save(destination / "predictions.json")
-    if args.embeddings:
-        np.save(destination / "embeddings.npy", embeddings, allow_pickle=False)
     columns = [
         "instance_id",
         "filename",
@@ -87,31 +87,68 @@ def run(default_backend="onnx", default_device="cpu"):
     full_labels = predictor.bundle.classes["labels"]
     species_index = {label: i for i, label in enumerate(full_labels[0])}
     parents = predictor.bundle.classes["parents"]
-    with (destination / "mini_metric.csv").open("w", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(columns)
-        for i, path in enumerate(paths):
-            truth = [path.parent.name, "", ""]
-            if truth[0] in species_index:
-                genus = parents[0][species_index[truth[0]]]
-                truth[1:] = [full_labels[1][genus], full_labels[2][parents[1][genus]]]
-            for rank in range(3):
-                label = result.labels[i][0][rank]
-                confidence = float(result.confidence[i, 0, rank])
-                known = truth[rank] in result.cls2idx[str(rank)]
-                made = confidence >= args.threshold
-                writer.writerow(
-                    [
-                        i,
-                        str(path),
-                        rank,
-                        truth[rank],
-                        label,
-                        confidence,
-                        args.threshold,
-                        int(known),
-                        int(made),
-                        (1 if label == truth[rank] else -1) if made else 0,
-                    ]
-                )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Publish only a complete request. Failures leave no plausible final results.
+    with tempfile.TemporaryDirectory(prefix=".mambo-results-", dir=destination.parent) as temporary:
+        output = Path(temporary) / "results"
+        output.mkdir()
+        with (
+            (output / "mini_metric.csv").open("w", newline="") as stream,
+            (output / "predictions.json").open("w") as predictions,
+            closing(predictor.predict_stream(paths, topk=args.topk, embeddings=args.embeddings)) as batches,
+        ):
+            writer = csv.writer(stream)
+            writer.writerow(columns)
+            offset, vectors = 0, None
+            try:
+                for batch in batches:
+                    result, embedding = batch if args.embeddings else (batch, None)
+                    if offset == 0:
+                        predictions.write('{"metadata": ' + json.dumps(result.metadata))
+                        predictions.write(', "config": ' + json.dumps({"topk": result.topk, "cls2idx": result.cls2idx}))
+                        predictions.write(', "results": [')
+                        if embedding is not None:
+                            vectors = np.lib.format.open_memmap(
+                                output / "embeddings.npy", mode="w+", dtype=np.float32, shape=(len(paths), embedding.shape[1])
+                            )
+                    for i, record in enumerate(result.to_dict()):
+                        if offset + i:
+                            predictions.write(",")
+                        predictions.write(json.dumps(record))
+                        path = paths[offset + i]
+                        truth = [path.parent.name, "", ""]
+                        if truth[0] in species_index:
+                            genus = parents[0][species_index[truth[0]]]
+                            truth[1:] = [full_labels[1][genus], full_labels[2][parents[1][genus]]]
+                        for rank in range(3):
+                            label = result.labels[i][0][rank]
+                            confidence = float(result.confidence[i, 0, rank])
+                            known = truth[rank] in result.cls2idx[str(rank)]
+                            made = confidence >= args.threshold
+                            writer.writerow(
+                                [
+                                    offset + i,
+                                    str(path),
+                                    rank,
+                                    truth[rank],
+                                    label,
+                                    confidence,
+                                    args.threshold,
+                                    int(known),
+                                    int(made),
+                                    (1 if label == truth[rank] else -1) if made else 0,
+                                ]
+                            )
+                    if vectors is not None:
+                        vectors[offset : offset + len(result)] = embedding
+                    offset += len(result)
+                if offset != len(paths):
+                    raise RuntimeError(f"Incomplete prediction: {offset}/{len(paths)} images")
+                predictions.write("]}")
+            finally:
+                if vectors is not None:
+                    vectors.flush()
+                    # Release the mapping before directory publication on Windows.
+                    del vectors
+        output.rename(destination)
     print(destination)

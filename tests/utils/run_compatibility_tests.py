@@ -84,7 +84,6 @@ def run_integration_test(model_name: str, online: bool, temp_dir: str) -> tuple[
     os.makedirs(os.path.join(input_dir, "class_a"), exist_ok=True)
     os.makedirs(os.path.join(input_dir, "class_b"), exist_ok=True)
 
-    # Configure model_args
     model_args: dict[str, Any] = {"pretrained": False}
     if not online:
         model_args["local_files_only"] = True
@@ -114,7 +113,6 @@ def run_integration_test(model_name: str, online: bool, temp_dir: str) -> tuple[
             "seed": 42,
         }
 
-        # Redirect standard output/error to silence train prints
         sys.stdout.flush()
         sys.stderr.flush()
 
@@ -363,36 +361,26 @@ def main_cli():
                 print(f"    - {m}")
             print("-" * 60)
 
-        # Print blacklist updates
-        if not args.dry_run:
-            if added_to_blacklist or removed_from_blacklist:
-                print("Blacklist Updates:")
-                if added_to_blacklist:
-                    print("  Added to blacklist:")
-                    for m in sorted(added_to_blacklist):
-                        print(f"    - {m}")
-                if removed_from_blacklist:
-                    print("  Removed from blacklist:")
-                    for m in sorted(removed_from_blacklist):
-                        print(f"    - {m}")
-            else:
-                print("No blacklist changes detected.")
-            print("-" * 60)
-            # Save results once more to be safe
-            save_results(results)
-        else:
+        if args.dry_run:
             print("Dry-run mode: blacklist updates and result caching were skipped.")
             if added_to_blacklist or removed_from_blacklist:
                 print("Pending Blacklist Updates (if run without --dry-run):")
-                if added_to_blacklist:
-                    print("  Would add to blacklist:")
-                    for m in sorted(added_to_blacklist):
-                        print(f"    - {m}")
-                if removed_from_blacklist:
-                    print("  Would remove from blacklist:")
-                    for m in sorted(removed_from_blacklist):
-                        print(f"    - {m}")
-            print("-" * 60)
+        elif added_to_blacklist or removed_from_blacklist:
+            print("Blacklist Updates:")
+        else:
+            print("No blacklist changes detected.")
+
+        headings = (
+            ("Would add to blacklist", "Would remove from blacklist") if args.dry_run else ("Added to blacklist", "Removed from blacklist")
+        )
+        for heading, models in zip(headings, (added_to_blacklist, removed_from_blacklist), strict=True):
+            if models:
+                print(f"  {heading}:")
+                for model in sorted(models):
+                    print(f"    - {model}")
+        print("-" * 60)
+        if not args.dry_run:
+            save_results(results)
 
 
 if __name__ == "__main__":

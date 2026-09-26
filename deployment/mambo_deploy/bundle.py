@@ -5,15 +5,16 @@ import json
 import os
 from pathlib import Path
 
-from .download import fetch_file
+from .download import cached_model_file
 
 
 class Bundle:
     def __init__(self, root, *, download=False):
         self.download = download
         self.root = Path(root).expanduser().resolve()
-        with (self.root / "release.json").open() as stream:
-            self.manifest = json.load(stream)
+        manifest_bytes = (self.root / "release.json").read_bytes()
+        self.manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+        self.manifest = json.loads(manifest_bytes)
         if self.manifest.get("schema") != "mambo-release-v1":
             raise ValueError("Unsupported MAMBO bundle schema")
         if self.manifest.get("score_semantics") != "hierarchical-leaf-logits-logsumexp-v1":
@@ -42,7 +43,13 @@ class Bundle:
             raise ValueError(f"Unlisted bundle file: {relative}")
         if relative not in self._verified:
             if not path.exists() and self.download and relative in self.manifest.get("origins", {}):
-                fetch_file(self.manifest["origins"][relative], path, **item, offline=os.environ.get("MAMBO_OFFLINE") == "1")
+                cached_model_file(
+                    self.manifest["origins"][relative],
+                    path,
+                    cache=self.root.parent,
+                    **item,
+                    offline=os.environ.get("MAMBO_OFFLINE") == "1",
+                )
             if path.stat().st_size != item["size"]:
                 raise ValueError(f"Bundle size mismatch: {relative}")
             with path.open("rb") as stream:

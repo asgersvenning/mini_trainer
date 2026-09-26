@@ -2,15 +2,13 @@ import inspect
 import types
 from collections.abc import Callable, Iterable
 from functools import wraps
-from typing import Annotated, Any, Concatenate, ParamSpec, TypeVar, cast, get_args, get_origin, get_type_hints, overload
+from typing import Annotated, Any, Concatenate, ParamSpec, Union, cast, get_args, get_origin, get_type_hints, overload
 
 from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import thread_map as _thread_map
 
 from mini_trainer import get_logger
 
-X = TypeVar("X")  # input value
-R = TypeVar("R")  # return value
 P = ParamSpec("P")
 
 
@@ -27,22 +25,10 @@ def first_arg_base_types(fn):  # noqa: D103
             t = get_args(t)[0]
         return t
 
-    def base(t):
-        t = strip_annotated(t)
-        o = get_origin(t)
-        return o or t
-
-    def flatten_union(t):
-        t = strip_annotated(t)
-        o = get_origin(t)
-        if o in (types.UnionType, getattr(types, "NoneType", type(None)), None):
-            pass
-        if o is types.UnionType or o is getattr(__import__("typing"), "Union"):
-            return [base(x) for x in get_args(t)]
-        return [base(t)]
-
-    out = flatten_union(ann)
-    return list(dict.fromkeys(out))
+    ann = strip_annotated(ann)
+    members = get_args(ann) if get_origin(ann) in (types.UnionType, Union) else (ann,)
+    bases = (get_origin(t) or t for t in map(strip_annotated, members))
+    return list(dict.fromkeys(bases))
 
 
 def thread_map[X, R](func: Callable[[X], R], it: Iterable[X], **kwargs: Any) -> list[R]:

@@ -89,7 +89,7 @@ class Predictor:
             expected = self.bundle.manifest["files"][self.bundle.manifest["profiles"]["torch"]["model"]]["sha256"]
             if digest != expected:
                 raise ValueError("Local weights must match the pinned release checkpoint")
-        self.preset = self._preset_name(model or ("full" if weights is not None else "europe"))
+        self.preset = self._preset_name(model or "full")
         if class_list is not None:
             self._select_labels(self._read_list(class_list))
             self.preset = "custom"
@@ -169,7 +169,7 @@ class Predictor:
         try:
             import onnxruntime as ort
         except ImportError as error:
-            raise ImportError("Install mambo-deploy[onnx], or onnxruntime-gpu for CUDA") from error
+            raise ImportError("Install mambo-v3[onnx], or onnxruntime-gpu for CUDA") from error
         return ort
 
     @cached_property
@@ -420,15 +420,23 @@ class Predictor:
                 labels,
                 mappings,
                 topk,
-                model_id=self.bundle.manifest["model_id"],
-                backend=self.backend,
-                preset=self.preset,
-                class_list_sha256=self.class_list_sha256,
-                precision=self.effective_precision,
-                tta=self.tta.name if self.tta else "none",
-                tta_views=len(self.tta.transforms) if self.tta else 1,
+                **self._prediction_metadata(),
             )
             return (result, np.concatenate(embedding_batches)) if embeddings else result
+
+    def _prediction_metadata(self):
+        return dict(
+            model_id=self.bundle.manifest["model_id"],
+            artifact_revision=self.bundle.manifest.get("artifact_revision"),
+            bundle_sha256=self.bundle.manifest_sha256,
+            preprocessing_id=self.bundle.preprocessing["id"],
+            backend=self.backend,
+            preset=self.preset,
+            class_list_sha256=self.class_list_sha256,
+            precision=self.effective_precision,
+            tta=self.tta.name if self.tta else "none",
+            tta_views=len(self.tta.transforms) if self.tta else 1,
+        )
 
     def predict(self, x, topk=1):
         return self._predict(x, topk=topk)
@@ -447,7 +455,7 @@ class Predictor:
         topk=1,
         read_workers=32,
         prepare_workers=None,
-        read_window=128,
+        read_window=None,
         prefetch_batches=2,
         encoded_budget=256 * 1024**2,
         stats=None,
@@ -464,7 +472,7 @@ class Predictor:
             device_prefetch=device_prefetch,
             read_workers=read_workers,
             prepare_workers=self.preprocess_workers if prepare_workers is None else prepare_workers,
-            read_window=read_window,
+            read_window=max(128, self.batch_size) if read_window is None else read_window,
             prefetch_batches=prefetch_batches,
             encoded_budget=encoded_budget,
             stats=stats,
@@ -484,15 +492,7 @@ class Predictor:
                     worker.submit(
                         resolve,
                         self.hierarchy_plan(self.selected),
-                        dict(
-                            model_id=self.bundle.manifest["model_id"],
-                            backend=self.backend,
-                            preset=self.preset,
-                            class_list_sha256=self.class_list_sha256,
-                            precision=self.effective_precision,
-                            tta=self.tta.name if self.tta else "none",
-                            tta_views=len(views),
-                        ),
+                        self._prediction_metadata(),
                     )
                 if len(worker.pending) == 2:
                     yield worker.pop()

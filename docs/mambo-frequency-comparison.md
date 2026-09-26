@@ -1,7 +1,7 @@
 # Accuracy versus class frequency
 
-**Historical padded-scale TTA evidence.** The [deployment README](../deployment/README.md#release-comparison)
-contains the current rotation-and-padding default comparison.
+Single-view V2/V3 evidence. For the comparison including default TTA, see the
+[deployment README](../deployment/README.md#release-comparison).
 
 ![Macro accuracy by training and evaluation frequency](assets/mambo-frequency-accuracy.svg)
 

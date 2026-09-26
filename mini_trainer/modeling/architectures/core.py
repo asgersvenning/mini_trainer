@@ -10,6 +10,7 @@ from mini_trainer import get_logger
 
 
 def _read_blacklist():
+    """Use empty backend lists when the local blacklist is absent or unreadable."""
     json_path = os.path.join(os.path.dirname(__file__), "blacklist.json")
     if os.path.exists(json_path):
         try:
@@ -26,10 +27,7 @@ BLACKLIST = _read_blacklist()
 def resolve_embedding_dim(
     model: nn.Module, head_name: str, preprocess: Callable[[torch.Tensor], torch.Tensor], device: torch.device | None = None
 ) -> int:
-    """
-    Attempts to resolve the embedding dimension using fast structural checks.
-    Falls back to a dummy forward pass only if all structural checks fail.
-    """
+    """Infer feature width from model/head structure, falling back to a dummy pass."""
 
     # timm standard
     if hasattr(model, "num_features") and isinstance(model.num_features, int):
@@ -57,7 +55,7 @@ def resolve_embedding_dim(
 
 
 def _infer_via_dummy_pass(model: nn.Module, preprocess: Callable[[torch.Tensor], torch.Tensor], device: torch.device | None) -> int:
-    """The robust dummy pass fallback."""
+    """Infer feature width from a preprocessed 224-pixel dummy image."""
     if device is None:
         try:
             device = next(model.parameters()).device
@@ -90,7 +88,7 @@ def _infer_via_dummy_pass(model: nn.Module, preprocess: Callable[[torch.Tensor],
 
 class Preprocess:
     def __init__(self, transform=None, func=None):
-        """Hook torchvision preprocessing function with load image from file to tensor."""
+        """Decode image paths and apply the optional transform and postprocessor."""
         self.transform = transform
         self.func = func
 
@@ -117,7 +115,7 @@ class Preprocess:
 
 
 def module_output_dim(module: nn.Module):
-    """Finds the output dimension by looking for the last parameter and returning the right-most size."""
+    """Infer output width from the first dimension of the last non-scalar parameter."""
     for param in reversed(list(module.parameters())):
         if param.ndim > 0:
             return param.shape[0]
@@ -126,7 +124,7 @@ def module_output_dim(module: nn.Module):
 
 
 class WrappedEncoder(nn.Module):
-    """Barebones encoder wrapper."""
+    """Wrap an encoder method, caching trainability for inference-mode selection."""
 
     def __init__(self, encoder: nn.Module, encoder_method: str | None = None):  # noqa: D107
         super().__init__()
@@ -142,11 +140,11 @@ class WrappedEncoder(nn.Module):
         return self
 
     def get_extra_state(self):
-        """Standard PyTorch hook to save non-tensor state."""
+        """Retain the selected encoder method in checkpoints."""
         return {"encoder_method": self.encoder_method}
 
     def set_extra_state(self, state):
-        """Standard PyTorch hook to load non-tensor state."""
+        """Restore the encoder method, defaulting older checkpoints to forward."""
         if "encoder_method" in state:
             encoder_method = state["encoder_method"]
         else:
@@ -167,7 +165,7 @@ class WrappedEncoder(nn.Module):
 
 
 class BackboneModel(nn.Module):
-    """A barebones wrapper for arbitrary encoder-only modules."""
+    """Wrap an encoder with a replaceable linear classification head."""
 
     def __init__(self, encoder: nn.Module, encoder_method: str | None = None):  # noqa: D107
         super().__init__()
@@ -186,6 +184,7 @@ class BackboneModel(nn.Module):
 
 
 def infer_size_from_transform(transform: Any, fallback: int = 256, warn_on_fallback: bool = True) -> int:
+    """Infer preferred size from wrapper/crop/resize metadata, or return fallback."""
     if transform is not None:
         # Unwrap common wrapper attributes if present
         for attr in ("transform", "processor"):

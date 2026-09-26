@@ -64,18 +64,21 @@ def summarize(root, output):
             else:
                 banks.add(bank_identity(directory, r))
                 for c in r["cells"]:
+                    identity = {
+                        "environment_id": data["environment_id"],
+                        "variant": job["variant"],
+                        "device": job["device"],
+                        "trial": job["name"],
+                        "preset": c["preset"],
+                        "batch_size": c["batch_size"],
+                    }
                     if "streaming" in c:
                         stream = c["streaming"]
                         if len(stream["seconds"]) != 3 or any(v <= 0 for v in stream["seconds"]):
                             raise ValueError("Require three positive streaming observations")
                         data["streaming_speed"].append(
                             {
-                                "environment_id": data["environment_id"],
-                                "variant": job["variant"],
-                                "device": job["device"],
-                                "trial": job["name"],
-                                "preset": c["preset"],
-                                "batch_size": c["batch_size"],
+                                **identity,
                                 "images": stream["images"],
                                 "images_per_second": stream["images"] / statistics.median(stream["seconds"]),
                                 "seconds": stream["seconds"],
@@ -86,12 +89,7 @@ def summarize(root, output):
                         raise ValueError("Require seven positive completed observations")
                     data["speed"].append(
                         {
-                            "environment_id": data["environment_id"],
-                            "variant": job["variant"],
-                            "device": job["device"],
-                            "trial": job["name"],
-                            "preset": c["preset"],
-                            "batch_size": c["batch_size"],
+                            **identity,
                             "images_per_second": c["batch_size"] / statistics.median(seconds),
                             "seconds": seconds,
                             "peak_host_rss_mib": r["peak_rss_kib_linux"] / 1024,

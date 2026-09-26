@@ -407,31 +407,12 @@ wheels = [
 ]
 
 [[package]]
-name = "mambo-deploy"
-version = "0.3.0"
-source = { directory = "../../../../deployment" }
-dependencies = [
-    { name = "numpy" },
-    { name = "pillow" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mini-trainer", marker = "extra == 'torch'", specifier = ">=0.3.0" },
-    { name = "numpy", specifier = ">=2.4" },
-    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
-    { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], marker = "extra == 'onnx-cuda'", specifier = ">=1.21,<2" },
-    { name = "pillow", specifier = ">=11" },
-]
-provides-extras = ["onnx", "onnx-cuda", "torch"]
-
-[[package]]
 name = "mambo-ucloud-release"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "huggingface-hub" },
-    { name = "mambo-deploy" },
+    { name = "mambo-v3" },
     { name = "mini-metrics" },
     { name = "mini-trainer", extra = ["bioclip", "recommended", "timm"] },
     { name = "onnxruntime-gpu", extra = ["cuda", "cudnn"] },
@@ -445,7 +426,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "huggingface-hub", specifier = "==0.36.2" },
-    { name = "mambo-deploy", directory = "../../../../deployment" },
+    { name = "mambo-v3", directory = "../../../../deployment" },
     { name = "mini-metrics", git = "https://github.com/GuillaumeMougeot/mini_metrics.git?rev=70cc69adc05362863439277048e06386c1f885e1" },
     { name = "mini-trainer", extras = ["recommended", "bioclip", "timm"], directory = "../../../../" },
     { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], specifier = ">=1.27,<2" },
@@ -455,6 +436,25 @@ requires-dist = [
     { name = "torch", specifier = "==2.12.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchvision", specifier = "==0.27.0", index = "https://download.pytorch.org/whl/cu130" },
 ]
+
+[[package]]
+name = "mambo-v3"
+version = "0.3.0"
+source = { directory = "../../../../deployment" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pillow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mini-trainer", marker = "extra == 'torch'", specifier = ">=0.3.0,<0.4" },
+    { name = "numpy", specifier = ">=2.4" },
+    { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
+    { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], marker = "extra == 'onnx-cuda'", specifier = ">=1.21,<2" },
+    { name = "pillow", specifier = ">=11" },
+]
+provides-extras = ["onnx", "onnx-cuda", "torch"]
 
 [[package]]
 name = "markdown"

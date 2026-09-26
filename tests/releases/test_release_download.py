@@ -53,7 +53,7 @@ def test_packaged_metadata_and_automatic_predictor(tmp_path, monkeypatch):
     monkeypatch.setenv("MAMBO_CACHE", str(tmp_path))
     monkeypatch.setattr(download, "urlopen", lambda *a, **k: pytest.fail("metadata should be packaged"))
     p = Predictor()
-    assert p.bundle.download and p.preset == "europe"
+    assert p.bundle.download and p.preset == "full"
     monkeypatch.setenv("MAMBO_OFFLINE", "1")
     assert Predictor().bundle.root == p.bundle.root
     with pytest.raises(FileNotFoundError, match="not cached"):
@@ -67,3 +67,43 @@ def test_packaged_metadata_and_automatic_predictor(tmp_path, monkeypatch):
         if relative not in manifest["origins"]:
             Bundle(p.bundle.root).file(relative)
     assert Path(download.__file__).with_name("default_bundle.json").exists()
+
+
+@pytest.mark.parametrize("hardlink", [True, False])
+def test_weight_bytes_survive_metadata_revision_offline(tmp_path, monkeypatch, hardlink):
+    payload = b"same immutable model"
+    calls = []
+
+    def get(*args, **kwargs):
+        calls.append(True)
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr(download, "urlopen", get)
+    if not hardlink:
+
+        def deny_link(*args):
+            raise OSError("cross-filesystem")
+
+        monkeypatch.setattr(download.os, "link", deny_link)
+    args = dict(cache=tmp_path, size=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+    first = tmp_path / "revision-1/models/model.onnx.data"
+    second = tmp_path / "revision-2/models/model.onnx.data"
+    download.cached_model_file("https://example.test/model", first, **args)
+    download.cached_model_file("https://example.test/model", second, **args, offline=True)
+    assert first.read_bytes() == second.read_bytes() == payload
+    assert len(calls) == 1
+    assert not first.is_symlink() and not second.is_symlink()
+    assert not list(second.parent.glob(".model-*"))
+
+
+def test_offline_can_materialize_packaged_metadata_without_connecting(tmp_path, monkeypatch):
+    from deployment.mambo_deploy import Predictor
+
+    monkeypatch.delenv("MAMBO_BUNDLE", raising=False)
+    monkeypatch.setenv("MAMBO_CACHE", str(tmp_path))
+    monkeypatch.setenv("MAMBO_OFFLINE", "1")
+    monkeypatch.setattr(download, "urlopen", lambda *args, **kwargs: pytest.fail("network used"))
+    predictor = Predictor()
+    assert predictor.preset == "full"
+    with pytest.raises(FileNotFoundError, match="not cached"):
+        predictor.bundle.profile("onnx")

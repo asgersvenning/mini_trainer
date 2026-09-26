@@ -14,6 +14,8 @@ from dev.releases.mambo_v3.defaults_report import SERIES
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.tail_report import collect
 
+from .figure_export import save_figure
+
 
 def quality(source, output):
     data = json.loads(source.read_text())
@@ -180,11 +182,7 @@ def render_speed(data, output):
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.15, 1, 0.84))
-    path = output / "mambo-promoted-speed.svg"
-    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-    fig.savefig(output / "mambo-promoted-speed.png", dpi=140, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, "mambo-promoted-speed", dpi=140)
 
 
 if __name__ == "__main__":

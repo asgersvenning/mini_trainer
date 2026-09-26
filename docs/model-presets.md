@@ -6,11 +6,11 @@ These overlapping deployment presets aim to avoid most geographically nonsensica
 
 Each geographic preset applies the minimum row count shown below. Counts use all existing splits, including held-out rows, without further deduplication. Each row counts once even if it matches both a country and a continent predicate. Full uses all model species without a regional threshold. Lists retain the model's species order.
 
-**Provisional qualification:** new presets require at least 3 regional rows and at least 25 global rows for a species. These inclusive thresholds are a working proposal, pending the final release decision. They reduce weak occurrence evidence but do not prove that records are independent or correctly geolocated: multiple images may belong to one observation. The global count measures available examples, not demonstrated model quality. Legacy presets retain their historical >25 regional-row rule with no new global gate.
+**V3 qualification policy:** new presets require at least 3 regional rows and at least 25 global rows for a species. These inclusive thresholds reduce weak occurrence evidence but do not prove that records are independent or correctly geolocated: multiple images may belong to one observation. The global count measures available examples, not demonstrated model quality. Legacy presets retain their historical >25 regional-row rule with no new global gate.
 
-In this pinned snapshot every model species has at least 50 global rows; 0 model species fall below the proposed global minimum of 25. Before finalizing qualification, decide whether regional evidence should count distinct GBIF observations instead of rows, and assess the effect on rare-species coverage. The present rule is reproducible, not a claim of ecological certainty.
+In this pinned snapshot every model species has at least 50 global rows; 0 model species fall below the global minimum of 25. V3 retains row counts to preserve the evaluated memberships. Counting distinct GBIF observations instead would require a future preset revision and assessment of rare-species coverage. The rule is reproducible, not a claim of ecological certainty.
 
-`europe` and `north_europe` preserve MAMBO_v2 membership and the default remains legacy Europe. Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; that equivalence does not establish equivalence at the lower threshold, so they are not silently added. The deployment API discovers all lists from the bundle; Flemming evaluation favours legacy north_europe; updated membership remains an explicit broader option.
+`europe` and `north_europe` preserve MAMBO_v2 membership while the V3 deployment default is global (`full`). Choose `europe_v3` or `north_europe_v3` for the new occurrence thresholds with the same explicit geographic filters. Parenthesized countries have ambiguous historical inclusion and leave the legacy list unchanged; that equivalence does not establish equivalence at the lower threshold, so they are not silently added. The deployment API discovers all lists from the bundle; Flemming evaluation favours legacy north_europe; updated membership remains an explicit broader option.
 
 ## Presets
 
@@ -90,9 +90,9 @@ Rebuild the figure and exact shared-count/percentage table with `.venv/bin/pytho
 
 ## Interpretation and reproducibility
 
-Mexico belongs to North and Central America; Costa Rica and Panama belong to Central and South America. Australia includes Tasmania; Tasmania-only uses the explicit state field and does not mean endemic-only. Arctic uses latitude at least 60°N across all countries, including the boundary; missing, malformed or out-of-range latitudes are excluded. This broad northern scope includes subarctic areas. Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.
+Regional restrictions change score normalization; excluded truth labels must remain visible in evaluation.
 
-Blank geographic fields match no predicate unless another selected field matches. The Tasmania preset excludes Australian records with blank or different state values. Overlapping presets are expected; membership in one does not exclude another.
+Blank geographic fields match no predicate unless another selected field matches.
 
 Run from the repository root with the existing PyArrow environment and the previously downloaded model manifest:
 

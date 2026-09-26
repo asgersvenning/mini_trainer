@@ -5,7 +5,7 @@ def _runtime():
     try:
         from mambo_deploy import Predictor
     except ImportError as error:
-        raise ImportError("Install the matching mambo_deploy deployment wheel and provide a local MAMBO bundle") from error
+        raise ImportError("Install mambo-v3 with its torch extra (or the matching release wheels)") from error
     return Predictor
 
 
@@ -79,8 +79,8 @@ def run():
     except ImportError:
         from argparse import ArgumentParser
 
-        parser = ArgumentParser(description="MAMBO local prediction. Install the matching mambo_deploy wheel for inference.")
+        parser = ArgumentParser(description="MAMBO local prediction. Install mambo-v3 for inference.")
         parser.parse_args()
-        parser.error("Install the matching mambo_deploy wheel and provide --bundle or MAMBO_BUNDLE")
+        parser.error("Install mambo-v3; model files download automatically")
 
     deploy_run(default_backend="torch", default_device="cuda")

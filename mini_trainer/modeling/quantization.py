@@ -19,7 +19,7 @@ from torch import nn
 
 from .classifier import Classifier
 from .context import EmbeddingContext, SupervisionContext
-from .onnx import _flatten, _json_value, _structure
+from .onnx import _copy_for_export, _flatten, _json_value, _structure
 
 
 def _backend():
@@ -155,13 +155,8 @@ def prepare_int8(model: nn.Module, example_input: torch.Tensor, *, qat=False, re
     if EmbeddingContext.active() or SupervisionContext.get() is not None:
         raise RuntimeError("Prepare outside embedding/supervision contexts.")
     backend, _, quantizer_cls, config_factory, _ = _backend()
-    while isinstance(model, (nn.DataParallel, nn.parallel.DistributedDataParallel)) or hasattr(model, "_orig_mod"):
-        model = model._orig_mod if hasattr(model, "_orig_mod") else model.module
     with torch.random.fork_rng(devices=[]):
-        model = copy.deepcopy(model).cpu().float().eval()
-        for module in model.modules():
-            if isinstance(module, Classifier):
-                module._dirty_cache.clear()
+        model = _copy_for_export(model, torch.float32)
         # Populate masks and immutable evaluation caches outside strict capture.
         with torch.no_grad():
             outputs = model(example_input)

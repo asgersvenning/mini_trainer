@@ -47,7 +47,34 @@ def sample(metadata, count=4096):
     return records
 
 
+def prepare_onnx_runtime():
+    """Keep the B200-qualified CUDA 12 runtime separate from the active Torch environment."""
+    cache = Path(os.environ.get("MAMBO_CACHE", Path.home() / ".cache/mambo")).expanduser()
+    environment = cache / "speed-onnx-1.22"
+    interpreter = environment / "bin/python"
+    print(f"Preparing isolated ONNX runtime: {environment}", flush=True)
+    if not interpreter.is_file():
+        subprocess.run(["uv", "venv", "--python", "3.13", str(environment)], check=True)
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(interpreter),
+            "onnxruntime-gpu[cuda,cudnn]==1.22.0",
+            "-e",
+            str(Path(__file__).resolve().parents[3] / "deployment"),
+        ],
+        check=True,
+    )
+    return interpreter
+
+
 def run(args):
+    if args.output.exists():
+        raise FileExistsError(args.output)
+    args.onnx_python = args.onnx_python or prepare_onnx_runtime()
     args.output.mkdir(parents=True, exist_ok=False)
     prepare_workers = args.workers or workers()
     root = args.metadata.resolve().parent
@@ -126,15 +153,16 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metadata", type=Path, required=True)
-    parser.add_argument("--onnx-python", type=Path, required=True, help="Interpreter in the already qualified ONNX environment")
+    parser.add_argument("--onnx-python", type=Path, help="Reuse an ONNX interpreter; otherwise uv prepares an isolated B200 runtime")
     parser.add_argument("--output", type=Path, required=True, help="New persistent directory under /work")
     parser.add_argument("--workers", type=int, help="Preparation workers; defaults to CPU quota, capped at 48")
     args = parser.parse_args()
     if args.workers is not None and args.workers < 1:
         parser.error("--workers must be positive")
-    args.onnx_python = args.onnx_python.absolute()
-    if not args.onnx_python.is_file():
-        parser.error("--onnx-python must identify an existing interpreter")
+    if args.onnx_python is not None:
+        args.onnx_python = args.onnx_python.absolute()
+        if not args.onnx_python.is_file():
+            parser.error("--onnx-python must identify an existing interpreter")
     run(args)
 
 

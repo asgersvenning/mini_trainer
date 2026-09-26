@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -37,6 +39,19 @@ def bundle(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def ort(monkeypatch):
+    runtime = SimpleNamespace(
+        SessionOptions=SimpleNamespace,
+        GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
+        OrtValue=type("FakeOrtValue", (), {}),
+        get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+        InferenceSession=None,
+    )
+    monkeypatch.setitem(sys.modules, "onnxruntime", runtime)
+    return runtime
+
+
 def test_mask_recomputes_parent_scores_and_normalization():
     leaf = np.log(np.array([[0.1, 0.2, 0.7]], dtype=np.float32))
     raw, labels, indices = hierarchy(leaf, [0, 2], CLASSES)
@@ -61,7 +76,7 @@ def test_tiny_legacy_top1_fixture():
 
 def test_custom_list_replaces_preset_and_predictors_are_isolated(bundle):
     first = Predictor(bundle, class_list=["c", "c", "a"])
-    second = Predictor(bundle)
+    second = Predictor(bundle, model="europe")
     assert first.class_list == ["a", "c"]
     assert second.class_list == ["a", "b"]
     first._apply_class_mask(-1)
@@ -81,7 +96,7 @@ def test_hash_failure_and_escape_are_rejected(bundle):
         loaded.file("../outside")
     (bundle / "europe.classes").write_text("c\nb\n")
     with pytest.raises(ValueError, match="hash mismatch"):
-        Predictor(bundle)
+        Predictor(bundle, model="europe")
 
 
 def test_uint8_and_float_inputs_align_and_reject_hwc():
@@ -109,6 +124,8 @@ def test_batches_embeddings_and_masked_output_contract(bundle, monkeypatch):
     assert len(result) == 5 and vectors.shape == (5, 1280)
     assert result[0].label == ("c", "g1", "f0")
     assert result[0].confidence == (1.0, 1.0, 1.0)
+    assert result.metadata["bundle_sha256"] == hashlib.sha256((bundle / "release.json").read_bytes()).hexdigest()
+    assert result.metadata["preprocessing_id"] == RECIPE["id"]
     with pytest.raises(ValueError, match="No images"):
         predictor.predict([])
 
@@ -171,10 +188,7 @@ def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeyp
 
 
 @pytest.mark.parametrize(("precision", "use_tf32"), [("fp32", 0), ("auto", 1)])
-def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32):
-    import sys
-    from types import SimpleNamespace
-
+def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32, ort):
     predictor = Predictor(bundle, device="cuda:0", precision=precision)
     monkeypatch.setattr(predictor.bundle, "profile", lambda key: bundle / "unused.onnx")
     captured = {}
@@ -183,17 +197,7 @@ def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision,
         captured["providers"] = providers
         return SimpleNamespace(disable_fallback=lambda: None, get_providers=lambda: ["CPUExecutionProvider"])
 
-    monkeypatch.setitem(
-        sys.modules,
-        "onnxruntime",
-        SimpleNamespace(
-            SessionOptions=SimpleNamespace,
-            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
-            OrtValue=type("FakeOrtValue", (), {}),
-            get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
-            InferenceSession=session,
-        ),
-    )
+    ort.InferenceSession = session
     with pytest.raises(RuntimeError, match="refusing CPU-only fallback"):
         predictor._onnx(np.zeros((1, 3, 384, 384), dtype=np.float32), False)
     assert captured["providers"][0][1]["use_tf32"] == use_tf32
@@ -399,47 +403,6 @@ def test_noise_preserves_extent_channels_and_reproducibility():
         SaltAndPepper(proportion=-0.1)
 
 
-def test_whole_image_candidates_preserve_source_and_prepare_deterministically():
-    from dev.releases.mambo_v3.tta_candidates import CANDIDATES, candidate_policy, pad, rotate
-
-    image = np.random.default_rng(12).integers(0, 256, (3, 19, 31), dtype=np.uint8)
-    original = image.copy()
-    padded = pad(image, 0.08)
-    np.testing.assert_array_equal(padded[:, 2:21, 3:34], image)
-    rotated = rotate(image, 10)
-    assert rotated.shape[1] > image.shape[1] and rotated.shape[2] > image.shape[2]
-    for name in CANDIDATES:
-        policy = candidate_policy(name)
-        assert len(policy.transforms) == 3
-        for transform in policy.transforms:
-            actual = preprocess(transform(image.copy()))
-            assert actual.shape == (3, 384, 384) and np.isfinite(actual).all()
-            np.testing.assert_array_equal(actual, preprocess(transform(image.copy())))
-    np.testing.assert_array_equal(image, original)
-
-
-@pytest.mark.parametrize("option", ["padded_scale"])
-def test_enabled_tta_uses_qualified_padded_recipe(bundle, monkeypatch, option):
-    from dev.releases.mambo_v3.tta_candidates import candidate_policy
-
-    p = Predictor(bundle, tta=option, preprocess_workers=1)
-    image = np.random.default_rng(18).integers(0, 256, (3, 23, 41), dtype=np.uint8)
-    observed = []
-
-    def runtime(images, embeddings):
-        observed.append(images[0].copy())
-        return np.ones((len(images), 3), np.float32), None
-
-    monkeypatch.setattr(p, "_onnx", runtime)
-    result = p.predict(image)
-    expected = candidate_policy("padded_scale")
-    assert len(observed) == 3
-    for actual, transform in zip(observed, expected.transforms, strict=True):
-        np.testing.assert_array_equal(actual, preprocess(transform(image)))
-    assert result.metadata["tta"] == "padded_scale" and result.metadata["tta_views"] == 3
-    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
-
-
 @pytest.mark.parametrize(
     ("options", "recipe"), [([], None), (["--tta"], "rotation30_pad25_3"), (["--tta", "d4"], "d4"), (["--tta", "none"], None)]
 )
@@ -460,52 +423,29 @@ def test_cli_tta_optional_recipe(bundle, monkeypatch, options, recipe):
         cli.run()
 
 
-@pytest.mark.parametrize("degrees", [-30, -10, 10, 30])
-def test_composed_rotation_reproduces_existing_padded_rotation(degrees):
-    from dev.releases.mambo_v3.compact_tta import rotate_pad
-    from dev.releases.mambo_v3.tta_candidates import rotate
-
-    image = np.random.default_rng(42).integers(0, 256, (3, 47, 83), dtype=np.uint8)
-    original = image.copy()
-    np.testing.assert_array_equal(rotate_pad(image, degrees, 0.08), rotate(image, degrees))
-    np.testing.assert_array_equal(image, original)
-
-
-@pytest.mark.parametrize("recipe", ["rotation30_pad25_3", "wide_rotation_mixed_padding_5"])
-def test_promoted_tta_matches_full_evaluation_views(bundle, monkeypatch, recipe):
+@pytest.mark.parametrize(
+    ("option", "settings"),
+    [
+        ("padded_scale", [(0, 0.08), (0, 0.15)]),
+        (True, [(-30, 0.25), (30, 0.25)]),
+        ("rotation30_pad25_3", [(-30, 0.25), (30, 0.25)]),
+        ("wide_rotation_mixed_padding_5", [(-10, 0.15), (10, 0.15), (-30, 0.25), (30, 0.25)]),
+    ],
+)
+def test_named_tta_preserves_released_recipe(option, settings):
+    from deployment.mambo_deploy import EdgePad, RotatePad, View
     from deployment.mambo_deploy.augmentation import resolve_tta
-    from dev.releases.mambo_v3.compact_tta import policies
 
-    views, _, recipes = policies()
-    source = np.random.default_rng(19).integers(0, 256, (3, 47, 83), dtype=np.uint8)
-    original = source.copy()
-    expected = [preprocess(views[key](source)) for key in recipes[recipe]]
-    for option in [True, recipe] if recipe == "rotation30_pad25_3" else [recipe]:
-        policy = resolve_tta(option)
-        for transform, key in zip(policy.transforms, recipes[recipe], strict=True):
-            np.testing.assert_array_equal(transform(source), views[key](source))
-        predictor = Predictor(bundle, tta=option, preprocess_workers=1)
-        observed = []
-
-        def runtime(images, embeddings):
-            observed.append(images[0].copy())
-            return np.ones((len(images), 3), np.float32), None
-
-        monkeypatch.setattr(predictor, "_onnx", runtime)
-        result = predictor.predict(source)
-        np.testing.assert_array_equal(observed, expected)
-        assert result.metadata["tta"] == recipe
-        assert result.metadata["tta_views"] == len(expected)
-    np.testing.assert_array_equal(source, original)
+    policy = resolve_tta(option)
+    expected = (View(), *(EdgePad(padding) if degrees == 0 else RotatePad(degrees, padding) for degrees, padding in settings))
+    assert policy.transforms == expected
+    assert policy.name == ("rotation30_pad25_3" if option is True else option)
 
 
 @pytest.mark.parametrize(
     "failure", [None, "cudaErrorNoKernelImageForDevice", "cudaErrorInvalidDeviceFunction", "CUDA out of memory", "baseline"]
 )
-def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
-    import sys
-    from types import SimpleNamespace
-
+def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure, ort):
     p = Predictor(bundle, device="cuda:0")
     monkeypatch.setattr(p.bundle, "profile", lambda key: bundle / key)
     sessions, calls = [], []
@@ -527,17 +467,7 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
             run=run, disable_fallback=lambda: None, get_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "onnxruntime",
-        SimpleNamespace(
-            SessionOptions=SimpleNamespace,
-            GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=99, ORT_DISABLE_ALL=0),
-            OrtValue=type("FakeOrtValue", (), {}),
-            get_available_providers=lambda: ["CUDAExecutionProvider"],
-            InferenceSession=create,
-        ),
-    )
+    ort.InferenceSession = create
     batch = np.zeros((2, 3, 384, 384), dtype=np.float32)
     if failure in ("CUDA out of memory", "baseline"):
         with pytest.raises(RuntimeError, match="out of memory" if failure != "baseline" else "baseline compatibility"):
@@ -564,10 +494,11 @@ def test_cuda_probe_profiles_and_reuse(bundle, monkeypatch, failure):
 
 
 @pytest.mark.parametrize("tta", ["none", "rotation30_pad25_3"])
-def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
+@pytest.mark.parametrize("batch_size", [2, 129])
+def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta, batch_size):
     from PIL import Image
 
-    predictor = Predictor(bundle, batch_size=2, tta=tta)
+    predictor = Predictor(bundle, batch_size=batch_size, tta=tta)
 
     def infer(images, embeddings=False):
         values = images.mean(axis=(2, 3))
@@ -584,15 +515,26 @@ def test_streaming_api_matches_request(bundle, tmp_path, monkeypatch, tta):
     np.testing.assert_array_equal(np.concatenate([v for _, v in observed]), vectors)
     np.testing.assert_array_equal(np.concatenate([r.indices for r, _ in observed]), expected.indices)
     np.testing.assert_array_equal(np.concatenate([r.confidence for r, _ in observed]), expected.confidence)
+    assert [len(result) for result, _ in observed] == [min(batch_size, len(paths) - start) for start in range(0, len(paths), batch_size)]
+    with pytest.raises(ValueError, match="read_window must cover"):
+        list(predictor.predict_stream(paths, read_window=1))
 
 
 @pytest.mark.parametrize("topk", [1, 2])
-def test_top1_fast_path_preserves_stable_ties(topk):
-    raw = [np.array([[2, 2, -1], [-3, -3, -3], [0, 2, 1]], dtype=np.float32)] * 3
-    labels = [["a", "b", "c"]] * 3
-    result = Prediction(raw, labels, [np.arange(3)] * 3, topk)
-    expected = np.stack([np.argsort(-v, axis=1, kind="stable")[:, :topk] for v in raw], axis=-1)
-    np.testing.assert_array_equal(result.indices, expected)
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param([[2, 2, -1], [-3, -3, -3], [0, 2, 1]], id="finite"),
+        pytest.param([[1, np.nan, 2], [np.nan, np.nan, np.nan], [np.inf, 2, -np.inf]], id="nonfinite"),
+    ],
+)
+def test_prediction_preserves_stable_ties_and_nonfinite_order(topk, raw):
+    raw = np.array(raw, dtype=np.float32)
+    with np.errstate(invalid="ignore"):
+        result = Prediction([raw] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk)
+        expected = np.argsort(-raw, axis=1, kind="stable")[:, :topk]
+    np.testing.assert_array_equal(result.indices, np.stack([expected] * 3, axis=-1))
+    np.testing.assert_array_equal(np.isnan(result.confidence).any(axis=(1, 2)), ~np.isfinite(raw).all(axis=1))
 
 
 @pytest.mark.parametrize("selected", [[0, 1, 2], [0, 2], [1]])
@@ -755,16 +697,6 @@ def test_square_gather_preserves_pixels_across_decoded_and_strided_layouts():
                 np.testing.assert_array_equal(target, expected)
 
 
-@pytest.mark.parametrize("topk", [1, 2])
-def test_prediction_nonfinite_ordering_matches_stable_sort(topk):
-    raw = np.array([[1, np.nan, 2], [np.nan, np.nan, np.nan], [np.inf, 2, -np.inf]], dtype=np.float32)
-    with np.errstate(invalid="ignore"):
-        result = Prediction([raw] * 3, [["a", "b", "c"]] * 3, [np.arange(3)] * 3, topk)
-        expected = np.argsort(-raw, axis=1, kind="stable")[:, :topk]
-    np.testing.assert_array_equal(result.indices, np.stack([expected] * 3, axis=-1))
-    assert np.isnan(result.confidence).all()
-
-
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
     from deployment.mambo_deploy import preprocessing as p
@@ -781,3 +713,65 @@ def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
     out = np.empty((3, 384, 768), dtype=dtype)[:, :, ::2]
     assert preprocess(image, out=out, padding=0.25) is out
     np.testing.assert_array_equal(out, expected)
+
+
+def test_default_scope_is_global_including_legacy_facade(bundle, monkeypatch):
+    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
+
+    from mini_trainer import deploy
+
+    monkeypatch.setattr(deploy, "_runtime", lambda: Predictor)
+    for predictor in (Predictor(bundle), deploy.Predictor(device="cpu", bundle=bundle)._predictor):
+        assert predictor.preset == "full"
+        assert predictor.class_list == ["a", "b", "c"]
+    assert Predictor(bundle, model="europe").class_list == ["a", "b"]
+
+
+@pytest.mark.parametrize("embeddings", [False, True])
+def test_cli_streams_ordered_results_and_publishes_only_complete_output(bundle, tmp_path, monkeypatch, embeddings):
+    import csv
+
+    from deployment.mambo_deploy import cli
+
+    paths = [tmp_path / "a" / f"{i}.jpg" for i in range(3)]
+    closed = []
+    fail = [False]
+
+    def batches(items, **kwargs):
+        assert items == paths
+        assert kwargs == {"topk": 1, "embeddings": embeddings}
+        try:
+            for start, size in ((0, 2), (2, 1)):
+                if fail[0] and start:
+                    raise ValueError("decode failed")
+                raw, labels, indices = hierarchy(np.tile([3.0, 2.0, 1.0], (size, 1)), [0, 1, 2], CLASSES)
+                result = Prediction(raw, labels, indices, model_id="fixture", preset="full")
+                yield (result, np.full((size, 1280), start, dtype=np.float32)) if embeddings else result
+        finally:
+            closed.append(True)
+
+    predictor = SimpleNamespace(bundle=SimpleNamespace(classes=CLASSES), predict_stream=batches)
+    monkeypatch.setattr(cli, "Predictor", lambda *args, **kwargs: predictor)
+    argv = ["mambo_predict", "-i", *map(str, paths), "-o", str(tmp_path), "--name", "success"]
+    if embeddings:
+        argv.append("--embeddings")
+    monkeypatch.setattr(sys, "argv", argv)
+    cli.run()
+    records = json.loads((tmp_path / "success/predictions.json").read_text())
+    assert len(records["results"]) == 3 and records["metadata"]["preset"] == "full"
+    with (tmp_path / "success/mini_metric.csv").open() as stream:
+        rows = list(csv.DictReader(stream))
+    assert [r["filename"] for r in rows[::3]] == list(map(str, paths))
+    assert [r["instance_id"] for r in rows[::3]] == ["0", "1", "2"]
+    assert all(r["correct"] == "1" for r in rows)
+    if embeddings:
+        vectors = np.load(tmp_path / "success/embeddings.npy")
+        assert vectors.shape == (3, 1280) and vectors.dtype == np.float32
+        np.testing.assert_array_equal(vectors[:, 0], [0, 0, 2])
+    argv[argv.index("success")] = "failed"
+    fail[0] = True
+    with pytest.raises(ValueError, match="decode failed"):
+        cli.run()
+    assert not (tmp_path / "failed").exists()
+    assert not list(tmp_path.glob(".mambo-results-*"))
+    assert len(closed) == 2

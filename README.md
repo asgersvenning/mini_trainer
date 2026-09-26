@@ -19,71 +19,65 @@ All code in `mini_trainer` should follow the following core principles:
 * All hyperparameters and system configuration should have smart defaults that are as general as possible
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
 
-# Installation
+## Find your workflow
 
-We recommend using `uv` for package and environment management.
+| Task | Start here |
+| --- | --- |
+| Integrate the MAMBO release candidate | [Deployment API and CLI](deployment/README.md) |
+| Prepare data or adapt an example | [Examples](examples/README.md) |
+| Change the trainer or run checks | [Development guide](dev/README.md), [test map](tests/README.md) |
+| Compare models, backends or training settings | [Benchmarks](dev/benchmarks/README.md) |
+| Run on UCloud or reproduce research | [UCloud](dev/ucloud/README.md), [research experiments](publication/experiments/README.md) |
+| Choose the next development task | [Roadmap](docs/roadmap.md) |
 
-> See [Install uv](https://docs.astral.sh/uv/getting-started/installation/) for instructions.
+## Installation
 
-## PyPi
+Use [uv](https://docs.astral.sh/uv/getting-started/installation/) for environment
+and package management. Choose a published package or a source checkout.
+
+### PyPI
 
 ```bash
-# Recommended installation (includes logging, visualization, and optional utilities)
+uv venv --python 3.12
+source .venv/bin/activate
 uv pip install "mini_trainer[recommended]" --torch-backend=auto
-# or standard pip
-pip install "mini_trainer[recommended]"
-
-# Installation with all features (timm, transformers, BioCLIP, etc.)
-uv pip install "mini_trainer[all]" --torch-backend=auto
-# or standard pip
-pip install "mini_trainer[all]"
-
-# Minimal installation (core training & inference loop only)
-uv pip install mini_trainer --torch-backend=auto
-# or standard pip
-pip install mini_trainer
 ```
 
-## Local Installation
+| Package choice | Includes |
+| --- | --- |
+| `mini_trainer` | Core training and inference |
+| `mini_trainer[recommended]` | Core plus logging, visualization and optional utilities |
+| `mini_trainer[all]` | Recommended extras plus notebooks, model backends and ONNX export |
+
+Substitute the desired package in the install command. Standard `pip install` also
+works; select its PyTorch CPU/CUDA installation separately for your environment.
+
+### Local installation
+
+Choose one backend: `cpu`, `cu126`, `cu130` or `cu132`. The example selects CUDA 13.0;
+change `TORCH_BACKEND` to match your intended environment before synchronizing.
 
 ```bash
-git clone ssh://git@github.com:asgersvenning/mini_trainer.git
+git clone https://github.com/asgersvenning/mini_trainer.git
 cd mini_trainer
-
-# Sync with recommended extras:
-uv sync --extra recommended --extra [cpu/cu126/cu130/cu132]
-
-# Or sync with all features (timm, transformers, BioCLIP):
-uv sync --extra all --extra [cpu/cu126/cu130/cu132]
-
+TORCH_BACKEND=cu130
+uv sync --extra recommended --extra "$TORCH_BACKEND"
 source .venv/bin/activate
 ```
 
-> [!TIP]
-> We highly recommend installing `torch` and `torchvision` with native CUDA support via either `uv sync ... --extra [cpu/cu126/cu130/cu132]` or `uv pip install ... --torch-backend=auto`, **and** crucially running scripts or tools associated with your `uv` virtual environment by **activating the venv:**
-> ```bash
-> source .venv/bin/activate
-> ```
-> Using `uv run ...` is likely to automatically install CUDA-incompatible wheels. If you really want to use `uv run`, we suggest using the `--no-sync` flag every time.
-> Note that if you are *"lucky"* you might have the default CUDA version on your system, meaning that `uv run` might in fact use the correct wheels. This is, however, not guaranteed.
+Replace `recommended` with `all` for the additional backends/export tools above.
+Activate the environment, use its executables directly, or use `uv run --no-sync`.
+An implicit sync can replace the deliberately selected PyTorch backend. Select the
+backend explicitly whenever installing or synchronizing dependencies.
 
 ## Data loading on shared machines
 
-Automatic DataLoader worker selection uses the CPUs available to the process when
-the OS exposes that information, including CPU affinity. It reserves four CPUs,
-rounds down to an even worker count, and caps workers at 16 for training and 32 for
-prediction. For example, an 8-CPU affinity limit selects four workers, even on a
-larger shared machine. Four or fewer available CPUs selects zero workers.
-
-Set `--num_workers 2` to choose a count explicitly, or `--num_workers 0` to load in
-the main process. CUDA-cached datasets always use zero DataLoader workers.
-RAM-cache preloading uses a separate thread pool that also respects process CPU
-availability, reserves two CPUs, and uses between 1 and 128 threads.
-
-Affinity does not describe all container CPU quotas or competition from other jobs.
-If an allocation shares an unrestricted CPU set, choose a conservative explicit
-worker count per training process. `--num_workers` does not control RAM-cache
-preloading; use uncached loading when you need that explicit bound.
+Defaults use process CPU availability, affinity, visible cgroup quotas and Slurm
+allocation limits. Shared resources may still need an explicit per-process budget.
+Set `--num_workers N` for loading (`0` runs in the main process), and
+`--cache-workers N` for training-cache preparation. CUDA-cached datasets use zero
+DataLoader workers. See [automatic budgets](dev/README.md#automatic-cpu-budgets)
+for caps and fallback behavior; cache readers and DataLoader workers are separate.
 
 ## Weights & Biases Integration
 
@@ -115,7 +109,7 @@ Feel free to contribute, but here are a few tips:
 
 Repository agents should start with [AGENTS.md](AGENTS.md). Planned improvements and
 their acceptance criteria are tracked in the [roadmap](docs/roadmap.md).
-The quantization branch has a focused [bottleneck and handoff roadmap](docs/quantization-roadmap.md).
+Remaining quantization work has a focused [target-qualification roadmap](docs/quantization-roadmap.md).
 
 ## ONNX export
 

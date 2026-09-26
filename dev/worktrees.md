@@ -2,14 +2,13 @@
 
 Use one Git worktree per active feature. Worktrees have independent tracked files,
 indexes and checked-out branches; commits, refs and Git configuration are shared.
-The current prototype exploration starts from `quant`, whose diagnostic functions
-are the reference for that work. Choose the base explicitly for other features.
+Choose the base revision for the task explicitly.
 
 From the main checkout:
 
 ```bash
 git worktree list
-git worktree add -b feature/my-feature .worktrees/my-feature quant
+git worktree add -b feature/my-feature .worktrees/my-feature YOUR_BASE_REF
 ```
 
 `/.worktrees/` is ignored on branches carrying this guide. For older branches,

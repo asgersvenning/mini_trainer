@@ -50,7 +50,7 @@ def get_bioclip_model(
 
 
 def get_bioclip_models() -> list[str]:
-    """Dynamically fetches the list of BioCLIP model versions from Hugging Face."""
+    """Discover BioCLIP versions on Hugging Face, falling back to known identifiers."""
     fallback = ["bioclip", "bioclip-2", "bioclip-2.5-vith14", "bioclip-vit-b-16-inat-only"]
     try:
         from huggingface_hub import HfApi

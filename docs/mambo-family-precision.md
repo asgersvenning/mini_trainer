@@ -1,124 +1,73 @@
-# Why calibrated family Macro-F1 favours V2
+# Rare-family sensitivity in the historical comparison
 
-**The difference is driven by additional predicted-only families surviving V3's
-confidence thresholds.** Their image counts are small, but each family receives
-equal weight in macro precision and Macro-F1. It is not a larger V3 taxonomy:
-V2 and V3 have identical genus/family mappings for all 12,632 model species, and
-the shared northern-Europe species list spans 67 eligible families in both.
-Flemming reporting truth contains 23 families.
+**Historical padded-scale TTA evidence.** See the [deployment README](../deployment/README.md#release-comparison)
+for the current rotation-and-padding comparison.
 
-This audit uses the same 52,788 reporting images, all truth, and independently
-calibrated family thresholds as the [threshold study](mambo-confidence-thresholds.md).
-All precision, recall and F1 values and class weights come from pinned
-`mini_metrics` revision `70cc69adc05362863439277048e06386c1f885e1`.
-Counts below describe retained predictions, without reimplementing metrics.
+V3's lower calibrated family macro precision and F1 came from **more predicted-only
+families surviving rejection**, despite better recall. V2/V3 have identical parent
+mappings for all 12,632 species; their shared northern-Europe list spans 67 families.
+The 52,788-image Flemming reporting partition contains 23 truth families.
 
-## Which families enter the average?
+## Effect on the averages
 
-At the calibrated thresholds, every pipeline predicts the **same 22 truth-present
-families**. Gelechiidae is present in truth but has no accepted predictions in any
-pipeline. In addition, V2 predicts 3 families absent from reporting truth; V3 predicts
-7. Those extra families have zero precision and zero F1.
+The [threshold study](mambo-confidence-thresholds.md) defines the shared all-truth
+reporting partition, separate per-pipeline calibration and pinned `mini_metrics`.
+At the calibrated thresholds, all five pipelines predict the same 22 truth-present
+families; Gelechiidae has truth support but no accepted predictions. Each additional
+predicted-only family contributes a zero-precision, zero-F1 group—even a singleton.
 
-| Pipeline | Predicted-only families | Images assigned to them | Official macro precision | Precision over truth-present groups only |
-|---|---:|---:|---:|---:|
-| MAMBO v2 | 3 | 4 | 0.8413 | 0.9561 |
-| V3 PyTorch | 7 | 31 | 0.7406 | 0.9762 |
-| V3 ONNX | 7 | 31 | 0.7406 | 0.9762 |
-| V3 PyTorch + TTA | 7 | 24 | 0.7394 | 0.9747 |
-| V3 ONNX + TTA | 7 | 23 | 0.7395 | 0.9748 |
+Precision and F1 cells show **official / truth-group diagnostic** scores. The diagnostic uses
+`mini_metrics` to reaggregate its per-class outputs over truth-present families;
+it changes the averaging domain, not predictions, thresholds or image rows.
+It is explanatory, not a replacement benchmark.
 
-The last column is a **diagnostic change to the averaging domain**, not a corrected
-benchmark score. It reaggregates the package's existing per-class outputs over
-truth-present families; it does not delete images, rerun predictions, or replace
-the official metrics. At these operating points, all pipelines have the same 22
-active precision groups in that diagnostic.
-
-The package's weights give the exact decomposition:
-
-- V2: `0.956078 × 22 / (22 + 3) = 0.841349` macro precision.
-- V3 PyTorch: `0.976235 × 22 / (22 + 7) = 0.740592` macro precision.
-
-V3 has higher average precision within those shared truth-present groups. Its
-lower official macro precision arises from the four additional zero-precision
-groups. Even one accepted prediction can activate such a group; these are errors
-relative to this dataset's labels, not evidence that the family cannot occur locally.
-
-## Which extra families survive?
-
-Accepted predictions into families absent from reporting truth:
-
-| Family | V2 | V3 PyTorch | V3 ONNX | PyTorch + TTA | ONNX + TTA |
+| Pipeline | Predicted-only families / images | Macro precision | Macro-F1 | Macro recall | Coverage |
 |---|---:|---:|---:|---:|---:|
-| Bedelliidae | 0 | 21 | 21 | 17 | 16 |
-| Choreutidae | 0 | 2 | 2 | 2 | 2 |
-| Coleophoridae | 0 | 2 | 2 | 1 | 1 |
-| Cossidae | 0 | 1 | 1 | 1 | 1 |
-| Opostegidae | 0 | 2 | 2 | 1 | 1 |
-| Pieridae | 2 | 0 | 0 | 0 | 0 |
-| Psychidae | 0 | 1 | 1 | 1 | 1 |
-| Thyrididae | 1 | 0 | 0 | 0 | 0 |
-| Tineidae | 1 | 2 | 2 | 1 | 1 |
+| MAMBO v2 | 3 / 4 | 0.8413 / 0.9561 | 0.6545 / 0.7399 | 0.6467 | 77.44% |
+| V3 PyTorch | 7 / 31 | 0.7406 / 0.9762 | 0.5807 / 0.7575 | 0.6535 | 73.06% |
+| V3 ONNX | 7 / 31 | 0.7406 / 0.9762 | 0.5816 / 0.7586 | 0.6549 | 73.26% |
+| V3 PyTorch + TTA | 7 / 24 | 0.7394 / 0.9747 | 0.6073 / 0.7921 | 0.7002 | 78.74% |
+| V3 ONNX + TTA | 7 / 23 | 0.7395 / 0.9748 | 0.6065 / 0.7911 | 0.6987 | 78.47% |
 
-Bedelliidae contributes most V3 cases: without TTA, 15 are labelled Erebidae and
-6 Geometridae. With PyTorch TTA, those counts fall to 13 and 4; ONNX TTA has 12 and
-4. Each of the other six predicted-only V3 families has only one or two accepted
-images. V2's four cases are two Nolidae → Pieridae, one Erebidae → Tineidae and
-one Geometridae → Thyrididae. These are label-based confusions; image-level expert
-review has not established whether every ground-truth annotation is correct.
+The package weights give the precision decomposition:
 
-## How this affects F1 and the crossing
+- V2: `0.956078 × 22 / (22 + 3) = 0.841349`.
+- V3 PyTorch: `0.976235 × 22 / (22 + 7) = 0.740592`.
 
-Macro-F1 is an average of per-family F1 values, **not** the harmonic mean of the
-reported macro precision and macro recall. Its active domain includes all 23
-truth families, even the one without accepted predictions, plus predicted-only
-families: 26 groups for V2 and 30 for V3.
+Macro-F1 averages per-family F1, not the harmonic mean of macro precision/recall.
+Its domain includes all 23 truth families plus predicted-only families: 26 groups
+for V2, 30 for V3. Recall is unaffected by removing predicted-only groups because
+they have no truth support.
 
-| Pipeline | Official family Macro-F1 | F1 over the same 23 truth families only | Macro recall |
-|---|---:|---:|---:|
-| MAMBO v2 | 0.6545 | 0.7399 | 0.6467 |
-| V3 PyTorch | 0.5807 | 0.7575 | 0.6535 |
-| V3 ONNX | 0.5816 | 0.7586 | 0.6549 |
-| V3 PyTorch + TTA | 0.6073 | 0.7921 | 0.7002 |
-| V3 ONNX + TTA | 0.6065 | 0.7911 | 0.6987 |
+Bedelliidae accounts for 21 of V3's 31 accepted predicted-only cases (15 labelled
+Erebidae, six Geometridae); the other six families have one or two cases each.
+These are label-based errors, not expert-confirmed misidentifications or evidence
+that a family cannot occur locally. The [per-family CSV](assets/mambo-family-precision.csv)
+retains all five pipelines' counts and metric weights.
 
-Again, the middle column is explanatory, not a substitute benchmark. Its ranking
-favours V3, especially TTA; adding the zero-F1 predicted-only groups yields the
-official ranking favouring V2. Recall is unchanged by this diagnostic because
-predicted-only families have no true support.
+## Why calibration changes the ranking
 
-At threshold zero, the pattern is different: **V2 predicts 41 absent families,
-V3 37**, with 408 versus 756 accepted images assigned to them (535 for either TTA
-backend). Thresholding removes more of V2's low-confidence predicted-only groups,
-leaving 3 versus 7. This explains why the ordering changes after calibration.
-A common family threshold of **0.96** still leaves 3 such groups for V2, 8 for
-ordinary V3 and 7 for TTA; the effect is not solely the choice of different
-optimized threshold values. Within-truth averages also vary with operating point.
+At threshold zero, V2 predicts **41 absent families / 408 images**, versus
+**37 / 756** for ordinary V3 (535 images for either TTA backend). Calibration
+removes more of V2's low-confidence groups, leaving 3 versus 7. A shared family
+threshold of **0.96** still leaves 3 groups for V2, 8 for ordinary V3 and 7 for TTA:
+separate optimized thresholds are not the sole cause.
 
-At the calibrated operating points, V3 improves recall of represented families
-while retaining a wider set of rare, confident false-family predictions.
-The official macro metrics expose that weakness, with considerable sensitivity
-to singleton predictions. Keep both official metrics and coverage; excluding
-absent families from deployment or evaluation based on Flemming would hide the
-failure mode and artificially tailor the system to this benchmark.
+Keep full-support metrics, recall and coverage alongside [tail-truncated results](mambo-tail-metrics.md).
+Truncation intentionally hides this rare-family failure mode. Removing absent
+families from deployment based on Flemming would tailor the vocabulary to the test.
 
 ## Evidence and reproduction
 
-The [per-family CSV](assets/mambo-family-precision.csv) contains family names,
-truth counts, accepted prediction counts, and the package's P/R/F1 values and
-weights for threshold zero, calibrated thresholds and the common 0.96 threshold.
-A blank metric with zero weight means the package did not emit that class group.
-The [JSON evidence](assets/mambo-family-precision.json) retains official scores,
-diagnostic aggregations, false-positive confusion counts, input hashes, and the
-name/taxonomy audit. Family names come from the pinned local metadata parquet.
+The [JSON](assets/mambo-family-precision.json) retains official scores, diagnostic
+aggregations, confusion counts, source hashes and the verified name/taxonomy audit.
+The CSV covers threshold zero, calibrated thresholds and 0.96. A blank metric with
+zero weight means the package did not emit that group.
 
 The [audit script](../dev/releases/mambo_v3/family_precision_report.py) uses public
-per-class metric calls (`aggregate=False`) and the pinned package's own
-`_aggregate_groups` implementation for diagnostic reaggregation. No data rows or
-thresholds are chosen using the diagnostic to improve the official results.
-
-Prepare names and verify taxonomy using `.venv` (PyArrow/PyTorch), then collect
-metrics using the existing pinned metrics environment:
+per-class calls (`aggregate=False`) and the pinned package's `_aggregate_groups`.
+Prepare names/taxonomy with PyArrow/PyTorch, then use the existing pinned metrics
+environment; no inference is needed:
 
 ```python
 from pathlib import Path

@@ -3,7 +3,6 @@
 import argparse
 import csv
 import hashlib
-import importlib.metadata
 import json
 from pathlib import Path
 
@@ -13,7 +12,9 @@ from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.acceleration_report import METRICS
 from dev.releases.mambo_v3.defaults_report import SERIES
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
+
+from .figure_export import save_figure
 
 SOURCES = {
     "v2": "mambo-release-comparison-quality/v2-full",
@@ -35,9 +36,7 @@ def collect(root, output):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import MacroF1, OptimalConfidenceThreshold, evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json") or "{}")
-    if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
-        raise ValueError(f"Require mini_metrics revision {REVISION}")
+    require_pinned_metrics()
     output.mkdir(parents=True, exist_ok=True)
     result = {
         "revision": REVISION,
@@ -201,11 +200,7 @@ def render(data, output):
             "Calibration/report split is image-level; TTA was previously selected using a subset of Flemming.",
             fontsize=9,
         )
-        path = output / f"{name}.svg"
-        fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-        path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-        fig.savefig(output / f"{name}.png", dpi=140, bbox_inches="tight")
-        plt.close(fig)
+        save_figure(fig, output, name, dpi=140)
 
     fig, axes = plt.subplots(3, 2, figsize=(12, 10))
     for level, rank in enumerate(RANKS):

@@ -237,21 +237,19 @@ class BaseResultCollector(_ResultsCollector):
             )
         if save and not isinstance(outdir, str):
             raise RuntimeError("Attempted to save evaluated results against labels without specifying an output directory.")
-        results = named_confusion_matrix(
-            results=data,
-            cls2idx=self.cls2idx,
-            verbose=self.verbose,
-        )
-        if plot_conf_mat and save:
-            assert isinstance(outdir, str)
-            dst = os.path.join(outdir, f"{prefix}confusion_matrix.png")
-            classes = [k for k, v in sorted(self.cls2idx.items(), key=lambda x: x[1])]
-            conf_mat = results["conf_mat"]
-            conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-            arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
+        dst = os.path.join(outdir, f"{prefix}confusion_matrix.png") if plot_conf_mat and save else None
+        return self._evaluate_labels(data, self.cls2idx, dst)
+
+    def _evaluate_labels(self, data: dict, cls2idx: dict, dst: str | None):
+        """Evaluate one vocabulary and optionally save its count matrix."""
+        results = named_confusion_matrix(data, cls2idx, verbose=self.verbose)
+        if dst is not None:
             from PIL.Image import fromarray
 
-            fromarray(arr).save(dst)
+            classes = sorted(cls2idx, key=cls2idx.get)
+            conf_mat = results["conf_mat"]
+            counts = np.array([[conf_mat[label][pred] for pred in classes] for label in classes], dtype=np.float64)
+            fromarray(plot_heatmap(counts, "magma", percent=False)).save(dst)
         return results
 
     def evaluate(self, outdir: str | None = None, prefix: str = "", **kwargs):

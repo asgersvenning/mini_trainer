@@ -95,7 +95,7 @@ def summarize(quality, benchmarks, output):
         "# Local MAMBO release qualification",
         "",
         f"Full {report_dataset} evaluation: {report_samples:,} images / {report_species} truth species. "
-        "All predictions are unthresholded. Both backends use FP32 and the same release image recipe.",
+        "All predictions are unthresholded. See source reports for runtime precision and host details.",
         "",
         "## Full-dataset species results",
         "",
@@ -113,7 +113,7 @@ def summarize(quality, benchmarks, output):
         "",
         "## End-to-end latency and throughput",
         "",
-        "Laptop measurements; updated Europe, four CPU threads, three alternating-order trials. "
+        "Updated Europe, four CPU threads, three alternating-order trials. "
         "Batch latency includes image decoding, preprocessing, transfers, hierarchy reduction and optional embeddings. "
         "p95 is descriptive of the retained observations, not a service-level guarantee.",
         "",

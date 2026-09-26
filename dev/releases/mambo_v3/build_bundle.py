@@ -10,6 +10,7 @@ from pathlib import Path
 
 from deployment.mambo_deploy.preprocessing import RECIPE
 from dev.releases.mambo_v3.audit import HERE, sha256
+from dev.releases.mambo_v3.package_download_metadata import distribution_readme
 
 
 def build(source, destination):
@@ -18,6 +19,7 @@ def build(source, destination):
     inventory = tomllib.loads((HERE / "inventory.toml").read_text())
     presets = tomllib.loads((HERE / "preset-manifest.toml").read_text())
     definitions = tomllib.loads((HERE / "preset-definitions.toml").read_text())
+    provenance = tomllib.loads((HERE / "model-provenance.toml").read_text())
     if sha256(HERE / "preset-definitions.toml") != presets["definitions_sha256"]:
         raise ValueError("Preset manifest is stale; rebuild presets first")
     files = {item["path"]: item for item in inventory["artifacts"]}
@@ -85,12 +87,13 @@ def build(source, destination):
         write_json("presets.json", regions)
         shutil.copyfile(HERE / "preset-definitions.toml", root / "PRESET_DEFINITIONS.toml")
         shutil.copyfile(HERE / "preset-updates.toml", root / "PRESET_UPDATES.toml")
-        shutil.copyfile(HERE.parents[2] / "deployment/README.md", root / "README.md")
+        (root / "README.md").write_text(distribution_readme())
         shutil.copyfile(HERE.parents[2] / "LICENSE", root / "CODE_LICENSE")
         lines = [
             "# Presets",
             "",
-            "Geographic minima are provisional; rows include all metadata splits.",
+            "V3 uses metadata row counts, including all splits, without further deduplication. "
+            "New lists require at least 3 regional and 25 global rows; legacy lists preserve their historical membership.",
             "",
             "| Preset | Species | Regional/global minimum rows | Scope |",
             "|---|---:|---|---|",
@@ -101,13 +104,9 @@ def build(source, destination):
         ]
         lines += ["", "Exact filters: PRESET_DEFINITIONS.toml. `full` includes all 12,632 model species.", ""]
         (root / "PRESETS.md").write_text("\n".join(lines))
-        (root / "MODEL_CARD.md").write_text(
-            "# MAMBO_v3 candidate\n\nEfficientNetV2-S; September 2026 UCloud run; 12,632 species. "
-            "Original FP32 artifacts; no quantization. Native weights and ONNX variants share the vocabulary.\n\n"
-            "This is an unpublished consumer release candidate. Training revision/best-epoch provenance, "
-            "weight/data redistribution notices, full task metrics and cross-OS qualification remain release gates. "
-            "CODE_LICENSE covers repository code only; it does not assert a license for model weights or source images.\n"
-        )
+        for filename in ("MODEL_CARD.md", "NOTICES.md", "MODEL_LICENSE.txt"):
+            shutil.copyfile(HERE / filename, root / filename)
+        shutil.copyfile(HERE / "model-provenance.toml", root / "MODEL_PROVENANCE.toml")
         profiles = {
             "torch": {"model": "models/pytorch/best.pt", "files": ["models/pytorch/best.pt"]},
             "onnx": {"model": "models/onnx/model.onnx", "files": ["models/onnx/model.onnx", "models/onnx/model.onnx.data"]},
@@ -118,9 +117,17 @@ def build(source, destination):
         }
         manifest = {
             "schema": "mambo-release-v1",
-            "model_id": "MAMBO_v3-candidate",
-            "artifact_revision": 2,
+            "model_id": "MAMBO_v3",
+            "artifact_revision": 3,
             "package_version": "0.3.0",
+            "distribution": "mambo-v3",
+            "default_preset": "full",
+            "licenses": {
+                "code": "MIT",
+                "weights": provenance["weights_license"],
+                "weights_text": "MODEL_LICENSE.txt",
+                "notices": "NOTICES.md",
+            },
             "score_semantics": "hierarchical-leaf-logits-logsumexp-v1",
             "profiles": profiles,
             "embedding": {"dimension": 1280, "stage": "normalized preclassification"},
