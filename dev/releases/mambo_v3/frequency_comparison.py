@@ -13,6 +13,8 @@ from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.metrics import REVISION, finite_json
 
+from .figure_export import save_figure
+
 BINS = {
     "training": [(0, 1), (1, 25), (25, 100), (100, 500), (500, 2000), (2000, 10000), (10000, None)],
     "flemming": [(1, 5), (5, 20), (20, 100), (100, 500), (500, None)],
@@ -180,11 +182,7 @@ def render(args):
     )
     fig.tight_layout(rect=(0, 0.08, 1, 0.91))
     args.output.mkdir(parents=True, exist_ok=True)
-    svg = args.output / "mambo-frequency-accuracy.svg"
-    fig.savefig(svg, metadata={"Date": None}, bbox_inches="tight")
-    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
-    fig.savefig(args.output / "mambo-frequency-accuracy.png", dpi=160, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, args.output, "mambo-frequency-accuracy")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ from dev.releases.mambo_v3.defaults_report import SERIES
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.metrics import REVISION, finite_json
 
+from .figure_export import save_figure
+
 SOURCES = {
     "v2": "mambo-release-comparison-quality/v2-full",
     "torch": "mambo-accelerated-quality/torch-cuda-0-prediction",
@@ -201,11 +203,7 @@ def render(data, output):
             "Calibration/report split is image-level; TTA was previously selected using a subset of Flemming.",
             fontsize=9,
         )
-        path = output / f"{name}.svg"
-        fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-        path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-        fig.savefig(output / f"{name}.png", dpi=140, bbox_inches="tight")
-        plt.close(fig)
+        save_figure(fig, output, name, dpi=140)
 
     fig, axes = plt.subplots(3, 2, figsize=(12, 10))
     for level, rank in enumerate(RANKS):

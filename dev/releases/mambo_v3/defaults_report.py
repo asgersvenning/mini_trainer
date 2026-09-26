@@ -11,6 +11,8 @@ from dev.releases.mambo_v3.comparison_charts import REGION_LABELS, REGIONS, comp
 from dev.releases.mambo_v3.evaluation_data import write_json
 from dev.releases.mambo_v3.metrics import REVISION
 
+from .figure_export import save_figure
+
 SERIES = (
     ("v2", "MAMBO v2", "#8064a2"),
     ("torch", "V3 PyTorch", "#098e92"),
@@ -84,13 +86,6 @@ def render(data, output):
     output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"svg.fonttype": "none", "svg.hashsalt": "mambo-defaults-v1", "axes.spines.top": False, "axes.spines.right": False})
 
-    def save(fig, name):
-        svg = output / f"{name}.svg"
-        fig.savefig(svg, bbox_inches="tight", metadata={"Date": None})
-        svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n")
-        fig.savefig(output / f"{name}.png", dpi=160, bbox_inches="tight")
-        plt.close(fig)
-
     for level, rank in enumerate(("species", "genus", "family")):
         for scope in ("all", "known"):
             fig, axes = plt.subplots(2, 2, figsize=(13, 8))
@@ -131,7 +126,7 @@ def render(data, output):
             )
             fig.tight_layout(rect=(0, 0.10, 1, 0.88))
             suffix = "" if rank == "species" else f"-{rank}"
-            save(fig, f"mambo-defaults-quality{suffix}-{scope}")
+            save_figure(fig, output, f"mambo-defaults-quality{suffix}-{scope}")
 
     scores = {(r["model"], r["preset"]): r["scores"]["all"] for r in data["quality"]}
     rank_metrics = (("accuracy", "Macro accuracy (%)", 100), ("f1", "Macro-F1", 1))
@@ -161,7 +156,7 @@ def render(data, output):
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.09, 1, 0.96))
-    save(fig, "mambo-defaults-ranks-all")
+    save_figure(fig, output, "mambo-defaults-ranks-all")
 
     fig, axes = plt.subplots(3, 2, figsize=(11, 9))
     steps = (("full", "europe"), ("europe", "north_europe"))
@@ -211,7 +206,7 @@ def render(data, output):
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.10, 1, 0.89))
-    save(fig, "mambo-defaults-regional-effect")
+    save_figure(fig, output, "mambo-defaults-regional-effect")
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
     for ax, device, batches in zip(axes, ("cpu", "cuda:0"), ((1, 8), (1, 8, 32)), strict=True):
@@ -253,7 +248,7 @@ def render(data, output):
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.16, 1, 0.85))
-    save(fig, "mambo-defaults-speed")
+    save_figure(fig, output, "mambo-defaults-speed")
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 5))
     for ax, device in zip(axes, ("cpu", "cuda:0"), strict=True):
@@ -278,7 +273,7 @@ def render(data, output):
         fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.12, 1, 0.93))
-    save(fig, "mambo-defaults-memory")
+    save_figure(fig, output, "mambo-defaults-memory")
 
     with (output / "mambo-defaults-metrics.csv").open("w", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")

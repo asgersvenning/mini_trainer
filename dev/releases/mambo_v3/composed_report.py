@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from .figure_export import save_figure
+
 SERIES = (
     ("v2", "MAMBO v2", "#8064a2"),
     ("torch", "V3 single view", "#777777"),
@@ -72,11 +74,7 @@ def render(data, output):
         fontsize=10,
     )
     fig.tight_layout(rect=(0, 0.11, 1, 0.91))
-    path = output / "mambo-composed-tta.svg"
-    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-    fig.savefig(output / "mambo-composed-tta.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, "mambo-composed-tta", dpi=150)
 
 
 def tables(data, output):

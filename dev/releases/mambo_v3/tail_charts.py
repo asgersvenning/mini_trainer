@@ -6,6 +6,8 @@ from pathlib import Path
 
 from dev.releases.mambo_v3.defaults_report import SERIES
 
+from .figure_export import save_figure
+
 
 def render(data, output):
     import matplotlib
@@ -65,11 +67,7 @@ def render(data, output):
     )
     fig.tight_layout(rect=(0, 0.10, 1, 0.92))
     output.mkdir(parents=True, exist_ok=True)
-    path = output / "mambo-defaults-tail.svg"
-    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-    fig.savefig(output / "mambo-defaults-tail.png", dpi=160, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, "mambo-defaults-tail")
 
 
 def render_paired(data, output):
@@ -144,11 +142,7 @@ def render_paired(data, output):
     )
     fig.tight_layout(rect=(0, 0.10, 1, 0.91))
     output.mkdir(parents=True, exist_ok=True)
-    path = output / "mambo-threshold-tail.svg"
-    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
-    path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
-    fig.savefig(output / "mambo-threshold-tail.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, "mambo-threshold-tail", dpi=150)
 
 
 if __name__ == "__main__":
