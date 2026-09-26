@@ -7,6 +7,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import ExitStack
 from itertools import chain, repeat
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -664,25 +665,39 @@ class MultiLogger:
             self._start_time = time.time()
             self.eta = ETA(self.total_steps, 0.999)
         else:
-            self.save()
-            self._store_summary()
+            try:
+                self.save()
+                self._store_summary()
+            finally:
+                self._close_loggers()
             if self.clear_store_on_update:
                 self.statistics_storage = defaultdict(list)
                 self.heterogeneous_storage = defaultdict(list)
         self._epoch = epoch
         self._type = type
         self._reset_cuda_memory_stats()
-        self._current_loggers = []
         self._soft_confusion_matrix = dict()
-        for cls, kwargs, stat_factory in zip(
-            self.logger_cls,
-            chain(self.logger_cls_extra_kwargs, repeat(dict())),
-            chain(self.logger_cls_stat_factory, repeat(BaseStatistic)),
-        ):
-            this_logger = cls(steps=self.steps, tag=type, name=self.name, output=self.output, **kwargs)
-            for stat in self.statistics:
-                this_logger.add_stat(stat, stat_factory())
-            self._current_loggers.append(this_logger)
+        try:
+            for cls, kwargs, stat_factory in zip(
+                self.logger_cls,
+                chain(self.logger_cls_extra_kwargs, repeat(dict())),
+                chain(self.logger_cls_stat_factory, repeat(BaseStatistic)),
+            ):
+                this_logger = cls(steps=self.steps, tag=type, name=self.name, output=self.output, **kwargs)
+                self._current_loggers.append(this_logger)
+                for stat in self.statistics:
+                    this_logger.add_stat(stat, stat_factory())
+        except BaseException:
+            self._close_loggers()
+            raise
+
+    def _close_loggers(self):
+        loggers, self._current_loggers = self._current_loggers, []
+        with ExitStack() as stack:
+            for logger in loggers:
+                close = getattr(logger, "close", None)
+                if close is not None:
+                    stack.callback(close)
 
     def step(self):
         """Advance one logging step.
@@ -759,8 +774,11 @@ class MultiLogger:
         pass
 
     def finish(self):
-        self._store_summary()
-        self.save()
+        try:
+            self._store_summary()
+            self.save()
+        finally:
+            self._close_loggers()
         self._start_time = None
         self.eta = None
         self.statistics_storage = defaultdict(list)
@@ -768,7 +786,6 @@ class MultiLogger:
         self._epoch = None
         self._type = None
         self._reset_cuda_memory_stats()
-        self._current_loggers: list[_Logger] = []
         self._soft_confusion_matrix = dict()
         self._finished = True
 

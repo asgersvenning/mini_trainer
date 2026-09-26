@@ -74,6 +74,13 @@ class TensorboardLogger(_Logger):
             self.writer.add_scalar(tag, value, self.global_steps[int(step)])
         self.clear_buffer()
 
+    def close(self):
+        """Write remaining scalars and close the owned event writer."""
+        try:
+            self.flush()
+        finally:
+            self.writer.close()
+
     def update(self, name: str, values):
         """Add values to tensorboard."""
         if isinstance(values, torch.Tensor):
