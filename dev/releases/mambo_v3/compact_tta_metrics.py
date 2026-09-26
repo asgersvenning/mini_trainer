@@ -2,21 +2,18 @@
 
 import argparse
 import csv
-import importlib.metadata
 import json
 from pathlib import Path
 
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
 
 
 def collect(root, study):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json"))
-    if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
-        raise ValueError("Require pinned mini_metrics")
+    require_pinned_metrics()
     report = json.loads((root / "report.json").read_text())
     if report["status"] != "complete":
         raise ValueError("Incomplete inference")

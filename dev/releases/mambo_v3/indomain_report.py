@@ -2,7 +2,6 @@
 
 import argparse
 import csv
-import importlib.metadata
 import json
 from pathlib import Path
 
@@ -11,7 +10,7 @@ import numpy as np
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.defaults_report import SERIES
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
 from dev.releases.mambo_v3.tail_charts import render_paired
 from dev.releases.mambo_v3.tail_report import collect as collect_tails
 from dev.releases.mambo_v3.threshold_report import identity
@@ -22,9 +21,7 @@ def collect(root, output):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import MacroF1, OptimalConfidenceThreshold, evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json"))
-    if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
-        raise ValueError("Require pinned mini_metrics")
+    require_pinned_metrics()
     plan = json.loads((root / "full/plan.json").read_text())
     if plan["status"] != "complete" or set(plan["completed"]) != {m for m, _, _ in SERIES}:
         raise ValueError("Require five completed models")

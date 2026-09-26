@@ -1,7 +1,6 @@
 """Compare pinned mini_metrics accuracy by training and evaluation class support."""
 
 import argparse
-import importlib.metadata
 import json
 import tomllib
 from collections import Counter
@@ -11,7 +10,7 @@ import numpy as np
 
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
 
 from .figure_export import save_figure
 
@@ -54,9 +53,7 @@ def measure(args):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json"))
-    if provenance["vcs_info"]["commit_id"] != REVISION:
-        raise ValueError("Wrong mini_metrics revision")
+    require_pinned_metrics()
     training = json.loads(args.counts.read_text())
     roots = {"v2": args.v2, "v3-torch": args.v3 / "torch-cuda-0-prediction", "v3-onnx": args.v3 / "onnx-cuda-0-prediction"}
     result = {

@@ -3,7 +3,6 @@
 import argparse
 import csv
 import hashlib
-import importlib.metadata
 import json
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.acceleration_report import METRICS
 from dev.releases.mambo_v3.defaults_report import SERIES
 from dev.releases.mambo_v3.evaluation_data import write_json
-from dev.releases.mambo_v3.metrics import REVISION, finite_json
+from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
 
 from .figure_export import save_figure
 
@@ -37,9 +36,7 @@ def collect(root, output):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import MacroF1, OptimalConfidenceThreshold, evaluate_file
 
-    provenance = json.loads(importlib.metadata.distribution("mini_metrics").read_text("direct_url.json") or "{}")
-    if provenance.get("vcs_info", {}).get("commit_id") != REVISION:
-        raise ValueError(f"Require mini_metrics revision {REVISION}")
+    require_pinned_metrics()
     output.mkdir(parents=True, exist_ok=True)
     result = {
         "revision": REVISION,
