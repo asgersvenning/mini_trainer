@@ -2,7 +2,7 @@ import torch
 
 
 class SupervisionContext:
-    """Used for passing a target to the classification module."""
+    """Process-global target passed to classifier heads; cleared on context exit."""
 
     _target: torch.Tensor | None = None
 
@@ -29,7 +29,7 @@ class SupervisionContext:
 
 
 class EmbeddingContext:
-    """Used for passing embeddings from the classification module to the criterion (or elsewhere)."""
+    """Process-global embedding handoff preserving gradients; nested contexts are rejected."""
 
     # Dynamo can carry dictionary mutations out of a compiled graph. Assigning
     # a Tensor to a class attribute instead forces a graph break at publication.
