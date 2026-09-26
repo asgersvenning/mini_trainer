@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -49,8 +50,17 @@ class CleanupOnFailure:
 
 
 def download_with_progress(url, dst, max_workers=8):
+    """Publish a downloaded archive only after its transfer succeeds."""
     print(f"Downloading {url} to {dst}...")
+    destination = os.path.abspath(dst)
+    with tempfile.TemporaryDirectory(dir=os.path.dirname(destination), prefix=".download-") as staging:
+        partial = os.path.join(staging, os.path.basename(destination))
+        _download_to_file(url, partial, max_workers)
+        os.replace(partial, destination)
+    print("Download complete.")
 
+
+def _download_to_file(url, dst, max_workers):
     # 1. HEAD request to check size and range support
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
     try:
@@ -128,8 +138,6 @@ def download_with_progress(url, dst, max_workers=8):
                             break
                         f.write(buffer)
                         pbar.update(len(buffer))
-
-    print("Download complete.")
 
 
 def _extract_native(command, success_codes=(0,)):
