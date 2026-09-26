@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 
 import numpy as np
@@ -27,30 +26,8 @@ def test_invalid_settings_fail_before_output_creation(tmp_path, settings):
 
 
 @pytest.mark.parametrize("pinned", [False, True])
-def test_real_engine_memory_and_retained_failure(tmp_path, pinned):
-    if os.environ.get("RUN_CUDA_TESTS") != "1":
-        pytest.skip("Set RUN_CUDA_TESTS=1 in an explicitly prepared GPU environment")
-    pytest.importorskip("tensorrt")
-    onnx = pytest.importorskip("onnx")
-    from dev.benchmarks.inference.tensorrt_build import build
-
-    graph = onnx.helper.make_graph(
-        [onnx.helper.make_node("Add", ["x", "offset"], ["scores"])],
-        "two-input",
-        [
-            onnx.helper.make_tensor_value_info("x", onnx.TensorProto.FLOAT, [2, 2]),
-            onnx.helper.make_tensor_value_info("offset", onnx.TensorProto.FLOAT, [2]),
-        ],
-        [onnx.helper.make_tensor_value_info("scores", onnx.TensorProto.FLOAT, [2, 2])],
-    )
-    model = tmp_path / "model.onnx"
-    onnx.save(onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 18)], ir_version=10), model)
-    inputs = tmp_path / "inputs.npz"
-    x = np.arange(4, dtype=np.float32).reshape(2, 2)
-    offset = np.array([0.5, -0.5], dtype=np.float32)
-    np.savez(inputs, x=x, offset=offset)
-    build(model, inputs, tmp_path / "build", optimization=0)
-    engine = tmp_path / "build/model.engine"
+def test_real_engine_memory_and_retained_failure(tmp_path, pinned, tensorrt_add_engine):
+    engine, inputs, x, offset = tensorrt_add_engine
     result = measure(engine, inputs, tmp_path / "memory", runs=2, pinned=pinned)
     assert result["status"] == "passed"
     assert result == json.loads((tmp_path / "memory/report.json").read_text())
