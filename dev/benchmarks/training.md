@@ -68,10 +68,10 @@ arguments. These are focused diagnostics, not substitutes for paired training.
 | `training.large_head_training` | EfficientNetV2 large-head setup, steps and memory; `--frozen` evaluates the backbone |
 | `training.quantized_training` | Integer linear forward/backward and updates against floating compute |
 | `training.quantization` | Separate CPU PTQ/QAT behavior |
-| `data.loader` | Cached loader throughput |
-| `data.cache` | Cache construction and host/shared-memory costs |
-| `data.reader` | Streaming image decode/resize |
-| `data.transfer` | Host/device transfer and overlap |
+| `data.loader` | Scalar vs batched fetching; optional pinned gathering |
+| `data.cache` | CPU cache construction from repeated PNGs |
+| `data.reader` | Real-image decode/resize with exact batch comparison |
+| `data.transfer` | Pinned H2D/overlap with fixed ResNet18; optional backward |
 
 ```bash
 OMP_NUM_THREADS=1 .venv/bin/python -m dev.benchmarks.data.loader

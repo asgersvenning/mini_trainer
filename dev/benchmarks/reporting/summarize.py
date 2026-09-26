@@ -82,18 +82,17 @@ def summarize(directory: Path) -> str:
     lines.extend(
         [
             "",
-            "Synthetic profiles require 100% oracle accuracy. Real-data runs marked `completed`",
-            "have no quality acceptance threshold yet; completion does not establish an improvement.",
+            "Synthetic runs require 100% oracle accuracy; real-data completion has no quality gate.",
+            "Compare matching hardware, data/configuration and measurement scopes. CPU results do not validate GPU behavior.",
+            "See JSON reports for provenance, errors and coverage.",
             "",
-            "Wall times include setup, training, validation, logging and checkpoints. Compare timings",
-            "only with matching hardware, dataset/configuration and timing scope. See JSON reports",
-            "for provenance, errors and explicit coverage flags. CPU results do not validate GPU behavior.",
-            "QT coverage counts quantized Linear modules; other operations may remain floating point.",
-            "Frozen backbone parameters do not imply evaluation mode: fine-tuning retains normal BatchNorm/dropout behavior.",
-            "Parameter bytes describe stored parameters. CUDA peaks cover training, excluding final held-out inference.",
-            "Older CUDA readings without a scope marker are unverified because logger resets could hide earlier peaks.",
-            "Later-epoch medians use timed training phases from epoch 3 onward, including loading, preprocessing and batch logging.",
-            "They exclude validation/figures/checkpoints, but may still include later compilation; they do not replace total wall time.",
+            "- Wall time: setup, training, validation, logging and checkpoints.",
+            "- Epoch 3+ median: loading, preprocessing and batch logging; excludes validation, figures and checkpoints.",
+            "  Later compilation may still contribute; this does not replace wall time.",
+            "- CUDA peak: training allocations, excluding final held-out inference. Legacy readings without scope markers",
+            "  are unverified because logger resets could hide earlier peaks.",
+            "- Parameter bytes: stored parameters. QT coverage: INT8 Linear modules; other operations may remain floating point.",
+            "- Frozen backbone: parameters frozen, normal training-mode BatchNorm/dropout retained.",
         ]
     )
     return "\n".join(lines) + "\n"
