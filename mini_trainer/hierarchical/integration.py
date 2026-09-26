@@ -20,8 +20,7 @@ from mini_trainer.integrations import (
     parquet_to_class_spec_hierarchical,
 )
 from mini_trainer.logging import BaseResultCollector
-from mini_trainer.training import EMLACrossEntropy, named_confusion_matrix
-from mini_trainer.visualization import plot_heatmap
+from mini_trainer.training import EMLACrossEntropy
 
 from .loss import MultiLevelWeightedCrossEntropyLoss
 from .model import HierarchicalClassifier, HierarchicalPrediction
@@ -348,23 +347,8 @@ class HierarchicalResultCollector(BaseResultCollector):
 
         results = {}
         for level in range(self._levels):
-            lvl_results = named_confusion_matrix(
-                results={k: [row[level] for row in v] if k in ("preds", "confs", "labels") else v for k, v in data.items()},
-                cls2idx=self.cls2idx[str(level)],
-                verbose=self.verbose,
-            )
-            results[level] = lvl_results
-
-            if plot_conf_mat and save:
-                assert outdir is not None
-                dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
-                classes = [k for k, v in sorted(self.cls2idx[str(level)].items(), key=lambda x: x[1])]
-                conf_mat = lvl_results["conf_mat"]
-
-                conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-                arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
-                from PIL.Image import fromarray
-
-                fromarray(arr).save(dst)
+            rank_data = {k: [row[level] for row in v] if k in ("preds", "confs", "labels") else v for k, v in data.items()}
+            dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png") if plot_conf_mat and save else None
+            results[level] = self._evaluate_labels(rank_data, self.cls2idx[str(level)], dst)
 
         return results
