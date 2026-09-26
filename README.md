@@ -19,6 +19,17 @@ All code in `mini_trainer` should follow the following core principles:
 * All hyperparameters and system configuration should have smart defaults that are as general as possible
 * All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
 
+## Find your workflow
+
+| Task | Start here |
+| --- | --- |
+| Integrate the MAMBO release candidate | [Deployment API and CLI](deployment/README.md) |
+| Prepare data or adapt an example | [Examples](examples/README.md) |
+| Change the trainer or run checks | [Development guide](dev/README.md), [test map](tests/README.md) |
+| Compare models, backends or training settings | [Benchmarks](dev/benchmarks/README.md) |
+| Run on UCloud or reproduce research | [UCloud](dev/ucloud/README.md), [research experiments](publication/experiments/README.md) |
+| Choose the next development task | [Roadmap](docs/roadmap.md) |
+
 ## Installation
 
 Use [uv](https://docs.astral.sh/uv/getting-started/installation/) for environment
@@ -58,9 +69,6 @@ Replace `recommended` with `all` for the additional backends/export tools above.
 Activate the environment, use its executables directly, or use `uv run --no-sync`.
 An implicit sync can replace the deliberately selected PyTorch backend. Select the
 backend explicitly whenever installing or synchronizing dependencies.
-
-The [examples index](examples/README.md) describes dataset constructors and historical
-notebook demonstrations.
 
 ## Data loading on shared machines
 
