@@ -1,13 +1,12 @@
 """Compose TensorRT held-out quality, inspection, paired latency and isolated memory."""
 
 import json
-import os
-import subprocess
 import sys
 from argparse import ArgumentParser
 from collections import Counter
 from pathlib import Path
 
+from ._stage import run_stage
 from .inference_pair import run_pair
 from .onnx_inference import file_hash
 
@@ -83,26 +82,7 @@ def evaluate(
 
     def child(name, module, arguments):
         command = [sys.executable, "-m", f"dev.benchmarks.inference.{module}", *map(str, arguments), "--output", str(output / name)]
-        stage = {"name": name, "command": command, "status": "running", "log": f"{name}.log"}
-        report["stages"].append(stage)
-        save()
-        with (output / stage["log"]).open("w") as log:
-            process = subprocess.run(
-                command,
-                cwd=Path(__file__).resolve().parents[3],
-                env={**os.environ, "PYTHONHASHSEED": "0", "OMP_NUM_THREADS": str(threads)},
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-        stage["returncode"] = process.returncode
-        if process.returncode:
-            raise RuntimeError(f"{name} failed; see {output / stage['log']}")
-        result = json.loads((output / name / "report.json").read_text())
-        if result["status"] != "passed":
-            raise RuntimeError(f"Unexpected {name} status: {result['status']}")
-        stage.update(status="passed", report_sha256=file_hash(output / name / "report.json"))
-        return result
+        return run_stage(output, report, name, command, "passed", env={"OMP_NUM_THREADS": str(threads)})
 
     def identity(role, engine_info):
         if engine_info["sha256"] != report["builds"][role]["engine"]["sha256"]:
