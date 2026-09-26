@@ -52,6 +52,7 @@ def prepare(source, output):
         package(bundle, stage / "mambo_deploy/default_bundle.json")
         subprocess.run(["uv", "build", "--project", str(stage), "--wheel", "--sdist", "--out-dir", str(dist)], check=True)
     subprocess.run(["uv", "build", "--wheel", "--out-dir", str(dist)], cwd=ROOT, check=True)
+    (dist / ".gitignore").unlink(missing_ok=True)  # Build sidecar, omitted by Actions artifact upload.
     (output / "RELEASE_README.md").write_text(distribution_readme())
     for name in ("publication.md", "evidence-policy.md", "model-provenance.toml"):
         shutil.copyfile(HERE / name, output / name)
