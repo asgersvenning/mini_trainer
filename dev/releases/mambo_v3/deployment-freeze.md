@@ -11,9 +11,10 @@ remains MIT. Final artifact identities and installed checks are recorded in
 - Integrated the `minitrainer` distribution rename, retaining `mini_trainer` imports.
   Both lockfiles preserve dependency versions. Isolated installed-wheel imports,
   CLI, training, checkpoint reload and inference passed.
-- Training publication now accepts `minitrainer-vVERSION` release events only;
+- Training publication now accepts `packages/minitrainer/vVERSION` release events only;
   manual dispatch prepares artifacts without publication. Model and demo publication
-  have separate workflows, environment gates and verified upload inventories.
+  have separate workflows, per-product environment gates and verified upload inventories.
+  [Hierarchical branch/tag routing](../README.md) is shared across releases.
 - The CPU Space uses the release API with runtime, scope, custom-list, TTA and
   top-K controls and names for all 17,212 taxa. Runtime reuse is qualified on a
   real image; final installed-candidate qualification is recorded with its artifacts.

@@ -1,8 +1,14 @@
-name: Prepare or update MAMBO demo
+name: Prepare or update model demo
 
 on:
+  push:
+    branches: ["release/demos/**"]
   workflow_dispatch:
     inputs:
+      product:
+        description: Model distribution name, e.g. mambo-v3
+        type: string
+        required: true
       publish:
         description: Deploy the reviewed demo to Hugging Face
         type: boolean
@@ -12,11 +18,31 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-mambo-v3-space
+  group: prepare-demo-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  route:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.route.outputs.enabled }}
+      product: ${{ steps.route.outputs.product }}
+      module: ${{ steps.route.outputs.module }}
+      tag: ${{ steps.route.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: route
+        env:
+          RELEASE_PRODUCT: ${{ inputs.product }}
+        run: python3 dev/release_route.py demos
+
   prepare:
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+    needs: route
+    if: needs.route.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -27,7 +53,7 @@ jobs:
       - run: uv pip install --python .venv-release/bin/python numpy pillow
       - name: Stage only the demo
         run: |
-          .venv-release/bin/python -c 'from pathlib import Path; from dev.releases.mambo_v3.publication_assets import stage_space; stage_space(Path("space"))'
+          .venv-release/bin/python -c 'import os; from pathlib import Path; from importlib import import_module; stage_space=import_module(os.environ["RELEASE_MODULE"]+".publication_assets").stage_space; stage_space(Path("space"))'
       - name: Check the installed public demo dependencies
         env:
           GRADIO_ANALYTICS_ENABLED: "False"
@@ -36,22 +62,27 @@ jobs:
           .venv-release/bin/python -c 'import runpy; app=runpy.run_path("space/app.py"); app["build_app"]()'
       - uses: actions/upload-artifact@v4
         with:
-          name: mambo-v3-space
+          name: model-space
           path: space/
           if-no-files-found: error
 
   publish:
-    needs: prepare
-    if: inputs.publish
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+    needs: [route, prepare]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
     runs-on: ubuntu-latest
-    environment: model-demo
+    concurrency:
+      group: deploy-space-${{ needs.route.outputs.product }}
+      cancel-in-progress: false
+    environment: model-demo-${{ needs.route.outputs.product }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: mambo-v3-space
+          name: model-space
           path: space/
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
@@ -60,4 +91,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
-        run: .venv-release/bin/python -m dev.releases.mambo_v3.publish_assets space space "$HF_SPACE_REPO"
+        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space space "$HF_SPACE_REPO"

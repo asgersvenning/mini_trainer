@@ -8,8 +8,8 @@ hashes are the candidate's `release-candidate.json` and `SHA256SUMS`.
 ## Current candidate records
 
 Local output: `local-evidence/mambo-v3-publication-candidate/`. The corresponding
-Action output is `mambo-v3-candidate`; the explicit upload set is
-`mambo-v3-publication`. A manifest with `qualification != "passed"` cannot be
+Action output is `model-candidate`; the explicit upload set is
+`model-publication`. A manifest with `qualification != "passed"` cannot be
 staged. Inspect these retained records rather than treating this page as a
 completion marker:
 

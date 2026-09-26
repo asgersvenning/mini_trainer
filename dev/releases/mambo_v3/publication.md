@@ -15,16 +15,16 @@ publishers with owner `asgersvenning`, repository `mini_trainer` and these setti
 | Project | Workflow filename | GitHub environment |
 | --- | --- | --- |
 | `minitrainer` | `publish.yml` | `pypi-training` |
-| `mambo-v3` | `publish-model.yml` | `pypi-model` |
+| `mambo-v3` | `publish-model.yml` | `pypi-model-mambo-v3` |
 
-Create those GitHub environments plus `model-assets` and `model-demo`, with owner
+Create those GitHub environments plus `model-assets-mambo-v3` and `model-demo-mambo-v3`, with owner
 review before public writes. No PyPI API token is needed. Create the Hugging Face
 model repository and Gradio Space, both named `asgersvenning/MAMBO-v3` in their
 respective namespaces. Choose CPU Basic initially; the demo does not need a GPU.
 
-- `model-assets`: variable `HF_MODEL_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
+- `model-assets-mambo-v3`: variable `HF_MODEL_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
   with write access limited to that model repository.
-- `model-demo`: variable `HF_SPACE_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
+- `model-demo-mambo-v3`: variable `HF_SPACE_REPO=asgersvenning/MAMBO-v3`; secret `HF_TOKEN`
   with write access limited to that Space.
 
 These are the destinations linked in the public documentation. If using another
@@ -33,18 +33,23 @@ variables. Do not put tokens in source, release assets or CLI arguments.
 
 ## 2. Review and prepare without publishing
 
+[Shared routing conventions](../README.md) use `release/packages/**`,
+`release/models/**` and `release/demos/**` for automatic preparation. The existing
+`release/mambo-v3` branch can stay in place and use manual preparation; it has no
+special publication permission. `MAMBO_v3` is an explicit descriptor tag override.
+
 Make the reviewed workflow changes available on the repository's default branch
 before using manual Actions dispatch. Push the release source through the normal
 review/merge process; no release tag is needed for preparation.
 
-Run **Prepare and publish MAMBO V3** (`publish-model.yml`) manually on the intended
-release revision. Manual dispatch only downloads pinned inputs, builds artifacts,
+Run **Prepare and publish model** (`publish-model.yml`) manually on the intended
+release revision with `product=mambo-v3`. Manual dispatch only downloads pinned inputs, builds artifacts,
 qualifies installed CPU runtimes and uploads downloadable Action artifacts;
 it does not run any publication job. Download and review:
 
-- `mambo-v3-candidate`: exact wheels, source distribution, offline bundle, evidence,
+- `model-candidate`: exact wheels, source distribution, offline bundle, evidence,
   source/hash manifest and `qualification/` results.
-- `mambo-v3-publication`: the explicit GitHub, model and Space upload directories.
+- `model-publication`: the explicit GitHub, model and Space upload directories.
 
 The CLI equivalent, from a clean committed checkout with NumPy/Pillow and uv:
 
@@ -71,7 +76,7 @@ prediction archives, credentials or datasets belong in the upload directories.
 ## 3. Publish training, then the model
 
 At the reviewed commit, create and **publish a GitHub Release** with tag
-`minitrainer-v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
+`packages/minitrainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
 `publish.yml` builds, installs and exercises the wheel, then publishes the exact
 retained wheel and the source distribution to PyPI. Model/Space jobs do not run.
 Verify `minitrainer==0.3.0` is publicly available under the intended ownership.
@@ -79,12 +84,12 @@ Verify `minitrainer==0.3.0` is publicly available under the intended ownership.
 Then publish the GitHub Release tagged **`MAMBO_v3`** at the reviewed model commit.
 The model workflow prepares and qualifies its candidate before the public gates:
 
-1. `pypi-model` publishes only `mambo-v3` distributions. It first checks that the
+1. `pypi-model-mambo-v3` publishes only `mambo-v3` distributions. It first checks that the
    intended `minitrainer` version is public and points to this repository.
-2. `model-assets` attaches the offline bundle, deployment distributions, evidence,
+2. `model-assets-mambo-v3` attaches the offline bundle, deployment distributions, evidence,
    inventory and checksums to GitHub; it uploads the model repository and creates
    an immutable Hugging Face `v0.3.0` tag at that upload's commit.
-3. `model-demo` deploys the staged Space after package/model publication succeeds.
+3. `model-demo-mambo-v3` deploys the staged Space after package/model publication succeeds.
 
 Prereleases prepare artifacts but do not publish packages or activate the demo.
 Training versions and model versions need not advance together. Future trained
@@ -113,9 +118,9 @@ that public endpoints were exercised during local preparation.
 
 ## Demo updates and recovery
 
-For a UI-only update, dispatch **Prepare or update MAMBO demo** (`publish-demo.yml`)
-on a reviewed revision. The default `publish=false` builds/checks a staged Space
-without public writes. Set `publish=true` and approve `model-demo` to deploy it.
+For a UI-only update, dispatch **Prepare or update model demo** (`publish-demo.yml`)
+on a reviewed revision with `product=mambo-v3`. The default `publish=false` builds/checks a staged Space
+without public writes. Set `publish=true` and approve `model-demo-mambo-v3` to deploy it.
 This workflow uploads no package or model weights. It requires the public package
 release to exist and pins that package and its CPU runtime dependencies.
 

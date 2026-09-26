@@ -1,0 +1,8 @@
+# Routing is shared; preparation and artifact semantics belong to each model.
+[models.mambo-v3]
+project = "deployment"
+module = "dev.releases.mambo_v3"
+# Preserve the tag already used throughout this release's public documentation.
+# Omit these two fields for the standard models/PRODUCT/vVERSION convention.
+tag = "MAMBO_v3"
+tag_version = "0.3.0"
