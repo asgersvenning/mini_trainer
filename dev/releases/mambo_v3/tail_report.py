@@ -21,7 +21,7 @@ def eligible_classes(truth, accepted_predictions, cutoff):
     }
 
 
-def collect(study, *, full_dataset=False):
+def collect(study):
     from mini_metrics.data import MetricDF
     from mini_metrics.metrics import MacroAccuracy, MacroF1, MacroPrecision, MacroRecall
 
@@ -33,13 +33,12 @@ def collect(study, *, full_dataset=False):
         if file_hash(source["source"]) != source["source_sha256"]:
             raise ValueError("Changed predictions")
         data = MetricDF.from_source(source["source"])
-        if not full_dataset:
-            data, _ = data.split((0.9, 0.1), strata=("label",), seed=42)
+        data, _ = data.split((0.9, 0.1), strata=("label",), seed=42)
         identities[model] = identity(data)
-        if not full_dataset and identity(data) != source["identities"]["report"]:
+        if identity(data) != source["identities"]["report"]:
             raise ValueError("Changed reporting partition")
         work[model] = {}
-        scopes = (("zero", 0),) if full_dataset else (("zero", 0), ("optimized", source["thresholds"]))
+        scopes = (("zero", 0), ("optimized", source["thresholds"]))
         for scope, threshold in scopes:
             df = data.with_threshold(threshold)
             groups = {name: metric(df, aggregate=False, verbose=0) for name, metric in metrics.items()}
@@ -54,14 +53,14 @@ def collect(study, *, full_dataset=False):
     if len(set(identities.values())) != 1:
         raise ValueError("Model evaluation populations differ")
     result = {
-        "population": "full_dataset" if full_dataset else "reporting_partition",
+        "population": "reporting_partition",
         "identities": identities,
         "sources_sha256": {model: source["source_sha256"] for model, source in study["models"].items()},
         "revision": REVISION,
         "policy": "Strictly > cutoff in both truth and accepted predictions; preserve all per-class FP/FN; macro reaggregation only",
         "rows": [],
     }
-    for scope in ("zero",) if full_dataset else ("zero", "optimized"):
+    for scope in ("zero", "optimized"):
         for level, rank in enumerate(("species", "genus", "family")):
             for cutoff in (-1, 5, 10, 20):
                 eligible = {
@@ -106,9 +105,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study", type=Path, default=Path("docs/assets/mambo-threshold-comparison.json"))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--full-dataset", action="store_true", help="Use all source images at threshold zero only")
     args = parser.parse_args()
-    result = collect(json.loads(args.study.read_text()), full_dataset=args.full_dataset)
+    result = collect(json.loads(args.study.read_text()))
     args.output.mkdir(parents=True, exist_ok=True)
     write_json(args.output / "mambo-tail-metrics.json", result)
     with (args.output / "mambo-tail-metrics.csv").open("w", newline="") as stream:
