@@ -28,10 +28,6 @@ from mini_trainer.utils import (
     save_on_master,
 )
 
-# from mini_trainer.contrastive import SupConLoss
-
-# contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
-
 
 def _optimizer_step(optimizer: Optimizer, scaler: GradScaler) -> bool:
     """Step and update the scaler; report a completed, non-overflow optimizer step.
@@ -134,8 +130,6 @@ def train_one_epoch(
         with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
             loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
-            # TODO: Add optional contrastive path
-            # ctr_loss = contrastive_criterion()
             # If EMA is disabled ``distill_loss`` is ``0.0``
             distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
