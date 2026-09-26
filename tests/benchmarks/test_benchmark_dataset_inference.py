@@ -88,6 +88,7 @@ def test_pair_pipeline_runs_real_children_and_preserves_evidence(example, tmp_pa
     assert report["stages"][0]["command"][0] == sys.executable
     assert all(level["prediction_changes"] == 0 for level in report["levels"])
     assert all(value == 0 for level in report["levels"] for value in level["candidate_minus_baseline"].values())
+    assert all(v == pytest.approx(1) for levels in report["models"]["candidate"]["metrics"].values() for v in levels.values())
     assert (output / "candidate/scores-00001.npz").is_file()
     assert "Theil U delta" in (output / "summary.md").read_text()
     with pytest.raises(FileExistsError):
@@ -211,18 +212,6 @@ def test_bundle_rejects_different_labels(example, tmp_path):
     bundle["samples"][0]["labels"][0] = "changed"
     with pytest.raises(ValueError, match="samples"):
         pair_bundle(baseline, bundle)
-
-
-def test_cpu_inference_to_real_mini_metrics(example, tmp_path):
-    pytest.importorskip("onnxruntime")
-    pytest.importorskip("mini_metrics")
-    from dev.benchmarks.inference.quality_compare import compare
-
-    model, manifest, _ = example
-    collect(model, manifest, tmp_path / "baseline")
-    collect(model, manifest, tmp_path / "candidate", baseline_bundle=tmp_path / "baseline/evaluation.json")
-    result = compare(tmp_path / "candidate/comparison.json", tmp_path / "metrics")
-    assert all(v == pytest.approx(1) for levels in result["models"]["candidate"]["metrics"].values() for v in levels.values())
 
 
 def test_cpu_collection_does_not_import_training_or_gpu_packages(example, tmp_path):
