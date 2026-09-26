@@ -11,9 +11,14 @@ on:
         description: Model distribution name, e.g. mambo-v3
         type: string
         required: true
+      resume_run:
+        description: Original publication run ID to finish assets/demo without rebuilding (leave blank to prepare)
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: publish-model-${{ github.ref }}
@@ -27,6 +32,8 @@ jobs:
       product: ${{ steps.route.outputs.product }}
       module: ${{ steps.route.outputs.module }}
       tag: ${{ steps.route.outputs.tag }}
+      version: ${{ steps.route.outputs.version }}
+      recovery_source: ${{ steps.recovery.outputs.source }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -35,12 +42,20 @@ jobs:
         env:
           RELEASE_PRODUCT: ${{ inputs.product }}
         run: python3 dev/release_route.py models
+      - id: recovery
+        if: github.event_name == 'workflow_dispatch' && inputs.resume_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIGINAL_RUN: ${{ inputs.resume_run }}
+          RELEASE_TAG: ${{ steps.route.outputs.tag }}
+          RELEASE_MODULE: ${{ steps.route.outputs.module }}
+        run: python3 -m ${RELEASE_MODULE}.recover_publication run --run "$ORIGINAL_RUN" --tag "$RELEASE_TAG"
 
   prepare:
     env:
       RELEASE_MODULE: ${{ needs.route.outputs.module }}
     needs: route
-    if: needs.route.outputs.enabled == 'true'
+    if: needs.route.outputs.enabled == 'true' && inputs.resume_run == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -83,6 +98,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -108,11 +124,13 @@ jobs:
       RELEASE_MODULE: ${{ needs.route.outputs.module }}
       RELEASE_TAG: ${{ needs.route.outputs.tag }}
     needs: [route, package]
+    if: ${{ !cancelled() && needs.route.result == 'success' && (needs.package.result == 'success' || needs.route.outputs.recovery_source != '') }}
     runs-on: ubuntu-latest
     environment: model-assets-${{ needs.route.outputs.product }}
     permissions:
       id-token: write
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -121,15 +139,25 @@ jobs:
         with:
           name: model-publication
           path: publication/
+          run-id: ${{ inputs.resume_run || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
       - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
+      - name: Verify retained release identity
+        env:
+          RELEASE_SOURCE: ${{ needs.route.outputs.recovery_source || github.sha }}
+          RELEASE_PRODUCT: ${{ needs.route.outputs.product }}
+          RELEASE_VERSION: ${{ needs.route.outputs.version }}
+        run: |
+          .venv-release/bin/python -m ${RELEASE_MODULE}.recover_publication payload publication \
+            --source "$RELEASE_SOURCE" --product "$RELEASE_PRODUCT" --version "$RELEASE_VERSION"
       - name: Publish GitHub assets without replacing existing files
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
         run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets github publication/github "$GH_REPOSITORY" --tag "$RELEASE_TAG"
-      - name: Publish model and immutable Hugging Face revision
+      - name: Publish model and record immutable Hugging Face commit
         env:
           HF_MODEL_REPO: ${{ vars.HF_MODEL_REPO }}
           HF_OIDC_RESOURCE: ${{ vars.HF_MODEL_REPO }}
@@ -140,12 +168,18 @@ jobs:
           test -n "$HF_TOKEN"
           echo "::add-mask::$HF_TOKEN"
           export HF_TOKEN
-          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets model publication/model "$HF_MODEL_REPO"
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets model publication/model "$HF_MODEL_REPO" --receipt "$RUNNER_TEMP/hf-model-revision.json"
+      - name: Attach immutable model revision to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets github-receipt "$RUNNER_TEMP/hf-model-revision.json" "$GH_REPOSITORY" --tag "$RELEASE_TAG"
 
   demo:
     env:
       RELEASE_MODULE: ${{ needs.route.outputs.module }}
     needs: [route, assets]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.assets.result == 'success' }}
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-space-${{ needs.route.outputs.product }}
@@ -154,6 +188,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -162,9 +197,19 @@ jobs:
         with:
           name: model-publication
           path: publication/
+          run-id: ${{ inputs.resume_run || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv venv --python 3.13 .venv-release
       - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
+      - name: Verify retained release identity
+        env:
+          RELEASE_SOURCE: ${{ needs.route.outputs.recovery_source || github.sha }}
+          RELEASE_PRODUCT: ${{ needs.route.outputs.product }}
+          RELEASE_VERSION: ${{ needs.route.outputs.version }}
+        run: |
+          .venv-release/bin/python -m ${RELEASE_MODULE}.recover_publication payload publication \
+            --source "$RELEASE_SOURCE" --product "$RELEASE_PRODUCT" --version "$RELEASE_VERSION"
       - name: Deploy the reviewed Space
         env:
           HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
@@ -176,4 +221,9 @@ jobs:
           test -n "$HF_TOKEN"
           echo "::add-mask::$HF_TOKEN"
           export HF_TOKEN
-          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space publication/space "$HF_SPACE_REPO"
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space publication/space "$HF_SPACE_REPO" --receipt "$RUNNER_TEMP/hf-space-revision.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hf-space-revision
+          path: ${{ runner.temp }}/hf-space-revision.json
+          if-no-files-found: error

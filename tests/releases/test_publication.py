@@ -1,4 +1,4 @@
-"""Publication must reject changed bytes and must not repeat immutable Hub uploads."""
+"""Publication preserves reviewed payloads and pins actual Hub upload commits."""
 
 import json
 import sys
@@ -12,15 +12,17 @@ from dev.releases.mambo_v3.publish_assets import hub, verified_payload
 
 @pytest.fixture
 def payload(tmp_path):
-    (tmp_path / "README.md").write_text("Public model card")
+    folder = tmp_path / "payload"
+    folder.mkdir()
+    (folder / "README.md").write_text("Public model card")
     data = {
         "source_commit": "a" * 40,
         "package_version": "0.3.0",
         "model_id": "MAMBO_v3",
-        "files": {"README.md": digest(tmp_path / "README.md")},
+        "files": {"README.md": digest(folder / "README.md")},
     }
-    (tmp_path / "publication.json").write_text(json.dumps(data))
-    return tmp_path
+    (folder / "publication.json").write_text(json.dumps(data))
+    return folder
 
 
 def test_modified_or_uninventoried_file_cannot_be_published(payload):
@@ -33,45 +35,76 @@ def test_modified_or_uninventoried_file_cannot_be_published(payload):
         verified_payload(payload)
 
 
-def test_hub_retry_checks_identity_without_reupload(payload, monkeypatch, tmp_path):
-    remote = tmp_path / "remote.json"
-    remote.write_bytes((payload / "publication.json").read_bytes())
-    # Keep simulated remote state outside the local publication inventory.
-    remote_state = remote.read_text()
-    remote.unlink()
-    calls = []
-    api = SimpleNamespace(
-        token="unused",
-        list_repo_refs=lambda *a, **kw: SimpleNamespace(tags=[SimpleNamespace(name="v0.3.0")]),
-        upload_folder=lambda **kw: calls.append(kw),
-        create_tag=lambda **kw: calls.append(kw),
-    )
+@pytest.fixture
+def remote(payload, monkeypatch):
+    class MissingManifest(Exception):
+        pass
+
+    state = SimpleNamespace(manifest=json.loads((payload / "publication.json").read_text()), calls=[], failure=None)
 
     def download(*a, **kw):
-        destination = tmp_path.parent / f"{tmp_path.name}-remote.json"
-        destination.write_text(remote_state)
-        return str(destination)
+        assert kw["revision"] == "b" * 40
+        if state.failure:
+            raise state.failure
+        if state.manifest is None:
+            raise MissingManifest
+        path = payload.parent / "remote.json"
+        path.write_text(json.dumps(state.manifest))
+        return str(path)
 
+    def upload(**kw):
+        state.calls.append(kw)
+        return SimpleNamespace(oid="c" * 40)
+
+    # Deliberately no create_tag method: trusted publication does not need one.
+    api = SimpleNamespace(token="unused", repo_info=lambda *a, **kw: SimpleNamespace(sha="b" * 40), upload_folder=upload)
     monkeypatch.setenv("HF_TOKEN", "unused")
     monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(HfApi=lambda **kw: api, hf_hub_download=download))
-    hub(payload, "owner/model", "model")
-    assert calls == []
-    remote_state = json.dumps({"different": "release"})
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", SimpleNamespace(EntryNotFoundError=MissingManifest))
+    return state
+
+
+@pytest.mark.parametrize("kind", ["model", "space"])
+def test_hub_retry_reuses_uploaded_commit_and_records_receipt(payload, remote, kind):
+    receipt = hub(payload, "owner/model", kind)
+    assert remote.calls == []
+    assert receipt == {
+        "repository": "owner/model",
+        "repo_type": kind,
+        "revision": "b" * 40,
+        "source_commit": "a" * 40,
+        "model_id": "MAMBO_v3",
+        "package_version": "0.3.0",
+        "publication_sha256": digest(payload / "publication.json"),
+    }
+
+
+@pytest.mark.parametrize("kind", ["model", "space"])
+def test_hub_new_upload_uses_observed_parent_and_pins_returned_commit(payload, remote, kind):
+    remote.manifest = None
+    receipt = hub(payload, "owner/model", kind)
+    assert receipt["revision"] == "c" * 40
+    assert remote.calls[0]["parent_commit"] == "b" * 40
+
+
+@pytest.mark.parametrize("kind", ["model", "space"])
+def test_hub_rejects_changed_payload_at_same_release_source(payload, remote, kind):
+    remote.manifest["files"] = {}
+    with pytest.raises(ValueError, match="Refusing to replace"):
+        hub(payload, "owner/model", kind)
+    assert remote.calls == []
+
+
+def test_model_cannot_be_replaced_but_reviewed_space_can_advance(payload, remote):
+    remote.manifest["source_commit"] = "d" * 40
     with pytest.raises(ValueError, match="Refusing to replace"):
         hub(payload, "owner/model", "model")
-    assert calls == []
+    assert remote.calls == []
+    assert hub(payload, "owner/model", "space")["revision"] == "c" * 40
 
 
-def test_hub_tags_exact_uploaded_commit(payload, monkeypatch):
-    calls = []
-    api = SimpleNamespace(
-        token="unused",
-        list_repo_refs=lambda *a, **kw: SimpleNamespace(tags=[]),
-        upload_folder=lambda **kw: SimpleNamespace(oid="reviewed-upload-commit"),
-        create_tag=lambda **kw: calls.append(kw),
-    )
-    monkeypatch.setenv("HF_TOKEN", "unused")
-    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(HfApi=lambda **kw: api, hf_hub_download=None))
-    hub(payload, "owner/model", "model")
-    assert calls[0]["revision"] == "reviewed-upload-commit"
-    assert calls[0]["tag"] == "v0.3.0"
+def test_auth_failure_is_not_treated_as_missing_manifest(payload, remote):
+    remote.failure = PermissionError("401 Unauthorized")
+    with pytest.raises(PermissionError):
+        hub(payload, "owner/model", "model")
+    assert remote.calls == []
