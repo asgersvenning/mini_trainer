@@ -169,7 +169,7 @@ class WandbLogger(_Logger):
         super().update(name, values)
 
     def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, epoch: int = 0, **kwargs):
-        """Add figure to wandb, queued to commit atomically with step()."""
+        """Log a rank-zero figure immediately with its epoch."""
         if wandb is None:
             raise ImportError(
                 "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "

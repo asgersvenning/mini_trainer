@@ -75,7 +75,6 @@ def test_Timer():
     assert not t.running
     assert t.total >= 0.0
 
-    # Test errors
     with pytest.raises(RuntimeError):
         t.stop()  # already stopped
 
@@ -83,7 +82,7 @@ def test_Timer():
     with pytest.raises(RuntimeError):
         t.start()  # already running
     with pytest.raises(RuntimeError):
-        _ = t.total  # total is invalid while running? -> Code says: raise RuntimeError("Attempting to grab total of a running timer!")
+        _ = t.total
 
     assert "Timer[Running]" in str(t)
     t.stop()
@@ -116,15 +115,9 @@ def test_compute_aligned_steps():
     assert steps[0] == 0
     assert steps[-1] == 9
 
-    # Validation usually has fewer steps or different freq
-    # Origin 5, Target 10
+    # Fewer validation steps retain the training endpoints, rounding ties to even.
     steps = compute_aligned_steps(10, 5, 1, 0)
     assert len(steps) == 5
-    # linspace(0, 9, 5) -> 0, 2.25, 4.5, 6.75, 9
-    # round: 0, 2, 4 (4.5 rounds to nearest even? or Up? Py3 round ties to even: 4).
-    # 6.75 -> 7.
-    # 9 -> 9.
-    # [0, 2, 4, 7, 9]
     assert steps == [0, 2, 4, 7, 9]
 
 

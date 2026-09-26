@@ -187,10 +187,6 @@ class _Statistic(ABC):
     @abstractmethod
     def __str__(self) -> str: ...
 
-    # @property
-    # @abstractmethod
-    # def data(self) -> list[float]: ...
-
     @abstractmethod
     def update(self, value, *args, **kwargs): ...
 
@@ -236,9 +232,9 @@ class _Logger:
         self.get(name).update(values)
 
     @abstractmethod
-    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, **kwargs) -> None: ...
-
-    """This function should close any new matplotlib.pyplot.Figures it creates!"""
+    def add_figure(self, name: str, figure: plt.Figure | np.ndarray | torch.Tensor | str, **kwargs) -> None:
+        """Record a figure; close any additional Matplotlib figures the backend creates."""
+        ...
 
     def step(self):
         """This function may not be necessary for your logger."""
@@ -537,37 +533,19 @@ def compute_aligned_steps(target_length: int, origin_length: int, total_epochs: 
 
 
 class MultiLogger:
-    """Multi-backend training/evaluation logger.
+    """Coordinate per-phase backends, summary CSVs and diagnostic figures.
 
-    Orchestrates one or more concrete loggers (e.g., terminal metrics, TensorBoard)
-    and provides a single interface for recording statistics, figures and
-    heterogeneous artifacts per step and per epoch.
+    Loader lengths align training and validation steps across epochs. The first
+    public statistic is canonical; private statistics are not sent to backends.
+    Backend classes, kwargs and statistic factories are matched in order.
 
-    Args:
-        train_loader: Training dataloader; used to build aligned global steps.
-        val_loader: Validation dataloader; used to build aligned global steps.
-        epochs: Total number of epochs used to pre-compute global steps.
-        output: Directory to store serialized logs (JSON).
-        name: Base filename for the serialized log (auto-incremented).
-        statistics: Names of statistics to track and expose to backends.
-        private_statistics: Internal statistics not forwarded to backends.
-        logger_cls: Concrete logger classes to instantiate.
-        logger_cls_extra_kwargs: Per-logger extra keyword arguments.
-        logger_cls_stat_factory: Factories for statistic containers per logger.
-        canonical_statistic: Name of the main metric (used for returns and summaries).
-        clear_store_on_update: If True, clears transient storage at epoch/phase switch.
-        verbose: If True, prints summaries and progress information.
+    Summaries and figures are saved under output/name/logs. Per-step history
+    accumulation is disabled to bound memory; save() remains a compatibility no-op.
     """
 
     @staticmethod
     def _reset_cuda_memory_stats():
-        """Reset CUDA peak memory stats on the current device.
-
-        Notes:
-            This intentionally avoids synchronization to reduce performance
-            impact. As a result, memory statistics can be slightly biased
-            towards lower values, but remain consistent across steps.
-        """
+        """Best-effort peak reset on the current CUDA device, without synchronization."""
         if torch.cuda.is_available():
             try:
                 torch.cuda.reset_peak_memory_stats()
@@ -760,19 +738,12 @@ class MultiLogger:
                         logger.add_stat(stat, stat_factory())
                 for logger in self.loggers:
                     logger.update(stat, value)
-            # Disable for now to avoid OOM
-            # if isinstance(value, (torch.Tensor, np.ndarray)):
-            #     value = value.tolist()
-            # if isinstance(value, (tuple, list)):
-            #     self.statistics_storage[stat].extend(value)
-            # else:
-            #     self.statistics_storage[stat].append(value)
 
     @property
     def data(self):
         return {
             "statistics": dict(self.statistics_storage),
-            "extra": dict(),  # dict(self.heterogeneous_storage)
+            "extra": dict(),
         }
 
     def _store_summary(self):
@@ -784,53 +755,8 @@ class MultiLogger:
         return
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
-        pass  # Disable saving for now to avoid OOM
-        # ext = ".json"
-        # if self._start_time is None:
-        #     warnings.warn("Attempting to save logs before starting the loggers is a no-op!")
-        #     return
-        # if self._epoch is None:
-        #     raise NotImplementedError(
-        #       f'Saving logs while {self._epoch=} is not supported and probably not meaningful.
-        #       'If this happens you are probably doing something wrong!'
-        #     )
-        # if self._type is None:
-        #     raise NotImplementedError(
-        #       f'Saving logs while {self._type=} is not supported and probably not meaningful. '
-        #       'If this happens you are probably doing something wrong!'
-        #     )
-        # if fp is None:
-        #     if self.output_dir is None:
-        #         return
-        #     output_dir, name = self.output_dir, f'log_{self._type}_epoch{self._epoch}'
-        # elif isinstance(fp, TextIO):
-        #     json.dump(self.data, fp, **kwargs)
-        #     return
-        # elif isinstance(fp, str):
-        #     output_dir, name = os.path.split(os.path.abspath(fp))
-        #     _, ext = os.path.splitext(name)
-        #
-        # if os.path.exists(os.path.join(output_dir, name)):
-        #     name = increment_name_dir(name, output_dir)
-        # fp = os.path.join(output_dir, name + ext)
-        #
-        # temp_file_name = None
-        # try:
-        #     with NamedTemporaryFile("w", encoding=encoding, suffix=".json", delete=False) as tmpfile:
-        #         json.dump(self.data, tmpfile, **kwargs)
-        #         tmpfile.flush()
-        #         os.fsync(tmpfile.fileno())
-        #         temp_file_name = tmpfile.name
-        #
-        #     shutil.move(temp_file_name, fp)
-        #     self._last_save = time.time() # Assuming self._last_save is defined
-        # except Exception as e:
-        #     if temp_file_name and os.path.exists(temp_file_name):
-        #         try:
-        #             os.remove(temp_file_name)
-        #         except OSError:
-        #             pass # Suppress error during cleanup
-        #     raise
+        """Compatibility no-op; summaries and diagnostic figures are saved separately."""
+        pass
 
     def finish(self):
         self._store_summary()
@@ -918,15 +844,10 @@ class MultiLogger:
         self.log_statistic(**{"item/s": self._batch_size / (time.time() - start_time)})
 
     def log_memory_use(self):
-        """Log per-batch peak CUDA memory usage (no sync).
+        """Record CUDA peak allocation since the last reset, or current CPU RSS, in MiB.
 
-        Notes:
-            Uses ``torch.cuda.max_memory_allocated()`` which reports the peak
-            allocation since the last reset. The logger resets the peak at the
-            end of each step and at phase boundaries, so this value reflects a
-            best-effort per-batch peak. No device synchronization is performed
-            to avoid performance impact, so values may be slightly under the
-            true peak but are consistent across steps.
+        CUDA peaks reset at step and phase boundaries without synchronization.
+        CPU memory is reported as zero when optional psutil is unavailable.
         """
         MB = 1024.0**2
         if torch.cuda.is_available():
