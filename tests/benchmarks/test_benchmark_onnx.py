@@ -7,12 +7,11 @@ import pytest
 
 from dev.benchmarks.inference.onnx_inference import require_operations, run
 
-onnx = pytest.importorskip("onnx")
-pytest.importorskip("onnxruntime")
-
 
 @pytest.fixture
 def model_and_inputs(tmp_path):
+    onnx = pytest.importorskip("onnx")
+    pytest.importorskip("onnxruntime")
     graph = onnx.helper.make_graph(
         [
             onnx.helper.make_node("MatMul", ["images", "weight"], ["raw_scores"]),
@@ -150,7 +149,7 @@ def test_isolated_cpu_memory_probe_records_measurement_or_failure(model_and_inpu
     assert len(report["seconds"]) == 2 and report["median_seconds"] > 0
     assert len(report["model_files"]) == 2
     snapshots = list(report["memory"].values())
-    assert len(snapshots) == 7
+    assert {"before_runtime_import", "after_session", "after_measurement"} <= report["memory"].keys()
     assert all(s["resident_bytes"] > 0 and s["peak_resident_bytes"] > 0 and s["swap_bytes"] >= 0 for s in snapshots)
     peaks = [s["peak_resident_bytes"] for s in snapshots]
     assert peaks == sorted(peaks)

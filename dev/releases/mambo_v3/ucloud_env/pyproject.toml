@@ -1,0 +1,31 @@
+[project]
+name = "mambo-ucloud-release"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "mt-trainer[recommended,bioclip,timm]",
+  "mambo-v3",
+  "mini_metrics",
+  "torch==2.12.0",
+  "torchvision==0.27.0",
+  "onnxruntime-gpu[cuda,cudnn]>=1.27,<2",
+  "open_clip_torch==3.3.0",
+  "timm==1.0.25",
+  "huggingface_hub==0.36.2",
+  "safetensors==0.6.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+mt-trainer = { path = "../../../.." }
+mambo-v3 = { path = "../../../../deployment" }
+mini_metrics = { git = "https://github.com/GuillaumeMougeot/mini_metrics.git", rev = "70cc69adc05362863439277048e06386c1f885e1" }
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

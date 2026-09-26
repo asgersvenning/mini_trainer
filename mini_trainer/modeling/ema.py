@@ -50,11 +50,10 @@ class EMATeacher(AveragedModel):
         return float(min(1.0, max(0.0, (step - self.distill_start) / max(1.0, self.total_steps - self.distill_start))))
 
     def teach(self, step: int, input: torch.Tensor, student: torch.Tensor | list[torch.Tensor]):
-        """TODO.
+        """Return ramped KL distillation loss, or a zero tensor when disabled.
 
-        Returns:
-          KL-divergence between the model EMA and the ``student`` logits.
-            If the ``enabled=False``, ``0.0``.
+        The zero uses the student's dtype and device. See the class warning before
+        enabling this unsupported teacher.
         """
         dr = self.distill_rate(step)
         if isinstance(student, (list, tuple)):

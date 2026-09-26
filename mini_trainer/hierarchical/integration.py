@@ -20,8 +20,7 @@ from mini_trainer.integrations import (
     parquet_to_class_spec_hierarchical,
 )
 from mini_trainer.logging import BaseResultCollector
-from mini_trainer.training import EMLACrossEntropy, named_confusion_matrix
-from mini_trainer.visualization import plot_heatmap
+from mini_trainer.training import EMLACrossEntropy
 
 from .loss import MultiLevelWeightedCrossEntropyLoss
 from .model import HierarchicalClassifier, HierarchicalPrediction
@@ -64,47 +63,17 @@ def parse_class_spec(
     label_fn: Callable[Concatenate[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
     **kwargs,
 ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]]:
-    """Construct class specification:
-    * class index (label string to index mapping)
-    * hierarchical labels (tuple of label strings leaf->root)
-    * number of (leaf) classes
-    from a precalculated class specification or a directory structure.
+    """Load a JSON class specification or build one from directories/Parquet.
 
-    If constructed from a directory structure, the hierarchy is constructed based on the names
-    and structure of the directories containing the training images.
+    Returns a dictionary with ``cls2idx`` (per-rank label/index maps), ``labels`` (source keys
+    mapped to leaf-to-root sequences), and ``num_classes`` (per-rank counts).
+    An existing ``path`` is loaded; a missing one receives the generated JSON.
+    Loaded labels follow leaf-index order.
 
-    By default it assumed that labels can be parsed from the image path like:
-        ```
-        image_path = <"[dir]/[root_label]>/[...]/[leaf_label]/[image_filename]">
-        label = [<"leaf_label">, ..., <"root_label">]
-        labels = {<"[root_label]>/[...]/[leaf_label]"> : [<"leaf_label">, ..., <"root_label">] for image in images}
-        ```
-    However, this behaviour can be modified by passing a function to `label_fn` that takes the root
-    directory containing all training images (and no other images), and computes an ordered dictionary
-    of all labels for all valid images in the directory, where the key should be the parent directory of images
-    with a given label.
-    The labels should be sorted first by the root label and last by the leaf label.
-
-    Args:
-        path: Path to a precomputed class specification if it exists, otherwise one will be computed.
-            If path is not None, but doesn't exist yet, the computed class specification
-            will be stored in path for later use.
-        levels: If an integer, the hierarchy is truncated to the number of levels specified.
-            Otherwise all levels computed from ``label_fn`` are used.
-        dir: Root directory containing all training images (and no other images).
-        label_fn: A function which computes an ordered dictionary of labels for all images in ``dir``,
-            where the key should be the name of the directory containing all images which match a label.
-        **kwargs: Additional arguments passed to ``label_fn``.
-
-    Returns:
-        (class specification): A dictionary containing information
-            used for constructing models and dataloaders. Structure:
-            * "cls2idx": [dict[str, dict[str, int]]]
-                * [str] <"hierarchy level">:
-                    * [str] <"leaf label">: [int] <"leaf class index">
-            * "labels": [OrderedDict[str, tuple[str, ...]]]
-                * [str] (<"label 1 image directory">) : [tuple[str, ...]] (<"leaf 1 label">, ..., <"root 1 label">)
-            * "num_classes": [int] <number of leaf classes>
+    For directories, ``label_fn(dir, levels=levels, **kwargs)`` supplies ordered
+    labels. Explicit ``levels`` truncates their sequences; Parquet defaults to
+    three ranks. When loading JSON, truncation restricts labels/index maps but
+    retains the stored ``num_classes`` list.
     """
     if isinstance(levels, int):
         assert levels > 0
@@ -113,9 +82,6 @@ def parse_class_spec(
     if path is None or not os.path.exists(path):
         if dir is None or not os.path.isdir(dir):
             if isinstance(dir, str) and dir.endswith(".parquet"):
-                # TODO: For now we will just assume that there are three levels
-                # if not specified with parquet, but this should be determined
-                # automatically as it is in the other code branch!
                 if levels is None:
                     levels = 3
                 retval = parquet_to_class_spec_hierarchical(dir, levels=levels)
@@ -157,28 +123,14 @@ def parse_class_spec(
 
 
 def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx: dict[int | str, dict[str, int]]):
-    """Compute 'sparse masks' from labels (e.g. [species, genus, family]) and class indices.
+    """Return child-to-parent index tensors for adjacent hierarchy ranks.
 
-    A sparse mask is an integer vector (1D tensor) with length equal to the number of classes
-    at some level (e.g. number of species) that maps each class to it's parent class
-    (e.g. a species to a genus), encoded such that the value in the mask at the index of a class
-    is the index of it's parent:
-        ```
-        mask[child_idx] = parent_idx
-        ```
-
-    Args:
-        labels: Ordered dictionary of hierarchical labels (tuple of label strings leaf->root).
-        cls2idx: Dictionary of dictionaries, keys to the outer dictionary are hierarchy levels (integer),
-            while the nested dictionaries are class label to index mappings for each level in the hierarchy.
-
-    Returns:
-        List of sparse masks for levels `{0, ..., N-2}` where `N` is the
-            number of layers in the hierarchy (e.g. 3 if [species, genus, family]).
+    Each ``torch.long`` vector satisfies ``mask[child_idx] = parent_idx``.
+    Labels run leaf-to-root; ``cls2idx`` maps rank numbers to label/index maps.
+    Reject conflicting parents, unmapped children and unused top-rank classes.
     """
     cls2idx = {str(k): v for k, v in cls2idx.items()}
     nlvl = len(cls2idx)
-    # Initialize masks with "empty" values (-1)
     masks = [[-1 for _ in range(len(cls2idx[str(lvl)]))] for lvl in range(nlvl - 1)]
     for lab in labels.values():
         idx = [cls2idx[str(lvl)][cls] for lvl, cls in enumerate(lab)]
@@ -209,18 +161,18 @@ def sparse_masks_from_labels(labels: OrderedDict[str, tuple[str, ...]], cls2idx:
         err_msg = f"Found {len(missing)} unused classes in top level: [{', '.join(map(str, missing))}]"
         raise ValueError(err_msg)
 
-    # Return masks converted to long tensors
     return [torch.tensor(mask, dtype=torch.long) for mask in masks]
 
 
-class HierarchicalBuilder(BaseBuilder):  # noqa: D101
+class HierarchicalBuilder(BaseBuilder):
+    """Adapt class metadata, parent mappings and losses for hierarchical training."""
+
     @staticmethod
     def build_class_spec(*args, path: str | None = None, dir: str | None = None, levels: int | None = None, species: bool = True, **kwargs):
-        """TODO.
+        """Return a hierarchical class specification for model and loader setup.
 
-        Returns:
-            (extra_model_kwargs, extra_dataloader_kwargs):
-                Extra keyword arguments for the model and dataloader building functions.
+        With ``species=True``, resolve directory labels through GBIF and reject
+        a custom ``label_fn``. Otherwise use the supplied/default directory parser.
         """
         if species:
             if "label_fn" in kwargs:
@@ -298,7 +250,6 @@ class HierarchicalResultCollector(BaseResultCollector):
         super().__init__(model=model, idx2cls=idx2cls, cls2idx=cls2idx, scientific_names=scientific_names, *args, **kwargs)
         self._levels = None
 
-    # --- Overridden Hooks for Hierarchical Operations ---
     def _cls2idx_to_scientific(self, cls2idx: dict) -> dict:
         return cls2idx_to_names(cls2idx)
 
@@ -316,7 +267,6 @@ class HierarchicalResultCollector(BaseResultCollector):
             for level in range(self._levels):
                 yield i, path, level, labs[level], preds[level], confs[level]
 
-    # --- Overridden Base Attribute Extraction ---
     def _collect_base_attributes(
         self, paths: list[str], predictions: list[torch.Tensor] | HierarchicalPrediction, labels: list[tuple[str, ...]] | None = None
     ):
@@ -348,23 +298,8 @@ class HierarchicalResultCollector(BaseResultCollector):
 
         results = {}
         for level in range(self._levels):
-            lvl_results = named_confusion_matrix(
-                results={k: v[level] if k in ["preds", "confs", "labels"] else v for k, v in data.items()},
-                cls2idx=self.cls2idx[str(level)],
-                verbose=self.verbose,
-            )
-            results[level] = lvl_results
-
-            if plot_conf_mat and save:
-                assert outdir is not None
-                dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png")
-                classes = [k for k, v in sorted(self.cls2idx[str(level)].items(), key=lambda x: x[1])]
-                conf_mat = lvl_results["conf_mat"]
-
-                conf_mat_arr = np.array([[conf_mat[g][p] for p in classes] for g in classes]).astype(np.float64)
-                arr = plot_heatmap(conf_mat_arr, "magma", percent=False)
-                from PIL.Image import fromarray
-
-                fromarray(arr).save(dst)
+            rank_data = {k: [row[level] for row in v] if k in ("preds", "confs", "labels") else v for k, v in data.items()}
+            dst = os.path.join(outdir, f"{prefix}confusion_matrix_level{level}.png") if plot_conf_mat and save else None
+            results[level] = self._evaluate_labels(rank_data, self.cls2idx[str(level)], dst)
 
         return results

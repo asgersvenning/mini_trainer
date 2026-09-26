@@ -1,0 +1,201 @@
+{
+  "environment": {
+    "commit": "503de96ad0cc1e30662600fa766cd35ca30427e5",
+    "gpu": "Fri Sep 25 12:30:33 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 610.57.04              KMD Version: 610.57.04     CUDA UMD Version: 13.3     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  NVIDIA B200                    Off |   00000000:F6:00.0 Off |                    0 |\n| N/A   31C    P0            156W / 1000W |       0MiB / 183359MiB |      0%      Default |\n|                                         |                        |             Disabled |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|  No running processes found                                                             |\n+-----------------------------------------------------------------------------------------+\n",
+    "gpu_instances": "GPU 0: NVIDIA B200 (UUID: GPU-af8d94b4-7e48-9570-1f4b-5476a933901c)\n",
+    "cuda_visible_devices": null,
+    "cpu_max": "4800000 100000\n",
+    "prepare_workers": 48,
+    "metadata_sha256": "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe",
+    "sample_sha256": "a5814a7f9ac9111c7ea0288ef0c507d83c6449067392028dc2df2788439f1b43"
+  },
+  "reports": {
+    "torch": {
+      "sha256": "f6620b0cd43caeb35c257cbbc31c86ab88ec278e422fb0e7e637b94dc33a48ee",
+      "runtime": {
+        "threads": 4,
+        "tf32": false,
+        "autocast": true,
+        "precision": "fp16",
+        "platform": "Linux-6.12.0-211.40.1.el10_2.x86_64-x86_64-with-glibc2.39",
+        "torch": "2.14.0+cu132",
+        "cuda": "13.2"
+      },
+      "settings": {
+        "bundle": "/work/mambo-cache/9da887e131bd95a8",
+        "manifest": "/work/mambo-speed/b200-full-gather/sample.json",
+        "root": "/work/datasets/global_lepi",
+        "output": "/work/mambo-speed/b200-full-gather/torch",
+        "backend": "torch",
+        "device": "cuda:0",
+        "precision": "auto",
+        "tta": "none",
+        "embeddings": false,
+        "threads": 4,
+        "batches": [
+          256
+        ],
+        "presets": [
+          "full"
+        ],
+        "warmup": 2,
+        "repeats": 3,
+        "bank_size": 256,
+        "seed": 20260923,
+        "no_device_prefetch": false,
+        "stream_images": 4096,
+        "stream_workers": 48,
+        "read_workers": 128,
+        "read_window": 4096,
+        "prefetch_batches": 2,
+        "encoded_budget_mib": 1024
+      },
+      "bundle_sha256": "f0d42b3803829c03cbbc54982bec7bae880a76bfc400ae9b5fa309548de2aa5e",
+      "manifest_sha256": "a5814a7f9ac9111c7ea0288ef0c507d83c6449067392028dc2df2788439f1b43",
+      "effective_precision": "fp16",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5",
+      "peak_host_gib": 4.011272430419922
+    },
+    "onnx": {
+      "sha256": "5370c34ccb48d15582da8360d20dfd23658607a3a39aa2596e7d59bd1c28a37e",
+      "runtime": {
+        "threads": 4,
+        "tf32": true,
+        "autocast": false,
+        "precision": "tf32",
+        "platform": "Linux-6.12.0-211.40.1.el10_2.x86_64-x86_64-with-glibc2.39",
+        "onnxruntime": "1.22.0"
+      },
+      "settings": {
+        "bundle": "/work/mambo-cache/9da887e131bd95a8",
+        "manifest": "/work/mambo-speed/b200-full-gather/sample.json",
+        "root": "/work/datasets/global_lepi",
+        "output": "/work/mambo-speed/b200-full-gather/onnx",
+        "backend": "onnx",
+        "device": "cuda:0",
+        "precision": "auto",
+        "tta": "none",
+        "embeddings": false,
+        "threads": 4,
+        "batches": [
+          256
+        ],
+        "presets": [
+          "full"
+        ],
+        "warmup": 2,
+        "repeats": 3,
+        "bank_size": 256,
+        "seed": 20260923,
+        "no_device_prefetch": false,
+        "stream_images": 4096,
+        "stream_workers": 48,
+        "read_workers": 128,
+        "read_window": 4096,
+        "prefetch_batches": 2,
+        "encoded_budget_mib": 1024
+      },
+      "bundle_sha256": "f0d42b3803829c03cbbc54982bec7bae880a76bfc400ae9b5fa309548de2aa5e",
+      "manifest_sha256": "a5814a7f9ac9111c7ea0288ef0c507d83c6449067392028dc2df2788439f1b43",
+      "effective_precision": "tf32",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5",
+      "peak_host_gib": 4.750694274902344
+    },
+    "torch-tta": {
+      "sha256": "31e5a4d3be24f11108def9d337376d047f194691c4c06023a03362015530c70f",
+      "runtime": {
+        "threads": 4,
+        "tf32": false,
+        "autocast": true,
+        "precision": "fp16",
+        "platform": "Linux-6.12.0-211.40.1.el10_2.x86_64-x86_64-with-glibc2.39",
+        "torch": "2.14.0+cu132",
+        "cuda": "13.2"
+      },
+      "settings": {
+        "bundle": "/work/mambo-cache/9da887e131bd95a8",
+        "manifest": "/work/mambo-speed/b200-full-gather/sample.json",
+        "root": "/work/datasets/global_lepi",
+        "output": "/work/mambo-speed/b200-full-gather/torch-tta",
+        "backend": "torch",
+        "device": "cuda:0",
+        "precision": "auto",
+        "tta": "rotation30_pad25_3",
+        "embeddings": false,
+        "threads": 4,
+        "batches": [
+          256
+        ],
+        "presets": [
+          "full"
+        ],
+        "warmup": 2,
+        "repeats": 3,
+        "bank_size": 256,
+        "seed": 20260923,
+        "no_device_prefetch": false,
+        "stream_images": 4096,
+        "stream_workers": 48,
+        "read_workers": 128,
+        "read_window": 4096,
+        "prefetch_batches": 2,
+        "encoded_budget_mib": 1024
+      },
+      "bundle_sha256": "f0d42b3803829c03cbbc54982bec7bae880a76bfc400ae9b5fa309548de2aa5e",
+      "manifest_sha256": "a5814a7f9ac9111c7ea0288ef0c507d83c6449067392028dc2df2788439f1b43",
+      "effective_precision": "fp16",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5",
+      "peak_host_gib": 5.841754913330078
+    },
+    "onnx-tta": {
+      "sha256": "bcab5433a4c10c6dac1f9c6d748ad64507f3449122d94a162916fc19539156a9",
+      "runtime": {
+        "threads": 4,
+        "tf32": true,
+        "autocast": false,
+        "precision": "tf32",
+        "platform": "Linux-6.12.0-211.40.1.el10_2.x86_64-x86_64-with-glibc2.39",
+        "onnxruntime": "1.22.0"
+      },
+      "settings": {
+        "bundle": "/work/mambo-cache/9da887e131bd95a8",
+        "manifest": "/work/mambo-speed/b200-full-gather/sample.json",
+        "root": "/work/datasets/global_lepi",
+        "output": "/work/mambo-speed/b200-full-gather/onnx-tta",
+        "backend": "onnx",
+        "device": "cuda:0",
+        "precision": "auto",
+        "tta": "rotation30_pad25_3",
+        "embeddings": false,
+        "threads": 4,
+        "batches": [
+          256
+        ],
+        "presets": [
+          "full"
+        ],
+        "warmup": 2,
+        "repeats": 3,
+        "bank_size": 256,
+        "seed": 20260923,
+        "no_device_prefetch": false,
+        "stream_images": 4096,
+        "stream_workers": 48,
+        "read_workers": 128,
+        "read_window": 4096,
+        "prefetch_batches": 2,
+        "encoded_budget_mib": 1024
+      },
+      "bundle_sha256": "f0d42b3803829c03cbbc54982bec7bae880a76bfc400ae9b5fa309548de2aa5e",
+      "manifest_sha256": "a5814a7f9ac9111c7ea0288ef0c507d83c6449067392028dc2df2788439f1b43",
+      "effective_precision": "tf32",
+      "list_sha256": "8a256b140c3ec3389329e6f3cb6c4d50e1634c49907a9caef099cdfd5c378ca5",
+      "peak_host_gib": 7.350887298583984
+    }
+  },
+  "retained_request_baseline": {
+    "file": "mambo-indomain-speed.csv",
+    "sha256": "604180640f24d7ed180832d0b2ac4fbfea4dbf7a5b8be173edb760388e51820f",
+    "scope": "CPU and smaller GPU batches; earlier campaign, not rerun"
+  }
+}

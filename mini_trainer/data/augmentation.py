@@ -19,9 +19,11 @@ def debug_augmentation(
     if output_dir is None or int(os.environ.get("RANK", 0)) > 0:
         return
     convert2fp32 = make_convert_dtype(torch.float32)
+    fig = None
     try:
         n = min(3, len(dataset))
-        fig, axs = plt.subplots(3, n, figsize=(10, 5))
+        fig = plt.figure(figsize=(10, 5))
+        axs = fig.subplots(n, 3, squeeze=False)
 
         def prep_for_imshow(img_tensor):
             img_tensor = convert2fp32(img_tensor.permute(1, 2, 0))
@@ -40,9 +42,8 @@ def debug_augmentation(
             for ax in axs[j, :]:
                 ax.axis("off")
 
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "example_augmentation.png"))
-        plt.close()
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "example_augmentation.png"))
     except Exception as e:
         e_msg = (
             "Error while attempting to create debug augmentation image."
@@ -54,7 +55,8 @@ def debug_augmentation(
         warnings.warn(e_msg, UserWarning)
         return False
     finally:
-        plt.close()
+        if fig is not None:
+            plt.close(fig)
     return True
 
 

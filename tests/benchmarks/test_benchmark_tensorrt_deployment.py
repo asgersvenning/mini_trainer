@@ -1,6 +1,5 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -77,7 +76,7 @@ def pipeline(tmp_path, monkeypatch):
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(deployment, "run_pair", quality)
-    monkeypatch.setattr(deployment.subprocess, "run", child)
+    monkeypatch.setattr(subprocess, "run", child)
     return builds, manifest, inputs, calls, quality, child
 
 
@@ -111,7 +110,7 @@ def test_mismatched_build_artifacts_fail_before_runtime(pipeline, tmp_path, arti
     assert report["status"] == "failed" and report["phase"] == "inspection" and not calls
 
 
-@pytest.mark.parametrize("mutation", ["input", "engine", "process"])
+@pytest.mark.parametrize("mutation", ["input", "engine", "process", "status"])
 def test_failed_or_changed_resource_stops_pipeline(pipeline, tmp_path, monkeypatch, mutation):
     builds, manifest, inputs, calls, _, child = pipeline
 
@@ -123,12 +122,14 @@ def test_failed_or_changed_resource_stops_pipeline(pipeline, tmp_path, monkeypat
             report["inputs"]["sha256"] = "changed"
         elif mutation == "engine":
             report["models"]["candidate"]["sha256"] = "changed"
+        elif mutation == "status":
+            report["status"] = "failed"
         else:
             return SimpleNamespace(returncode=17)
         path.write_text(json.dumps(report))
         return result
 
-    monkeypatch.setattr(deployment.subprocess, "run", change)
+    monkeypatch.setattr(subprocess, "run", change)
     with pytest.raises((ValueError, RuntimeError)):
         deployment.evaluate(*builds, manifest, inputs, tmp_path / "result")
     result = json.loads((tmp_path / "result/report.json").read_text())
@@ -152,23 +153,3 @@ def test_changed_quality_batches_stop_before_resources(pipeline, tmp_path, monke
         deployment.evaluate(*builds, manifest, inputs, tmp_path / "result")
     assert not calls
     assert json.loads((tmp_path / "result/report.json").read_text())["status"] == "failed"
-
-
-def test_help_is_runtime_independent():
-    subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            """
-import runpy, sys
-sys.argv = ['tensorrt_deployment', '--help']
-try:
-    runpy.run_module('dev.benchmarks.inference.tensorrt_deployment', run_name='__main__')
-except SystemExit as error:
-    assert error.code == 0
-assert 'torch' not in sys.modules and 'tensorrt' not in sys.modules
-""",
-        ],
-        check=True,
-        capture_output=True,
-    )

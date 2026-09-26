@@ -27,6 +27,26 @@
 
 ## Priorities
 
+Prioritize the user's intended outcome and recurring integration effort when
+choosing fixes. For diagnosis and experiment selection, follow
+[the contribution guidance](.agents/rules/code-contribution.md#choosing-fixes-and-experiments).
+
+### Release branch scope
+
+On `release/mambo-v3`, restrict direct work to the MAMBO release: deployment
+assets and adapters, presets, packaging, release documentation, and the associated
+compatibility and quality/performance qualification. Follow
+[the release roadmap](docs/ucloud-model-release-roadmap.md).
+
+Do not implement fixes or refactors to the shared core module on this branch.
+Develop required core changes on a dedicated feature/fix branch or `master`,
+validate them there, then merge the reviewed commits into the release branch and
+validate the affected combined behavior. Release pressure does not override this
+boundary. Existing feature-branch export work must follow the same integration
+path; do not copy it into new direct core commits on the release branch.
+
+### Repository priorities
+
 Follow the order in `docs/roadmap.md`: development safeguards; behavior-preserving
 simplification; ONNX export and Hugging Face packaging; training efficiency;
 `mini_metrics` and continuous evaluation; additional dataset formats.
@@ -52,6 +72,18 @@ Complete a bounded, validated increment before moving to the next priority.
 - Slow backbone tests require `RUN_SLOW_TESTS=1` and may need model downloads.
   The compatibility runner can update the backbone blacklist; use it only when
   that mutation is part of the task.
+- Be economical with validation: choose the smallest set of checks that covers the
+  changed behavior and credible regressions, while satisfying the requirements above.
+  Before an expensive suite or benchmark, identify the unresolved question it answers.
+- Reuse passing evidence for unchanged code and environments. Batch related edits
+  before expensive checks; do not rerun the same suite for documentation changes or
+  automatically repeat focused checks already covered by a passing broader run.
+  Repeat or broaden checks when new changes, failures, integration conflicts or a
+  concrete unresolved risk justify it, not merely for additional reassurance.
+- Add tests for meaningful behavior and failure modes, not assertions that mirror
+  implementation details or low-impact presentation changes. Prefer existing
+  coverage and a focused browser/manual check where appropriate. Keep required CI
+  gates intact; report the limits of focused validation rather than implying full coverage.
 - Report checks run, failures, skips, and limits honestly. Do not weaken checks or
   alter expected results merely to make a refactor pass.
 

@@ -28,10 +28,6 @@ from mini_trainer.utils import (
     save_on_master,
 )
 
-# from mini_trainer.contrastive import SupConLoss
-
-# contrastive_criterion = SupConLoss(temperature=25, base_temperature=25)
-
 
 def _optimizer_step(optimizer: Optimizer, scaler: GradScaler) -> bool:
     """Step and update the scaler; report a completed, non-overflow optimizer step.
@@ -84,27 +80,16 @@ def train_one_epoch(
     device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
 ):
-    """Run one training epoch.
+    """Run an epoch over ``(NCHW inputs, targets)`` batches and finish in eval mode.
 
-    Args:
-        model: Model under training.
-        model_ema: Exponential Moving Average model (``mini_trainer.builders.EMATeacher``) linked to ``model``.
-        criterion: Loss function; may return a scalar tensor or a list of tensors.
-        optimizer: Optimizer used for parameter updates.
-        scaler: AMP gradient scaler.
-        lr_scheduler: Learning rate scheduler stepped per batch.
-        data_loader: Dataloader yielding mini-batches of ``(inputs, targets)``.
-        epoch: Zero-based epoch index.
-        logger: Multi-backend logger used to record metrics and figures.
-        preprocess: Function applied to tensors before passing to the model.
-        augmentation: Training-time augmentation applied before preprocess.
-        regularizer: Callable that returns an extra scalar loss term from the model.
-        clip_grad_norm: Max gradient norm; disabled if ``None``.
-        device: Target device for training (e.g., ``cuda:0``).
-        dtype: AMP/autocast data type for forward pass.
+    Apply augmentation before preprocessing. The criterion returns a scalar or
+    per-level losses; regularization and optional teacher distillation are added
+    before backward. Pass a disabled ``EMATeacher`` when EMA is unused.
 
-    Raises:
-        RuntimeError: If non-finite loss persists across several steps or input shape is invalid.
+    Scheduler and EMA updates follow successful optimizer steps only, including
+    AMP overflow gating. Non-finite criterion/distillation losses skip the batch;
+    five consecutive failures raise ``RuntimeError``. ``clip_grad_norm=None``
+    disables clipping; ``dtype=float32`` disables autocast.
     """
     log = get_logger()
 
@@ -134,9 +119,6 @@ def train_one_epoch(
         with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
             logits = model(preprocess(augmentation(batch)))
             loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
-            # TODO: Add optional contrastive path
-            # ctr_loss = contrastive_criterion()
-            # If EMA is disabled ``distill_loss`` is ``0.0``
             distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
 
@@ -179,11 +161,6 @@ def train_one_epoch(
     logger.stop_timing()
     logger.synchronize_between_processes()
 
-    # TODO: I don't think this is appropriate when use_buffers=True and using EMA (not SWA)
-    # if model_ema:
-    #     with torch.no_grad():
-    #         copy_bn_buffers(model, model_ema.module)
-
     model.eval()
 
 
@@ -197,20 +174,11 @@ def evaluate(
     device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
 ):
-    """Evaluate the model for one validation epoch.
+    """Evaluate batches and return the logger's canonical scalar, or NaN if absent.
 
-    Args:
-        model: Model in evaluation mode.
-        criterion: Loss function compatible with the model outputs/targets.
-        data_loader: Validation dataloader yielding mini-batches.
-        epoch: Zero-based epoch index.
-        logger: Logger used to record metrics and figures.
-        preprocess: Preprocess function applied to tensors before inference.
-        device: Target device for evaluation.
-        dtype: AMP/autocast data type for inference.
-
-    Returns:
-        The most recent value of the canonical statistic recorded by the logger.
+    Preprocess under inference mode and optional autocast, synchronize metrics,
+    and emit figures. Restore the incoming model training mode on normal return.
+    Warn if the distributed sample count differs from the dataset length.
     """
     log = get_logger()
 
@@ -236,7 +204,6 @@ def evaluate(
     logger.stop_timing()
     logger.synchronize_between_processes()
 
-    # gather the stats from all processes
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
         hasattr(data_loader.dataset, "__len__")
@@ -286,30 +253,17 @@ def train(
     compile_mode: str | None = None,
     **kwargs,
 ):
-    """Full training loop across epochs with periodic evaluation and checkpointing.
+    """Train from ``start_epoch`` up to the total ``epochs`` budget.
 
-    Args:
-        model: Model to train.
-        model_ema: Exponential Moving Average model (``AveragedModel``) linked to ``model``.
-        train_loader: Training dataloader.
-        val_loader: Validation dataloader.
-        criterion: Loss function.
-        optimizer: Optimizer instance.
-        scaler: Gradient scaler.
-        lr_scheduler: LR scheduler stepped every training batch.
-        logger: Logger used for metrics, summaries and figures.
-        epochs: Total number of epochs to run.
-        start_epoch: Initial epoch index when resuming from a checkpoint.
-        preprocess: Preprocess function applied prior to the model.
-        augmentation: Augmentation function used during training only.
-        regularizer: Callable returning an extra scalar loss term from the model.
-        device: Target device.
-        dtype: AMP/autocast data type for forward/eval passes.
-        output_dir: If provided, checkpoints are written here.
-        weight_store_rate: Store a snapshot every ``weight_store_rate`` epochs if set.
-        compile: Compile the model with PyTorch.
-        compile_mode: Optional PyTorch model compilation mode; requires compile=True.
-        **kwargs: Forwarded to lower-level helpers.
+    Evaluate the teacher when enabled, otherwise the model, after each epoch.
+    ``compile_mode`` requires ``compile=True``; DDP wrapping precedes compilation.
+    Extra keyword arguments go to ``train_one_epoch`` (for example, clipping).
+
+    When ``output_dir`` is set, save model/optimizer/scheduler/scaler and optional
+    EMA state in ``checkpoint_last.pth``. ``weight_store_rate`` adds snapshots at
+    zero-based epoch multiples. ``best.pt`` contains evaluation-model weights;
+    the canonical metric is maximized, with ties replacing the previous best.
+    Best-metric tracking restarts on each call. Close the logger on completion.
     """
     log = get_logger()
 

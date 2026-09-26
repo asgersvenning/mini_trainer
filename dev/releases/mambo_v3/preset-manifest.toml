@@ -1,0 +1,257 @@
+schema_version = 2
+qualification_status = "selected for MAMBO_v3; metadata row-count policy"
+source_sha256 = "094afa30bab25daad6583d33055bf7c61bcbade2f7f3c5e212d6b16fbf4429fe"
+model_manifest_sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
+definitions_sha256 = "d89e62e5ee9d91aea0e46ccd60edbc49bd0378017cf6d8b8f70870e4f7673be6"
+minimum_regional_rows = 3
+minimum_global_rows = 25
+
+[presets.europe]
+path = "presets/europe.classes"
+count = 3014
+minimum_regional_rows = 26
+minimum_global_rows = 0
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2079617
+species_before_threshold = 3132
+sha256 = "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
+
+[presets.north_europe]
+path = "presets/north_europe.classes"
+count = 1977
+minimum_regional_rows = 26
+minimum_global_rows = 0
+excluded_by_global_gate_after_regional = 0
+selected_rows = 768497
+species_before_threshold = 2291
+sha256 = "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"
+
+[presets.europe_v3]
+path = "presets/europe_v3.classes"
+count = 3086
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2079617
+species_before_threshold = 3132
+sha256 = "465e644095abe381b7b6a44f7ce05d5da0ba77bf75b76e1c53d0eba6c89f487a"
+
+[presets.north_europe_v3]
+path = "presets/north_europe_v3.classes"
+count = 2199
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 768497
+species_before_threshold = 2291
+sha256 = "78ee7693c7352244cd8a99b7276196aa32de27e620ed66648c4087f826d47092"
+
+[presets.australia]
+path = "presets/australia.classes"
+count = 1874
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 465726
+species_before_threshold = 1907
+sha256 = "04892d628263fa751c268693fccd9afd480a819b4896791ac5e0219b8467cb53"
+
+[presets.tasmania]
+path = "presets/tasmania.classes"
+count = 274
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 4457
+species_before_threshold = 401
+sha256 = "21248a60d54592bc4db4e638e6565b07ee37ad1911c7e7f4e4a8fd0fc49d913f"
+
+[presets.north_america]
+path = "presets/north_america.classes"
+count = 4425
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2300391
+species_before_threshold = 4551
+sha256 = "2707b4956327c31e719331cc2c40cd457f3d1fa67896a831d26a3e7e9accb44f"
+
+[presets.central_america]
+path = "presets/central_america.classes"
+count = 1639
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 210173
+species_before_threshold = 2022
+sha256 = "835b3447932cc142dd7c470617e0ce5f948ec2d6f6119be7d06b78e365f79885"
+
+[presets.south_america]
+path = "presets/south_america.classes"
+count = 1506
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 257026
+species_before_threshold = 1683
+sha256 = "47ee75929656a4f66874861e54a05b8503aa7974ebb5eb3d1eef1a68dbf7b130"
+
+[presets.caribbean]
+path = "presets/caribbean.classes"
+count = 876
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 28652
+species_before_threshold = 1092
+sha256 = "ebb9cfbb63a4ad434ae8fa49b2709e09de0df30f3d31a2f939846e41c9731dc3"
+
+[presets.south_asia]
+path = "presets/south_asia.classes"
+count = 1552
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 177926
+species_before_threshold = 1929
+sha256 = "5d838de414acb5a4ca14a5098972bbd36c3078c44525584860f6e2e7a94f3849"
+
+[presets.asia]
+path = "presets/asia.classes"
+count = 4443
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 920962
+species_before_threshold = 4937
+sha256 = "c54053282b739c7bfcfad6a69c9f9b2e613f4ff4986cf30e1cd0848fe5eb2daf"
+
+[presets.japan]
+path = "presets/japan.classes"
+count = 697
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 30076
+species_before_threshold = 974
+sha256 = "8b3a9cd5874c26ecb5217e61f6402fb7e60082f3ebeea13273abe177c233a64b"
+
+[presets.africa]
+path = "presets/africa.classes"
+count = 924
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 149267
+species_before_threshold = 1129
+sha256 = "471c14708f50d98e51b8513ec49e978fae360e1099b6f40491c008e9bd1d59c1"
+
+[presets.north_africa]
+path = "presets/north_africa.classes"
+count = 236
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 4393
+species_before_threshold = 422
+sha256 = "015e6c49e7c220421fdd646743216d34464708e6bfeebfac408f912a87e4a62b"
+
+[presets.subsaharan_africa]
+path = "presets/subsaharan_africa.classes"
+count = 796
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 144918
+species_before_threshold = 904
+sha256 = "1cc936061b0037c71d60d5cdb74fc8af1817dd567e54dcd6904a6901009d9184"
+
+[presets.madagascar]
+path = "presets/madagascar.classes"
+count = 107
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 2584
+species_before_threshold = 169
+sha256 = "cda395b4bab28ffec49a698487cbb2aa6578a79107ce7a9885c8260e421b9c54"
+
+[presets.mediterranean]
+path = "presets/mediterranean.classes"
+count = 2680
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 660065
+species_before_threshold = 2874
+sha256 = "f203302f8bfdcb92aec580fa3f11e6ebda8c3886f5fd691379860408e84fd4e3"
+
+[presets.arctic]
+path = "presets/arctic.classes"
+count = 1548
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 115881
+species_before_threshold = 1832
+sha256 = "a9138c543b90e319296d2c0cd5dc3400c9045616633988755f8057450a19ae5f"
+
+[presets.oceania]
+path = "presets/oceania.classes"
+count = 2273
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 584477
+species_before_threshold = 2337
+sha256 = "bf6f77aeb7700a0e1d46f7d51e5a45b842485a16d2f9777b3c5e61a899b84b47"
+
+[presets.new_zealand]
+path = "presets/new_zealand.classes"
+count = 425
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 110030
+species_before_threshold = 441
+sha256 = "81b4facb4283f0e0e867fa7219f8bc5f33418e68cde61fc18df212b2a085887b"
+
+[presets.oceania_excluding_australia_nz]
+path = "presets/oceania_excluding_australia_nz.classes"
+count = 352
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 8721
+species_before_threshold = 533
+sha256 = "5a38ae5ba587577b7dcad4a8850089f1b8036abc6f1e676436968f97e34f322d"
+
+[presets.southeast_asia]
+path = "presets/southeast_asia.classes"
+count = 1672
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 172424
+species_before_threshold = 2031
+sha256 = "ad2f4d1ed1f78abd66594f59d9550383f37f96b9bdcda81138c11f64c3907ccd"
+
+[presets.east_asia]
+path = "presets/east_asia.classes"
+count = 3430
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 549482
+species_before_threshold = 3912
+sha256 = "4a3e8635e06c7c86c0b08cfbc6acfa13ceb484d708f771312afc874e47ac0085"
+
+[presets.middle_east]
+path = "presets/middle_east.classes"
+count = 846
+minimum_regional_rows = 3
+minimum_global_rows = 25
+excluded_by_global_gate_after_regional = 0
+selected_rows = 24805
+species_before_threshold = 1330
+sha256 = "2f74a654f035774373e25b9518b1d3d0724a456389647be6584dab4ab85261a9"

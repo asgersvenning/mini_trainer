@@ -1,0 +1,33 @@
+[project]
+name = "mambo-v3"
+version = "0.3.0"
+description = "Portable local inference for MAMBO model bundles"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.4", "pillow>=11"]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Asger Svenning"}]
+keywords = ["image-classification", "biodiversity", "lepidoptera", "onnx", "pytorch"]
+
+[project.urls]
+Documentation = "https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md"
+Repository = "https://github.com/asgersvenning/mini_trainer"
+Issues = "https://github.com/asgersvenning/mini_trainer/issues"
+Changelog = "https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v3"
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.20"]
+onnx-cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.21,<2"]
+torch = ["mt-trainer>=0.3.0,<0.4"]
+
+[project.scripts]
+mambo_predict = "mambo_deploy.cli:run"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+module-name = "mambo_deploy"

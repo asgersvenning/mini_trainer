@@ -1,4 +1,3 @@
-import hashlib
 import math
 import operator
 import os
@@ -26,7 +25,6 @@ from mini_trainer.utils import TQDM, make_convert_dtype, memory_proportion, mult
 from ._workers import _default_worker_count
 
 T = TypeVar("T")
-V = TypeVar("V")
 
 
 class CACHE_MODE(int, Enum):  # noqa: D101
@@ -186,10 +184,6 @@ def make_read_and_resize_fn(
             raise ValueError(f'Unknown dtype "{dtype}"')
         dtype = _dtype
     return ReadAndResize(size, device, dtype, interpolation, **kwargs)
-
-
-def _normalize_to_tuple(data):
-    return data if isinstance(data, (tuple, list)) else (data,)
 
 
 # From `flatbug`: https://github.com/darsa-group/flat-bug/blob/9093de0f89756b7f59e63f3bd7161f5574eb90ac/src/flat_bug/datasets.py#L42
@@ -447,21 +441,6 @@ class LazyDataset(torch.utils.data.Dataset):
         if self.items and any(len(seq) != len(self.items[0]) for seq in self.items):
             raise ValueError("Dataset input sequences must have equal lengths.")
         self._init_cache(CACHE_MODE(cache))
-
-    @staticmethod
-    def _hash_item(item):
-        if isinstance(item, str):
-            return item.encode("utf-8")
-        if isinstance(item, (list, tuple)):
-            str_item = next((e for e in item if isinstance(e, str)), str(item))
-            return str_item.encode("utf-8")
-        return str(item).encode("utf-8")
-
-    def _get_cache_hash(self) -> str:
-        s256 = hashlib.sha256(b"mini_trainer", usedforsecurity=False)
-        for item_hash in sorted(map(self._hash_item, zip(*self.items))):
-            s256.update(item_hash)
-        return s256.hexdigest()
 
     def _init_cache(self, mode: CACHE_MODE):
         match mode:

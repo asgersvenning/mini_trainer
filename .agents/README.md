@@ -49,11 +49,22 @@ from file paths, independently of the message prefix. See
 
 ## Maintenance
 
-Use the [note format](notes/README.md). Maintain one note per coherent topic, with
-an explicit status and last verification date. When work finishes, close or
-supersede the note and promote developer-relevant conclusions to their canonical
-docs. Remove obsolete duplication; Git preserves history. No session-by-session
-journal, parallel roadmap or automatic archive tree is required.
+Keep tracked explanations and evidence only when they are highly useful for a
+current decision, maintained workflow or likely future development. Uniqueness
+alone is not a reason to retain a finding. Condense superseded investigations to
+their consequential conclusion and provenance; use Git for the detailed history.
 
-Existing developer roadmaps, benchmark evidence and execution plans remain where
-they are. Being produced by an agent does not make them agent-only documentation.
+Keep one maintained home for each contract, procedure, result and backlog item.
+Update that section when evidence changes instead of appending another dated fix
+or campaign recap. Link from indexes rather than copying explanations or tables.
+Developer documents stay in `docs/`/`dev/`; authorship does not make them agent notes.
+
+Use [handoffs](notes/README.md) only for unresolved cross-session work. On completion,
+promote useful conclusions and remove redundant notes; Git is the history. Retain
+raw evidence, provenance and consequential negative results where reproducibility
+needs them, without duplicating every experiment's presentation in maintained docs.
+Before retiring a page or figure, check inbound links, generators and release assets.
+
+A new document needs a distinct audience/purpose that an existing page cannot serve.
+Prefer a concise update or link. Cleanup should improve decisions and findability,
+not merely minify text or relocate it into another archive tree.

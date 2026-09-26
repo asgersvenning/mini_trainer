@@ -1,7 +1,7 @@
 import shutil
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar, TypeVarTuple
+from typing import Any
 
 import numpy as np
 import torch
@@ -11,10 +11,6 @@ from tqdm.auto import tqdm
 from mini_trainer.utils import get_rank
 
 TERMINAL_WIDTH, _ = shutil.get_terminal_size()
-
-X = TypeVar("X")
-R = TypeVar("R")
-Ks = TypeVarTuple("Ks")
 
 
 def make_empty_ndarray(s: int) -> np.typing.NDArray[np.float64]:

@@ -8,66 +8,56 @@ def test_to_scalar():
     assert _to_scalar(0.5) == 0.5
     assert _to_scalar(torch.tensor(0.5)) == 0.5
     assert _to_scalar(torch.tensor([0.5])) == 0.5
-    # Should keep other tensors as is (though function name implies scalar result,
-    # the code says "If it is not a tensor... kept as is".
-    # If tensor dim != 0 -> squeeze.
-    t = torch.randn(2)
-    assert _to_scalar(t).shape == (2,)
+    values = torch.tensor([0.25, 0.5])
+    torch.testing.assert_close(_to_scalar(values), values)
 
 
 def test_zeropower_via_newtonschulz():
-    # Needs 2D matrix
-    g = torch.eye(4)
-    out = _zeropower_via_newtonschulz(g, ns_coefficients=(3.4445, -4.7750, 2.0315), ns_steps=5, eps=1e-7)
-    assert out.shape == (4, 4)
-    # Check if close to identity (orthogonal of identity is identity)
-    # Note: Muon NS is quintic and coefficients are specific.
-    # But for Identity, it should likely remain Identity.
-    assert out.shape == (4, 4)
-    # Muon NS implementation scales singular values, so we don't expect exact Identity for Identity input.
-    # It produces something like US'V^T where S' is randomized/scaled.
-    # Just check it returns valid values.
-    assert torch.isfinite(out).all()
+    result = _zeropower_via_newtonschulz(torch.eye(4), ns_coefficients=(3.4445, -4.7750, 2.0315), ns_steps=5, eps=1e-7)
+    assert result.shape == (4, 4)
+    assert torch.isfinite(result).all()
 
 
-def test_adjust_lr():
-    # original: sqrt(max(1, A/B))
-    lr = 0.1
-    # Square: A=B=10. ratio=1. adjusted=0.1
-    adj = _adjust_lr(lr, "original", torch.Size([10, 10]))
-    assert adj == 0.1
-
-    # Rect: A=100, B=10. A/B=10. sqrt(10) ~ 3.16.
-    adj = _adjust_lr(lr, "original", torch.Size([100, 10]))
-    assert abs(adj - 0.1 * 3.16) < 0.01
-
-    # match_rms_adamw
-    # 0.2 * sqrt(max(A, B))
-    # A=100. 0.2 * 10 = 2.0.
-    adj = _adjust_lr(lr, "match_rms_adamw", torch.Size([100, 10]))
-    assert abs(adj - 0.1 * 2.0) < 1e-5
+@pytest.mark.parametrize(
+    "mode,shape,expected",
+    [("original", [10, 10], 0.1), ("original", [100, 10], 0.316227766), ("match_rms_adamw", [100, 10], 0.2)],
+)
+def test_adjust_lr(mode, shape, expected):
+    assert _adjust_lr(0.1, mode, torch.Size(shape)) == pytest.approx(expected)
 
 
-def test_Muon_init():
-    p = torch.randn(10, 10)
-    opt = Muon([p], lr=1e-3)
-    assert opt.defaults["lr"] == 1e-3
-
-    # Muon only supports 2D
-    p_bad = torch.randn(10)
-    with pytest.raises(ValueError):
-        Muon([p_bad])
+def test_muon_rejects_nonmatrix_parameters():
+    with pytest.raises(ValueError, match="only supports 2D"):
+        Muon([torch.ones(10)])
 
 
-def test_Muon_step():
-    p = torch.randn(10, 10, requires_grad=True)
-    opt = Muon([p], lr=0.1)
-
-    loss = (p**2).sum()
+def test_muon_step_reduces_quadratic_loss():
+    parameter = torch.nn.Parameter(torch.eye(4))
+    optimizer = Muon([parameter], lr=0.1, weight_decay=0)
+    loss = parameter.square().sum()
     loss.backward()
+    optimizer.step()
+    assert torch.isfinite(parameter).all()
+    assert parameter.square().sum() < loss.detach()
 
-    # Step
-    opt.step()
 
-    # Check if params changed
-    assert not torch.allclose(p, torch.zeros_like(p))  # well, they were random before.
+@pytest.mark.parametrize("name,use_muon", [("head", True), ("head_nomuon", False)])
+def test_composite_routes_parameters_and_exposes_child_groups(name, use_muon):
+    from mini_trainer.training.muon import MuonAuxAdamW
+
+    matrix = torch.nn.Parameter(torch.eye(4))
+    bias = torch.nn.Parameter(torch.ones(4))
+    optimizer = MuonAuxAdamW([{"name": name, "params": [matrix, bias]}], lr=0.01)
+    expected = {"muon": [matrix], "adamw": [bias]} if use_muon else {"adamw": [matrix, bias]}
+    assert list(optimizer.optimizers) == list(expected)
+    for child_name, parameters in expected.items():
+        child = getattr(optimizer, child_name)
+        assert [id(p) for group in child.param_groups for p in group["params"]] == [id(p) for p in parameters]
+        assert all(any(group is exposed for exposed in optimizer.param_groups) for group in child.param_groups)
+    # Scheduler changes through the composite must reach every child optimizer.
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    (matrix.sum() + bias.sum()).backward()
+    optimizer.step()
+    scheduler.step()
+    assert optimizer._step_count == 1
+    assert all(getattr(optimizer, child).param_groups[0]["lr"] == 0.005 for child in expected)

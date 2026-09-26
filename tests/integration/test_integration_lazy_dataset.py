@@ -81,11 +81,8 @@ class TestLazyDatasetIntegration:
 
         from mini_trainer.data import get_dataset_dataloader
 
-        metadata = {
-            "path": image_paths,
-            "class": [0 if i % 2 == 0 else 1 for i in range(len(image_paths))],
-            "split": ["train" for _ in image_paths],
-        }
+        paths = image_paths[0]
+        metadata = {"path": paths, "class": [i % 2 for i in range(len(paths))]}
 
         datasets, loaders = get_dataset_dataloader(
             metadata,
@@ -100,10 +97,12 @@ class TestLazyDatasetIntegration:
         pickled = pickle.dumps(ds)
         unpickled = pickle.loads(pickled)
 
-        assert len(unpickled) == len(ds)
-        item = unpickled[0]
-        assert isinstance(item, tuple)
-        assert len(item) == 2
+        assert len(unpickled) == len(ds) == len(paths)
+        for index in (0, len(paths) - 1):
+            item = unpickled[index]
+            assert isinstance(item, tuple) and len(item) == 2
+            torch.testing.assert_close(item, ds[index])
+            assert item[1].item() == index % 2
 
     def test_lazy_dataset_caching_exception_propagation(self):
         paths = ["ok1.png", "fail.png", "ok2.png"]

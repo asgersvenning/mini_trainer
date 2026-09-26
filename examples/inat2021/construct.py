@@ -16,12 +16,10 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
     train_dir = os.path.join(base_dir, train_dir_name)
     val_dir = os.path.join(base_dir, val_dir_name)
 
-    # Check if directories exist
     if not os.path.exists(train_dir) and not os.path.exists(val_dir):
         print("Error: train or val directory does not exist.")
         return
 
-    # Load existing taxonomy map if it exists
     taxonomy_map = {}
     taxonomy_map_path = os.path.join(base_dir, "taxonomy_map.json")
     if os.path.exists(taxonomy_map_path):
@@ -31,7 +29,6 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
         except Exception:
             pass
 
-    # Step 5/8: Scanning and mapping category directories
     print("\n[Step 5/8] Scanning and mapping category directories...")
     dir_to_species = {}
     scientific_names = set()
@@ -57,7 +54,6 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
                     if name not in taxonomy_map:
                         scientific_names.add(name)
 
-    # Step 6/8: Resolving taxonomy via GBIF API
     print("\n[Step 6/8] Resolving taxonomy via GBIF API...")
     if scientific_names:
         print(f"Resolving taxonomy for {len(scientific_names)} species...")
@@ -68,7 +64,6 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
             labels = labels_from_taxonomy(tax)
             for species_name, tax_tuple in labels.items():
                 taxonomy_map[species_name] = list(tax_tuple)
-            # Save updated taxonomy map
             with open(taxonomy_map_path, "w") as f:
                 json.dump(taxonomy_map, f, indent=2)
         except Exception as e:
@@ -85,21 +80,24 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
             gbif_id = taxonomy_map[species][0]
             dir_to_gbif_id[name] = gbif_id
 
-    # Step 7/8: Renaming directories on disk
     print("\n[Step 7/8] Renaming directories on disk to GBIF IDs...")
+    renames = {}
     for dir_path in dirs_to_scan:
         subdirs = sorted(os.listdir(dir_path))
-        for name in tqdm(subdirs, desc=f"Renaming {os.path.basename(dir_path)}"):
+        for name in tqdm(subdirs, desc=f"Checking {os.path.basename(dir_path)}"):
             full_path = os.path.join(dir_path, name)
             if not os.path.isdir(full_path):
                 continue
             if name in dir_to_gbif_id:
                 gbif_id = dir_to_gbif_id[name]
                 new_path = os.path.join(dir_path, gbif_id)
-                if not os.path.exists(new_path):
-                    os.rename(full_path, new_path)
-                elif full_path != new_path:
-                    shutil.rmtree(full_path)
+                if full_path == new_path:
+                    continue
+                if os.path.lexists(new_path) or new_path in renames:
+                    raise FileExistsError(f"GBIF category destination conflicts: {new_path}; no directories renamed")
+                renames[new_path] = full_path
+    for new_path, full_path in tqdm(renames.items(), desc="Renaming categories"):
+        os.rename(full_path, new_path)
 
     # Build a lookup from category (GBIF key) to taxonomy list
     category_to_tax = {}
@@ -107,7 +105,6 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
         if tax_list:
             category_to_tax[tax_list[0]] = tax_list
 
-    # Step 8/8: Generating data_index.json
     print("\n[Step 8/8] Generating data_index.json...")
     paths = []
     splits = []
@@ -115,35 +112,21 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
 
     img_exts = {".jpg", ".jpeg", ".png"}
 
-    # Process train
-    if os.path.exists(train_dir):
-        categories = sorted(os.listdir(train_dir))
-        for category in tqdm(categories, desc="Indexing train"):
-            cat_dir = os.path.join(train_dir, category)
-            if os.path.isdir(cat_dir):
-                tax_list = category_to_tax.get(category)
-                if tax_list is None:
-                    tax_list = [category, category, "Unknown", "Unknown", "Unknown", "Unknown", "Unknown"]
-                for f in sorted(os.listdir(cat_dir)):
-                    if os.path.splitext(f)[1].lower() in img_exts:
-                        paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
-                        splits.append("train")
-                        labels.append(tax_list)
-
-    # Process val
-    if os.path.exists(val_dir):
-        categories = sorted(os.listdir(val_dir))
-        for category in tqdm(categories, desc="Indexing val"):
-            cat_dir = os.path.join(val_dir, category)
-            if os.path.isdir(cat_dir):
-                tax_list = category_to_tax.get(category)
-                if tax_list is None:
-                    tax_list = [category, category, "Unknown", "Unknown", "Unknown", "Unknown", "Unknown"]
-                for f in sorted(os.listdir(cat_dir)):
-                    if os.path.splitext(f)[1].lower() in img_exts:
-                        paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
-                        splits.append("validation")
-                        labels.append(tax_list)
+    for dir_path, split in ((train_dir, "train"), (val_dir, "validation")):
+        if not os.path.exists(dir_path):
+            continue
+        for category in tqdm(sorted(os.listdir(dir_path)), desc=f"Indexing {split}"):
+            cat_dir = os.path.join(dir_path, category)
+            if not os.path.isdir(cat_dir):
+                continue
+            tax_list = category_to_tax.get(category)
+            if tax_list is None:
+                tax_list = [category, category, "Unknown", "Unknown", "Unknown", "Unknown", "Unknown"]
+            for f in sorted(os.listdir(cat_dir)):
+                if os.path.splitext(f)[1].lower() in img_exts:
+                    paths.append(os.path.relpath(os.path.join(cat_dir, f), base_dir))
+                    splits.append(split)
+                    labels.append(tax_list)
 
     index_data = {"path": paths, "split": splits, "label": labels}
 
@@ -180,7 +163,6 @@ def main():
 
     os.makedirs(base_dir, exist_ok=True)
 
-    # URLs
     urls = {
         "mini": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train_mini.tar.gz",
         "full": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train.tar.gz",
@@ -240,7 +222,6 @@ def main():
                 except OSError:
                     pass
 
-        # Write sentinel
         with open(sentinel_path, "w") as f:
             f.write("complete")
 

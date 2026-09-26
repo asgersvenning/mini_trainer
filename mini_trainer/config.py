@@ -14,19 +14,6 @@ import yaml
 from mini_trainer import get_logger
 
 
-def _nullify(d: dict[str, Any]):
-    """Recursively replaces all values in a dictionary with None.
-
-    Recurses on nested dictionaries.
-    """
-    for k, v in list(d.items()):
-        if isinstance(v, dict):
-            _nullify(v)
-        else:
-            d[k] = None
-    return d
-
-
 def _drop_none(d: dict[str, Any]) -> dict[str, Any]:
     """Recursively drop keys with value ``None`` and empty dicts."""
     out: dict[str, Any] = {}

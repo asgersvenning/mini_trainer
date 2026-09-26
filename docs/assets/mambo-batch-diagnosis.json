@@ -1,0 +1,1054 @@
+{
+  "status": "complete",
+  "hardware": {
+    "cpu_model": "12th Gen Intel(R) Core(TM) i7-12800H",
+    "gpu": "NVIDIA GeForce RTX 3080 Ti Laptop GPU, 700 MiB, 19.13 W, 63, 210 MHz, P8",
+    "gpu_processes": "",
+    "ac_online": "1",
+    "power_profile": null,
+    "cpu_governor": null
+  },
+  "observed_forward_shapes": [
+    [
+      1,
+      3,
+      384,
+      384
+    ],
+    [
+      8,
+      3,
+      384,
+      384
+    ],
+    [
+      32,
+      3,
+      384,
+      384
+    ]
+  ],
+  "gpu_resident": [
+    {
+      "amp": false,
+      "channels_last": false,
+      "batch": 1,
+      "median_ms": 18.73565999994753,
+      "images_per_second": 53.374153886375
+    },
+    {
+      "amp": false,
+      "channels_last": false,
+      "batch": 8,
+      "median_ms": 49.16021700046258,
+      "images_per_second": 162.73321169279467
+    },
+    {
+      "amp": false,
+      "channels_last": false,
+      "batch": 32,
+      "median_ms": 180.17124500329373,
+      "images_per_second": 177.60880766192741
+    },
+    {
+      "amp": true,
+      "channels_last": false,
+      "batch": 1,
+      "median_ms": 25.087848996918183,
+      "images_per_second": 39.85993379196602
+    },
+    {
+      "amp": true,
+      "channels_last": false,
+      "batch": 8,
+      "median_ms": 25.791216001380235,
+      "images_per_second": 310.18312589727736
+    },
+    {
+      "amp": true,
+      "channels_last": false,
+      "batch": 32,
+      "median_ms": 86.16407899535261,
+      "images_per_second": 371.3844605908916
+    },
+    {
+      "amp": false,
+      "channels_last": true,
+      "batch": 1,
+      "median_ms": 19.476649998978246,
+      "images_per_second": 51.34353187290733
+    },
+    {
+      "amp": false,
+      "channels_last": true,
+      "batch": 8,
+      "median_ms": 59.71050000516698,
+      "images_per_second": 133.97978578822367
+    },
+    {
+      "amp": false,
+      "channels_last": true,
+      "batch": 32,
+      "median_ms": 232.55600000265986,
+      "images_per_second": 137.60126593007277
+    },
+    {
+      "amp": true,
+      "channels_last": true,
+      "batch": 1,
+      "median_ms": 25.334970996482298,
+      "images_per_second": 39.471132615026384
+    },
+    {
+      "amp": true,
+      "channels_last": true,
+      "batch": 8,
+      "median_ms": 27.269050995528232,
+      "images_per_second": 293.37287906762487
+    },
+    {
+      "amp": true,
+      "channels_last": true,
+      "batch": 32,
+      "median_ms": 76.47655099572148,
+      "images_per_second": 418.4289116514977
+    }
+  ],
+  "preparation_interventions": [
+    {
+      "variant": "baseline",
+      "batch": 32,
+      "median_ms": 562.1651870023925,
+      "observations": 21
+    },
+    {
+      "variant": "contiguous-True-crop-False",
+      "batch": 32,
+      "median_ms": 343.510406994028,
+      "observations": 21
+    },
+    {
+      "variant": "contiguous-False-crop-True",
+      "batch": 32,
+      "median_ms": 525.9267129949876,
+      "observations": 21
+    },
+    {
+      "variant": "contiguous-True-crop-True",
+      "batch": 32,
+      "median_ms": 300.3360820002854,
+      "observations": 21
+    }
+  ],
+  "threaded_preparation": [
+    {
+      "workers": 0,
+      "batch": 1,
+      "preparation": {
+        "ms": [
+          19.616127996414434,
+          19.292778000817634,
+          17.02880099765025,
+          16.201587997784372,
+          16.534098002011888,
+          16.695651996997185,
+          18.7562249993789
+        ],
+        "median_ms": 17.02880099765025
+      },
+      "end_to_end": {
+        "ms": [
+          53.67833700438496,
+          43.58293499535648,
+          48.570915998425335,
+          58.70243599929381,
+          51.21928400330944,
+          50.04593500052579,
+          109.66543499671388
+        ],
+        "median_ms": 51.21928400330944
+      }
+    },
+    {
+      "workers": 0,
+      "batch": 8,
+      "preparation": {
+        "ms": [
+          142.15509499626933,
+          148.18065000144998,
+          140.30640100099845,
+          134.68550000106916,
+          145.06119200086687,
+          147.70605999365216,
+          146.079619997181
+        ],
+        "median_ms": 145.06119200086687
+      },
+      "end_to_end": {
+        "ms": [
+          218.58030399744166,
+          222.14935300144134,
+          235.41950900107622,
+          222.19096399931004,
+          213.08374200452818,
+          229.48078599438304,
+          234.97099000087474
+        ],
+        "median_ms": 222.19096399931004
+      }
+    },
+    {
+      "workers": 0,
+      "batch": 32,
+      "preparation": {
+        "ms": [
+          514.3840050004655,
+          539.2801329944632,
+          562.3003309956403,
+          534.1173130000243,
+          540.6491399990045,
+          535.0450780024403,
+          547.7692889980972
+        ],
+        "median_ms": 539.2801329944632
+      },
+      "end_to_end": {
+        "ms": [
+          724.3408480062499,
+          724.2302400045446,
+          810.2542579945293,
+          747.9360249999445,
+          752.7866360032931,
+          794.1586329980055,
+          818.1538760036347
+        ],
+        "median_ms": 752.7866360032931
+      }
+    },
+    {
+      "workers": 4,
+      "batch": 1,
+      "preparation": {
+        "ms": [
+          20.269925997126848,
+          22.22652499767719,
+          20.50503699865658,
+          19.721185002708808,
+          21.125603998370934,
+          20.139608001045417,
+          21.683350001694635
+        ],
+        "median_ms": 20.50503699865658
+      },
+      "end_to_end": {
+        "ms": [
+          47.38394000014523,
+          46.94011100218631,
+          46.92848800186766,
+          53.701498996815644,
+          51.292921001731884,
+          62.550968999858014,
+          58.61212900344981
+        ],
+        "median_ms": 51.292921001731884
+      }
+    },
+    {
+      "workers": 4,
+      "batch": 8,
+      "preparation": {
+        "ms": [
+          59.703109000111,
+          60.19584999739891,
+          59.60010799753945,
+          61.238673006300814,
+          59.36151299829362,
+          60.17484599578893,
+          60.63941100001102
+        ],
+        "median_ms": 60.17484599578893
+      },
+      "end_to_end": {
+        "ms": [
+          105.8031850043335,
+          103.50890800327761,
+          99.12116499617696,
+          97.16311900410801,
+          97.02218999882462,
+          100.90754300472327,
+          104.99859300034586
+        ],
+        "median_ms": 100.90754300472327
+      }
+    },
+    {
+      "workers": 4,
+      "batch": 32,
+      "preparation": {
+        "ms": [
+          240.61233399697812,
+          234.24396100017475,
+          234.06826899736188,
+          239.8692399947322,
+          269.3112029955955,
+          258.4397809987422,
+          284.8161590009113
+        ],
+        "median_ms": 240.61233399697812
+      },
+      "end_to_end": {
+        "ms": [
+          437.74061399744824,
+          423.9376620025723,
+          443.24309199873824,
+          384.62499099841807,
+          398.3012780008721,
+          387.2949769938714,
+          384.7743169972091
+        ],
+        "median_ms": 398.3012780008721
+      }
+    },
+    {
+      "workers": 8,
+      "batch": 1,
+      "preparation": {
+        "ms": [
+          18.01865000015823,
+          17.704174999380484,
+          17.384498998580966,
+          17.4712570005795,
+          17.728767001244705,
+          18.49644599860767,
+          21.064079002826475
+        ],
+        "median_ms": 17.728767001244705
+      },
+      "end_to_end": {
+        "ms": [
+          40.77254099684069,
+          44.51147800136823,
+          41.865560997393914,
+          43.20249200100079,
+          44.91773899644613,
+          49.07010399620049,
+          51.19167999509955
+        ],
+        "median_ms": 44.51147800136823
+      }
+    },
+    {
+      "workers": 8,
+      "batch": 8,
+      "preparation": {
+        "ms": [
+          39.493053998739924,
+          38.93004300334724,
+          40.128129003278445,
+          40.12657199928071,
+          42.5515759998234,
+          41.09424100170145,
+          43.94215100182919
+        ],
+        "median_ms": 40.128129003278445
+      },
+      "end_to_end": {
+        "ms": [
+          106.83042999880854,
+          101.63770999497501,
+          99.31824399973266,
+          107.72375099622877,
+          103.89905999909388,
+          118.59914499655133,
+          104.00590399513021
+        ],
+        "median_ms": 104.00590399513021
+      }
+    },
+    {
+      "workers": 8,
+      "batch": 32,
+      "preparation": {
+        "ms": [
+          216.59438700589817,
+          212.2394100006204,
+          197.78962199779926,
+          175.19723700388568,
+          174.7613069965155,
+          189.28766500175698,
+          218.17095300502842
+        ],
+        "median_ms": 197.78962199779926
+      },
+      "end_to_end": {
+        "ms": [
+          379.3693120023818,
+          362.06720899645006,
+          359.358975001669,
+          357.9453249985818,
+          360.56900700350525,
+          348.9935030011111,
+          366.41513500217116
+        ],
+        "median_ms": 360.56900700350525
+      }
+    }
+  ],
+  "preprocess_layout": {
+    "coordinates": {
+      "dtype": "float32",
+      "shape": [
+        438
+      ],
+      "strides": [
+        4
+      ],
+      "contiguous": true
+    },
+    "lo": {
+      "dtype": "int64",
+      "shape": [
+        438
+      ],
+      "strides": [
+        8
+      ],
+      "contiguous": true
+    },
+    "fraction": {
+      "dtype": "float64",
+      "shape": [
+        438
+      ],
+      "strides": [
+        8
+      ],
+      "contiguous": true
+    },
+    "image": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        384,
+        384
+      ],
+      "strides": [
+        4,
+        12,
+        4608
+      ],
+      "contiguous": false
+    },
+    "rows": {
+      "dtype": "float64",
+      "shape": [
+        3,
+        438,
+        384
+      ],
+      "strides": [
+        8,
+        9216,
+        24
+      ],
+      "contiguous": false
+    },
+    "pixels": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        384,
+        384
+      ],
+      "strides": [
+        4,
+        12,
+        4608
+      ],
+      "contiguous": false
+    }
+  },
+  "preprocess_line_profile": [
+    {
+      "line": 61,
+      "code": "pixels = rows[:, :, lo] * (1 - fraction)[None, None, :] + rows[:, :, hi] * fraction[None, None, :]",
+      "ms": 257.64437997713685
+    },
+    {
+      "line": 60,
+      "code": "rows = image[:, lo] * (1 - fraction)[None, :, None] + image[:, hi] * fraction[None, :, None]",
+      "ms": 200.77586602565134
+    },
+    {
+      "line": 65,
+      "code": "(pixels - np.array(RECIPE[\"mean\"], dtype=np.float32)[:, None, None]) / np.array(RECIPE[\"std\"], dtype=np.float32)[:, None, None]",
+      "ms": 114.54548400070053
+    },
+    {
+      "line": 54,
+      "code": "image = image[:, yy][:, :, xx].astype(np.float32)",
+      "ms": 63.36485400242964
+    },
+    {
+      "line": 50,
+      "code": "image = _rgb(item)",
+      "ms": 44.08031197817763
+    },
+    {
+      "line": 63,
+      "code": "pixels = np.rint(pixels[:, offset : offset + size, offset : offset + size]).astype(np.float32) / 255",
+      "ms": 37.388277996797115
+    },
+    {
+      "line": 64,
+      "code": "return np.ascontiguousarray(",
+      "ms": 22.246315966185648
+    },
+    {
+      "line": 56,
+      "code": "coordinates = np.maximum((np.arange(resized, dtype=np.float32) + 0.5) * np.float32(size / resized) - 0.5, 0)",
+      "ms": 1.2886569966212846
+    },
+    {
+      "line": 52,
+      "code": "yy = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[1] / size)).astype(int), image.shape[1] - 1)",
+      "ms": 1.1460980094852857
+    },
+    {
+      "line": 62,
+      "code": "offset = (resized - size) // 2",
+      "ms": 0.39232201379491016
+    },
+    {
+      "line": 57,
+      "code": "lo = np.floor(coordinates).astype(int)",
+      "ms": 0.23413298913510516
+    },
+    {
+      "line": 53,
+      "code": "xx = np.minimum((np.arange(size, dtype=np.float32) * np.float32(image.shape[2] / size)).astype(int), image.shape[2] - 1)",
+      "ms": 0.22443901252700016
+    },
+    {
+      "line": 58,
+      "code": "hi = np.minimum(lo + 1, size - 1)",
+      "ms": 0.19344200700288638
+    },
+    {
+      "line": 59,
+      "code": "fraction = coordinates - lo",
+      "ms": 0.18871598149416968
+    },
+    {
+      "line": 51,
+      "code": "size, resized = 384, 438",
+      "ms": 0.10417701560072601
+    }
+  ],
+  "cuda_kernel_time_shares_batch32": {
+    "convolution": 0.6359277858701351,
+    "batch_normalization": 0.14220184332861804,
+    "silu": 0.12333557066163707
+  },
+  "onnx_placement": {
+    "before": {
+      "cpu_model": "12th Gen Intel(R) Core(TM) i7-12800H",
+      "gpu": "NVIDIA GeForce RTX 3080 Ti Laptop GPU, 910 MiB, 20.07 W, 67, 210 MHz, P8",
+      "gpu_processes": "",
+      "ac_online": "1",
+      "power_profile": null,
+      "cpu_governor": null
+    },
+    "cells": [
+      {
+        "batch": 1,
+        "profiled_median_ms": 14.495415998680983,
+        "node_totals": [
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Conv",
+            "us": 731492.0,
+            "calls": 1530
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Add",
+            "us": 91277.0,
+            "calls": 342
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ScatterElements",
+            "us": 26894.0,
+            "calls": 54
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Gemm",
+            "us": 19772.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "QuickGelu",
+            "us": 17403.0,
+            "calls": 918
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceMean",
+            "us": 11877.0,
+            "calls": 279
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Neg",
+            "us": 9642.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceL2",
+            "us": 8983.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sigmoid",
+            "us": 6007.0,
+            "calls": 270
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Mul",
+            "us": 5523.0,
+            "calls": 270
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Expand",
+            "us": 2812.0,
+            "calls": 45
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Clip",
+            "us": 1791.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Div",
+            "us": 1131.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "GatherElements",
+            "us": 978.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sub",
+            "us": 900.0,
+            "calls": 27
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Acos",
+            "us": 567.0,
+            "calls": 9
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Concat",
+            "us": 429.0,
+            "calls": 36
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyToHost",
+            "us": 375.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Shape",
+            "us": 372.0,
+            "calls": 27
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ConstantOfShape",
+            "us": 338.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Log",
+            "us": 293.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Exp",
+            "us": 292.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyFromHost",
+            "us": 267.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "LeakyRelu",
+            "us": 195.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Reshape",
+            "us": 75.0,
+            "calls": 9
+          }
+        ],
+        "trace": "local-evidence/mambo-batch-root-cause/onnx-1_2026-09-23_21-12-47_264.json"
+      },
+      {
+        "batch": 8,
+        "profiled_median_ms": 54.01113900006749,
+        "node_totals": [
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Conv",
+            "us": 411025.0,
+            "calls": 1530
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "QuickGelu",
+            "us": 11434.0,
+            "calls": 918
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Add",
+            "us": 7787.0,
+            "calls": 342
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceMean",
+            "us": 6011.0,
+            "calls": 279
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Mul",
+            "us": 3882.0,
+            "calls": 270
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sigmoid",
+            "us": 3511.0,
+            "calls": 270
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ScatterElements",
+            "us": 1943.0,
+            "calls": 54
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Acos",
+            "us": 1096.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Expand",
+            "us": 989.0,
+            "calls": 45
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Gemm",
+            "us": 900.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyFromHost",
+            "us": 867.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sub",
+            "us": 791.0,
+            "calls": 27
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceL2",
+            "us": 577.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Log",
+            "us": 490.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Shape",
+            "us": 430.0,
+            "calls": 27
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Concat",
+            "us": 425.0,
+            "calls": 36
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "GatherElements",
+            "us": 335.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Div",
+            "us": 313.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Clip",
+            "us": 288.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyToHost",
+            "us": 284.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ConstantOfShape",
+            "us": 273.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Exp",
+            "us": 245.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "LeakyRelu",
+            "us": 162.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Neg",
+            "us": 130.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Reshape",
+            "us": 91.0,
+            "calls": 9
+          }
+        ],
+        "trace": "local-evidence/mambo-batch-root-cause/onnx-8_2026-09-23_21-12-49_543.json"
+      },
+      {
+        "batch": 32,
+        "profiled_median_ms": 233.22565700073028,
+        "node_totals": [
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Conv",
+            "us": 384720.0,
+            "calls": 1530
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "QuickGelu",
+            "us": 11865.0,
+            "calls": 918
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Add",
+            "us": 10292.0,
+            "calls": 342
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Gemm",
+            "us": 6870.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceMean",
+            "us": 5579.0,
+            "calls": 279
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Mul",
+            "us": 3899.0,
+            "calls": 270
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sigmoid",
+            "us": 3759.0,
+            "calls": 270
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Acos",
+            "us": 3519.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyToHost",
+            "us": 1920.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "MemcpyFromHost",
+            "us": 1877.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ScatterElements",
+            "us": 1387.0,
+            "calls": 54
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Sub",
+            "us": 833.0,
+            "calls": 27
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Expand",
+            "us": 763.0,
+            "calls": 45
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ReduceL2",
+            "us": 647.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Shape",
+            "us": 510.0,
+            "calls": 27
+          },
+          {
+            "provider": "CPUExecutionProvider",
+            "op": "Concat",
+            "us": 420.0,
+            "calls": 36
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Div",
+            "us": 340.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "ConstantOfShape",
+            "us": 289.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Clip",
+            "us": 284.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "GatherElements",
+            "us": 260.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Exp",
+            "us": 246.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Log",
+            "us": 210.0,
+            "calls": 18
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "LeakyRelu",
+            "us": 164.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Neg",
+            "us": 147.0,
+            "calls": 9
+          },
+          {
+            "provider": "CUDAExecutionProvider",
+            "op": "Reshape",
+            "us": 70.0,
+            "calls": 9
+          }
+        ],
+        "trace": "local-evidence/mambo-batch-root-cause/onnx-32_2026-09-23_21-12-51_225.json"
+      }
+    ],
+    "providers": [],
+    "after": {
+      "cpu_model": "12th Gen Intel(R) Core(TM) i7-12800H",
+      "gpu": "NVIDIA GeForce RTX 3080 Ti Laptop GPU, 1957 MiB, 41.93 W, 70, 1222 MHz, P0",
+      "gpu_processes": "151641, [N/A]",
+      "ac_online": "1",
+      "power_profile": null,
+      "cpu_governor": null
+    }
+  },
+  "source_sha256": {
+    "report.json": "918aecaef03e91796d2972c792018407151222fbc344d5710ecc6d751ee91efc",
+    "preprocess-interventions.json": "48009fc511ef5d98fc6257cdfe7dc6e62f7a8f907eab25f4e89ef0fbd2b0dce7",
+    "preprocess-line-profile.json": "c69867c2e2e78f1c77e7ae4cfd1eb60044eeb92a7f8343c99628f0619fd866ac",
+    "preprocess-layout.json": "ae01376e86e37a523c8e53e457e89d896fed586a593071688f6729e08eb086d5",
+    "torch-profile-32.json": "a10f0ab9e11b70125a44b5289432173b988509a3ccbb6a6c56e1942a48c919e3",
+    "onnx-profile-summary.json": "6e22f17f87cd981dfb20d5cb329af03ad10b7f45a25a4b0e1b25d33780607ad7"
+  },
+  "limits": "Diagnostic interventions, not qualified release variants. GPU timings exclude input preparation and transfers; threaded end-to-end uses unchanged pixels. Profiler timings are explanatory, not replacement benchmarks. No hardware counter roofline attribution."
+}

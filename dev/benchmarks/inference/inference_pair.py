@@ -1,12 +1,11 @@
 """Run paired held-out inference and mini_metrics evaluation in fresh processes."""
 
 import json
-import os
-import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
+from ._stage import run_stage
 from .onnx_inference import file_hash
 
 
@@ -81,27 +80,7 @@ def run_pair(manifest, baseline, candidate, output, baseline_runtime=None, candi
 
     try:
         for name, command, expected in commands:
-            stage = {"name": name, "command": command, "status": "running", "log": f"{name}.log"}
-            report["stages"].append(stage)
-            save()
-            with (output / stage["log"]).open("w") as log:
-                result = subprocess.run(
-                    command,
-                    cwd=Path(__file__).resolve().parents[3],
-                    env={**os.environ, "PYTHONHASHSEED": "0"},
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    check=False,
-                )
-            stage["returncode"] = result.returncode
-            if result.returncode:
-                stage["status"] = "failed"
-                raise RuntimeError(f"{name} failed with exit code {result.returncode}; see {output / stage['log']}")
-            child_path = output / name / "report.json"
-            child = json.loads(child_path.read_text())
-            if child["status"] != expected:
-                raise RuntimeError(f"Unexpected {name} report status: {child['status']}")
-            stage.update(status=expected, report_sha256=file_hash(child_path))
+            child = run_stage(output, report, name, command, expected)
             save()
         report.update(status="evaluated", levels=child["levels"], models=child["models"], undefined_metrics=child["undefined_metrics"])
         lines = [

@@ -22,15 +22,8 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
             weights = [1] * self.n_levels
         self.weights = torch.tensor(weights).to(device=self.device, dtype=self.dtype)
 
-        # The adjustment:
-        #   ls(L)=1-(1-ls(0))^(1/(L+1)), ls(0)=k
-        # is to avoid a situation where the model gives the target probability for the correct leaf class,
-        # e.g. if ls=0.1, the model predicts P(Correct_0 | Model, Data) = 1 - ls = 0.9, and distributes the remaining
-        # probability mass to the correct class siblings (i.e. other species in the correct genus), then the model must
-        # give a higher confidence for the correct parent (child):
-        #   P(Correct_1 | Model, Data) > P(Correct_0 | Model, Data)
-        # (if it gives any confidence to the sibling classes), meaning that the model is encouraged NOT to give any
-        # confidence to the sibling classes, which is counter to the point of hierarchical learning
+        # Smoothing decreases toward the root: ls(i) = 1 - (1 - ls(0))**(1/(i+1)).
+        # Correct parents receive probability mass from multiple sibling classes.
         self.label_smoothing = [1 - (1 - label_smoothing) ** (1 / (i + 1)) for i in range(self.n_levels)]
         kwargs["label_smoothing"] = self.label_smoothing
 

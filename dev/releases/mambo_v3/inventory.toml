@@ -1,0 +1,323 @@
+schema_version = 1
+production = "global-lepi-production-release-20260911T150236Z"
+legacy_commit = "32b3cd661778356b2e8c4cff5b10fa9061aa6f5d"
+
+[[artifacts]]
+path = "MAMBO/hierarchical_bioclip2_ft_eu_v1.pt"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/MAMBO/hierarchical_bioclip2_ft_eu_v1.pt"
+size = 21151665
+sha256 = "da676e0389eedbfd9a798b6fc45b293905968313a46cf9be6ed53ea74f525df9"
+status = "observed_unpinned_legacy"
+
+[[artifacts]]
+path = "MAMBO/hierarchical_bioclip2_ft_neu_v1.pt"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/MAMBO/hierarchical_bioclip2_ft_neu_v1.pt"
+size = 21143364
+sha256 = "34fe04302877de5540ed847859efb6b676876d5efc9401cd3336905e10ead568"
+status = "observed_unpinned_legacy"
+
+[[artifacts]]
+path = "MAMBO/hierarchical_bioclip2_ft_v1.pt"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/MAMBO/hierarchical_bioclip2_ft_v1.pt"
+size = 21127207
+sha256 = "047cfdcb3162d09f2a32482b8e699de240095226400e90922866751d1b00d413"
+status = "observed_unpinned_legacy"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/SHA256SUMS"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/SHA256SUMS"
+size = 166421
+sha256 = "e608a584ec550df0bcdfc23df007a1d8fc42013756d1fa8bea5138933938586b"
+status = "metadata_readback"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/COMPLETED"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/COMPLETED"
+size = 0
+sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/all_labels.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/all_labels.csv"
+size = 578
+sha256 = "a19afb807c8d5e81800b6adaaaa1a19d99fd950ed6bf0fce408fc922a556cf07"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/all_labels.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/all_labels.json"
+size = 1121
+sha256 = "921e665d5a7140688d657e1d5a981e5961aabb17c0b7a0bfccd60266c5cd667f"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/commands.sh"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/commands.sh"
+size = 848
+sha256 = "8884f48277175f780b544d6cb429e9c39259616f22ef87064986402058b5c91b"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/input.sha256"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/input.sha256"
+size = 114
+sha256 = "5806c384780dbbfcf86e9f9151548b08e914ef63d0aba86aaf5e57dd879f269e"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/known_labels.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/known_labels.csv"
+size = 577
+sha256 = "0befc063a4d475c29215160acdb2dc50594428273016b602a04dcce1ebca4868"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/known_labels.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/known_labels.json"
+size = 1120
+sha256 = "84d250b7fc35d38e549e192c98c542e4432f90701ca6bc45a0406b7e9282cc28"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/per_class.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/per_class.csv"
+size = 82829
+sha256 = "e07abe5c7e64c1d47cb436d9c7d3199e0f1d1fffa074674554552de2ceab32f7"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/provenance.txt"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/baseline/provenance.txt"
+size = 117
+sha256 = "ef5a9c5a9e9876646d5cdc6db3d0eb5f18ae16a0a127dbecb0e18a564f0ab8fb"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-all-labels/all_labels.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-all-labels/all_labels.csv"
+size = 471
+sha256 = "83498c86976160a83a0854cf2ea5aeef77456cf189e332b9978baf7529fdc6c9"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-all-labels/all_labels.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-all-labels/all_labels.json"
+size = 1011
+sha256 = "0cc85fa7148b373bc1505d34502872367b94650000a6b9687f9116257a948642"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-known-only/known.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-known-only/known.csv"
+size = 468
+sha256 = "6f9821fe61afcfd314f5684e6c923d21eafce35ea48c21b3be114dc676fec207"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-known-only/known.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/optimal-known-only/known.json"
+size = 1008
+sha256 = "e7b8839408bd75e9d00b75d17ea3255d75878e928170c86431bc78a92e936827"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/predictions/mini_metric.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/predictions/mini_metric.csv"
+size = 23694718
+sha256 = "7d7ecf27f82fb3aa048a63278072a81b428fcf5a1fd2cdefa136403b2b5a8d84"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/inference.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/inference.yaml"
+size = 125
+sha256 = "7bf2573f5f179cdaf77cf20840f74cc5839c47b1fa123a2c20892677ef141afb"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/predictions-config.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/predictions-config.yaml"
+size = 472
+sha256 = "896b5332946e207d076c0f06fe770bdc9445ce02597e797bbd090e0caa334b40"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/staging.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/expert/provenance/staging.json"
+size = 14986156
+sha256 = "e72de8fe8e67b51e9240e0f3533a23459bdc21b650b616e510331574c05ac53a"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_optimal/metrics.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_optimal/metrics.csv"
+size = 466
+sha256 = "7235ca63d8c31e76ebf881066008d9299575665b8781cbd05657d21a7ab87c77"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_optimal/metrics.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_optimal/metrics.json"
+size = 1004
+sha256 = "c2a245e90cdbf8af8cef30cd48ea8a17540ddfa3efc9e713a0e492c2944c78ee"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_zero/metrics.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_zero/metrics.csv"
+size = 446
+sha256 = "93f92970467610669fe842ce75bdba2ed9f692f5ad0fed026196dac551888615"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_zero/metrics.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/all_labels_zero/metrics.json"
+size = 966
+sha256 = "cc1b8a96aba102040307f5aa1f51623e54a77b30898e61b95dd46406ff2a7072"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_optimal/metrics.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_optimal/metrics.csv"
+size = 466
+sha256 = "7235ca63d8c31e76ebf881066008d9299575665b8781cbd05657d21a7ab87c77"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_optimal/metrics.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_optimal/metrics.json"
+size = 1004
+sha256 = "c2a245e90cdbf8af8cef30cd48ea8a17540ddfa3efc9e713a0e492c2944c78ee"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_zero/metrics.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_zero/metrics.csv"
+size = 446
+sha256 = "93f92970467610669fe842ce75bdba2ed9f692f5ad0fed026196dac551888615"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_zero/metrics.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/known_only_zero/metrics.json"
+size = 966
+sha256 = "cc1b8a96aba102040307f5aa1f51623e54a77b30898e61b95dd46406ff2a7072"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/predictions/mini_metric.csv"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/predictions/mini_metric.csv"
+size = 185880109
+sha256 = "9675f9f5a2f0a0e3f9f6b58fafe96af2fafb673dd1d8ee992ba34e984ccc7611"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/inference.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/inference.yaml"
+size = 178
+sha256 = "19beb3fc39b75af3ee09c9c3de0bec1e918b49f1f171bd3d4ef9dbf5f70ab9fa"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/predictions-config.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/predictions-config.yaml"
+size = 516
+sha256 = "6562cca001d7b183a2a6f5106dda05f9861c09396b2a158a0597692a1abf0fd7"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/staging.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/evaluation/in-domain/provenance/staging.json"
+size = 123661500
+sha256 = "fa07a494006ef3eb95a7201a66f23dd615cca62e35d3213c5c3860c039fde6ed"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/export/preprocessing.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/export/preprocessing.json"
+size = 459
+sha256 = "5381bfa42a975a731641182a8a3e78f12b24c4842fe129da5b391253e3079e2a"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/models/onnx-fp32/manifest.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/onnx-fp32/manifest.json"
+size = 1787397
+sha256 = "a49e6ee862f24095cc2f66e309b5704c47011b54c11a7bfa56f432342e26b32b"
+status = "metadata_readback"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/models/onnx-fp32/model.onnx"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/onnx-fp32/model.onnx"
+size = 1527453
+sha256 = "aa02baa22765a04de03c5ba46029e2a66ca7e430bfddce0a001af5cec2e7c15d"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/models/onnx-fp32/model.onnx.data"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/onnx-fp32/model.onnx.data"
+size = 151838720
+sha256 = "9ffb389ec4c6fe9864a4dfb16b167cf68950d7fa35b3fa39d84b1987b1845f4e"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
+size = 153951029
+sha256 = "174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/provenance.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/provenance.json"
+size = 270678
+sha256 = "bf61291b2271a02d14c9043dbf54d97f2475df7c8f1ec27e41e39bd1f040b2dc"
+status = "metadata_readback"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/training/production-w32.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/production-w32.yaml"
+size = 1435
+sha256 = "43a30581599230bc8482007eb2f7dbcff86c9c786e272539eb5b7c92450fa039"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/training/run-metadata/config.yaml"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/training/run-metadata/config.yaml"
+size = 1906
+sha256 = "a10caf8c1abca6b1660c0ca4c6e3cc42687512f1db02501bf1a3e236165c960f"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/viewer/browser-model/manifest.json"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/viewer/browser-model/manifest.json"
+size = 294850
+sha256 = "d84e148626581e568df76832f257c7e59db944b343fe5cbc1f0636467874cf8d"
+status = "metadata_readback"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/viewer/browser-model/model.onnx"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/viewer/browser-model/model.onnx"
+size = 1932003
+sha256 = "70130c3dbc2b8a6bc4610bb213a1aaf029816fb634faf104bbb27ffa997dfc44"
+status = "verified"
+
+[[artifacts]]
+path = "global-lepi-production-release-20260911T150236Z/viewer/browser-model/model.onnx.data"
+url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/viewer/browser-model/model.onnx.data"
+size = 151838720
+sha256 = "9ffb389ec4c6fe9864a4dfb16b167cf68950d7fa35b3fa39d84b1987b1845f4e"
+status = "verified"
+
+[presets.europe]
+path = "presets/europe.classes"
+source = "MAMBO/hierarchical_bioclip2_ft_eu_v1.pt"
+count = 3014
+sha256 = "df66152ba29ba979b32741db4a0dc7c85db18fa65eac5602ca4aab702343de90"
+
+[presets.north_europe]
+path = "presets/north_europe.classes"
+source = "MAMBO/hierarchical_bioclip2_ft_neu_v1.pt"
+count = 1977
+sha256 = "065bb3ade45c970ca129c7507b56ed62fe16b84251961bf53352f5098b8b2be6"

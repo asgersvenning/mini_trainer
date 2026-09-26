@@ -1,0 +1,23 @@
+{
+  "environment_id": "ucloud-replace-with-allocation-and-gpu",
+  "v2_python": "/work/envs/mambo-v2/bin/python",
+  "v3_python": "/work/envs/mambo-v3/bin/python",
+  "metrics_python": "/work/envs/mambo-metrics/bin/python",
+  "legacy_source": "/work/mambo-v2-source",
+  "legacy_weights": "/work/models/MAMBO",
+  "hf_cache": "/work/models/huggingface/hub",
+  "bundle": "/work/models/mambo-v3-bundle",
+  "manifest": "/work/global-lepi-test-manifest.json",
+  "root": "/work/global_lepi",
+  "output": "/work/mambo-release-ucloud",
+  "cuda_visible_devices": "0",
+  "quality_device": "cuda:0",
+  "quality_batch_size": 32,
+  "qualification_count": 256,
+  "threads": 4,
+  "quality_presets": ["full"],
+  "timing_presets": ["full", "north_europe"],
+  "timing_devices": ["cpu", "cuda:0"],
+  "cpu_batches": [1, 8],
+  "gpu_batches": [1, 8, 32]
+}

@@ -1,0 +1,179 @@
+name: Prepare and publish model
+
+on:
+  push:
+    branches: ["release/models/**"]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      product:
+        description: Model distribution name, e.g. mambo-v3
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-model-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.route.outputs.enabled }}
+      product: ${{ steps.route.outputs.product }}
+      module: ${{ steps.route.outputs.module }}
+      tag: ${{ steps.route.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: route
+        env:
+          RELEASE_PRODUCT: ${{ inputs.product }}
+        run: python3 dev/release_route.py models
+
+  prepare:
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+    needs: route
+    if: needs.route.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv venv --python 3.13 .venv-release
+      - run: uv pip install --python .venv-release/bin/python numpy pillow
+      - name: Build pinned candidate
+        run: |
+          .venv-release/bin/python -m ${RELEASE_MODULE}.prepare_candidate \
+            --source "$RUNNER_TEMP/model-inputs" --output "$RUNNER_TEMP/candidate" --download
+      - name: Qualify exact installed artifacts
+        run: .venv-release/bin/python -m ${RELEASE_MODULE}.qualify_candidate "$RUNNER_TEMP/candidate"
+      - name: Stage public files
+        run: |
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publication_assets \
+            "$RUNNER_TEMP/candidate" --output "$RUNNER_TEMP/publication"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-candidate
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-publication
+          path: ${{ runner.temp }}/publication/
+          if-no-files-found: error
+          retention-days: 30
+
+  package:
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+      RELEASE_PRODUCT: ${{ needs.route.outputs.product }}
+    needs: [route, prepare]
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    environment: pypi-model-${{ needs.route.outputs.product }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-candidate
+          path: candidate/
+      - run: cd candidate && sha256sum --check SHA256SUMS
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Require the intended training dependency to be public first
+        run: |
+          python3 - <<'PYTHON'
+          import json, urllib.request
+          from pathlib import Path
+          package = json.loads(Path('candidate/release-candidate.json').read_text())['training_distribution']
+          with urllib.request.urlopen(f"https://pypi.org/pypi/{package['name']}/{package['version']}/json") as response:
+              metadata = json.load(response)['info']
+          assert metadata['project_urls']['Repository'] == 'https://github.com/asgersvenning/mini_trainer'
+          PYTHON
+      - name: Publish deployment package only
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ candidate/dist/"${RELEASE_PRODUCT//-/_}"-*.whl candidate/dist/"${RELEASE_PRODUCT//-/_}"-*.tar.gz
+
+  assets:
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+      RELEASE_TAG: ${{ needs.route.outputs.tag }}
+    needs: [route, package]
+    runs-on: ubuntu-latest
+    environment: model-assets-${{ needs.route.outputs.product }}
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-publication
+          path: publication/
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv venv --python 3.13 .venv-release
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
+      - name: Publish GitHub assets without replacing existing files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets github publication/github "$GH_REPOSITORY" --tag "$RELEASE_TAG"
+      - name: Publish model and immutable Hugging Face revision
+        env:
+          HF_MODEL_REPO: ${{ vars.HF_MODEL_REPO }}
+          HF_OIDC_RESOURCE: ${{ vars.HF_MODEL_REPO }}
+        shell: bash
+        run: |
+          : "${HF_MODEL_REPO:?Set the repository variable in this GitHub environment}"
+          HF_TOKEN="$(.venv-release/bin/hf auth token)"
+          test -n "$HF_TOKEN"
+          echo "::add-mask::$HF_TOKEN"
+          export HF_TOKEN
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets model publication/model "$HF_MODEL_REPO"
+
+  demo:
+    env:
+      RELEASE_MODULE: ${{ needs.route.outputs.module }}
+    needs: [route, assets]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-space-${{ needs.route.outputs.product }}
+      cancel-in-progress: false
+    environment: model-demo-${{ needs.route.outputs.product }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-publication
+          path: publication/
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv venv --python 3.13 .venv-release
+      - run: uv pip install --python .venv-release/bin/python numpy pillow 'huggingface-hub>=1.19,<2'
+      - name: Deploy the reviewed Space
+        env:
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+          HF_OIDC_RESOURCE: spaces/${{ vars.HF_SPACE_REPO }}
+        shell: bash
+        run: |
+          : "${HF_SPACE_REPO:?Set the repository variable in this GitHub environment}"
+          HF_TOKEN="$(.venv-release/bin/hf auth token)"
+          test -n "$HF_TOKEN"
+          echo "::add-mask::$HF_TOKEN"
+          export HF_TOKEN
+          .venv-release/bin/python -m ${RELEASE_MODULE}.publish_assets space publication/space "$HF_SPACE_REPO"

@@ -75,35 +75,24 @@ def test_recommendation_prefers_near_best_and_rejects_failed_setting():
     assert calibrator.recommend([], 0.05)["workers"] is None
 
 
-def test_blocked_read_is_terminated_without_hanging_calibration(tmp_path):
-    import os
-    import time
-    from types import SimpleNamespace
-
-    source = tmp_path / "blocked.jpg"
-    os.mkfifo(source)
-    args = SimpleNamespace(mode="read", resize=0, max_mib=1, trial_seconds=0.3, max_rss_mib=4096)
-    row = calibrator.run_trial(args, [str(source)], 1, "sweep", tmp_path, time.monotonic() + 5)
-    assert row["termination"] == "time_limit"
-    assert row["completed"] == 0
-    assert not row["eligible"]
-
-
-def test_timeout_does_not_consume_unsubmitted_paths(tmp_path):
+@pytest.mark.parametrize("count", [1, 100], ids=["blocked-reader", "unsubmitted-paths"])
+def test_blocked_reads_stop_without_consuming_unsubmitted_paths(tmp_path, count):
     import os
     import time
     from types import SimpleNamespace
 
     paths = []
-    for index in range(100):
+    for index in range(count):
         path = tmp_path / f"{index}.jpg"
         os.mkfifo(path)
         paths.append(str(path))
     args = SimpleNamespace(mode="read", resize=0, max_mib=1, trial_seconds=0.5, max_rss_mib=4096)
     row = calibrator.run_trial(args, paths, 1, "sweep", tmp_path, time.monotonic() + 5)
-    assert row["selected"] == 100
+    assert row["termination"] == "time_limit"
+    assert row["selected"] == count
     assert row["attempted"] == 1
     assert row["completed"] == 0
+    assert not row["eligible"]
 
 
 def test_byte_limit_shrinks_trial_instead_of_aborting(tmp_path):

@@ -2,7 +2,7 @@
 
 This document describes the checks that must remain valid while quantization is
 extended. Current results live in [benchmark findings](benchmarks.md); planned
-work and target acceptance live in the [branch roadmap](quantization-roadmap.md).
+work and target acceptance live in the [quantization roadmap](quantization-roadmap.md).
 Detailed historical runs are retained in the [experiment archive](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md).
 
 ## Model and dataset coverage
@@ -52,7 +52,6 @@ A few points of degradation may be acceptable when justified by a material
 speed/cost or memory benefit. Record the per-profile acceptance limits before
 qualification; integer execution alone is not acceptance.
 
-The intended execution targets remain HPC GPU training on A40/A100/B300-class
-systems with EPYC hosts, local training/fine-tuning and ONNX GPU inference on Spark
-or the intended RTX desktop, and ONNX CPU inference on Raspberry Pi/ARM.
-Support claims require evidence from the corresponding hardware and workload.
+Target hardware and workload acceptance are maintained in the
+[quantization roadmap](quantization-roadmap.md#supported-scope-and-decision-criteria).
+Support claims require evidence from the corresponding target.

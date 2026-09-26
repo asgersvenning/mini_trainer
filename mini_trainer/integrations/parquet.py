@@ -16,7 +16,7 @@ except ImportError:
 def _check_pyarrow():
     if not _HAS_PYARROW:
         raise ImportError(
-            "Parquet integration requires the optional dependency: pyarrow. Install with `pip install mini_trainer[recommended]`."
+            "Parquet integration requires the optional dependency: pyarrow. Install with `pip install mt-trainer[recommended]`."
         )
 
 
@@ -215,14 +215,11 @@ def parquet_to_class_spec_hierarchical(
     )
     cls2idx: dict[str, dict[str, int]] = dict()
     for level in range(levels):
-        clss = set()
         this_cls2idx: dict[str, int] = dict()
         for _, comb in combs.items():
             cls = comb[level]
-            if cls in clss:
-                continue
-            this_cls2idx[cls] = len(clss)
-            clss.add(cls)
+            if cls not in this_cls2idx:
+                this_cls2idx[cls] = len(this_cls2idx)
         cls2idx[str(level)] = this_cls2idx
     num_classes = [len(cls2idx[str(i)]) for i in range(len(cls2idx))]
     return {"cls2idx": cls2idx, "labels": combs, "num_classes": num_classes}

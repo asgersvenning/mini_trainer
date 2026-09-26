@@ -102,6 +102,7 @@ def test_interrupted_upload_can_resume_without_deleting_assets(remote, records, 
     remote.corrupt = True
     with pytest.raises(ValueError, match="readback"):
         synchronize("owner/repo", tmp_path / "interrupted", records, upload=True)
+    assert len(remote.assets) == 1  # Keep failed-readback bytes available for inspection/retry.
     first_asset = remote.assets[1]
     remote.corrupt = False
     synchronize("owner/repo", tmp_path / "retry", records, upload=True)
@@ -126,13 +127,6 @@ def test_api_failure_is_not_treated_as_empty_storage(remote, records, tmp_path):
         synchronize("owner/repo", tmp_path / "denied", records, upload=True)
     assert "secret-token" not in str(error.value)
     assert len(remote.calls) == 1 and not remote.releases
-
-
-def test_upload_requires_successful_readback(remote, records, tmp_path):
-    remote.corrupt = True
-    with pytest.raises(ValueError, match="readback"):
-        synchronize("owner/repo", tmp_path / "corrupt", records, upload=True)
-    assert len(remote.assets) == 1  # Preserve the uploaded bytes for inspection/retry.
 
 
 def test_published_month_cannot_be_appended(remote, records, tmp_path):

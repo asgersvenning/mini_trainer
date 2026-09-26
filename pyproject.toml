@@ -1,6 +1,6 @@
 [project]
-name = "mini_trainer"
-version = "0.2.0"
+name = "mt-trainer"
+version = "0.3.0"
 default-optional-dependency-keys = ["recommended"]
 dependencies = [
   "torch>=2.11",
@@ -87,12 +87,12 @@ recommended = [
   "wandb",
 ]
 all = [
-  "mini_trainer[recommended]",
-  "mini_trainer[notebook]",
-  "mini_trainer[timm]",
-  "mini_trainer[bioclip]",
-  "mini_trainer[transformers]",
-  "mini_trainer[export]",
+  "mt-trainer[recommended]",
+  "mt-trainer[notebook]",
+  "mt-trainer[timm]",
+  "mt-trainer[bioclip]",
+  "mt-trainer[transformers]",
+  "mt-trainer[export]",
 ]
 quantization = ["torchao>=0.17,<0.18"]
 export = ["onnx>=1.17", "onnxscript>=0.3", "onnxruntime>=1.20"]
@@ -161,6 +161,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = "mini_trainer"
 source-include = ["mini_trainer/modeling/architectures/blacklist.json"]
 
 [tool.pytest.ini_options]

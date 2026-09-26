@@ -1,45 +1,16 @@
-# Training features: implementation and comparison plan
+# Training feature comparison plan
 
-This is planned work. Existing CPU/GPU benchmark results establish a baseline;
-they do not measure the benefit of the features below. EMA is temporarily
-nonfunctional and excluded from these experiments; repair is deferred.
+This page covers **unmeasured feature comparisons**, not implementation status.
+The [repository roadmap](roadmap.md) sets priorities; the
+[quantization roadmap](quantization-roadmap.md), [validation contract](quantized-training-validation.md)
+and [measured findings](benchmarks.md) own native QT/PTQ/QAT work. Those paths are
+implemented but have different numerical and resource contracts; do not repeat
+their implementation plans here. EMA remains unsupported and excluded.
 
-## Actual quantized training is the primary implementation target
-
-The priority is now QT that lowers training memory and increases speed, together
-with faster data loading for floating-point and quantized workloads. PTQ/QAT do
-not satisfy that objective. See the [QT and loader probes](../dev/benchmarks/training.md#capacity-and-bottleneck-probes);
-an initial [model/trainer integration](quantized-training.md) is available, while
-broader optimizer/resume coverage, convergence and end-to-end measurement remain
-requirements, not optional follow-ups.
-
-The initial [INT8 PTQ/QAT Python backend](quantization.md) is implemented on the
-`quant` branch. Its CPU tests establish a training-to-integer-inference path;
-user-facing checkpoint integration, other backends and quality studies remain open.
-
-Deliver two distinct paths through the existing builders, checkpoint and export
-interfaces, with optional dependencies:
-
-- Quantization-aware training: specify simulated weight/activation bit widths,
-  scales and observer behavior, then convert and evaluate the resulting inference
-  artifact. Fake quantization during training is not itself proof of faster or
-  smaller inference.
-- Post-training quantization: compare calibrated integer/low-bit artifacts against
-  the same floating-point checkpoint. Calibration uses a recorded subset of
-  training data, never held-out test images.
-
-Start with an explicit, validated precision/backend combination before expanding
-to lower bit widths. Record weight-only versus weight-and-activation quantization,
-which operators remain floating point, model size, peak memory, latency/throughput,
-and per-class/per-level quality. Validate normalized/parametrized heads, functional
-linear operations, masks and hierarchical outputs instead of limiting export to
-one backbone. Verify save/reload, optimizer/scheduler/AMP state during training,
-and quantized artifact loading in the intended standalone runtime.
-
-Hardware-specific reduced-precision compute, including FP8 where supported, is a
-separate profile. Existing float16/bfloat16 autocast tests do not establish deeper
-quantization. Declare unsupported backends and models; prohibit silent fallback
-that mislabels ordinary floating-point execution as quantized.
+Select a bounded comparison only when it answers the next decision. Existing
+CPU/GPU baselines do not establish benefits for the features below. New precision
+formats or backends require their own operator-placement, checkpoint and
+quality/resource evidence; AMP checks do not establish deeper quantization.
 
 ## Augmentation defaults
 
@@ -89,6 +60,6 @@ optional integration. Publish individual runs and paired differences with uncert
 distinguish variation across training seeds from uncertainty due to finite test data.
 
 Use the existing versioned report/provenance artifacts and visible repository run
-summaries. Retain failures and negative/null effects. Add durable historical hosting
-before the current artifact retention expires. Do not combine different hardware,
+summaries. Retain failures and negative/null effects. The [reporting guide](../dev/benchmarks/reporting.md) distinguishes existing
+artifact retention from the optional publisher's still-unverified live activation. Do not combine different hardware,
 precision, dataset versions or tuning budgets into one apparent improvement trend.

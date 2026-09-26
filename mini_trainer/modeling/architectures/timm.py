@@ -23,14 +23,12 @@ def get_timm_model(
     resize_size: int | None = None,
     **kwargs: Any,
 ) -> tuple[Any, Any, int]:
-    """Load timm model and resolve its default transform."""
+    """Return (backbone, transform, preferred size) using timm's model configuration."""
     try:
         import timm
         from timm.data import create_transform, resolve_model_data_config
     except ImportError as e:
-        e.add_note(
-            "The `timm` module was not found in the current Python environment. Please install with `pip install mini-trainer[timm]`."
-        )
+        e.add_note("The `timm` module was not found in the current Python environment. Please install with `pip install mt-trainer[timm]`.")
         raise
 
     backbone_model = timm.create_model(model, pretrained=pretrained, **kwargs)

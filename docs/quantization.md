@@ -1,12 +1,12 @@
-# INT8 quantization: initial x86 backend
+# x86 INT8 calibration and QAT
 
-This is an opt-in Python API for **static INT8 weights and UINT8 activation storage**,
-using TorchAO PT2E. Actual quantized training with reduced memory and training
-time now has an initial [CUDA model integration](quantized-training.md); see the [QT/loader probes](../dev/benchmarks/training.md#capacity-and-bottleneck-probes). It supports post-training calibration (PTQ) and
-quantization-aware training (QAT). QAT uses fake quantization with float32 master
-parameters/gradients; it does not promise integer backward computation or reduced
-training memory. Converted inference executes native oneDNN integer Conv/Linear
-kernels. This is separate from float16/bfloat16 AMP.
+The opt-in `mini_trainer.modeling.quantization` API uses TorchAO PT2E for
+post-training calibration (PTQ) and quantization-aware training (QAT).
+Converted inference executes oneDNN integer Conv/Linear kernels with static INT8
+weights and UINT8 activations. QAT uses fake quantization and float32 master
+parameters/gradients; it does not promise reduced training memory or integer
+backward computation. [Native CUDA INT8 training](quantized-training.md) has a
+separate implementation and qualification scope.
 
 Install the optional dependency in an explicitly selected backend environment:
 
@@ -15,9 +15,8 @@ uv sync --extra cpu --extra quantization
 # Existing CUDA environments: do not run a CPU sync; select their CUDA extra.
 ```
 
-The first verified backend is x86 CPU with PyTorch 2.12 and TorchAO 0.17.
-TorchAO is imported lazily. Ordinary training, prediction, checkpoint formats and
-ONNX export are unchanged. The new API is in `mini_trainer.modeling.quantization`.
+The recorded x86 qualification uses PyTorch 2.12 and TorchAO 0.17. TorchAO is
+loaded only when this API is used; ordinary training and prediction are unchanged.
 
 ## Calibration and inference
 
@@ -107,7 +106,7 @@ and BatchNorm; arbitrary Python training branches are specialized by capture.
 Autoregressive teacher-forcing/sampling requires a separate training integration
 and is not currently a supported QAT claim. Capture failures propagate explicitly.
 
-## Coverage and next increments
+## Supported scope and validation
 
 Inputs currently have a fixed captured batch and image shape. All batches must
 match it; pad and slice final inference batches, or prepare a separate shape.
@@ -115,16 +114,10 @@ The original model's parameters, modes and caches are preserved by preparation.
 Functional linears, weight parametrization, hierarchical aggregation and class
 masks are included in capture; this does not rely on a backbone allowlist.
 
-Focused tests exercise flat, hierarchical, conditional and independent heads,
-real gradients, exact controlled QAT/AdamW continuation, held-out-data isolation,
-integer operator execution, checksums and artifact reload. A synthetic oracle
-exercises QAT through the actual training loop and checks integer predictions.
-
-Still required: user-facing checkpoint/CLI integration, dynamic batch support,
-MNIST/Blair reports, broader backbone/operator coverage, GPU quantization,
-ONNX/runtime conversion, and lower-bit profiles. Model quality, artifact size,
-memory and latency need measured comparisons; no speedup or quality benefit is
-claimed by passing compatibility tests. EMA remains unsupported.
+EMA remains unsupported. Model quality, memory and latency require measured
+comparisons beyond compatibility checks. See the [quantization roadmap](quantization-roadmap.md)
+for planned work and [benchmark findings](benchmarks.md) for retained measurements
+and their separate backend/workload boundaries.
 
 Run focused checks without changing the installed environment:
 

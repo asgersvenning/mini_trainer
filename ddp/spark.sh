@@ -2,7 +2,7 @@
 
 usage() {
     cat << EOF
-Usage: uv run bash launch.sh -w <worker_alias> <your_script.py> [script arguments...]
+Usage: bash ddp/spark.sh -w <worker_alias> <your_script.py | -m module> [arguments...]
 
 A launcher for two-node PyTorch Distributed Data Parallel (DDP) training over RoCE/NFS.
 
@@ -10,7 +10,7 @@ Required Arguments:
   -w <alias>    The SSH alias for the worker node (must exist in ~/.ssh/config)
 
 Example:
-  uv run bash launch.sh -w spkc -m mini_trainer.train -i train -o . --batch_size 32
+  bash ddp/spark.sh -w spkc -m mini_trainer.train -i train -o . --batch_size 32
 EOF
     exit 1
 }
@@ -62,7 +62,7 @@ fi
 # 3. Resolve the Python executable
 PYTHON_EXEC=$(command -v python)
 if [[ -z "$PYTHON_EXEC" ]]; then
-    echo "[Error] Could not resolve Python executable. Are you running via 'uv run'?"
+    echo "[Error] Could not resolve Python executable. Activate the checkout .venv first."
     exit 1
 fi
 

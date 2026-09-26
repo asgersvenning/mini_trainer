@@ -16,13 +16,14 @@ optional dependencies, expected failures or slow-backbone requirements.
 | `export/` | ONNX export and native-quantized export contracts |
 | `integration/` | Full training, lazy data and distributed integration |
 | `benchmarks/` | Dataset/evaluation orchestration, inference probes, provenance and report storage |
-| `logging/` | Console, TensorBoard and W&B logging |
+| `releases/` | Deployment adapters, presets, streaming ownership, campaign evidence and packaging |
+| `logging/` | Console, TensorBoard, W&B, confusion reports and figure ownership |
 | `utils/` | General device/plot helpers and the opt-in compatibility utility |
 
 Shared test builders and state assertions currently live in the integration and
 checkpoint modules that define their behavior. Imports and serialized test model
-identifiers use those modules' new paths. Keep those paths importable for spawned
-processes; avoid changing fixture semantics as part of directory cleanup.
+identifiers use those modules. Keep them importable for spawned processes and
+checkpoint reconstruction.
 
 These folders use ordinary pytest discovery, not custom collections. `dev/check.sh`
 only selects the existing environment, sets CPU/headless defaults and forwards

@@ -6,6 +6,13 @@ import pytest
 from dev.benchmarks.inference.quality_compare import COLUMNS, METRICS, compare, read_manifest, read_predictions
 
 
+def write_predictions(path, rows):
+    with path.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 @pytest.fixture
 def example(tmp_path):
     classes = [["001", "1"], ["alpha", "beta"]]
@@ -40,10 +47,7 @@ def example(tmp_path):
                 )
         if mode == "candidate":
             rows.reverse()
-        with path.open("w", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=COLUMNS)
-            writer.writeheader()
-            writer.writerows(rows)
+        write_predictions(path, rows)
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(metadata))
     return manifest, metadata
@@ -84,10 +88,7 @@ def test_predictions_reject_mismatched_samples_and_policy(example, kind):
         rows[0]["confidence"] = "nan"
     else:
         artifact["sha256"] = "wrong"
-    with source.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_predictions(source, rows)
     with pytest.raises(ValueError):
         read_predictions(source, artifact, metadata)
 
@@ -142,10 +143,7 @@ def test_undefined_theil_u_is_explicit_null_not_invalid_json(example, tmp_path):
         source = path.parent / metadata[mode]["path"]
         with source.open() as stream:
             rows = [r for r in csv.DictReader(stream) if r["instance_id"] == "0"]
-        with source.open("w", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=COLUMNS)
-            writer.writeheader()
-            writer.writerows(rows)
+        write_predictions(source, rows)
     report = compare(path, tmp_path / "undefined")
     assert report["models"]["baseline"]["metrics"]["theilU"]["0"] is None
     assert report["levels"][0]["candidate_minus_baseline"]["theilU"] is None

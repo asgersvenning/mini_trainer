@@ -58,7 +58,7 @@ for branch in "${branches[@]}"; do
         --index-strategy unsafe-first-match "$requirements"
     sha=$master_sha
     if [[ "$branch" == quant ]]; then sha=$quant_sha; fi
-    uv pip install --python "$env_dir/bin/python" --no-deps "mini_trainer @ git+$repo_url@$sha"
+    uv pip install --python "$env_dir/bin/python" --no-deps "git+$repo_url@$sha"
     uv pip check --python "$env_dir/bin/python"
 done
 

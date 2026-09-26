@@ -19,12 +19,12 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
     def __init__(  # noqa: D417
         self, sparse_masks: list[torch.Tensor] | None = None, prior: list[torch.Tensor | list[float]] | None = None, **kwargs
     ):
-        """TODO.
+        """Aggregate leaf logits through child-to-parent maps.
 
         Args:
-            sparse_masks: Long-Tensors with parent indices for each element in layers n-1.
-            masks: DEPRECATED! Dense child-parent "log-adjacency" matrices.
-            kwargs: passed to `mini_trainer.classifier.Classifier`.
+            sparse_masks: Parent indices for each child, ordered from leaves upward.
+            prior: Per-rank biases, ordered from leaves upward.
+            kwargs: Passed to `mini_trainer.modeling.Classifier`.
         """
         super().__init__(**kwargs)
         if not self.normalized:
@@ -88,9 +88,7 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
     @property
     def masks(self):
         if self._dirty_cache["_masks"]:
-            masks = []
             filter = self.active_indices
-            filters = [filter]
             self._dim_sizes = []
             for i in range(self.num_masks):
                 mask = getattr(self, f"mask_{i}")
@@ -99,8 +97,6 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
                     mask = mask[filter]
                     filter, mask = mask.unique(sorted=False, return_inverse=True)
                 setattr(self, f"_mask_{i}", mask.view_as(mask))
-                masks.append(mask)
-                filters.append(filter)
                 self._dim_sizes.append(int(mask.max().item() + 1))
             setattr(self, f"_filter_{self.num_masks}", None if filter is None else filter.view_as(filter))
             self._dirty_cache["_masks"] = False

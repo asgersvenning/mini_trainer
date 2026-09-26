@@ -6,6 +6,8 @@
 # ]
 # ///
 
+"""Repeat seeded mini_metrics calibration/evaluation; no wrapper-level resampling."""
+
 import random
 from argparse import ArgumentParser
 from csv import DictWriter
@@ -72,13 +74,13 @@ def main(file: str, dst: str, n: int, seed: int | None = None, combinations: str
     rng = random.Random(seed)
     seeds = [rng.getrandbits(64) for _ in range(n)]
     data = MetricDF.from_source(file)
-    cfg = {"combinations" : combinations}
-    results = combine(*(proc_one(data, seed, **cfg) for seed in tqdm(seeds, desc="Computing bootstrap iterations", unit="it")))
+    cfg = {"combinations": combinations}
+    results = combine(*(proc_one(data, seed, **cfg) for seed in tqdm(seeds, desc="Evaluating calibration splits", unit="it")))
     write_dict_to_csv(dst, results)
 
 
 def cli():
-    parser = ArgumentParser("boot-metrics", description="Compute `mini-metric` bootstrap metrics for uncertainty quantification.")
+    parser = ArgumentParser("boot-metrics", description="Repeat mini_metrics threshold calibration and report metrics by seed and level.")
     parser.add_argument(
         "-i",
         "-I",
@@ -90,10 +92,23 @@ def cli():
         help="Input file with predictions and labels following the `mini-metric.MetricDF` specification.",
     )
     parser.add_argument(
-        "-o", "-O", "--output", "--dst", type=str, required=True, dest="dst", help="Path of the combined bootstrap metric results."
+        "-o",
+        "-O",
+        "--output",
+        "--dst",
+        type=str,
+        required=True,
+        dest="dst",
+        help="Output CSV of metrics by evaluation seed and taxonomic level.",
     )
     parser.add_argument(
-        "-n", "--n", type=int, default=100, required=False, dest="n", help="Number of bootstrap iterations. NB: Can be *VERY* slow!"
+        "-n",
+        "--n",
+        type=int,
+        default=100,
+        required=False,
+        dest="n",
+        help="Number of seeded evaluations; each recalibrates thresholds (default: 100).",
     )
     parser.add_argument(
         "-s",
@@ -103,11 +118,7 @@ def cli():
         type=int,
         default=None,
         required=False,
-        help=(
-            "Set the global seed for the bootstrap procedure. "
-            "Each individual bootstrap iteration of calculating "
-            "the metrics will receive an independent seed set deterministically via the global seed."
-        ),
+        help="Global seed used to generate reproducible per-evaluation seeds.",
     )
     parser.add_argument(
         "-C",
@@ -115,10 +126,7 @@ def cli():
         type=str,
         default=None,
         required=False,
-        help=(
-            "Path to a 'combinations' CSV file, which include leaf-to-higher order mappings. "
-            "Mainly useful if the model (outputs) are flat, but the labels/task is inherently hierarchical."
-        ),
+        help="Optional CSV mapping leaf classes to higher taxonomy ranks.",
     )
     return vars(parser.parse_args())
 

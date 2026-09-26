@@ -7,7 +7,7 @@ from mini_trainer.modeling import get_prior_method
 
 
 def leaf_to_parents(h):
-    """Construct the path from leaf-to-root for a specific leaf."""
+    """Return a leaf-to-ancestor index mapping for each parent rank."""
     l2p = []
     p2c = None
     for lvl in h:
@@ -24,57 +24,36 @@ def leaf_to_parents(h):
 
 
 def create_hierarchy(combinations: Iterable[list[str]], class_to_idx: list[dict[str, int]]) -> list[list[list[int]]]:
-    """Creates a hierarchy from the paths and class handles.
+    """Build parent-to-child index lists, ordered from the first parent rank upward.
 
-    The hierarchy is constructed based on the nodes found in the dataset.
-    TODO: The hierarchy should be constructed once and saved in a structured file.
-
-    Arguments:
-        combinations: List of all leaf-to-root labels.
-        class_to_idx: A mapping from classes to indexes.
-
-    Returns:
-        A list for each level of the hierarchy.
-            Each list contains a list for each node containing the indices of the children of that node.
-            Level 0 is the leaf level, and is not included.
+    Paths and class mappings are leaf-first. Only the first path for each leaf
+    contributes; repeated leaves are ignored.
     """
     n_classes = [len(class_to_idx[level]) for level in range(len(class_to_idx))]
-    hierarchy = [[set() for _ in range(n)] for n in n_classes[1:]]  # Create empty lists for each level
-    processed_leaves = [0] * n_classes[0]  # Keep track of which leaves have been processed
+    hierarchy = [[set() for _ in range(n)] for n in n_classes[1:]]
+    processed_leaves = [0] * n_classes[0]
 
-    # Iterate over the combinations
     for components in combinations:
-        # Convert the class strings to indices
         indices = [class_to_idx[ctype][class_str] for ctype, class_str in enumerate(components)]
 
-        # Skip processed leaves (species in this case)
-        if processed_leaves[indices[0]] == 0:  # If the leaf has not been processed yet
+        if processed_leaves[indices[0]] == 0:
             processed_leaves[indices[0]] = 1
         else:
-            continue  # Skip this leaf
+            continue
 
-        # Iterate over the indices and add them to the hierarchy
         for i in range(len(indices) - 1):
-            # Get the parent and child indices
             child = indices[i]
             parent = indices[i + 1]
-            hierarchy[i][parent].add(child)  # Append the child to the parent's list
+            hierarchy[i][parent].add(child)
 
     return [[list(parent) for parent in level] for level in hierarchy]
 
 
 def create_mask_col(indices, height, zero=-100, **kwargs):
-    """Create an approximate logarithmic binary mask with the given indices.
+    """Return a (height, 1) additive mask: 0 at indices, ``zero`` elsewhere.
 
-    Arguments:
-        indices (list): list of indices to include in the mask.
-        height (int): Height of the mask (i.e. number of rows, also the 1+max(indices)).
-        zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
-            This should be a large negative number. Default: -100.
-        **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
-
-    Returns:
-        An approximate logarithmic binary mask for the given indices.
+    ``zero`` defaults to -100 as a finite approximation to log(0). Keyword arguments
+    such as device and dtype are forwarded to torch.zeros.
     """
     col = torch.zeros((height, 1), **kwargs, requires_grad=False)
     col += zero
@@ -83,7 +62,7 @@ def create_mask_col(indices, height, zero=-100, **kwargs):
 
 
 def mask_islogarithmic(masks):
-    """Check if a mask is contains "logarithmic" zeros and ones."""
+    """Detect values outside {0, 1}; reject lists mixing binary and additive masks."""
     if isinstance(masks, list):
         response = [mask_islogarithmic(mask) for mask in masks]
         all_true = all(response)
@@ -96,20 +75,11 @@ def mask_islogarithmic(masks):
 
 
 def mask_hierarchy(hierarchy, zero=-100, **kwargs):
-    """Create approximate logarithmic binary masks for the given hierarchy.
+    """Return one additive (children, parents) mask per hierarchy rank.
 
-    Arguments:
-        hierarchy (list): list of lists of lists of indices.
-            The first level of the list corresponds to the levels of the hierarchy,
-            and each level contains a list of lists of indices for each node.
-        zero (int): "Approximate zero" value. This is used to avoid numerical issues with log(0).
-        **kwargs: Keyword arguments to pass to torch.zeros(). Notably 'device' and 'dtype'.
-
-    Returns:
-        list of masks for each level of the hierarchy.
-            Each mask has shape (n_nodes, n_child_nodes) and can be used to calculate the logits
-            for the nodes based on the child logits:
-            TODO: Add equation here (logarithmic matrix multiplication)
+    Entries are 0 for child-parent membership and ``zero`` otherwise (default -100).
+    Children must have contiguous indices and belong to exactly one parent.
+    Device and dtype keyword arguments are forwarded to torch.zeros.
     """
     masks = []
     for level in hierarchy:
@@ -146,7 +116,6 @@ def batched_scatter_logsumexp(input: torch.Tensor, index: torch.Tensor, dim: int
     """
     if dim_size is None:
         dim_size = int(index.max().item() + 1)
-    # Scaffold tensor - same size as output
     z = torch.zeros(shape_resize(input.shape, dim=dim, value=dim_size), dtype=input.dtype, device=input.device)
     index = index.expand_as(input)
     c = z.scatter_reduce(dim=dim, index=index, src=input, reduce="amax", include_self=False)

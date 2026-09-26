@@ -1,6 +1,7 @@
 import csv
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from dev.benchmarks.data.synthetic import generate, oracle
@@ -33,6 +34,8 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
         second = run(tmp_path / "second", cache="RAM", cache_workers=0)
     finally:
         torch.set_num_threads(threads)
+    assert "mt-trainer" in first["versions"]
+    assert "mini_trainer" not in first["versions"]
     assert first["cache"] == second["cache"] == "CPU"
     assert len(first["phase_measurements"]) == 24
     assert [phase["phase"] for phase in first["phase_measurements"]] == ["train", "eval"] * 12
@@ -57,7 +60,6 @@ def test_synthetic_training_matches_oracle_and_repeats(tmp_path):
 
 
 def test_requested_gpu_profile_does_not_fall_back_to_cpu(tmp_path, monkeypatch):
-    import pytest
     import torch
 
     from dev.benchmarks.training.run import run
@@ -72,7 +74,6 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
     import json
     import sys
 
-    import pytest
     import torch
 
     from dev.benchmarks.training.run import main
@@ -110,8 +111,6 @@ def test_cli_retains_failure_report(tmp_path, monkeypatch):
 
 
 def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
-    import pytest
-
     from dev.benchmarks.training.run import run
 
     with pytest.raises(ValueError, match="require CUDA"):
@@ -119,46 +118,22 @@ def test_qt_profile_requires_cuda_before_creating_output(tmp_path):
     assert not (tmp_path / "qt").exists()
 
 
-def test_compile_mode_requires_compilation_before_creating_outputs(tmp_path):
-    import pytest
-
-    from dev.benchmarks.training.run import run
-    from mini_trainer.train import main
-    from mini_trainer.training.compilation import model_compile_options
-
-    for mode in ("reduce-overhead", "invalid"):
-        with pytest.raises(ValueError, match="requires compile=True"):
-            run(tmp_path / "benchmark", compile_mode=mode)
-        with pytest.raises(ValueError, match="requires compile=True"):
-            main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), compile_mode=mode)
-    with pytest.raises(ValueError, match="Unknown model compile mode"):
-        model_compile_options(True, "invalid")
-    assert not list(tmp_path.iterdir())
-
-
-def test_optimizer_graphs_require_compilation_before_output(tmp_path):
-    import pytest
-
+@pytest.mark.parametrize(
+    "options,error",
+    [
+        ({"compile_mode": "reduce-overhead"}, "requires compile=True"),
+        ({"compile_mode": "invalid"}, "requires compile=True"),
+        ({"compile": True, "compile_mode": "invalid"}, "Unknown model compile mode"),
+        ({"optimizer_cudagraphs": True}, "requires compile_optimizer=True"),
+        ({"device": "cpu", "compile_optimizer": True, "optimizer_cudagraphs": True}, "require CUDA"),
+    ],
+)
+def test_invalid_compilation_fails_before_creating_outputs(tmp_path, options, error):
     from dev.benchmarks.training.run import run
     from mini_trainer.train import main
 
-    with pytest.raises(ValueError, match="requires compile_optimizer=True"):
-        run(tmp_path / "benchmark", optimizer_cudagraphs=True)
-    with pytest.raises(ValueError, match="requires compile_optimizer=True"):
-        main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), optimizer_cudagraphs=True)
-    assert not list(tmp_path.iterdir())
-
-
-def test_optimizer_graphs_reject_cpu_before_output(tmp_path):
-    import pytest
-
-    from dev.benchmarks.training.run import run
-    from mini_trainer.train import main
-
-    with pytest.raises(ValueError, match="require CUDA"):
-        run(tmp_path / "benchmark", device="cpu", compile_optimizer=True, optimizer_cudagraphs=True)
-    with pytest.raises(ValueError, match="require CUDA"):
-        main(
-            input=str(tmp_path / "missing"), output=str(tmp_path / "train"), device="cpu", compile_optimizer=True, optimizer_cudagraphs=True
-        )
+    with pytest.raises(ValueError, match=error):
+        run(tmp_path / "benchmark", **options)
+    with pytest.raises(ValueError, match=error):
+        main(input=str(tmp_path / "missing"), output=str(tmp_path / "train"), **options)
     assert not list(tmp_path.iterdir())

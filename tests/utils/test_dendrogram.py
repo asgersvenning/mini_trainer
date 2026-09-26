@@ -1,4 +1,4 @@
-"""Large-tree plotting regressions; no network or model downloads."""
+"""Dendrogram metadata and rendering regressions; no network or model downloads."""
 
 import io
 import sys
@@ -7,10 +7,12 @@ from xml.etree import ElementTree
 
 import numpy as np
 import pytest
+import torch
 from matplotlib import pyplot as plt
 from matplotlib import rc_context
 
 import mini_trainer.visualization.dendrogram as d
+from mini_trainer.visualization import plot_probabilistic_dendrogram
 from mini_trainer.visualization._dendrogram_layout import linkage_layout
 
 pytestmark = pytest.mark.skipif(not d._HAS_DENDROGRAM_DEPS, reason="Optional dendrogram dependencies missing")
@@ -22,6 +24,47 @@ def offline_labels(monkeypatch):
     monkeypatch.setattr(d, "resolve_name_or_id", MagicMock(side_effect=ValueError("offline")))
     yield
     d._resolve_labels.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        pytest.param({"idx2cls": dict(enumerate(("5219173", "2435261", "7429082", "9117798")))}, id="flat"),
+        pytest.param(
+            {
+                "cls2idx": {
+                    "0": {
+                        "Carnivora - Canidae - dog": 0,
+                        "Carnivora - Felidae - cat": 1,
+                        "Rodentia - Muridae - mouse": 2,
+                        "Perissodactyla - Equidae - horse": 3,
+                    }
+                }
+            },
+            id="hierarchical-json",
+        ),
+        pytest.param(
+            {
+                "idx2cls": {
+                    0: {"order": "Carnivora", "species": "dog"},
+                    1: {"order": "Carnivora", "species": "cat"},
+                    2: {"order": "Rodentia", "species": "mouse"},
+                    3: {"order": "Perissodactyla", "species": "horse"},
+                }
+            },
+            id="dictionary-labels",
+        ),
+    ],
+)
+def test_model_metadata_forms_render_offline(metadata, monkeypatch):
+    monkeypatch.setattr(d, "classification_module", lambda _: MagicMock(metadata=metadata))
+    monkeypatch.setattr(d, "class_distance", lambda _: [torch.ones(4, 4) - torch.eye(4)])
+    fig, info = plot_probabilistic_dendrogram(None)[0]
+    try:
+        assert isinstance(info, dict) and all(len(values) == 4 for values in info.values())
+        assert len(fig.axes[0].texts) == 4
+    finally:
+        plt.close(fig)
 
 
 def test_iterative_layout_matches_existing_newick_geometry():

@@ -12,8 +12,7 @@ def get_bioclip_encoder(version: str = "bioclip-2", pretrained: bool = True):
         import open_clip
     except ImportError as e:
         e.add_note(
-            "The `open_clip` module was not found in the current Python environment. "
-            "Please install with `pip install mini-trainer[bioclip]`."
+            "The `open_clip` module was not found in the current Python environment. Please install with `pip install mt-trainer[bioclip]`."
         )
         raise
 
@@ -50,7 +49,7 @@ def get_bioclip_model(
 
 
 def get_bioclip_models() -> list[str]:
-    """Dynamically fetches the list of BioCLIP model versions from Hugging Face."""
+    """Discover BioCLIP versions on Hugging Face, falling back to known identifiers."""
     fallback = ["bioclip", "bioclip-2", "bioclip-2.5-vith14", "bioclip-vit-b-16-inat-only"]
     try:
         from huggingface_hub import HfApi

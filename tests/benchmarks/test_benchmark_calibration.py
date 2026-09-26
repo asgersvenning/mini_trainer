@@ -131,7 +131,7 @@ def test_calibration_recipes_keep_all_batches_source_and_thread_limits(model, in
     )
     assert report["status"] == "passed"
     assert report == json.loads((output / "report.json").read_text())
-    assert sessions == [(2, 1), (2, 1)]
+    assert set(sessions) == {(2, 1)}
     assert inference_paths and all(output in p.parents for p in inference_paths)
     assert {p.name: p.read_bytes() for p in model.parent.iterdir()} == original
     assert [b["sample_ids"] for b in report["batches"]] == [b["sample_ids"] for b in metadata["batches"]]

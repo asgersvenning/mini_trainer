@@ -8,10 +8,7 @@ from mini_trainer.utils import cosine_to_zscore
 
 
 class EvenCrossEntropyLoss(CrossEntropyLoss):
-    """A minimal wrapper around ``torch.nn.modules.loss.CrossEntropyLoss``
-    that ensures that the size of the loss is more or less independent
-    from the number of classes.
-    """
+    """Cross entropy divided by the log of the number of classes."""
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
         max_CE = input.new_full((1,), input.size(1), requires_grad=False).log()
@@ -19,34 +16,16 @@ class EvenCrossEntropyLoss(CrossEntropyLoss):
 
 
 class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
-    """Entropy-Modulated Logit Adjusted (EMLA) Cross Entropy for Long-Tail Learning.
+    """Cross entropy with a detached, entropy-gated class-frequency adjustment.
 
-    This loss function dynamically applies the Logit Adjustment penalty proposed by
-    Menon et al. (2021) based on the model's instance-level confidence (Shannon Entropy).
+    Add ``(1 - H(softmax(input)) / log(C)) * adjustments`` to each sample's
+    logits, where ``C`` is its class count and ``adjustments`` contains centered
+    log class counts. Uncertain predictions receive less adjustment; uniform
+    counts produce no adjustment. The gate does not contribute gradients.
 
-    Standard Logit Adjustment applies a static penalty to rare classes to ensure
-    Fisher consistency for the balanced error. It enforces a large relative margin
-    between the logits of rare and dominant labels. However, applying this penalty
-    uniformly can disrupt early-stage feature learning or over-penalize genuinely ambiguous samples.
-
-    This method introduces an instance-aware curriculum-learning gate:
-    1. Calculates the exact Shannon Entropy of the raw logits using purely numerically
-       stable log-space arithmetic via the identity: log(softmax(z)) = z - LSE(z).
-    2. Normalizes the entropy to a [0, 1] scale (where 0 is fully certain, 1 is uniform).
-    3. Computes a 'confidence' score (1 - normalized_entropy) which is detached from the gradient.
-    4. Scales the class prior penalty (tau * log(pi_y)) by this confidence score.
-    5. Applies the modulated penalty to the raw logits before native Cross-Entropy normalization.
-
-    Mechanics:
-        Unconfident predictions (e.g., early training or noisy samples) yield high entropy,
-        suppressing the penalty and allowing standard Empirical Risk Minimization (ERM).
-        Conversely, when the model becomes overconfident on a rare-attribute sample,
-        the low entropy triggers the full negative logit penalty, driving the softmax
-        probability to zero and generating a maximum-strength gradient to correct the boundary.
-
-    References:
-        - Menon, A. K., Jain, H., Rawat, A. S., Veit, A., & Kumar, S. (2021).
-          Long-tail learning via logit adjustment. arXiv preprint arXiv:2007.07314.
+    Adapts logit adjustment from Menon et al. (2021), arXiv:2007.07314, with
+    this implementation's entropy gate. Quality trade-offs require evaluation
+    on the intended dataset; see docs/training-feature-validation.md.
     """
 
     def __init__(
@@ -54,30 +33,23 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         class_frequencies: list[int] | list[float] | np.ndarray | torch.Tensor,
         flatten: float = 0.0,
         weight: torch.Tensor | None = None,
-        ignore_index: int = -100,  # Apparently `-100` is used instead of `None` in nn.CrossEntropy
+        ignore_index: int = -100,
         reduction: str = "mean",
         label_smoothing: float = 0.0,
         device: torch.types.Device = None,
     ) -> None:
-        """.
+        """Initialize adjustments from rounded class counts, clamped to at least one.
 
-        Args:
-            class_frequencies: The raw frequency or count of each class in the training dataset.
-            flatten: Adjusts the weights (i.e. the inverse class frequencies, normalized)
-                such that they are a mixture of the uniform and the raw distribution with weight `flatten`.
-            weight: A manual rescaling weight given to each class.
-            ignore_index: Specifies a target value that is ignored and does not contribute to the input gradient.
-            reduction: Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'.
-            label_smoothing: A float in [0.0, 1.0]. Specifies the amount of smoothing when computing the loss.
-            device: Device expected during training can optionally be passed, otherwise it will be inferred dynamically.
+        ``flatten`` replaces counts ``c`` with ``flatten * sum(c) +
+        (1 - flatten) * c``; zero preserves counts and one makes them uniform.
+        ``device`` optionally fixes the adjustment device; otherwise forward
+        uses the input device. Other arguments pass through to CrossEntropyLoss.
         """
-        # Initialize the parent nn.CrossEntropyLoss with all standard arguments
         super().__init__(weight=weight, ignore_index=ignore_index, reduction=reduction, label_smoothing=label_smoothing)
         self._device = device
         if isinstance(self._device, (int, str)):
             self._device = torch.device(self._device)
 
-        # Safely convert to a float tensor whether the input is a list or already a tensor
         if isinstance(class_frequencies, np.ndarray):
             class_frequencies = torch.from_numpy(class_frequencies)
         if isinstance(class_frequencies, (list, tuple)):
@@ -94,19 +66,10 @@ class EMLACrossEntropy(torch.nn.CrossEntropyLoss):
         if self._device is not None:
             log_priors = log_priors.to(device=self._device)
 
-        # Register the base adjustments as a buffer so they move to the correct device
         self.register_buffer("adjustments", log_priors)
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """.
-
-        Args:
-            logits: Raw, unnormalized outputs of shape (Batch, Classes).
-            targets: Ground truth class indices of shape (Batch,).
-
-        Returns:
-            The computed loss.
-        """
+        """Apply the detached adjustment before cross entropy."""
         # Uncertainty gate: 1.0 when confident, 0.0 when uncertain
         with torch.no_grad():
             log_probs = input.log_softmax(dim=-1)
@@ -129,8 +92,7 @@ def class_weight_distribution_regularization(W: torch.Tensor, sparse: bool = Tru
         W: Tensor of shape [num_classes, num_embeddings],
             typically the weights of the final linear layer.
         sparse: Use a sparse set of classes to compute the regularization over.
-            The size of the set will be equal to the square root of the number of classes.
-            Will use a random subset of classes each time.
+            Samples a bounded random subset on each call.
 
     Returns:
         A scalar tensor representing the regularization loss.

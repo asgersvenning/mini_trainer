@@ -1,6 +1,10 @@
 import csv
 import json
+import os
+import shlex
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -75,23 +79,24 @@ def test_summary_preserves_failures_and_unmeasured_fields(tmp_path, fine_tune):
     assert "No reports produced" in summarize(Path(tmp_path / "missing"))
 
 
-@pytest.mark.parametrize("mode", ["qt", "qt-large-batch", "qt-cudagraphs", "qt-optimizer-cudagraphs"])
-def test_shared_harness_records_process_failures(tmp_path, mode):
-    import os
-    import shlex
-    import subprocess
-    import sys
-
+@pytest.fixture
+def failed_training_python(tmp_path):
     runner = tmp_path / "python-wrapper"
     runner.write_text(
-        '#!/usr/bin/env bash\nif [[ "$1" == "-m" && "$2" == "dev.benchmarks.training.run" ]]; then exit 134; fi\n'
-        + f'exec {shlex.quote(sys.executable)} "$@"\n'
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == "-c" && "$2" == "import mini_metrics" ]]; then exit 0; fi\n'
+        'if [[ "$1" == "-m" && "$2" == "dev.benchmarks.training.run" ]]; then exit 134; fi\n' + f'exec {shlex.quote(sys.executable)} "$@"\n'
     )
     runner.chmod(0o755)
+    return str(runner)
+
+
+@pytest.mark.parametrize("mode", ["qt", "qt-large-batch", "qt-cudagraphs", "qt-optimizer-cudagraphs"])
+def test_shared_harness_records_process_failures(tmp_path, mode, failed_training_python):
     output = tmp_path / "reports"
     result = subprocess.run(
         ["bash", "dev/check-benchmarks.sh", mode, str(output)],
-        env={**os.environ, "BENCHMARK_PYTHON": str(runner), "BENCHMARK_DATA_ROOT": str(tmp_path)},
+        env={**os.environ, "BENCHMARK_PYTHON": failed_training_python, "BENCHMARK_DATA_ROOT": str(tmp_path)},
         capture_output=True,
         text=True,
         timeout=30,
@@ -120,8 +125,6 @@ def test_shared_harness_records_process_failures(tmp_path, mode):
 
 
 def test_benchmark_retains_cuda_peaks_across_phase_resets(tmp_path):
-    import os
-
     import torch
     from torch.utils.data import DataLoader
 
@@ -280,26 +283,14 @@ def test_efficientnet_flat_and_hierarchical_share_blair_splits(tmp_path, monkeyp
     assert indices[0]["class"] == [labels[0] for labels in indices[1]["class"]]
 
 
-def test_representative_profile_retains_training_and_quality_failures(tmp_path):
-    import os
-    import shlex
-    import subprocess
-    import sys
-
-    runner = tmp_path / "python-wrapper"
-    runner.write_text(
-        "#!/usr/bin/env bash\n"
-        'if [[ "$1" == "-c" ]]; then exit 0; fi\n'
-        'if [[ "$1" == "-m" && "$2" == "dev.benchmarks.training.run" ]]; then exit 134; fi\n' + f'exec {shlex.quote(sys.executable)} "$@"\n'
-    )
-    runner.chmod(0o755)
+def test_representative_profile_retains_training_and_quality_failures(tmp_path, failed_training_python):
     output = tmp_path / "reports"
     result = subprocess.run(
         ["bash", "dev/check-benchmarks.sh", "qt-efficientnet", str(output)],
         env={
             **os.environ,
-            "BENCHMARK_PYTHON": str(runner),
-            "BENCHMARK_METRICS_PYTHON": str(runner),
+            "BENCHMARK_PYTHON": failed_training_python,
+            "BENCHMARK_METRICS_PYTHON": failed_training_python,
             "BENCHMARK_DATA_ROOT": str(tmp_path),
             "BLAIR_CLASS_SPEC": str(tmp_path / "spec.json"),
             "BENCHMARK_HEAD": "hierarchical",
@@ -365,10 +356,6 @@ def test_summary_renders_paired_metrics_without_treating_them_as_training(tmp_pa
 
 @pytest.mark.parametrize("seeds", [" ", "42 42", "-1"])
 def test_representative_profile_rejects_invalid_seeds_before_output(tmp_path, seeds):
-    import os
-    import subprocess
-    import sys
-
     output = tmp_path / "reports"
     result = subprocess.run(
         ["bash", "dev/check-benchmarks.sh", "qt-efficientnet", str(output)],

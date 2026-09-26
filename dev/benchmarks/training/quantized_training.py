@@ -14,8 +14,6 @@ from argparse import ArgumentParser
 
 import torch
 
-from mini_trainer.modeling.quantized_training import IntegerLinear as IntegerLinear
-
 
 def dependencies():
     from mini_trainer.modeling._quantized_training import TrainingWeight, quantize_int8_rowwise, scaled_int8_mm

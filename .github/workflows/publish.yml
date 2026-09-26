@@ -1,27 +1,70 @@
-name: "Publish to PyPi"
+name: Publish training package
 
 on:
   push:
-    tags:
-      # Publish on any tag starting with a `v`, e.g., v0.1.0
-      - v*
+    branches: ["release/packages/**"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-training-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  run:
+  route:
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
+    outputs:
+      enabled: ${{ steps.route.outputs.enabled }}
+      product: ${{ steps.route.outputs.product }}
+      module: ${{ steps.route.outputs.module }}
+      tag: ${{ steps.route.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: route
+        run: python3 dev/release_route.py packages
+
+  prepare:
+    needs: route
+    if: needs.route.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv python install 3.13
+      - name: Qualify and retain the wheel
+        run: WHEEL_OUTPUT_DIR="$PWD/dist" bash dev/check-wheel.sh 3.13
+      - run: uv build --sdist --out-dir dist
+      - name: Record artifacts
+        run: sha256sum dist/* > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: training-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [route, prepare]
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    environment: pypi-training
     permissions:
       id-token: write
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-      - name: Install Python 3.14
-        run: uv python install 3.14
-      - name: Build
-        run: uv build
-      - name: Publish
-        run: uv publish
+      - uses: actions/download-artifact@v4
+        with:
+          name: training-distributions
+          path: dist/
+      - name: Verify qualified artifact bytes
+        run: sha256sum --check dist/SHA256SUMS
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Publish qualified distributions
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*.whl dist/*.tar.gz
