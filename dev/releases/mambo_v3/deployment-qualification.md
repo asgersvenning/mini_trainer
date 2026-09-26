@@ -71,7 +71,7 @@ Reproduce the current quality tables and figure:
 ```sh
 /tmp/mambo-release-metrics/bin/python -m dev.releases.mambo_v3.promoted_report \
   --quality docs/assets/mambo-composed-tta.json --output /tmp/promoted-report
-.venv/bin/python -m dev.releases.mambo_v3.tail_charts --paired \
+.venv/bin/python -m dev.releases.mambo_v3.tail_charts \
   --data /tmp/promoted-report/mambo-promoted-tail.json --output /tmp/promoted-report
 ```
 
