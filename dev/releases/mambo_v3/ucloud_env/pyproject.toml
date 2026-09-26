@@ -3,7 +3,7 @@ name = "mambo-ucloud-release"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "minitrainer[recommended,bioclip,timm]",
+  "mt-trainer[recommended,bioclip,timm]",
   "mambo-v3",
   "mini_metrics",
   "torch==2.12.0",
@@ -19,7 +19,7 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-minitrainer = { path = "../../../.." }
+mt-trainer = { path = "../../../.." }
 mambo-v3 = { path = "../../../../deployment" }
 mini_metrics = { git = "https://github.com/GuillaumeMougeot/mini_metrics.git", rev = "70cc69adc05362863439277048e06386c1f885e1" }
 torch = { index = "pytorch-cu130" }

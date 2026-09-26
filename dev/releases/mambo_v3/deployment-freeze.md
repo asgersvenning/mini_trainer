@@ -8,10 +8,10 @@ remains MIT. Final artifact identities and installed checks are recorded in
 
 ## Current publication preparation
 
-- Integrated the `minitrainer` distribution rename, retaining `mini_trainer` imports.
+- Integrated the `mt-trainer` distribution rename, retaining `mini_trainer` imports.
   Both lockfiles preserve dependency versions. Isolated installed-wheel imports,
   CLI, training, checkpoint reload and inference passed.
-- Training publication now accepts `packages/minitrainer/vVERSION` release events only;
+- Training publication now accepts `packages/mt-trainer/vVERSION` release events only;
   manual dispatch prepares artifacts without publication. Model and demo publication
   have separate workflows, per-product environment gates and verified upload inventories.
   [Hierarchical branch/tag routing](../README.md) is shared across releases.

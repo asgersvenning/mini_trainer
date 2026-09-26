@@ -44,7 +44,7 @@ def _check_deps():
     if not _HAS_DENDROGRAM_DEPS:
         raise ImportError(
             "Dendrogram visualization requires optional dependencies: biopython and scipy. "
-            "Install them with: `uv pip install minitrainer[recommended]` or `uv sync --extra recommended`."
+            "Install them with: `uv pip install mt-trainer[recommended]` or `uv sync --extra recommended`."
         )
 
 

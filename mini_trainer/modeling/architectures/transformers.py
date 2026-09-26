@@ -11,7 +11,7 @@ class TransformersPreprocessor:
         except ImportError as e:
             e.add_note(
                 "The `transformers` module was not found in the current Python environment. "
-                "Please install with `pip install minitrainer[transformers]`."
+                "Please install with `pip install mt-trainer[transformers]`."
             )
             raise
         assert isinstance(preprocessor, TorchvisionBackend)
@@ -57,7 +57,7 @@ def get_transformers_model(
     except ImportError as e:
         e.add_note(
             "The `transformers` module was not found in the current Python environment. "
-            "Please install with `pip install minitrainer[transformers]`."
+            "Please install with `pip install mt-trainer[transformers]`."
         )
         raise
 
