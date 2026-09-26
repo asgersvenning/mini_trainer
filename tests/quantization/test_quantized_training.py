@@ -1,4 +1,4 @@
-"""CUDA numerical and saved-storage checks for the QT kernel prototype."""
+"""Native INT8 training arithmetic, storage and compiler regressions."""
 
 import importlib.util
 import os
@@ -6,7 +6,7 @@ import os
 import pytest
 import torch
 
-from dev.benchmarks.training.quantized_training import IntegerLinear, dependencies
+from mini_trainer.modeling.quantized_training import IntegerLinear, prepare_quantized_training
 
 
 @pytest.mark.parametrize("gradient_scale", [1.0, 1e-6])
@@ -18,10 +18,11 @@ def test_integer_training_gradients_and_saved_storage(gradient_scale):
     if not torch.cuda.is_available():
         pytest.fail("CUDA requested but unavailable")
     torch.manual_seed(42)
-    weight_type, _, _ = dependencies()
+    from mini_trainer.modeling._quantized_training import TrainingWeight
+
     inputs = torch.randn(32, 64, device="cuda", dtype=torch.float16, requires_grad=True)
     original_weight = torch.randn(64, 64, device="cuda", dtype=torch.float16) / 8
-    weight = torch.nn.Parameter(weight_type.from_float(original_weight))
+    weight = torch.nn.Parameter(TrainingWeight.from_float(original_weight))
     grad_output = torch.randn(32, 64, device="cuda", dtype=torch.float16) * gradient_scale
     saved = []
 
@@ -172,10 +173,12 @@ def test_compiled_integer_parameter_gradients():
         pytest.skip("Set RUN_CUDA_TESTS=1 for compiled INT8 gradient validation")
     if not torch.cuda.is_available():
         pytest.fail("CUDA requested but unavailable")
-    from dev.benchmarks.training.quantized_training import Layer
 
     torch.manual_seed(42)
-    eager = torch.nn.Sequential(Layer(64, True, torch.float16), Layer(64, True, torch.float16))
+    eager = torch.nn.Sequential(*(torch.nn.Linear(64, 64, bias=False, device="meta") for _ in range(2)))
+    for layer in eager:
+        layer.weight = torch.nn.Parameter(torch.randn(64, 64, device="cuda", dtype=torch.float16) / 8)
+    prepare_quantized_training(eager)
     compiled = torch.compile(copy.deepcopy(eager), fullgraph=True)
     # Ordinary training input does not require gradients. A small mean-reduced
     # loss exercises scale products below FP16's representable range.
@@ -245,10 +248,8 @@ def test_dense_backward_graph_with_fresh_kernel_tuning(monkeypatch):
         )
         assert result.returncode == 0, result.stdout + result.stderr
         return
-    from dev.benchmarks.models import DenseImageMLP
     from mini_trainer.modeling import Classifier, EmbeddingContext
     from mini_trainer.modeling._quantized_training import matmul
-    from mini_trainer.modeling.quantized_training import prepare_quantized_training
 
     torch._dynamo.reset()
     torch.manual_seed(42)
@@ -262,8 +263,17 @@ def test_dense_backward_graph_with_fresh_kernel_tuning(monkeypatch):
         return benchmark(kernel, quantiles)
 
     monkeypatch.setattr(matmul._kernel, "_do_bench", record_tuning)
-    raw = DenseImageMLP()
-    raw.fc = Classifier(2048, 10, hidden=False, normalized=False)
+    raw = torch.nn.Sequential(
+        torch.nn.AdaptiveAvgPool2d((28, 28)),
+        torch.nn.Flatten(),
+        torch.nn.Linear(3 * 28 * 28, 2048),
+        torch.nn.ReLU(),
+        torch.nn.Linear(2048, 2048),
+        torch.nn.ReLU(),
+        torch.nn.Linear(2048, 2048),
+        torch.nn.ReLU(),
+        Classifier(2048, 10, hidden=False, normalized=False),
+    )
     raw.cuda()
     prepare_quantized_training(raw)
     model = torch.compile(raw, mode="reduce-overhead")
