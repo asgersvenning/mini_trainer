@@ -1,6 +1,5 @@
-"""Recover original UCloud test identities; verify-only works without the image dataset."""
+"""Recover original test identities from archived staging and truth for UCloud setup."""
 
-import argparse
 import csv
 import json
 import tomllib
@@ -8,7 +7,6 @@ from pathlib import Path
 
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.audit import HERE
-from dev.releases.mambo_v3.evaluation_data import write_json
 
 
 def recover(metadata, staging, reference, test_set="0"):
@@ -50,45 +48,3 @@ def recover(metadata, staging, reference, test_set="0"):
     if len(seen) != len(truth) * 3:
         raise ValueError("Incomplete archived predictions")
     return [{"path": name, "labels": labels, "split": "test"} for name, labels in sorted(truth.items())]
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("metadata", "staging", "reference", "output"):
-        parser.add_argument(f"--{name}", type=Path, required=True)
-    parser.add_argument("--root", type=Path)
-    parser.add_argument("--verify-only", action="store_true")
-    parser.add_argument("--test-set", default="0")
-    args = parser.parse_args()
-    if args.output.exists():
-        raise FileExistsError(args.output)
-    records = recover(args.metadata, args.staging, args.reference, args.test_set)
-    if len(records) != 632913:
-        raise ValueError("Expected 632,913 original test images")
-    provenance = {key: file_hash(getattr(args, key)) for key in ("metadata", "staging", "reference")}
-    provenance["test_set"] = args.test_set
-    if args.verify_only:
-        write_json(
-            args.output,
-            {
-                "status": "verified-identities-only",
-                "images": len(records),
-                "provenance": provenance,
-                "limitation": "Image existence and bytes not verified locally",
-            },
-        )
-    else:
-        if args.root is None:
-            parser.error("--root is required unless --verify-only")
-        for i, record in enumerate(records):
-            path = (args.root / record["path"]).resolve()
-            if not path.is_relative_to(args.root.resolve()):
-                raise ValueError("Unsafe original path")
-            record["sha256"] = file_hash(path)
-            if i % 10000 == 0:
-                print(f"Hashed {i}/{len(records)}", flush=True)
-        write_json(args.output, {"schema_version": 1, "dataset": "global-lepi-test", "provenance": provenance, "records": records})
-
-
-if __name__ == "__main__":
-    main()
