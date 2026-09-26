@@ -2,18 +2,11 @@ import torch
 
 from mini_trainer.config import (
     _drop_none,
-    _nullify,
     _stringify_types,
     defaults_from_function,
     merge_dicts,
     restructure_cli_args,
 )
-
-
-def test_nullify():
-    d = {"a": 1, "b": {"c": 2, "d": {"e": 3}}}
-    expected = {"a": None, "b": {"c": None, "d": {"e": None}}}
-    assert _nullify(d) == expected
 
 
 def test_drop_none():
