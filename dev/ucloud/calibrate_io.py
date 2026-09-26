@@ -27,6 +27,8 @@ import threading
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import nullcontext
+from itertools import islice
 from pathlib import Path
 
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
@@ -92,16 +94,14 @@ def child(job_path):
             size = os.stat(source).st_size
         else:
             size = 0
-            target = open(Path(job["destination"]) / str(index), "xb") if job["mode"] == "stage" else None
-            try:
-                with open(source, "rb") as stream:
-                    while chunk := stream.read(1024 * 1024):
-                        if target is not None:
-                            target.write(chunk)
-                        size += len(chunk)
-            finally:
-                if target is not None:
-                    target.close()
+            with (
+                open(Path(job["destination"]) / str(index), "xb") if job["mode"] == "stage" else nullcontext() as target,
+                open(source, "rb") as stream,
+            ):
+                while chunk := stream.read(1024 * 1024):
+                    if target is not None:
+                        target.write(chunk)
+                    size += len(chunk)
         return size, time.monotonic() - began
 
     rows, errors = [], []
@@ -140,7 +140,7 @@ def child(job_path):
             journal.write(b"x")
             return pool.submit(operation, item)
 
-        pending = {submit(item) for item in list_next(items, job["workers"])}
+        pending = {submit(item) for item in islice(items, job["workers"])}
         while pending:
             done, pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
             for future in done:
@@ -159,16 +159,6 @@ def child(job_path):
             if errors:
                 break
     snapshot(finished=True)
-
-
-def list_next(iterator, count):
-    result = []
-    for _ in range(count):
-        value = next(iterator, None)
-        if value is None:
-            break
-        result.append(value)
-    return result
 
 
 def stop(proc):
