@@ -4,6 +4,8 @@ set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 smoke_python="${1:-.venv/bin/python}"
+wheel_output="${WHEEL_OUTPUT_DIR:-}"
+if [[ -n "$wheel_output" ]]; then wheel_output="$(realpath -m "$wheel_output")"; fi
 smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/mini-trainer-wheel.XXXXXXXX")"
 trap 'rm -rf -- "$smoke_dir"' EXIT
 
@@ -17,3 +19,9 @@ cd -- "$smoke_dir"
 # Make the custom test backbone importable for weights-only reconstruction.
 CUDA_VISIBLE_DEVICES="" MPLBACKEND=Agg MPLCONFIGDIR="$smoke_dir/matplotlib" "$smoke_dir/env/bin/python" -I -c \
     'import sys; sys.path.insert(0, "."); from smoke_fixture.check import main; main()'
+
+# Retain the exact installed and exercised wheel for publication preparation.
+if [[ -n "$wheel_output" ]]; then
+    mkdir -p "$wheel_output"
+    cp "$smoke_dir"/dist/*.whl "$wheel_output/"
+fi
