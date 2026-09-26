@@ -38,3 +38,8 @@ These are planned comparisons, not recorded results.
 
 The separate [prototype-coordinate study](prototype_linearization/README.md)
 contains its own reproduction workflow and evidence.
+
+[boot_metrics.py](statistics/boot_metrics.py) repeats seeded `mini_metrics`
+threshold calibration/evaluation and writes metrics by seed and rank. Its legacy
+name does not imply bootstrap resampling: sampling is delegated to the installed
+`mini_metrics`. Record that dependency revision when retaining results.
