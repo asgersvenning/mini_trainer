@@ -1,77 +1,40 @@
-# Experiments
+# Research experiments
 
-## Configuration
+## Generate a SLURM matrix
 
-To configure and orchestrate an experiment with SLURM use the following recipe:
+From the repository root, use the [installed environment](../../README.md#local-installation)
+and copy [config.template.yaml](config.template.yaml) to a campaign configuration.
 
-1) Create a configuration YAML file (**`<CONFIG_FILE>`**) following the template [config.template.yaml](./config.template.yaml).
-   - `name`: Set the experiment name (**`<NAME>`**), also used for the SLURM job name.
-   - `slurm`: Configure SBATCH arguments.
-   - `experiment`: Configure experiment matrix parameters for `mini_trainer`.
-   - `eval`: Configure evaluation datasets for specific experiment parameters.
-   - `args`: Configure fixed (shared) `mini_trainer` parameters used for all experiment matrix parameter combinations.
-2) Create the SLURM array script for running the experiment matrix: `uv run orchestrate.py <CONFIG_FILE>`.
-   *(Validate the correct construction of the experiment matrix in the file `slurm_jobs/<NAME>/tasks.txt`).*
-3) Run the SLURM array script `sbatch slurm_jobs/<NAME>/array.sh`.
-
-## Notes
-
-Loose notes for the experiment configuration and matrix.
-
-## Template train command
+| Configuration | Role |
+| --- | --- |
+| `name`, `output_dir` | Campaign name and shared output base; defaults to `slurm_jobs/<name>`. |
+| `stubs`, `slurm` | Installed training/prediction/metric commands and SBATCH settings. |
+| `datasets`, `eval` | Dataset paths/indexes and training-to-evaluation dataset mappings. |
+| `experiment` | Cartesian product of model, head, dataset and other axes. |
+| `args` | `shared`, `train`, `eval` and `metrics` options; dictionaries select values by matrix axis. |
 
 ```sh
-mt_htrain -i <INPUT> \
-    -o <OUTPUT> \
-    --model <MODEL> \
-    --head <HEAD> \
-    --dtype float16 \
-    --batch_size 256 \
-    --epochs <EPOCHS> \
-    --warmup_epochs 0.1 \
-    --class_weighted \
-    --loss_weights <W0> <W1> [...] \
-    --wandb
+.venv/bin/python -m publication.experiments.orchestrate campaign.yaml
 ```
 
-## Experiment matrix
+Inspect `train_tasks.txt`, `eval_tasks.txt`, `metric_tasks.txt` and `array.sh` in
+`<output_dir>/<name>/` before submitting `sbatch <output_dir>/<name>/array.sh`.
+Each array task runs training, prediction from `weights/last.pt`, then metrics;
+a failed command stops that task. Results go under the campaign's `results/`.
+Generation can resolve taxonomy while constructing evaluation combinations.
 
-- Datasets (2)
-  - global_lepi
-  - plantnet300k
+The generated script assumes commands and dataset/output paths are available on
+the compute node; it does not install or activate an environment. Use explicit
+indexes for external evaluation datasets. Without one, evaluation only supports
+the training dataset and reuses its generated `data_index.json`.
 
-- Models (6)
-  - efficientnet_v2_[s/m/l]
-  - ViT_L_16
-  - ViT_H_14
-  - BioClip2 (finetune only and/or zero-shot)
+## Research scope
 
-- Heads (6)
-  - Flat
-  - Bottom-up
-  - Top-down
-  - Independent
-  - Autoregressive (independent)
-  - Autoregressive (geometrically nested)
+Proposed matrix: Global Lepidoptera and Pl@ntNet300K; EfficientNetV2 S/M/L,
+ViT-L/16, ViT-H/14 and BioCLIP2 (fine-tuned or zero-shot); flat, bottom-up,
+top-down, independent and autoregressive heads (independent or geometrically
+nested). Flemming supplies out-of-domain evaluation for Global Lepidoptera.
+These are planned comparisons, not recorded results.
 
-### Table templates
-
-#### Global Lepidoptera
-
-| Model | Head |
-|-------|------|
-| ...   | ...  |
-
-#### Flemming eval
-
-OOD test using model trained on Global Lepidoptera
-
-| Model | Head |
-|-------|------|
-| ...   | ...  |
-
-#### Pl@ntNet300K
-
-| Model | Head |
-|-------|------|
-| ...   | ...  |
+The separate [prototype-coordinate study](prototype_linearization/README.md)
+contains its own reproduction workflow and evidence.
