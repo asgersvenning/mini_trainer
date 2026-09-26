@@ -7,6 +7,14 @@ dependencies = ["numpy>=2.4", "pillow>=11"]
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{name = "Asger Svenning"}]
+keywords = ["image-classification", "biodiversity", "lepidoptera", "onnx", "pytorch"]
+
+[project.urls]
+Documentation = "https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md"
+Repository = "https://github.com/asgersvenning/mini_trainer"
+Issues = "https://github.com/asgersvenning/mini_trainer/issues"
+Changelog = "https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v3"
 
 [project.optional-dependencies]
 onnx = ["onnxruntime>=1.20"]

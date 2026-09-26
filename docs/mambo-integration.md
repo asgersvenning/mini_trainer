@@ -6,17 +6,17 @@ additional steps for the default ONNX/CPU integration.
 
 ## Runtime installation
 
-Use an activated Python 3.12+ environment. The candidate wheels must be supplied
-locally until publication. Choose one runtime installation:
+Use an activated Python 3.12+ environment. The commands target the prepared public release; reviewers can substitute the
+supplied wheels before publication. Choose one runtime installation:
 
 | Environment | Installation | Predictor options / CLI |
 |---|---|---|
-| CPU, without PyTorch | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx]'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
-| NVIDIA GPU, without the training package | `uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx-cuda]'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
-| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto './mini_trainer-0.3.0-py3-none-any.whl' ./mambo_v3-0.3.0-py3-none-any.whl` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
+| CPU, without PyTorch | `uv pip install 'mambo-v3[onnx]==0.3.0'` | Defaults: `backend="onnx", device="cpu"` / `--backend onnx --device cpu` |
+| NVIDIA GPU, without the training package | `uv pip install 'mambo-v3[onnx-cuda]==0.3.0'` | `backend="onnx", device="cuda:0"` / `--backend onnx --device cuda:0` |
+| PyTorch CPU or NVIDIA GPU | `uv pip install --torch-backend=auto 'mambo-v3[torch]==0.3.0'` | `backend="torch", device="cpu"` or `device="cuda:0"` / `--backend torch --device cpu` or `--device cuda:0` |
 
 For an environment with ONNX Runtime already provisioned, install the base
-`mambo-v3` wheel without extras. Do not install CPU and GPU ONNX Runtime
+`mambo-v3==0.3.0` without extras. Do not install CPU and GPU ONNX Runtime
 packages together. Use the application's dependency management to select and
 record versions; inference never installs or replaces runtime packages. If you
 use `uv run`, pass `--no-sync` to retain the installed environment.
@@ -80,6 +80,11 @@ model/list specific.
 release checkpoint. Keep the V2 runtime/assets separately if you still need to run
 V2. Preserving its calling conventions does not imply identical predictions or a
 shared embedding space.
+
+For an interactive application, call `predictor.configure(model="north_europe", tta=True)`
+to change scope and TTA while reusing loaded models. Omitted settings stay unchanged;
+`class_list=[...]` selects custom species, `model="full"` resets the scope, and
+`tta=False` disables TTA. Finish any active stream before reconfiguring.
 
 ## Streaming controls
 

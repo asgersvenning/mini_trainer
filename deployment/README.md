@@ -1,4 +1,4 @@
-# MAMBO deployment — release candidate
+# MAMBO V3 deployment
 
 Identify moths and butterflies from images, with species, genus and family
 predictions. V3 adds a standalone ONNX option alongside PyTorch: **no training
@@ -10,7 +10,8 @@ including CPU, laptop GPU and server GPU measurements.
 (non-commercial, share-alike). Adapter code: MIT.**
 [Model notices](../dev/releases/mambo_v3/NOTICES.md) explain attribution and scope.
 
-This candidate is not yet published; the examples use the supplied release wheels.
+Publication is being prepared; the commands below target the public release.
+Release reviewers can install the supplied wheels instead.
 Model files download automatically from public ERDA storage on first use and are
 verified and cached. Reuse one predictor across calls.
 
@@ -22,7 +23,7 @@ is required. Install ONNX/CPU to start without a CUDA setup:
 ```sh
 uv venv --python 3.13 .venv
 source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
-uv pip install './mambo_v3-0.3.0-py3-none-any.whl[onnx]'
+uv pip install 'mambo-v3[onnx]==0.3.0'
 ```
 
 **Python** — supply images directly:
@@ -47,7 +48,7 @@ This creates `output/predictions/predictions.json` and `mini_metric.csv`;
 `--embeddings` also writes `embeddings.npy`. Choose a new output name for each run.
 For a one-off command without installing into your application environment, replace
 `mambo_predict` with
-`uvx --from './mambo_v3-0.3.0-py3-none-any.whl[onnx]' mambo_predict`.
+`uvx --from 'mambo-v3[onnx]==0.3.0' mambo_predict`.
 
 | Interface | Inputs | Outputs |
 |---|---|---|
@@ -57,7 +58,8 @@ For a one-off command without installing into your application environment, repl
 
 For an RGB HWC NumPy image, pass `image.transpose(2, 0, 1)`; convert OpenCV BGR to
 RGB first. Do not resize or normalize images yourself. Alpha is discarded and EXIF
-orientation is not applied. Predictions at each rank are independent, so the three
+orientation is not applied. `topk` cannot exceed the smallest retained rank; narrow custom lists may require `topk=1`.
+Predictions at each rank are independent, so the three
 IDs need not form one ancestral path. CSV truth labels are inferred from parent
 folder names; arbitrary image folders do not supply evaluation ground truth.
 
@@ -144,7 +146,7 @@ if the defaults do not fit your workload.
   independent of backend; both entry points download model assets automatically.
 - **Model and features:** EfficientNetV2-S, ONNX, expanded presets, optional TTA and
   streaming. Supply original pixels and match classes by GBIF ID rather than numeric
-  index. V3's vocabulary, scores and embedding width differ from V2; thresholds and
+  index. V2 and V3 share the ordered taxon vocabulary. Scores and embedding width change; thresholds and
   stored embeddings need migration.
 
 [Migration details](../docs/mambo-integration.md#moving-from-v2) cover compatibility

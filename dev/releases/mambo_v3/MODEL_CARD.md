@@ -1,3 +1,17 @@
+---
+license: cc-by-nc-sa-4.0
+library_name: onnx
+pipeline_tag: image-classification
+tags:
+  - biology
+  - lepidoptera
+  - moths
+  - butterflies
+  - pytorch
+  - onnx
+  - hierarchical-classification
+---
+
 # MAMBO V3
 
 Unpublished release candidate: EfficientNetV2-S trained on global-lepi in September
@@ -12,7 +26,9 @@ ranks are predicted independently. Optional TTA uses `rotation30_pad25_3`.
 
 ## Intended use and evidence
 
-Local moth/butterfly image classification and downstream integration. Both
+Local moth/butterfly image classification and downstream integration. This is a
+closed-vocabulary classifier for images of individual animals, not an animal
+detector or a validated unknown-species rejection system. Both
 Flemming monitoring crops and the original global-lepi test split have completed
 V2/V3, backend and TTA comparisons. Their different domains produce different TTA
 responses; neither establishes accuracy for every deployment. Regional vocabulary

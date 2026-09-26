@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Please cite this release when using MAMBO V3 and identify the selected preset and runtime configuration."
+title: "MAMBO V3: hierarchical moth and butterfly image classification"
+type: software
+authors:
+  - family-names: Svenning
+    given-names: Asger
+version: 0.3.0
+repository-code: "https://github.com/asgersvenning/mini_trainer"
+url: "https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v3"

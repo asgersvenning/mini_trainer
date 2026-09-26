@@ -1,9 +1,34 @@
 # MAMBO V3 deployment freeze
 
-25 September 2026. Release preparation only: packages, artifacts and tags have not
+26 September 2026. Publication preparation is active after the packaging audit.
+The previous candidate qualification is historical; the final candidate must be
+rebuilt after the changes below. Release preparation only: packages, artifacts and tags have not
 been published. The selected weight license is **CC BY-NC-SA 4.0**; adapter code
 remains MIT. Final artifact identities and installed checks are recorded in
 [final qualification](final-qualification.md).
+
+## Current publication preparation
+
+- Integrated the `minitrainer` distribution rename, retaining `mini_trainer` imports.
+  Both lockfiles preserve dependency versions. Isolated installed-wheel imports,
+  CLI, training, checkpoint reload and inference passed.
+- Training publication now accepts `minitrainer-vVERSION` release events only;
+  manual dispatch prepares artifacts without publication. Model/demo workflows
+  and final publication-routing qualification remain to be completed.
+- The CPU Space uses the release API with runtime, scope, custom-list, TTA and
+  top-K controls. Final staging, readable-name assets and installed-candidate
+  qualification remain pending. Browser reuse is assessed separately below.
+- Complete publication documentation, model/Space staging, final rebuilt artifact
+  qualification and the human publishing handoff before calling this freeze ready.
+
+## Browser scope
+
+The existing prototype at `b174426` packages a WASM embedding explorer, including
+prototype coordinates, a separate worker and a different EXIF/alpha policy. It
+does not already supply the release preset/TTA interface. Integrating it would
+require another browser preprocessing and configuration qualification effort.
+This release preparation therefore delivers the Python-backed Space; WebGPU
+remains an explicitly unqualified follow-up, reusing that prototype where useful.
 
 ## Release contract
 
