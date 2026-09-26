@@ -1,5 +1,6 @@
 import csv
 from collections import OrderedDict
+from typing import Annotated, Union
 
 import pytest
 
@@ -9,6 +10,7 @@ from mini_trainer.utils import (
     filter_ordered_dict,
     float_signif_decimal,
     increment_name_dir,
+    multithread_vectorize,
     recursive_dfs_attr,
     write_csv_from_dict,
 )
@@ -108,3 +110,18 @@ def test_cosine_schedule_with_warmup():
         assert fn(i + 1) < fn(i)
         assert 0.0 < fn(i) < 1.0
     assert fn(10) == 0.0
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [str | int, Union[str, int], Annotated[str | int, "identifier"]],  # noqa: UP007 - legacy caller annotations
+)
+@pytest.mark.parametrize("threshold", [1, 100])
+def test_vectorize_preserves_scalars_and_ordered_iterables(annotation, threshold):
+    @multithread_vectorize(min_items_to_multithread=threshold, disable=True, max_workers=2)
+    def convert(value: annotation, factor=2):
+        return int(value) * factor
+
+    assert convert("12") == convert(12) == 24
+    assert convert(["3", 1, "2"], factor=3) == [9, 3, 6]
+    assert convert(iter(["3", 1, "2"]), factor=3) == [9, 3, 6]
