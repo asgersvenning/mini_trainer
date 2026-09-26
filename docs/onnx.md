@@ -1,5 +1,8 @@
 # ONNX export
 
+Export your own checkpoint with `mt_export` or the Python API below. For the
+ready-made MAMBO model, use the [deployment package](../deployment/README.md).
+
 Install the optional `export` extra alongside the backend needed to reconstruct your
 model. For example, a disposable CPU development environment can use:
 
@@ -92,32 +95,17 @@ outputs = session.run(
 )
 ```
 
-The test matrix covers small offline instances from torchvision (ResNet,
-EfficientNet, ViT), timm, Hugging Face Transformers and the OpenCLIP encoder wrapper
-used by BioCLIP, plus every classifier head family. This is representative backend
-coverage, not certification of every model in the catalog. Arbitrary custom
-operators and data-dependent Python control flow remain subject to the
-[PyTorch ONNX exporter's support](https://docs.pytorch.org/docs/stable/onnx_export.html).
-The actual EfficientNetV2-S backbone with symmetric normalized flat/hierarchical
-heads is also covered by offline dynamic-batch export tests. Trained Blair
-checkpoints passed ONNX Runtime CPU parity on real images; see the
-[deployment experiment](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#efficientnetv2-onnx-cpu-export-and-inference-quantization).
-Local [CUDA placement checks](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-cuda-provider-placement) expose
-CPU fallback for native integer heads and floating execution for calibrated
-convolutions. Target GPU hardware, ARM execution and arbitrary spatial dimensions
-remain unvalidated.
-An initial signed MinMax INT8 recipe lost substantial accuracy and retained
-floating convolutions. A follow-up unsigned Percentile recipe executed all
-convolutions as QLinearConv and roughly halved warm local CPU inference latency,
-with remaining quality losses measured through `mini_metrics`; see the
-[calibration and metric results](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-activation-calibration-execution-coverage-and-macro-metrics).
-It remains exploratory, with no agreed production quality gate or target-device
-verification. Native CUDA QT checkpoint export is a separate path described below;
-these floating-checkpoint PTQ experiments do not validate it.
+## Choosing an export path
 
-These local bundles are a foundation for Hugging Face hosting. Model cards,
-evaluation attachments and Hub upload commands remain separate roadmap work.
+| Checkpoint / purpose | Export path | Verification reference |
+| --- | --- | --- |
+| Floating checkpoint | Default export; calibration is a separate optional step | Model's floating evaluation forward |
+| Native `cuda-int8-linear` checkpoint | `--reference-device cuda:0`; retains dynamic activation quantization | Native forward with autocast and TF32 disabled |
+| Native checkpoint for static calibration | `--materialize-int8-training`; produces floating weights | Materialized floating forward, not the native quantized forward |
 
+Integer weights or nodes do not establish integer execution on a chosen device.
+Inspect the runtime profile and evaluate quality on that provider before selecting
+a quantized recipe. Recorded results and their limits are linked below.
 
 ## Native INT8 training checkpoints
 
@@ -131,46 +119,20 @@ CUDA_VISIBLE_DEVICES=0 .venv/bin/mt_export --weights native-int8-weights.pt \
     --output native-int8-onnx --reference-device cuda:0
 ```
 
-The Python API uses `export_onnx(model, float32_images, destination,
-reference_device="cuda:0")`. Float32 inputs and a CUDA reference are required for
-this backend. The CLI uses the scoped native-weight loader, retaining restricted
-checkpoint loading. The export copy is frozen to let the exporter unpack integer
-parameter storage; the caller's weights and gradient flags are preserved.
+The Python API requires float32 inputs and `reference_device="cuda:0"`.
+The CLI retains restricted checkpoint loading. Export freezes only its private
+copy; the caller's weights, gradient flags and precision settings are preserved.
 
-The graph retains the training backend's dynamic symmetric row quantization,
-including clipping, ties-to-even rounding and zero-row behavior. Its scaled INT8
-products lower to `MatMulInteger` with bounded INT32 partial accumulation and
-floating row/column scales. Long contractions combine partial sums in INT64
-before converting and applying scales, preventing accumulator saturation. Activation codes are represented as unsigned codes with zero point 128;
-this preserves the signed values exactly. Weights stay signed INT8. No calibration
-set, floating-weight substitution or replacement classifier is used. Convolutions
-remain floating, as they do in native QT training. This is distinct from the
-static Percentile recipe that also quantizes convolutions.
+The graph retains native dynamic row quantization and scaled integer Linear
+products (`MatMulInteger`), including overflow-safe accumulation. Convolutions
+remain floating. No calibration data or floating-weight substitution is involved.
+The CUDA reference temporarily disables autocast and TF32; the manifest records
+this choice. This reference need not match AMP/TF32 scores, since rounding can
+change subsequent integer activation codes.
 
-CUDA reference execution temporarily disables CUDA autocast and TF32 in cuDNN
-and floating matrix products, restoring the caller settings afterward. Real trained images exposed a parity
-failure with TF32 enabled; full-FP32 reference execution passed the original
-rtol=1e-4/atol=1e-5 checks. The manifest records the reference device and TF32 choice.
-This does not promise matching scores against AMP or TF32 evaluation of the same
-checkpoint, whose rounding can change the subsequent integer activation codes.
-
-Tests cover normalized symmetric flat/hierarchical heads, EfficientNetV2-S,
-active-class filtering, dynamic batches, checkpoint CLI loading and numerical
-edge cases. Trained Blair checkpoints also passed checks on eight real validation
-images at batches 1, 2, 4 and 8. An exported graph still needs runtime profiling
-and quality evaluation on the intended provider. Local CUDA-provider execution
-retains CPU MatMulInteger operations; it does not establish integer GPU execution.
-Target GPU/ARM deployment, million-class export capacity and production performance
-of this native path remain unverified. On the full Blair validation split,
-top-1 predictions and the
-requested macro metrics matched the full-FP32 CUDA reference, but some image
-scores exceeded the strict export tolerance; see the
-[full-validation results](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#native-onnx-full-validation-quality-and-numerical-limits).
-Supply representative `verification_inputs` and evaluate deployment thresholds
-separately; passing the default sample checks does not establish universal score
-parity or confidence-threshold equivalence. The generic exporter does not
-impose a model allowlist; configurations outside this tested coverage must pass
-the same export and parity checks before a bundle is published.
+Supply representative `verification_inputs` and evaluate confidence thresholds
+separately: the recorded full-validation results below show why passing a small
+export sample does not establish parity for every input.
 
 ## Explicit materialization for deployment calibration
 
@@ -184,17 +146,10 @@ mt_export --weights native-int8-last.pt --output materialized-onnx \
     --input-shape 3 128 128 --materialize-int8-training
 ```
 
-The conversion checks the recorded native recipes, copies the state, materializes
-INT8 weight representations, and removes the recipe that would restore native
-training tensor types. It preserves class metadata, active-class masks and other
-buffers. Normalized directions use signed integer codes, with magnitudes set to
-zero for zero-scale rows. This follows the native effective-weight formula
-and handles zero scales without introducing an ordinary weight-normalization
-divide-by-zero. Compatible parameter ties are retained by normal model loading;
-incompatible tied roles/views fail instead of silently loading different values
-into one shared parameter. Undefined zero-code directions and invalid/nonfinite states fail.
-The source checkpoint is never rewritten, and neither optimizers nor training
-state are carried into this deployment artifact.
+Conversion validates the native recipe, materializes effective weights and retains
+class metadata, masks and buffers. Invalid states and incompatible parameter ties
+fail explicitly. The source checkpoint is unchanged; optimizer/training state is
+excluded from the deployment artifact.
 
 **Dynamic activation quantization is removed.** ONNX verification compares against
 the materialized floating model, not against the native training forward. Its
@@ -207,11 +162,41 @@ it is not a training-memory optimization.
 
 Use the maintained [input preparation](../dev/benchmarks/inference.md#maintained-image-input-preparation)
 and [calibration](../dev/benchmarks/inference.md#maintained-onnx-calibration-command)
-commands on this artifact. For the tested TensorRT recipe, choose signed symmetric
-activations, signed per-channel weights and floating biases, with training-only
-calibration data. Build and inspect a new engine for its destination device.
-Compare native predictions, materialized predictions and the calibrated deployment
-candidate on the same held-out samples using all five requested mini_metrics
-metrics. Use a practical FP16 baseline for efficiency comparisons; successful
-materialization/export alone does not establish acceptable quality, integer GPU
-execution or a worthwhile cost reduction.
+commands. Calibrate on training data and compare native, materialized and calibrated
+predictions on the same held-out samples with `mini_metrics` (macro F1, recall,
+precision, coverage and Theil's U). For efficiency, include a practical FP16
+baseline. The calibration guide describes the tested TensorRT recipe; build and
+inspect its engine on the destination device.
+
+## Qualification evidence and limits
+
+Export tests cover representative offline torchvision, timm, Transformers and
+OpenCLIP backbones, all classifier head families, active masks and dynamic batches.
+They include EfficientNetV2-S flat/hierarchical heads and native INT8 numerical edge
+cases. This is not certification of every catalogue model: custom operators and
+control flow remain subject to the
+[PyTorch exporter](https://docs.pytorch.org/docs/stable/onnx_export.html).
+
+The linked Blair experiments concern specific checkpoints and local x86 CPU/laptop
+CUDA environments; they do not establish ARM support, large-vocabulary capacity or
+performance on other GPUs. MAMBO has separate qualification in its deployment README.
+
+- [Floating export](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#efficientnetv2-onnx-cpu-export-and-inference-quantization):
+  trained checkpoints passed real-image CPU parity. Signed MinMax quantization
+  lost substantial quality and left many convolutions floating.
+- [CPU calibration](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-activation-calibration-execution-coverage-and-macro-metrics):
+  unsigned Percentile quantization executed all convolutions as `QLinearConv` and
+  roughly halved warm inference latency, with measured quality losses. This was
+  exploratory, without a production acceptance gate.
+- [Native full-validation comparison](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#native-onnx-full-validation-quality-and-numerical-limits):
+  top-1 predictions and the five reported metrics matched the full-FP32 CUDA
+  reference, but some scores exceeded export tolerance. Sample parity does not
+  establish confidence-threshold equivalence.
+- [CUDA placement](https://github.com/asgersvenning/mini_trainer/blob/f5c69e7cab2bfde8a5467026b293858b93e628f9/docs/archive/benchmark-history.md#onnx-cuda-provider-placement):
+  native integer heads fell back to CPU; calibrated convolutions ran in floating
+  point. The calibrated recipe also changed scores and one top-1 prediction versus
+  its CPU execution. CPU quality/speed results therefore cannot qualify that CUDA
+  deployment.
+
+Model cards, evaluation attachments and Hub upload commands remain separate
+[roadmap work](roadmap.md).
