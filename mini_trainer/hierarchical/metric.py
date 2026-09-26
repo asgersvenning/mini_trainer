@@ -5,7 +5,7 @@ from mini_trainer.utils import TQDM
 
 
 def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], labels: list[int | str], progress: bool = False):
-    """Computes the rank error (LCA distance) between predictions and labels."""
+    """Legacy mean rank-match index from GBIF-resolved labels."""
     ranks = []
     elements = zip(predictions, labels)
     if progress:
@@ -18,7 +18,6 @@ def rank_error(predictions: list[str | int] | list[tuple[str | int, ...]], label
             if prediction == label:
                 break
         ranks.append(level)
-    # return Counter(ranks)
     return sum(ranks) / len(ranks)
 
 
@@ -28,8 +27,7 @@ def confusion_matrices(
     levels: int,
     progress: bool = False,
 ):
-    """TODO."""
-    # cf_mats = []
+    """Return sorted unique prediction/label hierarchy tuples (legacy name)."""
     pred_long, lab_long = [[[] for _ in range(levels)] for _ in range(2)]
     elements = zip(predictions, labels)
     if progress:
