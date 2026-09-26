@@ -1,26 +1,44 @@
+import pytest
 import torch
+from matplotlib import pyplot as plt
 
 from mini_trainer.data import SaltAndPepper, debug_augmentation, salt_and_pepper
 
 
-def test_debug_augmentation(tmp_path):
+@pytest.mark.parametrize("count", [1, 2, 5])
+def test_debug_augmentation(tmp_path, count):
+    dataset = torch.utils.data.TensorDataset(torch.zeros(count, 3, 10, 10), torch.arange(count))
+    caller_figure = plt.figure()
+    before = plt.get_fignums()
+    try:
+        assert debug_augmentation(lambda image: image, dataset, output_dir=str(tmp_path)) is True
+        assert (tmp_path / "example_augmentation.png").exists()
+        assert plt.get_fignums() == before
+    finally:
+        plt.close(caller_figure)
 
-    # Mock dataset
-    class MockDataset(torch.utils.data.Dataset):
-        def __len__(self):
-            return 5
 
-        def __getitem__(self, idx):
-            return torch.zeros((3, 10, 10)), 0
+@pytest.mark.parametrize("strict", [False, True])
+@pytest.mark.parametrize("failure", ["empty", "augmentation"])
+def test_debug_augmentation_failure_preserves_caller_figure(tmp_path, strict, failure):
+    dataset = torch.utils.data.TensorDataset(torch.zeros(0 if failure == "empty" else 3, 3, 10, 10))
 
-    ds = MockDataset()
+    def broken(image):
+        raise ValueError("broken augmentation")
 
-    def aug(x):
-        return x
-
-    ret = debug_augmentation(aug, ds, output_dir=str(tmp_path), strict=True)
-    assert ret is True
-    assert (tmp_path / "example_augmentation.png").exists()
+    caller_figure = plt.figure()
+    before = plt.get_fignums()
+    try:
+        if strict:
+            with pytest.raises(ValueError):
+                debug_augmentation(broken, dataset, str(tmp_path), strict=True)
+        else:
+            with pytest.warns(UserWarning, match="debug augmentation"):
+                assert debug_augmentation(broken, dataset, str(tmp_path), strict=False) is False
+        assert plt.get_fignums() == before
+        assert not (tmp_path / "example_augmentation.png").exists()
+    finally:
+        plt.close(caller_figure)
 
 
 def test_salt_and_pepper():
