@@ -414,7 +414,7 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "mambo-v3" },
     { name = "mini-metrics" },
-    { name = "mini-trainer", extra = ["bioclip", "recommended", "timm"] },
+    { name = "minitrainer", extra = ["bioclip", "recommended", "timm"] },
     { name = "onnxruntime-gpu", extra = ["cuda", "cudnn"] },
     { name = "open-clip-torch" },
     { name = "safetensors" },
@@ -428,7 +428,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = "==0.36.2" },
     { name = "mambo-v3", directory = "../../../../deployment" },
     { name = "mini-metrics", git = "https://github.com/GuillaumeMougeot/mini_metrics.git?rev=70cc69adc05362863439277048e06386c1f885e1" },
-    { name = "mini-trainer", extras = ["recommended", "bioclip", "timm"], directory = "../../../../" },
+    { name = "minitrainer", extras = ["recommended", "bioclip", "timm"], directory = "../../../../" },
     { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], specifier = ">=1.27,<2" },
     { name = "open-clip-torch", specifier = "==3.3.0" },
     { name = "safetensors", specifier = "==0.6.2" },
@@ -448,7 +448,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mini-trainer", marker = "extra == 'torch'", specifier = ">=0.3.0,<0.4" },
+    { name = "minitrainer", marker = "extra == 'torch'", specifier = ">=0.3.0,<0.4" },
     { name = "numpy", specifier = ">=2.4" },
     { name = "onnxruntime", marker = "extra == 'onnx'", specifier = ">=1.20" },
     { name = "onnxruntime-gpu", extras = ["cuda", "cudnn"], marker = "extra == 'onnx-cuda'", specifier = ">=1.21,<2" },
@@ -534,7 +534,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mini-trainer"
+name = "minitrainer"
 version = "0.3.0"
 source = { directory = "../../../../" }
 dependencies = [
@@ -572,12 +572,12 @@ requires-dist = [
     { name = "ipykernel", marker = "extra == 'notebook'" },
     { name = "ipywidgets", marker = "extra == 'notebook'" },
     { name = "matplotlib" },
-    { name = "mini-trainer", extras = ["bioclip"], marker = "extra == 'all'" },
-    { name = "mini-trainer", extras = ["export"], marker = "extra == 'all'" },
-    { name = "mini-trainer", extras = ["notebook"], marker = "extra == 'all'" },
-    { name = "mini-trainer", extras = ["recommended"], marker = "extra == 'all'" },
-    { name = "mini-trainer", extras = ["timm"], marker = "extra == 'all'" },
-    { name = "mini-trainer", extras = ["transformers"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["bioclip"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["export"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["notebook"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["recommended"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["timm"], marker = "extra == 'all'" },
+    { name = "minitrainer", extras = ["transformers"], marker = "extra == 'all'" },
     { name = "numpy", specifier = ">=2.4.0" },
     { name = "onnx", marker = "extra == 'export'", specifier = ">=1.17" },
     { name = "onnxruntime", marker = "extra == 'export'", specifier = ">=1.20" },
@@ -593,16 +593,16 @@ requires-dist = [
     { name = "tensorboard", marker = "extra == 'recommended'" },
     { name = "timm", marker = "extra == 'timm'" },
     { name = "torch", specifier = ">=2.11" },
-    { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mini-trainer", extra = "cpu" } },
-    { name = "torch", marker = "extra == 'cu126'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "mini-trainer", extra = "cu126" } },
-    { name = "torch", marker = "extra == 'cu130'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "mini-trainer", extra = "cu130" } },
-    { name = "torch", marker = "extra == 'cu132'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu132", conflict = { package = "mini-trainer", extra = "cu132" } },
+    { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "minitrainer", extra = "cpu" } },
+    { name = "torch", marker = "extra == 'cu126'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "minitrainer", extra = "cu126" } },
+    { name = "torch", marker = "extra == 'cu130'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "minitrainer", extra = "cu130" } },
+    { name = "torch", marker = "extra == 'cu132'", specifier = ">=2.11", index = "https://download.pytorch.org/whl/cu132", conflict = { package = "minitrainer", extra = "cu132" } },
     { name = "torchao", marker = "extra == 'quantization'", specifier = ">=0.17,<0.18" },
     { name = "torchvision" },
-    { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mini-trainer", extra = "cpu" } },
-    { name = "torchvision", marker = "extra == 'cu126'", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "mini-trainer", extra = "cu126" } },
-    { name = "torchvision", marker = "extra == 'cu130'", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "mini-trainer", extra = "cu130" } },
-    { name = "torchvision", marker = "extra == 'cu132'", index = "https://download.pytorch.org/whl/cu132", conflict = { package = "mini-trainer", extra = "cu132" } },
+    { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "minitrainer", extra = "cpu" } },
+    { name = "torchvision", marker = "extra == 'cu126'", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "minitrainer", extra = "cu126" } },
+    { name = "torchvision", marker = "extra == 'cu130'", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "minitrainer", extra = "cu130" } },
+    { name = "torchvision", marker = "extra == 'cu132'", index = "https://download.pytorch.org/whl/cu132", conflict = { package = "minitrainer", extra = "cu132" } },
     { name = "tqdm" },
     { name = "transformers", marker = "extra == 'transformers'" },
     { name = "wandb", marker = "extra == 'recommended'" },

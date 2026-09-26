@@ -16,7 +16,7 @@ except ImportError:
 def _check_pyarrow():
     if not _HAS_PYARROW:
         raise ImportError(
-            "Parquet integration requires the optional dependency: pyarrow. Install with `pip install mini_trainer[recommended]`."
+            "Parquet integration requires the optional dependency: pyarrow. Install with `pip install minitrainer[recommended]`."
         )
 
 

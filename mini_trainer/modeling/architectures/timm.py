@@ -29,7 +29,7 @@ def get_timm_model(
         from timm.data import create_transform, resolve_model_data_config
     except ImportError as e:
         e.add_note(
-            "The `timm` module was not found in the current Python environment. Please install with `pip install mini-trainer[timm]`."
+            "The `timm` module was not found in the current Python environment. Please install with `pip install minitrainer[timm]`."
         )
         raise
 

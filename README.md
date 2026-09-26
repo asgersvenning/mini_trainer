@@ -37,17 +37,21 @@ and package management. Choose a published package or a source checkout.
 
 ### PyPI
 
+The distribution is `minitrainer`; Python imports remain `mini_trainer`.
+The similarly named `mini-trainer` / `mini_trainer` PyPI project is unrelated.
+Version 0.3.0 is prepared for publication; use the source installation below until published.
+
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate
-uv pip install "mini_trainer[recommended]" --torch-backend=auto
+uv pip install "minitrainer[recommended]" --torch-backend=auto
 ```
 
 | Package choice | Includes |
 | --- | --- |
-| `mini_trainer` | Core training and inference |
-| `mini_trainer[recommended]` | Core plus logging, visualization and optional utilities |
-| `mini_trainer[all]` | Recommended extras plus notebooks, model backends and ONNX export |
+| `minitrainer` | Core training and inference |
+| `minitrainer[recommended]` | Core plus logging, visualization and optional utilities |
+| `minitrainer[all]` | Recommended extras plus notebooks, model backends and ONNX export |
 
 Substitute the desired package in the install command. Standard `pip install` also
 works; select its PyTorch CPU/CUDA installation separately for your environment.
