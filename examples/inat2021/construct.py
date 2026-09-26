@@ -87,19 +87,23 @@ def build_data_index(base_dir, train_dir_name, val_dir_name):
 
     # Step 7/8: Renaming directories on disk
     print("\n[Step 7/8] Renaming directories on disk to GBIF IDs...")
+    renames = {}
     for dir_path in dirs_to_scan:
         subdirs = sorted(os.listdir(dir_path))
-        for name in tqdm(subdirs, desc=f"Renaming {os.path.basename(dir_path)}"):
+        for name in tqdm(subdirs, desc=f"Checking {os.path.basename(dir_path)}"):
             full_path = os.path.join(dir_path, name)
             if not os.path.isdir(full_path):
                 continue
             if name in dir_to_gbif_id:
                 gbif_id = dir_to_gbif_id[name]
                 new_path = os.path.join(dir_path, gbif_id)
-                if not os.path.exists(new_path):
-                    os.rename(full_path, new_path)
-                elif full_path != new_path:
-                    shutil.rmtree(full_path)
+                if full_path == new_path:
+                    continue
+                if os.path.lexists(new_path) or new_path in renames:
+                    raise FileExistsError(f"GBIF category destination conflicts: {new_path}; no directories renamed")
+                renames[new_path] = full_path
+    for new_path, full_path in tqdm(renames.items(), desc="Renaming categories"):
+        os.rename(full_path, new_path)
 
     # Build a lookup from category (GBIF key) to taxonomy list
     category_to_tax = {}
