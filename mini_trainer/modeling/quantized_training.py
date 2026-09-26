@@ -12,7 +12,7 @@ def _backend():
     try:
         from . import _quantized_training
     except ImportError as error:
-        raise ImportError("CUDA INT8 training requires mini_trainer[quantization] and a compatible CUDA/Triton installation.") from error
+        raise ImportError("CUDA INT8 training requires minitrainer[quantization] and a compatible CUDA/Triton installation.") from error
     return _quantized_training
 
 

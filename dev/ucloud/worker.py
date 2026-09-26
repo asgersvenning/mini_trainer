@@ -88,7 +88,11 @@ def preflight(config, branch, *, verify=False):
 
     import mini_trainer
 
-    distribution = importlib.metadata.distribution("mini_trainer")
+    try:
+        distribution = importlib.metadata.distribution("minitrainer")
+    except importlib.metadata.PackageNotFoundError:
+        # Historical pinned comparison commits predate the distribution rename.
+        distribution = importlib.metadata.distribution("mini_trainer")
     direct = json.loads(distribution.read_text("direct_url.json") or "{}")
     commit = direct.get("vcs_info", {}).get("commit_id")
     if commit != config["environments"][branch]["commit"]:

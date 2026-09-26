@@ -48,7 +48,7 @@ def main():
         importlib.import_module(f"mini_trainer.{module}")
     blacklist = importlib.resources.files("mini_trainer.modeling.architectures").joinpath("blacklist.json")
     assert isinstance(json.loads(blacklist.read_text()), dict)
-    for entry in importlib.metadata.distribution("mini_trainer").entry_points:
+    for entry in importlib.metadata.distribution("minitrainer").entry_points:
         if entry.group == "console_scripts":
             subprocess.run([str(Path(sys.executable).parent / entry.name), "--help"], check=True, timeout=60, capture_output=True)
 

@@ -23,7 +23,7 @@ except ImportError:
 def _require_wandb():
     if wandb is None:
         raise ImportError(
-            "wandb is not installed. Please install it using `uv pip install mini_trainer[recommended]`, "
+            "wandb is not installed. Please install it using `uv pip install minitrainer[recommended]`, "
             "`uv sync --extra recommended`, or `uv add wandb`."
         )
 

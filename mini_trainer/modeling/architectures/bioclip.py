@@ -13,7 +13,7 @@ def get_bioclip_encoder(version: str = "bioclip-2", pretrained: bool = True):
     except ImportError as e:
         e.add_note(
             "The `open_clip` module was not found in the current Python environment. "
-            "Please install with `pip install mini-trainer[bioclip]`."
+            "Please install with `pip install minitrainer[bioclip]`."
         )
         raise
 

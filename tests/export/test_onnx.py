@@ -23,7 +23,7 @@ from tests.training.test_checkpoint_contract import assert_state_equal
 
 pytestmark = pytest.mark.skipif(
     any(importlib.util.find_spec(name) is None for name in ("onnx", "onnxscript", "onnxruntime")),
-    reason="Install mini_trainer[export] to run ONNX integration tests",
+    reason="Install minitrainer[export] to run ONNX integration tests",
 )
 
 

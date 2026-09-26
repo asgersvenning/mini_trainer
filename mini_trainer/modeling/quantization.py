@@ -31,7 +31,7 @@ def _backend():
             get_default_x86_inductor_quantization_config,
         )
     except ImportError as error:
-        raise ImportError("INT8 quantization requires mini_trainer[quantization].") from error
+        raise ImportError("INT8 quantization requires minitrainer[quantization].") from error
     return quantize_pt2e, export_utils, X86InductorQuantizer, get_default_x86_inductor_quantization_config, lower_pt2e_quantized_to_x86
 
 
