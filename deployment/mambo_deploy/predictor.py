@@ -169,7 +169,7 @@ class Predictor:
         try:
             import onnxruntime as ort
         except ImportError as error:
-            raise ImportError("Install mambo-deploy[onnx], or onnxruntime-gpu for CUDA") from error
+            raise ImportError("Install mambo-v3[onnx], or onnxruntime-gpu for CUDA") from error
         return ort
 
     @cached_property
