@@ -3,29 +3,22 @@ import warnings
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from functools import lru_cache
+from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch._prims_common import DeviceLikeType
+from torch.nn.utils.parametrizations import weight_norm
 
 from mini_trainer import get_logger
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
 from .architectures import get_model
-from .prior import prior_from_labels
-from .quantized_training import load_training_weights, restore_quantized_training
-
-try:
-    from torch.nn.utils.parametrizations import weight_norm
-except Exception:  # fallback for older installs
-    from torch.nn.utils import weight_norm
-
-from functools import lru_cache
-
 from .context import EmbeddingContext
+from .quantized_training import load_training_weights, restore_quantized_training
 
 
 class Classifier(nn.Module):
@@ -308,7 +301,6 @@ class Classifier(nn.Module):
                 raise NotImplementedError(
                     "DEPRECATED: This method of logit adjustment is currently defunct. Please use EMLACrossEntropy instead."
                 )
-                kwargs["prior"] = prior_from_labels(train_labels, cls2idx=cls2idx)
         with device:
             architecture.add_module(architecture_output_name, cls(**kwargs))
         for k, v in cfg.items():
@@ -486,10 +478,6 @@ class PredictionItem:
         return {"label": self.label, "confidence": self.confidence, "index": self.index}
 
 
-T = TypeVar("T", bound=PredictionItem)
-I = TypeVar("I")  # noqa: E741
-
-
 class BasePrediction[T: PredictionItem, I]:
     """Prediction container; subclasses define score processing and label mapping."""
 
@@ -572,22 +560,11 @@ class Prediction(BasePrediction[PredictionItem, torch.Tensor]):  # noqa: D101
         return torch.topk(raw_prediction, k)
 
     def _translate(self):
-        if self.idx2cls:
-            _idx2cls = self.idx2cls.copy()
-
-            def fmt_idx(i: int | torch.Tensor):
-                if isinstance(i, torch.Tensor):
-                    i = int(i.item())
-                return _idx2cls[i]
-
-        else:
-
-            def fmt_idx(i: int | torch.Tensor):
-                if isinstance(i, torch.Tensor):
-                    i = int(i.item())
-                return str(i)
-
-        return [[fmt_idx(i) for i in idxs] for idxs in self.indices]
+        indices = self.indices.tolist()
+        mapping = self.idx2cls
+        if mapping:
+            return [[mapping[i] for i in row] for row in indices]
+        return [[str(i) for i in row] for row in indices]
 
     def _extract_confidence(self, raw_prediction):
         if not (
