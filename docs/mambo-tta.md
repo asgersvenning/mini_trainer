@@ -66,9 +66,9 @@ and timings are in the [deployment comparison](../deployment/README.md#release-c
 
 TTA was selected using Flemming, including part of its reporting partition.
 Its benefit is domain-dependent; it is not a universal improvement or an
-independently validated recipe choice. Earlier crop/noise/reflection sweeps
-remain in [historical study results](https://github.com/asgersvenning/mini_trainer/blob/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/docs/mambo-tta.md).
+independently validated recipe choice. In the early 1,024-image northern-Europe
+sweep, cropping and salt-and-pepper noise reduced macro accuracy; padding gave
+the largest gain. Complete results remain in [historical study results](https://github.com/asgersvenning/mini_trainer/blob/852bf712e85b8d1a6b9c9c6d31b3b5d807904303/docs/mambo-tta.md).
 
-The early sweep runners and chart generator are retired; replay that completed
-study from [its pinned source](https://github.com/asgersvenning/mini_trainer/tree/b631c52c74b5bae2bd1d3addc517af2095ef7f7b/dev/releases/mambo_v3).
+The early sweep code and assets are retired; replay that completed study from [its pinned source](https://github.com/asgersvenning/mini_trainer/tree/b631c52c74b5bae2bd1d3addc517af2095ef7f7b/dev/releases/mambo_v3).
 The composed-study collectors and current release report generators remain maintained.
