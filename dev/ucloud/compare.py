@@ -136,6 +136,19 @@ def plan(config):
     return runs
 
 
+def verified_preparation(config, root):
+    """Verify prepared artifacts, the current harness and source Parquet."""
+    manifest = json.loads((root / "prepared.json").read_text())
+    for name, expected in manifest.items():
+        if digest(root / name) != expected:
+            raise ValueError(f"Prepared artifact changed: {name}")
+        if name.endswith(".py") and digest(HERE / name) != expected:
+            raise ValueError(f"Harness changed after preparation: {name}")
+    if digest(config["parquet"]) != json.loads((root / "dataset.json").read_text())["parquet_sha256"]:
+        raise ValueError("Source Parquet changed")
+    return manifest
+
+
 def reuse_preparation(config, output):
     """Copy verified model/data artifacts; keep the new trial's budget and plan."""
     source = Path(config["reuse_preparation"])
@@ -152,14 +165,7 @@ def reuse_preparation(config, output):
     ):
         if config.get(key) != original.get(key):
             raise ValueError(f"Cannot reuse preparation with different {key}")
-    manifest = json.loads((source / "prepared.json").read_text())
-    for name, expected in manifest.items():
-        if digest(source / name) != expected:
-            raise ValueError(f"Prepared artifact changed: {name}")
-        if name.endswith(".py") and digest(HERE / name) != expected:
-            raise ValueError(f"Harness changed after preparation: {name}")
-    if digest(config["parquet"]) != json.loads((source / "dataset.json").read_text())["parquet_sha256"]:
-        raise ValueError("Source Parquet changed")
+    manifest = verified_preparation(config, source)
     for name in manifest:
         if not name.endswith(".py") and name != "budget.json":
             shutil.copyfile(source / name, output / name)
@@ -431,13 +437,7 @@ def run_stage(config, args, deadline=None):
         raise ValueError(f"Preparation is incomplete: {output}. Check the active process and prepare.log before starting a new attempt")
     if json.loads(config_path.read_text()) != config:
         raise ValueError("Configuration differs from the frozen preparation; use a new output directory")
-    for name, sha in json.loads((output / "prepared.json").read_text()).items():
-        if digest(output / name) != sha:
-            raise ValueError(f"Prepared artifact changed: {name}")
-        if name.endswith(".py") and digest(HERE / name) != sha:
-            raise ValueError(f"Harness changed after preparation: {name}")
-    if digest(config["parquet"]) != json.loads((output / "dataset.json").read_text())["parquet_sha256"]:
-        raise ValueError("Source Parquet changed")
+    verified_preparation(config, output)
     if config.get("checkpoint"):
         source = json.loads((output / "resume-source.json").read_text())
         if digest(config["checkpoint"]) != source["sha256"]:

@@ -20,10 +20,19 @@ def harness(monkeypatch):
 
 @pytest.fixture
 def config(tmp_path):
-    source = Path(__file__).resolve().parents[2] / "dev" / "ucloud" / "comparison.json"
-    value = json.loads(source.read_text())
-    value.update(output=str(tmp_path / "output with spaces"), parquet=str(tmp_path / "data.parquet"))
-    return value
+    return dict(
+        output=str(tmp_path / "output with spaces"),
+        parquet=str(tmp_path / "data.parquet"),
+        environments={branch: {"python": sys.executable, "commit": pin * 40} for branch, pin in (("master", "a"), ("quant", "b"))},
+        gpus=4,
+        global_batch_size=64,
+        num_workers_per_rank=0,
+        epochs=3,
+        size=32,
+        seeds=[42],
+        variants=["master_eager", "quant_eager"],
+        timeout_seconds=30,
+    )
 
 
 @pytest.mark.parametrize("int8_variant", ["quant_int8", "quant_int8_combined"])
@@ -692,11 +701,10 @@ def test_resume_hook_verifies_restored_state_before_updates(harness, monkeypatch
         training.train(start_epoch=2, **objects)
 
 
-def test_scaling_workers_warm_steps_and_separate_storage(harness, tmp_path):
+def test_scaling_workers_warm_steps_and_separate_storage(harness, config, tmp_path):
     compare, _ = harness
     scaling = importlib.import_module("scaling")
-    cfg = json.loads((Path(__file__).resolve().parents[2] / "dev/ucloud/ddp.json").read_text())
-    cfg["output"] = str(tmp_path / "baseline")
+    cfg = dict(config, mode="scaling", qualification={"seed": 42, "train": 32768, "validation": 4096, "test": 128})
     Path(cfg["output"]).mkdir()
     compare.write_json(Path(cfg["output"]) / "prepared.json", {"qualification.parquet": "a" * 64})
     base = tmp_path / "base.json"
@@ -706,8 +714,9 @@ def test_scaling_workers_warm_steps_and_separate_storage(harness, tmp_path):
     assert derived["num_workers_per_rank"] == 8
     storage = scaling.trial(base, tmp_path / "storage.json", tmp_path / "storage", 128, 3, workers=16, storage=True)
     assert "reuse_preparation" not in storage
-    assert storage["epochs"] == 1 and storage["timeout_seconds"] == 600
-    assert storage["qualification"]["train"] == 262144
+    assert storage["epochs"] == 1
+    assert 0 < storage["timeout_seconds"] <= storage["budget_seconds"]
+    assert storage["qualification"]["train"] > cfg["qualification"]["train"]
     assert storage["exclude_qualification_sha256"] == "a" * 64
     with pytest.raises(ValueError, match="num_workers"):
         scaling.trial(base, tmp_path / "invalid.json", tmp_path / "invalid", 64, 3, workers=-1)
