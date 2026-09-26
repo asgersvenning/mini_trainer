@@ -20,7 +20,7 @@ def qualify(app_path, image_path, output):
         predictor = demo["predictor_for"](backend)
         custom = predictor.class_list[0]
         runtime = None
-        for preset, labels, tta in (("full", "", False), ("north_europe", "", True), ("full", custom, False)):
+        for preset, labels, tta in (("full", None, False), ("north_europe", "", True), ("full", custom, False)):
             tables = demo["classify"](image, backend, preset, labels, tta, 5)
             if not all(table and all(0 <= row[3] <= 100 and row[2] for row in table) for table in tables[:3]):
                 raise AssertionError("Missing predictions, taxon IDs or valid confidences")

@@ -30,6 +30,7 @@ def predictor_for(backend):
 def classify(image, backend, preset, custom, tta, topk):
     if image is None:
         raise gr.Error("Upload one moth or butterfly image first.")
+    custom = custom or ""
     labels = tuple(dict.fromkeys(custom.replace(",", " ").split())) if custom.strip() else ()
     try:
         with LOCK:
@@ -84,7 +85,7 @@ def build_app():
                 tta = gr.Checkbox(value=False, label="TTA — recommended recipe, about 3× more inference work")
                 topk = gr.Slider(1, 10, value=5, step=1, label="Candidates per rank")
                 with gr.Accordion("Custom species list", open=False):
-                    custom = gr.Textbox(label="GBIF species IDs, separated by spaces, commas or newlines", lines=3)
+                    custom = gr.Textbox(value="", label="GBIF species IDs, separated by spaces, commas or newlines", lines=3)
                     gr.Markdown("When supplied, this replaces the geographic preset.")
                 run = gr.Button("Classify", variant="primary")
         status = gr.Markdown()

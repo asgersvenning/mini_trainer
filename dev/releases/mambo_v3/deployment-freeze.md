@@ -1,9 +1,8 @@
 # MAMBO V3 deployment freeze
 
-26 September 2026. Publication preparation is active after the packaging audit.
-The previous candidate qualification is historical; the final candidate must be
-rebuilt after the changes below. Release preparation only: packages, artifacts and tags have not
-been published. The selected weight license is **CC BY-NC-SA 4.0**; adapter code
+26 September 2026. Publication preparation is implemented; installed-candidate
+records and hashes gate the publisher handoff. Packages, artifacts and tags have
+not been published. The selected weight license is **CC BY-NC-SA 4.0**; adapter code
 remains MIT. Final artifact identities and installed checks are recorded in
 [final qualification](final-qualification.md).
 
@@ -19,8 +18,9 @@ remains MIT. Final artifact identities and installed checks are recorded in
   top-K controls and names for all 17,212 taxa. Runtime reuse is qualified on a
   real image; final installed-candidate qualification is recorded with its artifacts.
   Browser reuse is assessed separately below.
-- Complete publication documentation, model/Space staging, final rebuilt artifact
-  qualification and the human publishing handoff before calling this freeze ready.
+- Publication documentation, explicit model/Space staging and installed qualification
+  are implemented. Follow the ordered handoff for account setup and public release;
+  inspect the candidate records before approving its artifacts.
 
 ## Browser scope
 
