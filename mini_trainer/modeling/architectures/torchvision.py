@@ -23,7 +23,7 @@ def get_torchvision_model(
         **kwargs: Additional arguments to pass to the model constructor.
 
     Returns:
-        The loaded model.
+        (Backbone, transform, None); the common loader infers size from the transform.
     """
     weight_enum = torchvision.models.get_model_weights(model)
 

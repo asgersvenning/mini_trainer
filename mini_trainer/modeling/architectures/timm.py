@@ -23,7 +23,7 @@ def get_timm_model(
     resize_size: int | None = None,
     **kwargs: Any,
 ) -> tuple[Any, Any, int]:
-    """Load timm model and resolve its default transform."""
+    """Return (backbone, transform, preferred size) using timm's model configuration."""
     try:
         import timm
         from timm.data import create_transform, resolve_model_data_config

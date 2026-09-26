@@ -86,7 +86,11 @@ def get_model(
     transform: Any = None,
     device: torch.device | None = None,
 ):
-    """Get torchvision, timm, transformers, or bioclip model and preprocessing function by name."""
+    """Return (model, head path, preprocess, embedding width, preferred image size).
+
+    Resolve backend-prefixed names through adapters, or inspect a supplied module.
+    Preprocessing combines the supplied/discovered transform with dtype conversion.
+    """
     default_transform = transform
     preferred_size = None
     if isinstance(backbone_model, str):
@@ -111,7 +115,6 @@ def get_model(
     if not isinstance(backbone_model, nn.Module):
         raise ValueError("backbone_model must be a string or a torch.nn.Module")
 
-    # Resolve Transform
     if default_transform is None:
         for attr in ("transforms", "default_transform", "preprocess_transform", "transform"):
             if hasattr(backbone_model, attr):
@@ -125,20 +128,17 @@ def get_model(
                     default_transform = val
                 break
 
-    # Build the exact preprocess pipeline
     preprocess_pipeline = Preprocess(
         transform=default_transform,
         func=preprocess_dtype if preprocess_dtype is None else make_convert_dtype(preprocess_dtype),
     )
 
-    # Resolve exact classifier name (using named_modules for exact paths like "head.fc")
     backbone_classifier_name = None
 
-    # 1. Try timm's native method first
+    # Prefer timm's exact classifier module before matching names.
     if hasattr(backbone_model, "get_classifier") and callable(backbone_model.get_classifier):
         try:
             timm_classifier = backbone_model.get_classifier()
-            # Search all modules to find the exact match
             for name, module in backbone_model.named_modules():
                 if module is timm_classifier:
                     backbone_classifier_name = name
@@ -146,7 +146,6 @@ def get_model(
         except Exception:
             pass
 
-    # 2. Fallback to name matching
     if backbone_classifier_name is None:
         if isinstance(classifier_name, str):
             classifier_name = [classifier_name]
@@ -157,7 +156,6 @@ def get_model(
                 backbone_classifier_name = name
                 break
 
-        # If not found at top level, search deeply
         if backbone_classifier_name is None:
             for name, module in backbone_model.named_modules():
                 # We split by '.' so we match the local name (e.g., 'fc' in 'head.fc')
@@ -168,7 +166,6 @@ def get_model(
     if backbone_classifier_name is None:
         raise AttributeError(f"No classifier found matching names {classifier_name}")
 
-    # Calculate embedding dimension using our robust resolver
     embedding_dim = resolve_embedding_dim(
         model=backbone_model, head_name=backbone_classifier_name, preprocess=preprocess_pipeline, device=device
     )
