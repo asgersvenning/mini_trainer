@@ -17,6 +17,8 @@ weights_license = "CC-BY-NC-SA-4.0"
 weights_license_status = "Prepared for release following owner preference for non-commercial share-alike weights; code remains MIT"
 
 [checkpoint]
+# Tensor contents and class order; see mini_trainer.deploy._checkpoint_digest.
+state_sha256 = "9fbc6affe1618aa13a869c4a772ce629be6501e3019e0a89cf245d94ef592b1f"
 url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
 sha256 = "174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a"
 

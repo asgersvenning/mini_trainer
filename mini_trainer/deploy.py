@@ -26,6 +26,23 @@ def _release():
     return json.loads(Path(__file__).with_name("nemo.json").read_text())
 
 
+def _checkpoint_digest(state):
+    """Identity of tensor contents and class order, independent of torch.save layout."""
+    digest = hashlib.sha256()
+    for key, value in sorted(state.items()):
+        if isinstance(value, torch.Tensor) and not key.endswith(".active_indices"):
+            value = value.detach().cpu().contiguous()
+            digest.update(json.dumps([key, str(value.dtype), list(value.shape)]).encode())
+            digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+    config = Classifier.extract_metadata(state)
+    identity = {
+        key: config.get(key)
+        for key in ("backbone_class", "backbone_output_name", "classifier_class", "resize_size", "cls2idx", "normalized", "hidden")
+    }
+    digest.update(json.dumps(identity, sort_keys=True).encode())
+    return digest.hexdigest()
+
+
 def ensure_weights(model=None, weight_dir=None):
     """Resolve Nemo or a local checkpoint, preserving the legacy two-value return."""
     if model is not None and Path(str(model)).suffix in (".pt", ".pth"):
@@ -123,6 +140,7 @@ class Predictor:
         self.weights = weights
         state = load_training_weights(weights, map_location="cpu") if isinstance(weights, (str, Path)) else deepcopy(weights)
         state = state.get("model", state)
+        is_nemo = not local or _checkpoint_digest(state) == release["state_sha256"]
         config = Classifier.extract_metadata(state)
         getter, _ = resolve_backbone_getter(config["backbone_class"])
         prefix = config["backbone_output_name"] + "."
@@ -134,7 +152,7 @@ class Predictor:
         head = classification_module(self.model)
         self._metadata = deepcopy(head.get_extra_state())
         self._metadata["backend"] = "torch"
-        if not local:
+        if is_nemo:
             self.preproc = TorchPreprocess(torch, self.device)
             self._metadata.update(model_id="MAMBO_v3", name="Nemo", preprocessing=release["preprocessing"])
         self.resize_size = self._metadata["resize_size"]
@@ -238,7 +256,7 @@ class Predictor:
                 ),
                 bypass_submodule(self.model, self.model._backbone_output_name),
             ):
-                features = self.model(images.to(self.device))
+                features = self.model(images.to(device=self.device, dtype=torch.float32))
             with torch.autocast(self.device.type, enabled=False):
                 features = features.float()
                 return head(features), head.preclassification(features) if embeddings else None
@@ -277,11 +295,24 @@ def run():
 
     args = cli(model={None: "-M", "type": str, "default": None, "help": "Nemo geographic preset or checkpoint path"})
     model = args.pop("model", None)
+    explicit_weights = args["weights"] is not None
     if args["weights"] is None:
         args["weights"] = ensure_weights(model)[0]
     elif model is not None:
         raise ValueError("model and weights are mutually exclusive")
-    if model is None and args.get("class_list") is not None:
+    base = args.get("builder", BaseBuilder)
+
+    class DeploymentBuilder(base):
+        @staticmethod
+        def build_model(**kwargs):
+            model, preproc = base.build_model(**kwargs)
+            state = load_training_weights(kwargs["weights"], map_location="cpu")
+            if _checkpoint_digest(state.get("model", state)) == _release()["state_sha256"]:
+                preproc = TorchPreprocess(torch, kwargs["device"])
+            return model, lambda images: preproc(images).float()
+
+    args["builder"] = DeploymentBuilder
+    if model is None and (explicit_weights or args.get("class_list") is not None):
         main(**args)
         return
     preset = (

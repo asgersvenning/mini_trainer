@@ -823,3 +823,20 @@ def test_onnx_load_prepares_sessions_without_running_images(bundle, ort, monkeyp
     assert created == [str(bundle / "onnx")]
     assert p.load(embeddings=True) is p and p.load(embeddings=True) is p
     assert created == [str(bundle / "onnx"), str(bundle / "onnx-embedding")]
+
+
+def test_embedding_startup_also_serves_classification(bundle, ort, monkeypatch):
+    created = []
+    session = SimpleNamespace(disable_fallback=lambda: None, get_providers=lambda: ["CPUExecutionProvider"])
+
+    def create(path, sess_options, providers):
+        created.append(str(path))
+        return session
+
+    ort.InferenceSession = create
+    p = Predictor(bundle)
+    monkeypatch.setattr(p.bundle, "profile", lambda key: bundle / key)
+    p.load(embeddings=True)
+    p.load()
+    assert p._load_onnx(False) is session
+    assert created == [str(bundle / "onnx-embedding")]

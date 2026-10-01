@@ -122,3 +122,17 @@ def test_rendered_card_and_native_bootstrap_match_bundle():
     assert card.data.license == "cc-by-nc-sa-4.0"
     assert card.data.library_name == "mambo-deploy" and card.data.model_name == "Nemo"
     assert "{{" not in content and f"{len(classes['labels'][0]):,} species" in content
+
+
+def test_hub_selection_does_not_depend_on_origins(hub):
+    root, _, calls = hub
+    load_bundle("owner/nemo", backend="onnx", embeddings=False)
+    manifest_path = root / "bundle/release.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("origins")
+    manifest_path.write_text(json.dumps(manifest))
+    calls.clear()
+    load_bundle("owner/nemo", backend="onnx", embeddings=False)
+    requested = {name for name, _ in calls}
+    assert "bundle/torch.pt" not in requested
+    assert "bundle/embedding/model.onnx" not in requested

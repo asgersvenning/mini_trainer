@@ -223,7 +223,7 @@ class Predictor:
 
     def _load_onnx(self, embeddings=False):
         ort = self._onnx_api
-        key = "onnx-embedding" if embeddings else "onnx"
+        key = "onnx-embedding" if embeddings or "onnx-embedding" in self._sessions else "onnx"
         if key not in self._sessions:
             path = self.bundle.profile(key)
             if self.device == "cpu":

@@ -20,8 +20,8 @@ def load_bundle(source, *, backend, embeddings, **options):
     manifest_path = Path(hf_hub_download(str(source), "bundle/release.json", **options))
     revision = manifest_path.parent.parent.name
     manifest = json.loads(manifest_path.read_text())
-    origins = manifest.get("origins", {})
-    files = set(manifest["files"]) - set(origins)
+    runtime_files = {name for profile in manifest["profiles"].values() for name in profile["files"]}
+    files = set(manifest["files"]) - runtime_files
     profile = "torch" if backend == "torch" else "onnx-embedding" if embeddings else "onnx"
     files.update(manifest["profiles"][profile]["files"])
     files.add("release.json")

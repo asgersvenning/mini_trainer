@@ -18,7 +18,8 @@ Candidate manifests remain the authority for exact source and wheel hashes.
   the shared environment. The earlier incomplete-environment run is not passing evidence.
 - Follow-up native regressions cover independent checkpoint loading, ACS metadata
   access, stored masks/full vocabulary and head-only legacy backbone restoration.
-  The optional BioCLIP dependency was unavailable; no new real V2 inference claim.
+  The optional BioCLIP dependency was unavailable in that initial run; see the
+  actual Meghan qualification in the follow-up below.
 - Minimal installed training wheel: native prediction without `mambo_deploy`,
   plus existing training/reload/CLI checks passed on CPU.
 - Isolated ONNX/Hub wheel: no Torch/trainer dependency; real Hub commit
@@ -37,6 +38,42 @@ Publication of 0.3.1 is pending. The original release remains immutable. Use
 [maintenance publication instructions](publication.md#nemo-maintenance-031)
 identify the workflow and unchanged-model checks. The live Hub currently retains
 its original card until maintenance publication advances it to a new commit.
+
+## Pre-publication review corrections (1 October 2026)
+
+The follow-up keeps publication pending. Candidates staged from `0bacea5` predate
+these corrections and must be rebuilt from the final reviewed commit.
+
+Native checkpoint recognition now uses tensor contents, architecture metadata and
+class order rather than the filename or constructor argument. Its fingerprint is
+recorded beside the immutable file checksum in `model-provenance.toml` and generated
+into the native bootstrap. Class selection remains separate from model identity.
+The native CLI preserves explicit checkpoint scope and uses the same Nemo
+preprocessing as the Python predictor. The CLI retains the generic inference
+runner and its explicit dtype/collector options.
+
+ONNX embedding startup also prepares ordinary prediction by reusing that graph's
+logit output. Hub asset selection follows runtime profiles, independent of origin
+URLs. Regression coverage includes both behaviors, native local-file/dictionary
+preprocessing, CLI output, and legacy BF16 preprocessing on an FP32 CPU model.
+
+Actual Meghan European checkpoint qualification used `open-clip-torch==3.3.0`
+and PyTorch `2.14.1+cpu` in an isolated environment. The head-only checkpoint
+restored the pretrained BioCLIP-2 backbone and predicted a retained Flemming image:
+3,014 active species, 12,632 full species, input size 512, embedding width 768.
+Labels and confidences matched the existing model prediction utility with FP32
+inputs; embeddings were finite. Compilation was disabled for this eager CPU check.
+This is a loading/inference qualification, not a V2 accuracy or GPU qualification.
+
+The full static/runtime harness passed: **969 passed, 168 skipped, one expected
+failure**. Final focused release checks after the checkpoint-identity and CLI
+regression refinements: **214 passed, 8 skipped**. Static/import contracts
+and the minimal installed training wheel passed. On a retained real image, Nemo
+CPU predictions and embeddings were identical for default, local-file and
+checkpoint-dictionary loading. A real ONNX embedding session served both ordinary
+prediction and embedding prediction with identical confidences and no second
+session. Scratch reports are `meghan-qualification.json` and `loading-parity.json`
+under `.agents/local/nemo/`.
 
 ## Current candidate records
 

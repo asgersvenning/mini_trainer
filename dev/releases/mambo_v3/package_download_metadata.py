@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import tomllib
 from pathlib import Path
 
 from deployment.mambo_deploy.bundle import Bundle
@@ -37,6 +38,7 @@ def native_descriptor(metadata):
     presets = json.loads(metadata["presets.json"])
     return {
         "url": manifest["origins"][checkpoint],
+        "state_sha256": tomllib.loads(Path(__file__).with_name("model-provenance.toml").read_text())["checkpoint"]["state_sha256"],
         **manifest["files"][checkpoint],
         "preprocessing": json.loads(metadata["preprocessing.json"]),
         "presets": {name: metadata[item["path"]].splitlines() for name, item in presets.items()},

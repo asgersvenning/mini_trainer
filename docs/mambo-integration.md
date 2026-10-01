@@ -74,7 +74,8 @@ checkpoint cache. Optional backbone dependencies are still needed for older mode
 `mambo_deploy.Predictor` defaults to ONNX/CPU and global scope. It delegates Torch
 execution to the native predictor. Construction reads metadata; `load()` loads the
 runtime without an image and returns the predictor. Repeated calls reuse the model.
-Use `load(embeddings=True)` to also prepare the separate ONNX embedding graph.
+Use `load(embeddings=True)` to prepare the ONNX embedding graph; its logits also
+serve ordinary prediction without loading another graph.
 Loading validates files and runtime availability; it does not perform inference or
 promise that every kernel has been warmed up.
 
