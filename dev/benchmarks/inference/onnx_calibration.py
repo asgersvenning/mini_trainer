@@ -6,6 +6,7 @@ import io
 import json
 import math
 import platform
+import shutil
 from argparse import ArgumentParser
 from collections import Counter
 from pathlib import Path
@@ -145,17 +146,22 @@ def calibrate(
 
     try:
         report["source_files"] = model_files(Path(model), onnx)
-        source = onnx.load(model)
+        # ONNX rejects hard-linked external weights. Copy before loading data;
+        # this also isolates ORT's inferred-model sidecars from the source bundle.
+        snapshot_dir = output / "source"
+        snapshot_dir.mkdir()
+        source_root = Path(model).resolve().parent
+        for item in report["source_files"]:
+            destination = snapshot_dir / Path(item["path"]).relative_to(source_root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(item["path"], destination)
+            if file_hash(destination) != item["sha256"]:
+                raise ValueError("Source ONNX asset changed while copying")
+        snapshot = snapshot_dir / Path(model).name
+        source = onnx.load(snapshot)
         report["source_ops"] = dict(Counter(node.op_type for node in source.graph.node))
         if not set(op_types).intersection(report["source_ops"]):
             raise ValueError("No selected operator types occur in the source graph")
-        # ORT writes inferred-model sidecars beside its input. Isolate those writes.
-        snapshot_dir = output / "source"
-        snapshot_dir.mkdir()
-        snapshot = snapshot_dir / "model.onnx"
-        onnx.save_model(
-            source, snapshot, save_as_external_data=True, all_tensors_to_one_file=True, location="weights.data", size_threshold=0
-        )
         del source
         report["snapshot_files"] = model_files(snapshot, onnx)
         collector = Calibrator(

@@ -242,11 +242,17 @@ UV_PROJECT_ENVIRONMENT=/work/venvs/nemo-int8 uv sync --locked --no-dev \
   --extra cpu --extra recommended --extra export --extra quantization --python 3.13
 uv pip install --python /work/venvs/nemo-int8/bin/python \
   'mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@70cc69adc05362863439277048e06386c1f885e1'
-CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 /work/venvs/nemo-int8/bin/python \
+env -u LD_LIBRARY_PATH -u LD_PRELOAD -u PYTHONPATH \
+  CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 /work/venvs/nemo-int8/bin/python \
   -m dev.releases.mambo_v3.quantize \
   --metadata /work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet \
   --root /work/global_lepi --output /work/mambo-results/nemo-int8-pilot
 ```
+
+The clean environment prefix prevents container-provided native libraries from
+being mixed with the virtual environment. It applies only to this CPU command.
+Verify imports before the pilot with the same prefix and interpreter using
+`-c 'import torch; print(torch.__file__, torch.__version__)'`.
 
 Adjust the dataset mount paths only. The default downloads the pinned FP32 release;
 `--bundle PATH` instead uses a complete local bundle. The output directory must be

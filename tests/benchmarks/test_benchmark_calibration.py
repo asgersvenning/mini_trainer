@@ -104,6 +104,8 @@ def test_calibration_recipes_keep_all_batches_source_and_thread_limits(model, in
 
     manifest, metadata = inputs
     output = tmp_path / "output"
+    # Cache downloads may colocate external tensor storage with hard links.
+    (tmp_path / "cached-weights").hardlink_to(model.parent / "weights.data")
     original = {p.name: p.read_bytes() for p in model.parent.iterdir()}
     sessions, inference_paths = [], []
     real_session, real_infer = ort.InferenceSession, onnx.shape_inference.infer_shapes_path
@@ -130,6 +132,7 @@ def test_calibration_recipes_keep_all_batches_source_and_thread_limits(model, in
         threads=2,
     )
     assert report["status"] == "passed"
+    assert (output / "source/weights.data").stat().st_nlink == 1
     assert report == json.loads((output / "report.json").read_text())
     assert set(sessions) == {(2, 1)}
     assert inference_paths and all(output in p.parents for p in inference_paths)
