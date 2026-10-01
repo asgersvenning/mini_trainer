@@ -22,11 +22,7 @@ from .quantized_training import load_training_weights, restore_quantized_trainin
 
 
 class Classifier(nn.Module):
-    """Classification head with optional hidden layer, normalization and class masking.
-
-    ``skip_spherical_init`` skips only the expensive repulsion initialization when
-    trained weights will replace it; fresh heads retain spherical initialization.
-    """
+    """Classification head with optional hidden layer, normalization and class masking."""
 
     _version = 1
 
