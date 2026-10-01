@@ -229,3 +229,59 @@ sha256sum /work/mambo-results.tar.gz
 Transfer the archive and digest, verify after download, and retain immutable raw
 results alongside derived tables/figures. Archive integrity is separate from
 successful campaign completion and metric validity.
+
+## FP32 versus INT8 pilot
+
+The release-specific runner is `dev/releases/mambo_v3/quantize.py`. Clone this
+repository on the allocated UCloud node and check out the reviewed
+`release/mambo-v3` commit containing that file. Run from its root, using a separate
+CPU environment so the training CUDA environment stays intact:
+
+```sh
+UV_PROJECT_ENVIRONMENT=/work/venvs/nemo-int8 uv sync --locked --no-dev \
+  --extra cpu --extra recommended --extra export --extra quantization --python 3.13
+uv pip install --python /work/venvs/nemo-int8/bin/python \
+  'mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@70cc69adc05362863439277048e06386c1f885e1'
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 /work/venvs/nemo-int8/bin/python \
+  -m dev.releases.mambo_v3.quantize \
+  --metadata /work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet \
+  --root /work/global_lepi --output /work/mambo-results/nemo-int8-pilot
+```
+
+Adjust the dataset mount paths only. The default downloads the pinned FP32 release;
+`--bundle PATH` instead uses a complete local bundle. The output directory must be
+new. This bounded first run selects 128 original training images for calibration
+and 256 original test images for evaluation, deterministically with seed 42. It
+never re-splits the data, uses validation or Flemming for calibration, or updates
+source weights. Selection includes known species only; this pilot cannot establish
+long-tail accuracy. Increase `--calibration-count` and `--evaluation-count` in a
+fresh output directory after reviewing the pilot.
+
+The coverage target is **all convolution and linear operations**, including the
+backbone, squeeze-and-excitation convolutions and classification head: signed
+per-channel INT8 weights and unsigned INT8 activations using the existing native
+PTQ and ONNX QDQ tools. Normalization, nonlinear functions, hierarchy and public
+outputs may remain floating point; integer accumulators use wider types. The
+native lowering gate and ONNX execution profile reject residual floating weighted
+operations. This is a target checked by the runner, not a claim of already achieved
+Nemo coverage. Graph annotations alone do not establish integer execution.
+
+Each backend runs independently and writes its own log and `report.json` even
+when the other fails. Reports retain input/artifact hashes, environment versions,
+integer execution evidence, global/regional hierarchical metrics, embedding cosine
+agreement and alternating FP32/INT8 batch-one CPU timings. `prepared.json` marks
+successful input preparation; `summary.json` records backend exit codes. A local
+synthetic native pilot failed the existing lowered-versus-reference numerical
+check; that check remains mandatory. A failed native run does not prevent ONNX
+qualification and must not be treated as a usable native artifact.
+
+This is an artifact/quality pilot, not publication acceptance. Larger held-out
+quality evaluation, threshold migration, peak memory, batching, TTA, installed
+runtime adapters and the Space selector remain to be qualified. Native `.pt2`
+exports use fixed-shape x86 CPU execution, not ordinary training checkpoints.
+Only expose variants in the Space after qualification; no artifact is published
+by this command. Keep the complete output on UCloud and return `summary.json`,
+backend logs/reports and metric reports first; calibration tensors and source
+images need not be transferred. After a failed preparation use a fresh output
+path; individual `--stage torch` or `--stage onnx` runs can reuse completed
+preparation when that backend's output directory does not yet exist.
