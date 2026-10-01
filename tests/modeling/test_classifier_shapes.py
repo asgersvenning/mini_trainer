@@ -117,3 +117,59 @@ def test_spherical_initialization_bounds_cuda_temporaries():
     # Two full-size buffers plus the small Gram matrix fit under this bound;
     # retaining the prior iteration's gradient/projection does not.
     assert extra < 3 * layer.weight.numel() * layer.weight.element_size()
+
+
+def test_skip_spherical_init_is_opt_in_and_not_serialized(monkeypatch):
+    calls = []
+    original = Classifier.init_spherical_repulsion.__func__
+
+    def initialize(cls, layer, **kwargs):
+        calls.append(layer)
+        return original(cls, layer, **kwargs)
+
+    monkeypatch.setattr(Classifier, "init_spherical_repulsion", classmethod(initialize))
+    normal = Classifier(8, 3)
+    skipped = Classifier(8, 3, skip_spherical_init=True)
+    assert len(calls) == 1
+    assert "skip_spherical_init" not in skipped.get_extra_state()
+    assert normal.state_dict().keys() == skipped.state_dict().keys()
+    skipped.load_state_dict(normal.state_dict())
+    normal.eval()
+    skipped.eval()
+    inputs = torch.randn(2, 8)
+    torch.testing.assert_close(normal(inputs), skipped(inputs), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("complete", [True, False])
+def test_checkpoint_loading_skips_repulsion_only_with_trained_weights(monkeypatch, complete):
+    reference = torch.nn.Module()
+    reference.add_module("classifier", Classifier(8, 3).eval())
+    state = reference.state_dict()
+    if not complete:
+        del state["classifier.linear.parametrizations.weight.original1"]
+    calls = []
+    original = Classifier.init_spherical_repulsion.__func__
+
+    def initialize(cls, layer, **kwargs):
+        calls.append(layer)
+        return original(cls, layer, **kwargs)
+
+    monkeypatch.setattr(Classifier, "init_spherical_repulsion", classmethod(initialize))
+    import warnings
+
+    with warnings.catch_warnings(record=True):
+        restored = Classifier.load(
+            "test",
+            "classifier",
+            torch.nn.Module(),
+            state,
+            torch.device("cpu"),
+            torch.float32,
+            strict=complete,
+            in_features=8,
+            out_features=3,
+        ).eval()
+    assert len(calls) == (0 if complete else 1)
+    if complete:
+        inputs = torch.randn(2, 8)
+        torch.testing.assert_close(reference.classifier(inputs), restored.classifier(inputs), rtol=0, atol=0)
