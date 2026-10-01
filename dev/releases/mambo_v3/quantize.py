@@ -223,10 +223,14 @@ def evaluate(args, bundle, samples, baseline, candidate, destination, provenance
     }
 
 
+def onnx_directory(args):
+    return args.output / ("onnx" if args.calibration_method == "percentile" else "onnx-minmax")
+
+
 def backend(args):
     import torch
 
-    destination = args.output / args.stage
+    destination = onnx_directory(args) if args.stage == "onnx" else args.output / args.stage
     destination.mkdir(exist_ok=False)
     report = {
         "status": "running",
@@ -278,7 +282,10 @@ def backend(args):
             ]
         else:
             source = bundle.profile("onnx-embedding")
-            calibrate(source, args.output / "calibration.json", destination / "calibration", threads=args.threads)
+            calibrate(
+                source, args.output / "calibration.json", destination / "calibration", method=args.calibration_method, threads=args.threads
+            )
+            report["calibration_method"] = args.calibration_method
             path = destination / "calibration/model.onnx"
             session = onnx_session(path, args.threads, profile=True)
             session.run(None, {"images": x})
@@ -323,7 +330,8 @@ def diagnose(args):
     bundle = Bundle(prepared["bundle"], download=prepared["automatic_bundle"])
     if file_hash(bundle.root / "release.json") != prepared["provenance"]["bundle_sha256"]:
         raise ValueError("Source bundle changed")
-    previous = json.loads((args.output / "onnx/report.json").read_text())
+    directory = onnx_directory(args)
+    previous = json.loads((directory / "report.json").read_text())
     for item in previous["artifact_files"]:
         if file_hash(item["path"]) != item["sha256"]:
             raise ValueError("Quantized artifact changed")
@@ -334,10 +342,12 @@ def diagnose(args):
         if file_hash(path) != record["sha256"]:
             raise ValueError("Evaluation image changed after preparation")
         images.append(preprocess(path)[None])
-    candidate = args.output / "onnx/calibration/model.onnx"
+    candidate = directory / "calibration/model.onnx"
     results, outputs = {}, {}
     for name, path, optimize in (("fp32", bundle.profile("onnx-embedding"), True), ("qdq", candidate, False), ("int8", candidate, True)):
-        session = onnx_session(path, args.threads, profile=True, optimize=optimize, profile_prefix=args.output / f"diagnostic-{name}")
+        session = onnx_session(
+            path, args.threads, profile=True, optimize=optimize, profile_prefix=args.output / f"{directory.name}-diagnostic-{name}"
+        )
         values = [session.run(["output_0", "embedding"], {"images": image}) for image in images]
         scores, embeddings = [np.concatenate([value[i] for value in values]) for i in (0, 1)]
         if (
@@ -382,7 +392,7 @@ def diagnose(args):
         "samples_sha256": prepared["samples_sha256"],
         "scope": "First 32 prepared held-out images; global species accuracy and embeddings; no recalibration or performance benchmark",
     }
-    write_json(args.output / "onnx-diagnostic.json", report)
+    write_json(args.output / f"{directory.name}-diagnostic.json", report)
     print(json.dumps(report, indent=2))
 
 
@@ -394,6 +404,12 @@ def main():
     parser.add_argument("--bundle", type=Path, help="Verified FP32 bundle; omitted uses the pinned automatic cache")
     parser.add_argument("--calibration-count", type=int, default=128)
     parser.add_argument("--evaluation-count", type=int, default=256)
+    parser.add_argument(
+        "--calibration-method",
+        choices=("percentile", "minmax"),
+        default="percentile",
+        help="ONNX calibration recipe; MinMax writes onnx-minmax/ beside the original onnx/ result",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--stage", choices=("all", "prepare", "torch", "onnx", "diagnose"), default="all")
@@ -401,8 +417,8 @@ def main():
     if args.stage == "diagnose":
         diagnose(args)
         return
-    if args.metadata is None or args.root is None:
-        parser.error("--metadata and --root are required except for --stage diagnose")
+    if args.stage in ("all", "prepare") and (args.metadata is None or args.root is None):
+        parser.error("--metadata and --root are required for input preparation")
     if args.stage in ("all", "prepare"):
         prepare(args)
     if args.stage in ("torch", "onnx"):
@@ -413,7 +429,8 @@ def main():
             command = [sys.executable, "-m", "dev.releases.mambo_v3.quantize", *sys.argv[1:], "--stage", name]
             with (args.output / f"{name}.log").open("w") as stream:
                 code = subprocess.run(command, stdout=stream, stderr=subprocess.STDOUT).returncode
-            summary["backends"][name] = {"exit_code": code, "report": f"{name}/report.json"}
+            folder = onnx_directory(args).name if name == "onnx" else name
+            summary["backends"][name] = {"exit_code": code, "report": f"{folder}/report.json"}
             write_json(args.output / "summary.json", summary)
         if any(item["exit_code"] for item in summary["backends"].values()):
             raise SystemExit("At least one backend failed; inspect summary.json and backend logs. Nothing was published.")

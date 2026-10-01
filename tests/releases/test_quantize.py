@@ -77,13 +77,16 @@ def test_all_continues_after_native_failure(tmp_path, monkeypatch):
     assert report["release_ready"] is False
 
 
-def test_corrupt_prepared_manifest_records_failure(tmp_path):
+@pytest.mark.parametrize(
+    "stage,method,folder", [("torch", "percentile", "torch"), ("onnx", "percentile", "onnx"), ("onnx", "minmax", "onnx-minmax")]
+)
+def test_corrupt_prepared_manifest_records_failure(tmp_path, stage, method, folder):
     (tmp_path / "prepared.json").write_text(json.dumps({"samples_sha256": "incorrect"}))
     (tmp_path / "samples.json").write_text("{}")
-    args = SimpleNamespace(output=tmp_path, stage="torch", threads=1, seed=42)
+    args = SimpleNamespace(output=tmp_path, stage=stage, calibration_method=method, threads=1, seed=42)
     with pytest.raises(ValueError, match="manifest changed"):
         quantize.backend(args)
-    report = json.loads((tmp_path / "torch/report.json").read_text())
+    report = json.loads((tmp_path / folder / "report.json").read_text())
     assert report["status"] == "failed"
     assert report["release_ready"] is False
 
@@ -160,10 +163,20 @@ def test_diagnostic_distinguishes_qdq_from_integer_execution(tmp_path, monkeypat
         )
 
     monkeypatch.setattr(quantize, "onnx_session", session)
-    quantize.diagnose(SimpleNamespace(output=tmp_path, threads=4))
+    quantize.diagnose(SimpleNamespace(output=tmp_path, threads=4, calibration_method="percentile"))
     report = json.loads((tmp_path / "onnx-diagnostic.json").read_text())
     assert report["results"]["fp32"]["correct_species"] == 1
     assert report["results"]["qdq"]["predictions_agree_with_fp32"] == 1
     assert report["results"]["int8"]["predictions_agree_with_fp32"] == 0
     assert report["qdq_int8_prediction_agreement"] == 0
     assert report["unoptimized_qdq_has_integer_kernels"] is False
+
+
+def test_minmax_cli_reuses_prepared_inputs_without_preparation(tmp_path, monkeypatch):
+    captured = []
+    monkeypatch.setattr(quantize, "prepare", lambda args: pytest.fail("Must reuse prepared inputs"))
+    monkeypatch.setattr(quantize, "backend", lambda args: captured.append(args))
+    monkeypatch.setattr(quantize.sys, "argv", ["quantize", "--stage", "onnx", "--calibration-method", "minmax", "--output", str(tmp_path)])
+    quantize.main()
+    assert captured[0].calibration_method == "minmax"
+    assert quantize.onnx_directory(captured[0]) == tmp_path / "onnx-minmax"

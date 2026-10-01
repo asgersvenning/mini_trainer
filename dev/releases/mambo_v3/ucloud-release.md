@@ -314,3 +314,21 @@ operators. If unoptimized QDQ still executes integer kernels, the report flags
 that limitation rather than assuming a floating-reference comparison. No model,
 calibration or original evaluation outputs are replaced; rerunning overwrites
 only the diagnostic summary. ORT profiles stay inside the pilot output directory.
+
+To test activation clipping as the cause of poor QDQ quality, change only the
+ONNX calibration method while retaining the prepared calibration/test images:
+
+```sh
+env -u LD_LIBRARY_PATH -u LD_PRELOAD -u PYTHONPATH \
+  CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
+  /work/venvs/nemo-int8/bin/python -m dev.releases.mambo_v3.quantize \
+  --stage onnx --calibration-method minmax \
+  --output /work/mambo-results/nemo-int8-pilot --threads 4
+```
+
+MinMax writes `onnx-minmax/` and preserves the percentile result in `onnx/`.
+Compare `onnx-minmax/report.json` with `onnx/report.json`; both evaluate the same
+held-out images against FP32. No environment changes, input preparation or larger
+sample are needed. For a targeted diagnostic of this new candidate, use
+`--stage diagnose --calibration-method minmax`; its summary is
+`onnx-minmax-diagnostic.json`. Neither individual stage updates `summary.json`.
