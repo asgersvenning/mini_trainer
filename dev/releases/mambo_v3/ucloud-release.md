@@ -297,3 +297,20 @@ backend logs/reports and metric reports first; calibration tensors and source
 images need not be transferred. After a failed preparation use a fresh output
 path; individual `--stage torch` or `--stage onnx` runs can reuse completed
 preparation when that backend's output directory does not yet exist.
+
+For a poor INT8 candidate, diagnose the existing artifact before recalibrating:
+
+```sh
+env -u LD_LIBRARY_PATH -u LD_PRELOAD -u PYTHONPATH \
+  CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
+  /work/venvs/nemo-int8/bin/python -m dev.releases.mambo_v3.quantize \
+  --stage diagnose --output /work/mambo-results/nemo-int8-pilot --threads 4
+```
+
+This compares FP32, QDQ with optimizations disabled and optimized INT8 on the first
+32 prepared test images. It prints and saves `onnx-diagnostic.json`: global species
+correct counts, prediction agreement, embedding cosine similarity and observed
+operators. If unoptimized QDQ still executes integer kernels, the report flags
+that limitation rather than assuming a floating-reference comparison. No model,
+calibration or original evaluation outputs are replaced; rerunning overwrites
+only the diagnostic summary. ORT profiles stay inside the pilot output directory.

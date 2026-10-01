@@ -141,14 +141,15 @@ def native_model(bundle):
     return native.model.eval()
 
 
-def onnx_session(path, threads, *, profile=False):
+def onnx_session(path, threads, *, profile=False, optimize=True, profile_prefix=None):
     import onnxruntime as ort
 
     options = ort.SessionOptions()
     options.intra_op_num_threads = threads
     options.inter_op_num_threads = 1
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL if optimize else ort.GraphOptimizationLevel.ORT_DISABLE_ALL
     options.enable_profiling = profile
-    options.profile_file_prefix = str(Path(path).parent / "execution")
+    options.profile_file_prefix = str(profile_prefix or Path(path).parent / "execution")
     session = ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
     session.disable_fallback()
     return session
@@ -314,18 +315,94 @@ def backend(args):
         write_json(destination / "report.json", report)
 
 
+def diagnose(args):
+    """Compare existing FP32, unoptimized QDQ and optimized INT8 on held-out images."""
+    prepared = json.loads((args.output / "prepared.json").read_text())
+    if file_hash(args.output / "samples.json") != prepared["samples_sha256"]:
+        raise ValueError("Prepared sample manifest changed")
+    bundle = Bundle(prepared["bundle"], download=prepared["automatic_bundle"])
+    if file_hash(bundle.root / "release.json") != prepared["provenance"]["bundle_sha256"]:
+        raise ValueError("Source bundle changed")
+    previous = json.loads((args.output / "onnx/report.json").read_text())
+    for item in previous["artifact_files"]:
+        if file_hash(item["path"]) != item["sha256"]:
+            raise ValueError("Quantized artifact changed")
+    samples = json.loads((args.output / "samples.json").read_text())["test"][:32]
+    images = []
+    for record in samples:
+        path = Path(prepared["root"]) / record["path"]
+        if file_hash(path) != record["sha256"]:
+            raise ValueError("Evaluation image changed after preparation")
+        images.append(preprocess(path)[None])
+    candidate = args.output / "onnx/calibration/model.onnx"
+    results, outputs = {}, {}
+    for name, path, optimize in (("fp32", bundle.profile("onnx-embedding"), True), ("qdq", candidate, False), ("int8", candidate, True)):
+        session = onnx_session(path, args.threads, profile=True, optimize=optimize, profile_prefix=args.output / f"diagnostic-{name}")
+        values = [session.run(["output_0", "embedding"], {"images": image}) for image in images]
+        scores, embeddings = [np.concatenate([value[i] for value in values]) for i in (0, 1)]
+        if (
+            scores.shape != (len(samples), len(bundle.classes["labels"][0]))
+            or embeddings.shape != (len(samples), bundle.manifest["embedding"]["dimension"])
+            or not np.isfinite(scores).all()
+            or not np.isfinite(embeddings).all()
+        ):
+            raise ValueError(f"Invalid {name} score/embedding outputs")
+        predictions = scores.argmax(axis=1)
+        profile = json.loads(Path(session.end_profiling()).read_text())
+        operators = sorted({event.get("args", {}).get("op_name", "") for event in profile if event.get("cat") == "Node"})
+        integer = [op for op in operators if op.startswith(("QLinear", "MatMulInteger", "ConvInteger", "QGemm"))]
+        results[name] = {
+            "correct_species": sum(
+                bundle.classes["labels"][0][i] == record["labels"][0] for i, record in zip(predictions, samples, strict=True)
+            ),
+            "integer_operators": integer,
+            "operators": operators,
+        }
+        outputs[name] = predictions, embeddings
+        del session
+    for name in ("qdq", "int8"):
+        predictions, embeddings = outputs[name]
+        reference, original = outputs["fp32"]
+        cosine = np.sum(embeddings * original, axis=1) / np.maximum(
+            np.linalg.norm(embeddings, axis=1) * np.linalg.norm(original, axis=1), 1e-12
+        )
+        results[name].update(
+            predictions_agree_with_fp32=int(np.sum(predictions == reference)),
+            embedding_cosine_mean=float(cosine.mean()),
+            embedding_cosine_min=float(cosine.min()),
+        )
+    report = {
+        "samples": len(samples),
+        "sample_paths": [r["path"] for r in samples],
+        "threads": args.threads,
+        "results": results,
+        "qdq_int8_prediction_agreement": int(np.sum(outputs["qdq"][0] == outputs["int8"][0])),
+        "unoptimized_qdq_has_integer_kernels": bool(results["qdq"]["integer_operators"]),
+        "artifact_files": previous["artifact_files"],
+        "samples_sha256": prepared["samples_sha256"],
+        "scope": "First 32 prepared held-out images; global species accuracy and embeddings; no recalibration or performance benchmark",
+    }
+    write_json(args.output / "onnx-diagnostic.json", report)
+    print(json.dumps(report, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--metadata", type=Path, required=True)
-    parser.add_argument("--root", type=Path, required=True, help="Directory containing images/SPECIES/FILENAME")
+    parser.add_argument("--metadata", type=Path)
+    parser.add_argument("--root", type=Path, help="Directory containing images/SPECIES/FILENAME")
     parser.add_argument("--output", type=Path, required=True, help="New persistent output directory")
     parser.add_argument("--bundle", type=Path, help="Verified FP32 bundle; omitted uses the pinned automatic cache")
     parser.add_argument("--calibration-count", type=int, default=128)
     parser.add_argument("--evaluation-count", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--stage", choices=("all", "prepare", "torch", "onnx"), default="all")
+    parser.add_argument("--stage", choices=("all", "prepare", "torch", "onnx", "diagnose"), default="all")
     args = parser.parse_args()
+    if args.stage == "diagnose":
+        diagnose(args)
+        return
+    if args.metadata is None or args.root is None:
+        parser.error("--metadata and --root are required except for --stage diagnose")
     if args.stage in ("all", "prepare"):
         prepare(args)
     if args.stage in ("torch", "onnx"):

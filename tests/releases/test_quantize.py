@@ -123,3 +123,47 @@ def test_evaluation_writes_valid_paired_tables(tmp_path, monkeypatch):
     image.write_bytes(b"changed")
     with pytest.raises(ValueError, match="image changed"):
         quantize.evaluate(SimpleNamespace(root=tmp_path, stage="onnx"), bundle, samples, forward, forward, tmp_path, {"seed": 42})
+
+
+def test_diagnostic_distinguishes_qdq_from_integer_execution(tmp_path, monkeypatch):
+    import numpy as np
+
+    image = tmp_path / "image"
+    image.write_bytes(b"image")
+    samples = {"test": [{"path": "image", "labels": ["a"], "sha256": quantize.file_hash(image)}]}
+    quantize.write_json(tmp_path / "samples.json", samples)
+    quantize.write_json(tmp_path / "release.json", {})
+    quantize.write_json(
+        tmp_path / "prepared.json",
+        {
+            "root": str(tmp_path),
+            "bundle": str(tmp_path),
+            "automatic_bundle": False,
+            "samples_sha256": quantize.file_hash(tmp_path / "samples.json"),
+            "provenance": {"bundle_sha256": quantize.file_hash(tmp_path / "release.json")},
+        },
+    )
+    (tmp_path / "onnx").mkdir()
+    quantize.write_json(tmp_path / "onnx/report.json", {"artifact_files": []})
+    bundle = SimpleNamespace(
+        root=tmp_path, classes={"labels": [["a", "b"]]}, manifest={"embedding": {"dimension": 2}}, profile=lambda _: "fp32"
+    )
+    monkeypatch.setattr(quantize, "Bundle", lambda *a, **kw: bundle)
+    monkeypatch.setattr(quantize, "preprocess", lambda _: np.zeros((3, 2, 2)))
+
+    def session(path, threads, *, profile, optimize, profile_prefix):
+        integer = str(path) != "fp32" and optimize
+        quantize.write_json(profile_prefix, [{"cat": "Node", "args": {"op_name": "QGemm" if integer else "Gemm"}}])
+        return SimpleNamespace(
+            run=lambda *a: [np.array([[0.0, 1.0]]) if integer else np.array([[1.0, 0.0]]), np.array([[1.0, 0.0]])],
+            end_profiling=lambda: str(profile_prefix),
+        )
+
+    monkeypatch.setattr(quantize, "onnx_session", session)
+    quantize.diagnose(SimpleNamespace(output=tmp_path, threads=4))
+    report = json.loads((tmp_path / "onnx-diagnostic.json").read_text())
+    assert report["results"]["fp32"]["correct_species"] == 1
+    assert report["results"]["qdq"]["predictions_agree_with_fp32"] == 1
+    assert report["results"]["int8"]["predictions_agree_with_fp32"] == 0
+    assert report["qdq_int8_prediction_agreement"] == 0
+    assert report["unoptimized_qdq_has_integer_kernels"] is False
