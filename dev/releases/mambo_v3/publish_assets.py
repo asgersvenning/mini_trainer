@@ -50,6 +50,31 @@ def github_files(paths, repository, tag):
             subprocess.run(["gh", "release", "upload", tag, str(path), "--repo", repository], check=True)
 
 
+def maintenance_update(existing, payload):
+    """Permit a new package revision only when model and vocabulary bytes stay fixed."""
+
+    def version(value):
+        return tuple(map(int, value.split("."))) if re.fullmatch(r"\d+\.\d+\.\d+", value) else ()
+
+    def assets(manifest):
+        return {
+            name: digest
+            for name, digest in manifest["files"].items()
+            if name.startswith(("bundle/models/", "bundle/regions/"))
+            or name in ("bundle/classes.json", "bundle/presets.json", "bundle/preprocessing.json")
+        }
+
+    old, new = version(existing["package_version"]), version(payload["package_version"])
+    fixed = assets(existing)
+    return (
+        bool(old and new and fixed)
+        and new > old
+        and existing["model_id"] == payload["model_id"]
+        and existing["source_commit"] != payload["source_commit"]
+        and fixed == assets(payload)
+    )
+
+
 def hub(folder, repository, kind):
     from huggingface_hub import HfApi, hf_hub_download
     from huggingface_hub.errors import EntryNotFoundError
@@ -68,7 +93,9 @@ def hub(folder, repository, kind):
         else:
             existing = json.loads(Path(manifest).read_text())
     if existing != payload:
-        if existing is not None and (kind == "model" or existing["source_commit"] == payload["source_commit"]):
+        if existing is not None and (
+            existing["source_commit"] == payload["source_commit"] or kind == "model" and not maintenance_update(existing, payload)
+        ):
             raise ValueError(f"Refusing to replace published {kind} payload")
         commit = api.upload_folder(
             repo_id=repository,

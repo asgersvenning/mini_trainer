@@ -49,13 +49,19 @@ def cached_model_file(url, destination, *, cache, size, sha256, offline=False):
     destination = Path(destination)
     blob = Path(cache) / "blobs" / sha256
     fetch_file(url, blob, size=size, sha256=sha256, offline=offline)
+    link_file(blob, destination)
+
+
+def link_file(source, destination):
+    """Atomically colocate cached bytes, including ONNX external data."""
+    destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".model-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "data"
         try:
-            os.link(blob, staged)
+            os.link(Path(source).resolve(), staged)
         except OSError:
-            shutil.copyfile(blob, staged)
+            shutil.copyfile(source, staged)
         staged.replace(destination)
 
 

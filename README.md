@@ -9,7 +9,7 @@
 
 This is an attempt to create a minimal extendable framework for development and research on classification models.
 
-For the MAMBO model release candidate, see the [local deployment guide](deployment/README.md)
+For the Nemo (MAMBO_v3) model release, see the [local deployment guide](deployment/README.md)
 for PyTorch/ONNX inference, regional presets, custom class lists and embeddings.
 
 All code in `mini_trainer` should follow the following core principles:
@@ -23,7 +23,7 @@ All code in `mini_trainer` should follow the following core principles:
 
 | Task | Start here |
 | --- | --- |
-| Integrate the MAMBO release candidate | [Deployment API and CLI](deployment/README.md) |
+| Integrate the Nemo release | [Deployment API and CLI](deployment/README.md) |
 | Prepare data or adapt an example | [Examples](examples/README.md) |
 | Change the trainer or run checks | [Development guide](dev/README.md), [test map](tests/README.md) |
 | Compare models, backends or training settings | [Benchmarks](dev/benchmarks/README.md) |

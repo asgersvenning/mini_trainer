@@ -14,7 +14,7 @@ from dev.releases.mambo_v3.metrics import REVISION
 from .figure_export import save_figure
 
 SERIES = (
-    ("v2", "MAMBO v2", "#8064a2"),
+    ("v2", "Meghan (MAMBO_v2)", "#8064a2"),
     ("torch", "V3 PyTorch", "#098e92"),
     ("onnx", "V3 ONNX", "#e8872e"),
     ("torch-tta", "V3 PyTorch + TTA", "#125351"),

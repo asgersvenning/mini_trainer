@@ -5,6 +5,39 @@ candidate from a clean committed checkout, qualifies its installed wheels, and
 only then stages public files. The authoritative source revision and artifact
 hashes are the candidate's `release-candidate.json` and `SHA256SUMS`.
 
+## Nemo maintenance 0.3.1 qualification (1 October 2026)
+
+The maintenance implementation lives on `release/mambo-v3`; it retains the
+MAMBO_v3 weights, ONNX graphs, class order, preprocessing recipe and presets.
+Local scratch evidence is under `.agents/local/nemo/` in the maintenance checkout.
+Candidate manifests remain the authority for exact source and wheel hashes.
+
+- Full static/runtime harness: **960 passed, 168 skipped, one expected failure**.
+  The shared environment lacked installed `mt-trainer` metadata; the successful
+  run used an isolated installed wheel alongside the checkout, without changing
+  the shared environment. The earlier incomplete-environment run is not passing evidence.
+- Follow-up native regressions cover independent checkpoint loading, ACS metadata
+  access, stored masks/full vocabulary and head-only legacy backbone restoration.
+  The optional BioCLIP dependency was unavailable; no new real V2 inference claim.
+- Minimal installed training wheel: native prediction without `mambo_deploy`,
+  plus existing training/reload/CLI checks passed on CPU.
+- Isolated ONNX/Hub wheel: no Torch/trainer dependency; real Hub commit
+  `9dcb52c37f2d912915e76d74a7cd4f7074bf7930` loaded and predicted, then reloaded
+  offline. Hugging Face Hub 2.0 and ONNX Runtime 1.30 exercised shared-cache blobs
+  and colocated external weights. The new model card parsed through `ModelCard`.
+- Four retained Flemming images: Torch on RTX 3080 Ti Laptop and ONNX CPU agree
+  on top-1 at all ranks for global, Europe and custom selections. Synthetic
+  four-image tests separately passed TTA, masks and embedding contracts on both.
+- A fixed-input GPU comparison retained identical logits and embeddings across
+  the original and delegated Torch paths; confidence differences were below
+  `9e-8`. This is bounded regression evidence, not a new throughput or accuracy claim.
+
+Publication of 0.3.1 is pending. The original release remains immutable. Use
+`packages/mt-trainer/v0.3.1` followed by `models/mambo-v3/v0.3.1`; the
+[maintenance publication instructions](publication.md#nemo-maintenance-031)
+identify the workflow and unchanged-model checks. The live Hub currently retains
+its original card until maintenance publication advances it to a new commit.
+
 ## Current candidate records
 
 Local output: `local-evidence/mambo-v3-publication-candidate/`. The corresponding

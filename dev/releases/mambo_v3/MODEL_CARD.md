@@ -1,6 +1,7 @@
 ---
 license: cc-by-nc-sa-4.0
-library_name: onnx
+library_name: mambo-deploy
+model_name: Nemo
 pipeline_tag: image-classification
 tags:
   - biology
@@ -12,27 +13,30 @@ tags:
   - hierarchical-classification
 ---
 
-# MAMBO V3
+# Nemo (MAMBO_v3)
 
 EfficientNetV2-S trained on global-lepi in September
-2026. Predicts 12,632 species, 4,476 genera and 104 families, identified by GBIF taxon
+2026. Predicts {{vocabulary}}, identified by GBIF taxon
 IDs. Native PyTorch and standard floating-point ONNX artifacts share this vocabulary.
-No quantized model is included. Embeddings have 1,280 dimensions and unit length.
+No quantized model is included. Embeddings have {{embedding_dim}} dimensions and unit length.
 
 [Try one image](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) ·
 [Python package](https://pypi.org/project/mambo-v3/) ·
-[Integration and comparison figures](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md)
+[Integration and comparison figures](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/deployment/README.md)
 
 ```python
 from mambo_deploy import Predictor
-result = Predictor().predict("moth.jpg")
+predictor = Predictor.from_pretrained("asgersvenning/MAMBO-v3", backend="onnx")
+result = predictor.predict("moth.jpg")
 print(result[0].label, result[0].confidence)
 ```
 
-Install with `uv pip install 'mambo-v3[onnx]==0.3.0'`. The package downloads verified
-weights from ERDA automatically. For a Hub snapshot, use its `bundle/` directory
-with `Predictor(bundle="/path/to/snapshot/bundle")`; this is not a Transformers
-`from_pretrained` model. `CITATION.cff` identifies the release citation.
+Install with `uv pip install 'mambo-v3[onnx,hub]==0.3.1'`. `from_pretrained` uses Hugging Face Hub caching and accepts `revision`,
+`cache_dir`, `token`, and `local_files_only`. Pin a published commit SHA for
+reproducibility. Local snapshots and bundles are accepted too. Plain `Predictor()`
+retains verified ERDA downloads. This custom library supports Hub loading;
+Transformers `AutoModel`/`pipeline` and hosted inference are not provided.
+`CITATION.cff` identifies the release citation.
 
 Use the release README for installation, input/output formats and configuration.
 Global is the default. Region presets and custom class lists constrain eligible

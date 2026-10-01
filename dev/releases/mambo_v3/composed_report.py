@@ -7,7 +7,7 @@ from pathlib import Path
 from .figure_export import save_figure
 
 SERIES = (
-    ("v2", "MAMBO v2", "#8064a2"),
+    ("v2", "Meghan (MAMBO_v2)", "#8064a2"),
     ("torch", "V3 single view", "#777777"),
     ("torch-tta", "Previous padded scale", "#098e92"),
     ("torch:rotation30_pad15_3", "±30° / pad15 · 3 views", "#2d6cc0"),

@@ -1,6 +1,6 @@
 [project]
 name = "mt-trainer"
-version = "0.3.0"
+version = "0.3.1"
 default-optional-dependency-keys = ["recommended"]
 dependencies = [
   "torch>=2.11",
@@ -162,7 +162,7 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = ""
 module-name = "mini_trainer"
-source-include = ["mini_trainer/modeling/architectures/blacklist.json"]
+source-include = ["mini_trainer/modeling/architectures/blacklist.json", "mini_trainer/nemo.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

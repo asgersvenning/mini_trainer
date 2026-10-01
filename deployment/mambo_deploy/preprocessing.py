@@ -157,25 +157,11 @@ class TorchDecode:
         return _rgb(item)
 
 
-class TorchPreprocess:
-    """Finish a batch of uint8 squares with native operations on its Torch device."""
+def TorchPreprocess(torch, device):
+    # Kept as the internal call boundary; Torch preprocessing belongs to the native runtime.
+    from mini_trainer.deploy import TorchPreprocess as NativePreprocess
 
-    def __init__(self, torch, device):
-        self.torch = torch
-        mean = torch.as_tensor(_MEAN, device=device)
-        std = torch.as_tensor(_STD, device=device)
-        self.scale, self.bias = 1 / (255 * std), -mean / std
-
-    def __call__(self, images):
-        torch = self.torch
-        with torch.autocast(images.device.type, enabled=False):
-            values = torch.nn.functional.interpolate(
-                images.float(), size=(_RESIZED, _RESIZED), mode="bilinear", align_corners=False, antialias=False
-            )
-            start = (_RESIZED - _SIZE) // 2
-            values = values[..., start : start + _SIZE, start : start + _SIZE]
-            # One broadcast normalization kernel also produces compact NCHW storage.
-            return torch.addcmul(self.bias, values.round_(), self.scale)
+    return NativePreprocess(torch, device)
 
 
 def image_items(value):

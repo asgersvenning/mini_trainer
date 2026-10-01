@@ -13,6 +13,21 @@ only reviewed, release-relevant fixes and qualify the affected behavior. Shared
 core fixes still originate on a feature/fix branch or `master` before integration.
 Published tags and artifacts remain immutable even as the maintenance branch advances.
 
+## Nemo maintenance 0.3.1
+
+Prepare from `release/mambo-v3`. Publish the qualified training package as
+`packages/mt-trainer/v0.3.1`, then the model adapter as `models/mambo-v3/v0.3.1`.
+Both tags point to the reviewed maintenance commit. `MAMBO_v3` and all 0.3.0
+artifacts remain unchanged. The default routing convention now selects the new
+model tag; do not reuse the initial tag override.
+
+The Hub model may advance to a new commit for a newer package version only when
+all checkpoint/ONNX, vocabulary, preprocessing and preset hashes are identical.
+Previous Hub revisions remain available. The model card and Space use **Nemo**;
+**Meghan** identifies the team's existing MAMBO_v2 alias. Use the integration guide
+for the 0.3.1 loading/metadata API. The original publication procedure below records
+0.3.0 identities; substitute the maintenance tags and versions above for this release.
+
 ## 1. Configure accounts and environments
 
 Configure pending trusted publishers for `mt-trainer` and `mambo-v3`. The owner

@@ -28,6 +28,7 @@ def bundle(tmp_path):
     manifest = {
         "schema": "mambo-release-v1",
         "model_id": "fixture",
+        "embedding": {"dimension": 1280},
         "score_semantics": "hierarchical-leaf-logits-logsumexp-v1",
         "files": {},
     }
@@ -164,29 +165,6 @@ def test_confidence_preserves_readonly_scores(dtype):
     np.testing.assert_array_equal(values, original)
 
 
-def test_native_facade_preserves_container_and_shared_confidence(bundle, monkeypatch):
-    import torch
-
-    from mini_trainer import deploy
-    from mini_trainer.hierarchical.model import HierarchicalPrediction
-
-    monkeypatch.setattr(deploy, "_runtime", lambda: Predictor)
-    facade = deploy.Predictor(device="cpu", bundle=bundle)
-    # Nonnegative logits summing to one must still be treated as logits.
-    raw = [np.array([[0.2, 0.8]], dtype=np.float32), np.array([[1.0]], dtype=np.float32), np.array([[1.0]], dtype=np.float32)]
-    result = Prediction(raw, [["a", "b"], ["g0"], ["f0"]], [np.arange(2), np.arange(1), np.arange(1)])
-    monkeypatch.setattr(facade._predictor, "predict", lambda *args, **kwargs: result)
-    monkeypatch.setattr(
-        facade._predictor, "predict_with_embeddings", lambda *args, **kwargs: (result, np.ones((1, 1280), dtype=np.float32))
-    )
-    native = facade("unused")
-    assert isinstance(native, HierarchicalPrediction)
-    assert native[0].label == result[0].label
-    np.testing.assert_array_equal(native.confidence.numpy(), result.confidence)
-    assert isinstance(native.indices, torch.Tensor)
-    assert isinstance(facade.predict_with_embeddings("unused")[1], torch.Tensor)
-
-
 @pytest.mark.parametrize(("precision", "use_tf32"), [("fp32", 0), ("auto", 1)])
 def test_requested_cuda_rejects_cpu_only_session(bundle, monkeypatch, precision, use_tf32, ort):
     predictor = Predictor(bundle, device="cuda:0", precision=precision)
@@ -254,7 +232,12 @@ def test_precision_defaults_and_unsupported_combinations(bundle):
 def test_native_fp32_head_and_embeddings_override_outer_autocast(bundle):
     import torch
 
-    class Head(torch.nn.Module):
+    from mini_trainer.modeling import Classifier
+
+    class Head(Classifier):
+        def __init__(self):
+            torch.nn.Module.__init__(self)
+
         def preclassification(self, values):
             assert values.dtype == torch.float32
             assert not torch.is_autocast_enabled("cpu")
@@ -275,13 +258,17 @@ def test_native_fp32_head_and_embeddings_override_outer_autocast(bundle):
             return self.classifier(self.backbone(x))
 
     predictor = Predictor(bundle, backend="torch", precision="fp32")
-    predictor._torch_model = Model().eval()
-    original = predictor._torch_model.classifier
+    from mini_trainer.deploy import Predictor as NativePredictor
+
+    native = NativePredictor.__new__(NativePredictor)
+    native.model, native.device, native.precision = Model().eval(), torch.device("cpu"), "fp32"
+    predictor._native = native
+    original = predictor._native.model.classifier
     values = np.ones((2, 4), dtype=np.float32)
     with torch.autocast("cpu", dtype=torch.bfloat16):
         scores, embeddings = predictor._torch(values, True)
     assert scores.dtype == embeddings.dtype == np.float32
-    assert predictor._torch_model.classifier is original
+    assert predictor._native.model.classifier is original
     np.testing.assert_array_equal(scores, embeddings)
 
 
@@ -715,15 +702,11 @@ def test_cpu_interpolation_retains_reference_pixels_in_caller_storage(dtype):
     np.testing.assert_array_equal(out, expected)
 
 
-def test_default_scope_is_global_including_legacy_facade(bundle, monkeypatch):
-    assert Predictor(bundle).tta is None and Predictor(bundle, tta=False).tta is None
-
-    from mini_trainer import deploy
-
-    monkeypatch.setattr(deploy, "_runtime", lambda: Predictor)
-    for predictor in (Predictor(bundle), deploy.Predictor(device="cpu", bundle=bundle)._predictor):
-        assert predictor.preset == "full"
-        assert predictor.class_list == ["a", "b", "c"]
+def test_portable_default_scope_is_global(bundle):
+    predictor = Predictor(bundle)
+    assert predictor.tta is None
+    assert predictor.preset == "full"
+    assert predictor.class_list == ["a", "b", "c"]
     assert Predictor(bundle, model="europe").class_list == ["a", "b"]
 
 
@@ -792,3 +775,51 @@ def test_reconfigure_keeps_runtime_and_rejects_invalid_state(bundle):
     predictor.configure(model="full", tta=False)
     assert predictor.class_list == ["a", "b", "c"] and predictor.tta is None
     assert predictor._sessions["onnx"] is session
+
+
+def test_public_metadata_before_load_is_defensive(bundle):
+    p = Predictor(bundle, model="europe")
+    assert p.input_size == 384 and p.embedding_dim == 1280
+    assert p.classes == CLASSES["labels"] and p.class_list == ["a", "b"]
+    p.metadata["cls2idx"]["0"].clear()
+    p.preprocessing["mean"].clear()
+    p.classes[0].clear()
+    assert p.cls2idx["0"] == {"a": 0, "b": 1, "c": 2}
+    assert p.preprocessing == RECIPE
+
+
+def test_load_native_once_without_image_and_retries_failure(bundle, monkeypatch):
+    import mini_trainer.deploy
+
+    calls = []
+
+    def native(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise RuntimeError("load failed")
+        return object()
+
+    monkeypatch.setattr(mini_trainer.deploy, "Predictor", native)
+    p = Predictor(bundle, backend="torch")
+    monkeypatch.setattr(p.bundle, "profile", lambda _: "checkpoint.pt")
+    with pytest.raises(RuntimeError, match="load failed"):
+        p.load()
+    assert p.load() is p and p.load(embeddings=True) is p
+    assert len(calls) == 2
+    assert calls[-1] == {"device": "cpu", "weights": "checkpoint.pt", "precision": "fp32"}
+
+
+def test_onnx_load_prepares_sessions_without_running_images(bundle, ort, monkeypatch):
+    created = []
+
+    def session(path, sess_options, providers):
+        created.append(str(path))
+        return SimpleNamespace(disable_fallback=lambda: None, get_providers=lambda: ["CPUExecutionProvider"])
+
+    ort.InferenceSession = session
+    p = Predictor(bundle)
+    monkeypatch.setattr(p.bundle, "profile", lambda key: bundle / key)
+    assert p.load() is p and p.load() is p
+    assert created == [str(bundle / "onnx")]
+    assert p.load(embeddings=True) is p and p.load(embeddings=True) is p
+    assert created == [str(bundle / "onnx"), str(bundle / "onnx-embedding")]

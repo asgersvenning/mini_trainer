@@ -128,7 +128,7 @@ def run(args):
                     count = consume(paths, stats)
                     torch.cuda.synchronize()
                     elapsed = time.perf_counter() - start
-                assert count == len(paths) and p._torch_model is None
+                assert count == len(paths) and p._native is None
                 cell = dict(
                     mode=mode,
                     images=count,

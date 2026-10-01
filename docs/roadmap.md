@@ -1,13 +1,13 @@
 # Repository roadmap
 
-Updated 26 September 2026. This is the cross-campaign priority map; specialist
+Updated 1 October 2026. This is the cross-campaign priority map; specialist
 pages own procedures and evidence. Delivered work is context, not a new checklist.
 
 ## Current state and next delivery
 
 | Area | Delivered | Remaining boundary |
 | --- | --- | --- |
-| MAMBO V3 | PyTorch/ONNX adapter, presets/custom lists, embeddings, TTA, Flemming/in-domain comparisons and laptop/B200 timings; installed release candidate qualified. | Renamed training distribution, independent publication Actions and a small Space demo are prepared; installed-candidate records gate publication. Account setup, publication and live endpoint checks remain owner tasks. See [final qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication handoff](../dev/releases/mambo_v3/publication.md). Do not restart completed release experiments. |
+| Nemo (MAMBO_v3) | Original 0.3.0 release published. Maintenance 0.3.1 restores standalone native deployment, adds explicit loading/public metadata and Hub-native loading, and retains the trained model. | Complete maintenance publication from `release/mambo-v3`; preserve original tags and artifacts. See [qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication](../dev/releases/mambo_v3/publication.md). Reuse existing quality evidence. |
 | Training | Four-GPU UCloud production run completed; loader, optimizer-step and checkpoint safeguards implemented. | Before another production run, deliver the recovery/evaluation workflow below. |
 | Quantization | Merged opt-in native CUDA INT8 Linear training, x86 PTQ/QAT, checkpoint/export tools. | Useful target-machine trade-offs remain unqualified; [specialist roadmap](quantization-roadmap.md). |
 | Generic export | `mt_export`, manifests and CPU float32 ONNX qualification across representative heads/backbones. | Broader backend qualification and generic Hugging Face bundle integration; MAMBO packaging does not establish either for every model. |

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from deployment.mambo_deploy.preprocessing import RECIPE
 from dev.releases.mambo_v3.audit import HERE, sha256
-from dev.releases.mambo_v3.package_download_metadata import distribution_readme
+from dev.releases.mambo_v3.package_download_metadata import distribution_readme, model_card
 
 INPUTS = {
     "models/pytorch/best.pt": "models/pytorch/best.pt",
@@ -106,7 +106,7 @@ def build(source, destination):
         ]
         lines += ["", "Exact filters: PRESET_DEFINITIONS.toml. `full` includes all 12,632 model species.", ""]
         (root / "PRESETS.md").write_text("\n".join(lines))
-        for filename in ("MODEL_CARD.md", "NOTICES.md", "MODEL_LICENSE.txt"):
+        for filename in ("NOTICES.md", "MODEL_LICENSE.txt"):
             shutil.copyfile(HERE / filename, root / filename)
         shutil.copyfile(HERE / "model-provenance.toml", root / "MODEL_PROVENANCE.toml")
         profiles = {
@@ -120,8 +120,8 @@ def build(source, destination):
         manifest = {
             "schema": "mambo-release-v1",
             "model_id": "MAMBO_v3",
-            "artifact_revision": 3,
-            "package_version": "0.3.0",
+            "artifact_revision": 4,
+            "package_version": tomllib.loads((HERE.parents[2] / "deployment/pyproject.toml").read_text())["project"]["version"],
             "distribution": "mambo-v3",
             "default_preset": "full",
             "licenses": {
@@ -136,6 +136,7 @@ def build(source, destination):
             "origins": origins,
             "files": {},
         }
+        (root / "MODEL_CARD.md").write_text(model_card(manifest, {"labels": labels}))
         for path in sorted(root.rglob("*")):
             if path.is_file():
                 manifest["files"][path.relative_to(root).as_posix()] = {"size": path.stat().st_size, "sha256": sha256(path)}

@@ -82,7 +82,7 @@ def stage(candidate, output):
     github.mkdir()
     shutil.copytree(candidate / "mambo-v3-bundle", model / "bundle")
     stage_space(space, manifest["source_commit"], manifest["package_version"])
-    shutil.copyfile(HERE / "MODEL_CARD.md", model / "README.md")
+    shutil.copyfile(candidate / "mambo-v3-bundle/MODEL_CARD.md", model / "README.md")
     for name in ("MODEL_LICENSE.txt", "NOTICES.md"):
         shutil.copyfile(HERE / name, model / name)
     shutil.copyfile(ROOT / "deployment/CITATION.cff", model / "CITATION.cff")

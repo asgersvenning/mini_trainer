@@ -1,10 +1,12 @@
-# MAMBO V3 release handoff
+# Nemo (MAMBO_v3) release handoff
 
-Updated 25 September 2026. **Preparation is complete; publication is separate.**
-This releases the model trained on UCloud on 10–11 September, without retraining
-or quantization. The [freeze record](../dev/releases/mambo_v3/deployment-freeze.md)
-owns the release contract and completion map; [final qualification](../dev/releases/mambo_v3/final-qualification.md)
-owns candidate hashes, installed checks and remaining provenance limitations.
+Updated 1 October 2026. The original 0.3.0 release is public; **0.3.1 maintenance
+publication is pending**. Maintenance restores the native entry point, adds public
+loading/metadata and Hub integration, and uses Nemo as the public name. It retains
+the September trained weights, presets and evaluation evidence. The
+[qualification record](../dev/releases/mambo_v3/final-qualification.md) and
+[publication procedure](../dev/releases/mambo_v3/publication.md) own the current
+checks and release actions. Historical preparation details below describe 0.3.0.
 
 ## Status and authoritative documents
 

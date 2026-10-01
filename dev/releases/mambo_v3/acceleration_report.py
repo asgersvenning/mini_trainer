@@ -152,7 +152,7 @@ def render(data, output):
             ax = axes[row, col]
             batches = (1, 8) if device == "cpu" else (1, 8, 32)
             for name, label, color in (
-                ("v2", "MAMBO v2", COLORS[0]),
+                ("v2", "Meghan (MAMBO_v2)", COLORS[0]),
                 (f"v3-{backend}", "Previous v3 FP32", "#888888"),
                 (backend, "Updated v3 auto", COLORS[col + 1]),
             ):
@@ -221,7 +221,7 @@ def render(data, output):
     )
 
     series = [
-        ("v2", "MAMBO v2", COLORS[0], data["reference"]["quality"]),
+        ("v2", "Meghan (MAMBO_v2)", COLORS[0], data["reference"]["quality"]),
         ("v3", "V3 FP32 reference", "#888888", data["reference"]["quality"]),
         ("torch", "V3 PyTorch FP16", COLORS[1], data["quality"]),
         ("onnx", "V3 ONNX TF32", COLORS[2], data["quality"]),

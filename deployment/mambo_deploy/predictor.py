@@ -6,6 +6,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, nullcontext
+from copy import deepcopy
 from functools import cached_property
 from itertools import islice
 from pathlib import Path
@@ -70,11 +71,11 @@ class Predictor:
             raise ValueError("weights override is only supported by the PyTorch backend")
         bundle = bundle or os.environ.get("MAMBO_BUNDLE")
         automatic = not bundle
-        self.bundle = Bundle(default_bundle() if automatic else bundle, download=automatic)
+        self.bundle = bundle if isinstance(bundle, Bundle) else Bundle(default_bundle() if automatic else bundle, download=automatic)
         if self.bundle.preprocessing != RECIPE:
             raise ValueError("Unsupported preprocessing recipe; use the matching deployment runtime")
         self.backend, self.device, self.batch_size, self.threads = backend, str(device), batch_size, threads
-        self._sessions, self._torch_model = {}, None
+        self._sessions, self._native = {}, None
         self._hierarchy_plans = {}
         self.runtime_timings = {}
         self._model_events = []
@@ -130,7 +131,7 @@ class Predictor:
         if not requested:
             raise ValueError("Class list is empty")
         self.selected = np.array([i for i, label in enumerate(vocabulary) if label in requested], dtype=np.int64)
-        self.class_list = [vocabulary[i] for i in self.selected]
+        self._class_list = [vocabulary[i] for i in self.selected]
         self.class_list_sha256 = hashlib.sha256(("\n".join(self.class_list) + "\n").encode()).hexdigest()
 
     def _apply_class_mask(self, mask):
@@ -203,10 +204,10 @@ class Predictor:
         try:
             import torch
 
-            from mini_trainer.modeling.classifier import bypass_submodule
+            from mini_trainer.deploy import Predictor as NativePredictor
         except ImportError as error:
             raise ImportError("Install the matching mini_trainer wheel and a suitable PyTorch backend") from error
-        return torch, bypass_submodule
+        return torch, NativePredictor
 
     @cached_property
     def _decode(self):
@@ -220,7 +221,7 @@ class Predictor:
     def _compact_inputs(self):
         return self.backend == "torch" and self.device != "cpu"
 
-    def _onnx(self, images, embeddings):
+    def _load_onnx(self, embeddings=False):
         ort = self._onnx_api
         key = "onnx-embedding" if embeddings else "onnx"
         if key not in self._sessions:
@@ -245,64 +246,117 @@ class Predictor:
             session, info = create_session(ort, path, providers, self.threads, cuda=self.device != "cpu", embeddings=embeddings)
             self.onnx_session_info[key] = info
             self._sessions[key] = session
+        return self._sessions[key]
+
+    def load(self, *, embeddings=False):
+        """Load and validate the selected runtime without inference; safe to repeat."""
+        with self._lock:
+            if self.backend == "onnx":
+                self._load_onnx(embeddings)
+            elif self._native is None:
+                _, native = self._torch_api
+                self._native = native(
+                    device=self.device, weights=self.weights or self.bundle.profile("torch"), precision=self.effective_precision
+                )
+        return self
+
+    @property
+    def class_list(self):
+        return list(self._class_list)
+
+    @property
+    def classes(self):
+        """Full ordered vocabulary at species, genus and family ranks."""
+        return deepcopy(self.bundle.classes["labels"])
+
+    @property
+    def cls2idx(self):
+        return {str(rank): {label: i for i, label in enumerate(labels)} for rank, labels in enumerate(self.classes)}
+
+    @property
+    def input_size(self):
+        return self.bundle.preprocessing["square_size"]
+
+    @property
+    def embedding_dim(self):
+        return self.bundle.manifest["embedding"]["dimension"]
+
+    @property
+    def preprocessing(self):
+        return deepcopy(self.bundle.preprocessing)
+
+    @property
+    def metadata(self):
+        return deepcopy(
+            {
+                **self._prediction_metadata(),
+                "input_size": self.input_size,
+                "embedding_dim": self.embedding_dim,
+                "cls2idx": self.cls2idx,
+                "preprocessing": self.preprocessing,
+            }
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path,
+        *,
+        revision=None,
+        cache_dir=None,
+        token=None,
+        local_files_only=False,
+        force_download=False,
+        embeddings=False,
+        **kwargs,
+    ):
+        """Load a local bundle or a revision-pinned Hugging Face Hub snapshot."""
+        from .hub import load_bundle
+
+        root = load_bundle(
+            pretrained_model_name_or_path,
+            backend=kwargs.get("backend", "onnx"),
+            embeddings=embeddings,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=local_files_only,
+            force_download=force_download,
+        )
+        return cls(bundle=root, **kwargs).load(embeddings=embeddings)
+
+    def _onnx(self, images, embeddings):
+        ort = self._onnx_api
+        session = self._load_onnx(embeddings)
         outputs = ["output_0", "embedding"] if embeddings else ["output_0"]
         if isinstance(images, ort.OrtValue):
-            binding = self._sessions[key].io_binding()
+            binding = session.io_binding()
             binding.bind_ortvalue_input("images", images)
             for name in outputs:
                 binding.bind_output(name, "cpu")
-            self._sessions[key].run_with_iobinding(binding)
+            session.run_with_iobinding(binding)
             values = [value.numpy() for value in binding.get_outputs()]
         else:
-            values = self._sessions[key].run(outputs, {"images": images})
+            values = session.run(outputs, {"images": images})
         return values[0], values[1] if embeddings else None
 
     def _torch(self, images, embeddings, *, tensors=False):
-        torch, bypass_submodule = self._torch_api
-        if self._torch_model is None:
-            from mini_trainer.builders import BaseBuilder
-
-            path = self.weights or self.bundle.profile("torch")
-            if self.device != "cpu" and not torch.cuda.is_available():
-                raise RuntimeError("PyTorch CUDA is unavailable; explicitly choose device='cpu' or install/configure CUDA")
-            if self.effective_precision == "bf16":
-                with torch.cuda.device(self.device):
-                    if not torch.cuda.is_bf16_supported(including_emulation=False):
-                        raise RuntimeError("BF16 requires native device support; choose fp16 or fp32")
-            # Full local state and pretrained=False prevent constructor downloads.
-            state = torch.load(str(path), map_location="cpu", weights_only=True)
-            self._torch_model, _ = BaseBuilder.build_model(
-                weights=state, device="cpu", dtype=torch.float32, model_args={"pretrained": False}
-            )
-            self._torch_model.to(self.device).eval()
-        head = self._torch_model.classifier
-        device_type = self.device.split(":")[0]
-        amp = self.effective_precision in ("fp16", "bf16")
-        dtype = torch.bfloat16 if self.effective_precision == "bf16" else torch.float16
-        with torch.inference_mode():
-            # Use the existing backbone boundary; keep the complete head in FP32.
-            with (
-                torch.autocast(device_type, dtype=dtype, enabled=amp),
-                bypass_submodule(self._torch_model, self._torch_model._backbone_output_name),
-            ):
-                tensor = images if isinstance(images, torch.Tensor) else torch.from_numpy(images).to(self.device)
-                if tensor.dtype == torch.uint8:
-                    tensor = self._device_preprocess(tensor)
-                events = None
-                if tensors and tensor.device.type == "cuda":
-                    events = (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
-                    events[0].record(torch.cuda.current_stream(tensor.device))
-                features = self._torch_model(tensor)
-            with torch.autocast(device_type, enabled=False):
-                features = features.float()
-                output = head(features)
-                embedding = head.preclassification(features) if embeddings else None
-                if events is not None:
-                    events[1].record(torch.cuda.current_stream(tensor.device))
-                    self._model_events.append(events)
-                if embedding is not None and not tensors:
-                    embedding = embedding.cpu().numpy()
-                return (output if tensors else output[0].float().cpu().numpy()), embedding
+        self.load(embeddings=embeddings)
+        torch, _ = self._torch_api
+        tensor = images if isinstance(images, torch.Tensor) else torch.from_numpy(images).to(self.device)
+        if tensor.dtype == torch.uint8:
+            tensor = self._device_preprocess(tensor)
+        events = None
+        if tensors and tensor.device.type == "cuda":
+            events = (torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+            events[0].record(torch.cuda.current_stream(tensor.device))
+        output, embedding = self._native.forward(tensor, embeddings=embeddings)
+        if events is not None:
+            events[1].record(torch.cuda.current_stream(tensor.device))
+            self._model_events.append(events)
+        if embedding is not None and not tensors:
+            embedding = embedding.cpu().numpy()
+        return (output if tensors else output[0].float().cpu().numpy()), embedding
 
     def hierarchy_plan(self, selected):
         # Hash contiguous bytes in native code, not one Python integer per species.

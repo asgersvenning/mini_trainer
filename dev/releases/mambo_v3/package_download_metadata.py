@@ -9,7 +9,7 @@ from pathlib import Path
 from deployment.mambo_deploy.bundle import Bundle
 
 
-def distribution_readme(ref="MAMBO_v3"):
+def distribution_readme(ref="models/mambo-v3/v0.3.1"):
     """Keep documentation links meaningful in PyPI metadata and extracted bundles."""
     root = Path(__file__).resolve().parents[3]
     readme = root / "deployment/README.md"
@@ -28,6 +28,28 @@ def distribution_readme(ref="MAMBO_v3"):
         return f"{prefix}({base}{ref}/{relative}{separator}{anchor})"
 
     return re.sub(r"(!?\[[^\]]*\])\(([^)]+)\)", link, readme.read_text())
+
+
+def native_descriptor(metadata):
+    """Derive native bootstrap data from the same manifest used by ONNX."""
+    manifest = json.loads(metadata["release.json"])
+    checkpoint = manifest["profiles"]["torch"]["model"]
+    presets = json.loads(metadata["presets.json"])
+    return {
+        "url": manifest["origins"][checkpoint],
+        **manifest["files"][checkpoint],
+        "preprocessing": json.loads(metadata["preprocessing.json"]),
+        "presets": {name: metadata[item["path"]].splitlines() for name, item in presets.items()},
+    }
+
+
+def model_card(manifest, classes):
+    """Render public facts from the bundle; do not maintain parallel counts."""
+    template = Path(__file__).with_name("MODEL_CARD.md").read_text()
+    counts = [f"{len(labels):,} {rank}" for labels, rank in zip(classes["labels"], ("species", "genera", "families"), strict=True)]
+    return template.replace("{{vocabulary}}", f"{counts[0]}, {counts[1]} and {counts[2]}").replace(
+        "{{embedding_dim}}", f"{manifest['embedding']['dimension']:,}"
+    )
 
 
 def package(source, output):

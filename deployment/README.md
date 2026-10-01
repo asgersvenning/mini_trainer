@@ -1,4 +1,4 @@
-# MAMBO V3 deployment
+# Nemo (MAMBO_v3) deployment
 
 Identify moths and butterflies from images, with species, genus and family
 predictions. V3 adds a standalone ONNX option alongside PyTorch: **no training
@@ -24,7 +24,7 @@ is required. Install ONNX/CPU to start without a CUDA setup:
 ```sh
 uv venv --python 3.13 .venv
 source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
-uv pip install 'mambo-v3[onnx]==0.3.0'
+uv pip install 'mambo-v3[onnx]==0.3.1'
 ```
 
 **Python** — supply images directly:
@@ -49,7 +49,7 @@ This creates `output/predictions/predictions.json` and `mini_metric.csv`;
 `--embeddings` also writes `embeddings.npy`. Choose a new output name for each run.
 For a one-off command without installing into your application environment, replace
 `mambo_predict` with
-`uvx --from 'mambo-v3[onnx]==0.3.0' mambo_predict`.
+`uvx --from 'mambo-v3[onnx]==0.3.1' mambo_predict`.
 
 | Interface | Inputs | Outputs |
 |---|---|---|
@@ -133,17 +133,17 @@ batch. `batch_size` limits model calls, not total request memory.
 [Streaming controls](../docs/mambo-integration.md#streaming-controls) are available
 if the defaults do not fit your workload.
 
-## Changes from MAMBO V2
+## Changes from Meghan (MAMBO_v2)
 
 - **Installation:** use `mambo-v3` (Python import `mambo_deploy`). Its maintenance
   releases retain the V3 trained model; pin the package version for reproducible
   builds. Keep V2 or older deployment candidates in a separate environment.
 - **Defaults:** global (`full`) scope and ONNX/CPU. Select `europe` or `north_europe`
-  to retain the V2 lists. Native CLI workflows must specify
+  to retain the V2 lists in the portable API. Native CLI workflows must specify
   `--backend torch --device cuda:0`; only the deployment package installs `mambo_predict`.
 - **Existing Python callers:** `mini_trainer.deploy.Predictor` retains native/CUDA
-  defaults, callable prediction, `class_mask` and native result containers. Install
-  both release wheels. New integrations can use `mambo_deploy` for CPU results
+  defaults and European scope, callable prediction, `class_mask` and native result containers. Install
+  `mt-trainer>=0.3.1`; the native entry point does not require `mambo-v3`. New integrations can use `mambo_deploy` for CPU results
   independent of backend; both entry points download model assets automatically.
 - **Model and features:** EfficientNetV2-S, ONNX, expanded presets, optional TTA and
   streaming. Supply original pixels and match classes by GBIF ID rather than numeric

@@ -108,3 +108,26 @@ def test_auth_failure_is_not_treated_as_missing_manifest(payload, remote):
     with pytest.raises(PermissionError):
         hub(payload, "owner/model", "model")
     assert remote.calls == []
+
+
+def test_maintenance_requires_new_version_and_identical_model_assets():
+    from copy import deepcopy
+
+    from dev.releases.mambo_v3.publish_assets import maintenance_update
+
+    old = {
+        "model_id": "MAMBO_v3",
+        "source_commit": "a" * 40,
+        "package_version": "0.3.0",
+        "files": {"bundle/models/pytorch/best.pt": "weights", "bundle/classes.json": "vocabulary", "README.md": "old"},
+    }
+    new = deepcopy(old)
+    new.update(source_commit="b" * 40, package_version="0.3.1")
+    new["files"]["README.md"] = "Nemo"
+    assert maintenance_update(old, new)
+    for key in ("bundle/models/pytorch/best.pt", "bundle/classes.json"):
+        changed = deepcopy(new)
+        changed["files"][key] = "changed"
+        assert not maintenance_update(old, changed)
+    new["package_version"] = "0.3.0"
+    assert not maintenance_update(old, new)
