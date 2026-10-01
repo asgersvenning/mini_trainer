@@ -272,6 +272,12 @@ native lowering gate and ONNX execution profile reject residual floating weighte
 operations. This is a target checked by the runner, not a claim of already achieved
 Nemo coverage. Graph annotations alone do not establish integer execution.
 
+ONNX calibration first runs ORT graph optimization and ONNX shape
+inference (symbolic inference is skipped because it fails on Nemo) on a private copy. It checks original versus preprocessed FP32 outputs
+on every calibration batch before collecting ranges, then quantizes the prepared
+graph. `onnx/calibration/report.json` records preprocessing hashes and maximum
+output errors. Reusing prepared images does not reuse obsolete tensor ranges.
+
 Each backend runs independently and writes its own log and `report.json` even
 when the other fails. Reports retain input/artifact hashes, environment versions,
 integer execution evidence, global/regional hierarchical metrics, embedding cosine
