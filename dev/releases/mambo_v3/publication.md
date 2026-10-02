@@ -1,55 +1,28 @@
-# Publish MAMBO V3
-
-Preparation does not publish anything. The owner performs the steps below after
-reviewing the candidate and its qualification records. Packages and weights have
-separate identities: training **`mt-trainer==0.3.0`** (Python `mini_trainer`),
-deployment **`mambo-v3==0.3.0`** (Python `mambo_deploy`), model **`MAMBO_v3`**.
-`mini-trainer` on PyPI is an unrelated project; never publish or install it here.
-
-**`release/mambo-v3` is the source and maintenance branch for this model release.**
-Prepare from that branch and tag its reviewed commit. `master` may develop
-independently; do not routinely merge it back into the release branch. Bring in
-only reviewed, release-relevant fixes and qualify the affected behavior. Shared
-core fixes still originate on a feature/fix branch or `master` before integration.
-Published tags and artifacts remain immutable even as the maintenance branch advances.
+# Publish Nemo
 
 ## Nemo maintenance 0.3.1
 
-Prepare from `release/mambo-v3`. Publish the qualified training package as
-`packages/mt-trainer/v0.3.1`, then the model adapter as `models/mambo-v3/v0.3.1`.
-Both tags point to the reviewed maintenance commit. `MAMBO_v3` and all 0.3.0
-artifacts remain unchanged. The default routing convention now selects the new
-model tag; do not reuse the initial tag override.
+Prepare and tag the reviewed commit on `release/mambo-v3`. Publish training
+`mt-trainer==0.3.1` as `packages/mt-trainer/v0.3.1`, then deployment
+`mambo-v3==0.3.1` as `models/mambo-v3/v0.3.1`, both from that commit.
+Python imports remain `mini_trainer` and `mambo_deploy`. The unrelated
+`mini-trainer` PyPI project is not a publication destination.
 
-The Hub model may advance to a new commit for a newer package version only when
-all checkpoint/ONNX, vocabulary, preprocessing and preset hashes are identical.
-Previous Hub revisions remain available. The model card and Space use **Nemo**;
-**Meghan** identifies the team's existing MAMBO_v2 alias. Use the integration guide
-for the 0.3.1 loading/metadata API. The original publication procedure below records
-0.3.0 identities; substitute the maintenance tags and versions above for this release.
+V3.1 improves integration and compatibility without changing the trained Nemo
+model. Keep `MAMBO_v3`, previous package versions and published artifacts immutable.
+A maintenance Hub commit may advance only with identical checkpoint/ONNX,
+vocabulary, preprocessing and preset hashes. Shared-core fixes must be developed
+and validated separately before integration into this release branch.
 
-## V3.1 scope and final review
+The iNaturalist comparison is still in progress. Keep its
+[runner and handoff](ucloud-release.md#nemo-v31-model-card-comparison-no-training-dataset-needed)
+available until the aggregate results and charts have been reviewed and added to
+the card. The card needs only the short introduction/example, performance charts
+and caption, variants/training summary, and license. Retire the one-off comparison
+scaffolding after that handoff; quantization is outside this maintenance release.
 
-V3.1 is the user-facing maintenance update; package versions remain **0.3.1**.
-It delivers standalone native PyTorch compatibility, portable startup loading and
-metadata, Hub loading, faster checkpoint restoration, and clearer integration
-instructions. The trained Nemo weights, vocabulary and preprocessing are unchanged.
-Quantization and new training are explicitly outside this maintenance release.
-Existing quantization scripts are experiments, not promised release artifacts.
-
-The model card uses four sections: Nemo, Performance, Variants and details, License.
-Its new comparison must be run on UCloud using [the card workflow](ucloud-release.md#nemo-v31-model-card-comparison-no-training-dataset-needed).
-Review the 1,000-image sample, taxonomy mappings, all three model outputs and CPU/API
-latency labels; then commit the compact summary and figures separately. The staging
-command rejects missing evidence, smoke runs and modified figures. Until authenticated
-iNaturalist CV scoring is verified, local data collection and Nemo/Meghan inference can
-proceed, but the three-model card remains pending. No replacement or guessed scores.
-
-The final candidate needs a new clean source revision and installed-artifact
-qualification after the results arrive. Reuse existing model-quality evidence for
-unchanged weights; the new card benchmark supplements it. Publish training 0.3.1,
-then model 0.3.1, then the staged Hub/Space contents through the existing workflow.
-Do not create a replacement `MAMBO_v3` tag or describe V3.1 as a newly trained model.
+Preparation never publishes. Qualify the final candidate using the
+[installed-artifact checks](final-qualification.md), then follow the steps below.
 
 ## 1. Configure accounts and environments
 
@@ -108,7 +81,7 @@ environment secrets and revoke tokens created solely for these workflows.
 [Shared routing conventions](../README.md) use `release/packages/**`,
 `release/models/**` and `release/demos/**` for automatic preparation. The existing
 `release/mambo-v3` branch can stay in place and use manual preparation; it has no
-special publication permission. `MAMBO_v3` is an explicit descriptor tag override.
+special publication permission. The model tag follows `models/mambo-v3/vVERSION`.
 
 Make the reviewed workflow changes available on `master` so GitHub exposes manual
 Actions dispatch. This registers the workflows; it does not make `master` the
@@ -150,13 +123,13 @@ prediction archives, credentials or datasets belong in the upload directories.
 
 ## 3. Publish training, then the model
 
-At the reviewed training-package commit on `master`, create and **publish a GitHub Release** with tag
-`packages/mt-trainer/v0.3.0`. A tag push alone does not publish. Approve `pypi-training`:
+At the reviewed maintenance commit on `release/mambo-v3`, create and **publish a GitHub Release** with tag
+`packages/mt-trainer/v0.3.1`. A tag push alone does not publish. Approve `pypi-training`:
 `publish.yml` builds, installs and exercises the wheel, then publishes the exact
 retained wheel and the source distribution to PyPI. Model/Space jobs do not run.
-Verify `mt-trainer==0.3.0` is publicly available under the intended ownership.
+Verify `mt-trainer==0.3.1` is publicly available under the intended ownership.
 
-Then publish the GitHub Release tagged **`MAMBO_v3`** at the qualified model commit
+Then publish the GitHub Release tagged **`models/mambo-v3/v0.3.1`** at the qualified model commit
 from `release/mambo-v3`. Select this branch as the target when creating the model tag
 in GitHub, verifying its HEAD still matches the qualified SHA; do not accept the
 default `master` target. Publication checks out the tagged revision, so later
@@ -189,9 +162,9 @@ From a fresh environment outside the checkout:
 ```sh
 uv venv --python 3.13 .venv-mambo
 source .venv-mambo/bin/activate
-uv pip install 'mambo-v3[onnx]==0.3.0'
+uv pip install 'mambo-v3[onnx]==0.3.1'
 mambo_predict -i moth.jpg -o output --name onnx
-uvx --from 'mambo-v3[onnx]==0.3.0' mambo_predict -i moth.jpg -o output --name isolated
+uvx --from 'mambo-v3[onnx]==0.3.1' mambo_predict -i moth.jpg -o output --name isolated
 ```
 
 Also follow the documented native installation, check cache/offline reuse and
@@ -212,7 +185,6 @@ For partial publication with unchanged publisher code, rerun the failed jobs fro
 the same workflow run. To apply a publisher fix after the release is already tagged,
 push the fix to `release/mambo-v3`, then dispatch **Prepare and publish model** from
 that branch with `product=mambo-v3` and **`resume_run=<original publication run ID>`**.
-For the initial interrupted V3 publication, that ID is `36270921011`.
 
 Recovery checks that the original run belongs to this publication workflow, its
 preparation and package jobs succeeded, and its source still matches the public

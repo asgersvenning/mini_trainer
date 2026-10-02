@@ -135,24 +135,14 @@ if the defaults do not fit your workload.
 
 ## Changes from Meghan (MAMBO_v2)
 
-- **Installation:** use `mambo-v3` (Python import `mambo_deploy`). Its maintenance
-  releases retain the V3 trained model; pin the package version for reproducible
-  builds. Keep V2 or older deployment candidates in a separate environment.
-- **Defaults:** global (`full`) scope and ONNX/CPU. Select `europe` or `north_europe`
-  to retain the V2 lists in the portable API. Native CLI workflows must specify
-  `--backend torch --device cuda:0`; only the deployment package installs `mambo_predict`.
-- **Existing Python callers:** `mini_trainer.deploy.Predictor` retains native/CUDA
-  defaults and European scope, callable prediction, `class_mask` and native result containers. Install
-  `mt-trainer>=0.3.1`; the native entry point does not require `mambo-v3`. New integrations can use `mambo_deploy` for CPU results
-  independent of backend; both entry points download model assets automatically.
-- **Model and features:** EfficientNetV2-S, ONNX, expanded presets, optional TTA and
-  streaming. Supply original pixels and match classes by GBIF ID rather than numeric
-  index. V2 and V3 share the ordered taxon vocabulary. Scores and embedding width change; thresholds and
-  stored embeddings need migration.
+Native `mini_trainer.deploy.Predictor` preserves Europe/CUDA defaults and needs only
+`mt-trainer>=0.3.1`. The portable `mambo_deploy` API defaults to global scope and
+ONNX/CPU. Nemo changes scores and embedding width: recalibrate thresholds and
+regenerate stored embeddings when migrating.
 
-[Migration details](../docs/mambo-integration.md#moving-from-v2) cover compatibility
-boundaries; [versioning](../docs/mambo-integration.md#versioning-and-model-identity)
-explains how package, model and preset identities relate.
+See [migration details](../docs/mambo-integration.md#moving-from-v2) for calling
+conventions and [loading and metadata](../docs/mambo-integration.md#loading-and-metadata)
+for startup loading, input-size discovery and Hugging Face downloads.
 
 ### Beyond Python
 
