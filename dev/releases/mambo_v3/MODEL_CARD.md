@@ -35,9 +35,12 @@ print(prediction.label, prediction.confidence)
 
 ![Nemo and Meghan on in-domain and Flemming images](performance/nemo-card-quality.svg)
 
-Species-level results on the original held-out images and Flemming monitoring
-crops. No confidence filtering; full class support. Nemo uses ONNX; TTA means
-averaging augmented views. Global scope in-domain, northern European scope on Flemming.
+Species-level results with confidence thresholds fitted on separate calibration
+images. Solid bars show full support; lighter tops show scores for shared species
+with >5 truth instances and accepted predictions in every compared pipeline.
+The extension changes the averaging set, not the predictions. Acceptance rates
+appear below each model. Nemo uses ONNX; TTA averages augmented views.
+Global scope in-domain, northern European scope on Flemming.
 
 {{performance}}
 
