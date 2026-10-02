@@ -90,8 +90,8 @@ def fetch(args):
     if not selection.exists():
         write_json(selection, {"count": args.count, "cutoff": datetime.now(UTC).isoformat()})
     spec = read(selection)
-    if spec["count"] != args.count:
-        raise ValueError("Use a new output directory when changing sample count")
+    if args.count > spec["count"]:
+        raise ValueError("Use a new output directory when increasing sample count")
     manifest = root / "samples.json"
     if manifest.exists():
         return
@@ -147,7 +147,12 @@ def fetch(args):
         page += 1
     write_json(
         manifest,
-        {**spec, "sampling": "first photo per observation; latest created_at; research grade; species/subspecies", "records": records},
+        {
+            **spec,
+            "count": len(records),
+            "sampling": "first photo per observation; latest created_at; research grade; species/subspecies",
+            "records": records,
+        },
     )
 
 

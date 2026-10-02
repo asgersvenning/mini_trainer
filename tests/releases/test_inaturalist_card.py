@@ -125,3 +125,35 @@ def test_timing_report_requires_comparable_completed_local_runs():
         changed = {**second, key: value}
         with pytest.raises(ValueError):
             comparison.check_timing_environments([first, changed])
+
+
+def test_fetch_can_shrink_incomplete_collection_without_new_requests(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    spec = {"count": 5000, "cutoff": "2026-10-02T09:30:00Z"}
+    (tmp_path / "selection.json").write_text(json.dumps(spec))
+    images = tmp_path / "images"
+    images.mkdir()
+    responses = tmp_path / "responses"
+    responses.mkdir()
+    observations = []
+    for i in range(3):
+        (images / f"{i}.jpg").write_bytes(b"cached image")
+        observations.append(
+            {
+                "id": i,
+                "created_at": spec["cutoff"],
+                "photos": [{"id": i, "url": "https://example/square.jpg"}],
+                "taxon": {"id": i, "name": str(i), "rank": "species"},
+            }
+        )
+        (responses / f"gbif-{i}.json").write_text(
+            json.dumps({"matchType": "EXACT", "rank": "SPECIES", "order": "Lepidoptera", "usageKey": i})
+        )
+    (responses / "observations-1.json").write_text(json.dumps({"results": observations}))
+    monkeypatch.setattr(comparison, "session", lambda: None)  # Any new HTTP request would fail.
+    comparison.fetch(SimpleNamespace(output=tmp_path, count=2))
+    manifest = comparison.read(tmp_path / "samples.json")
+    assert manifest["count"] == 2 and manifest["cutoff"] == spec["cutoff"]
+    assert [r["id"] for r in manifest["records"]] == [0, 1]
+    assert comparison.read(tmp_path / "selection.json") == spec

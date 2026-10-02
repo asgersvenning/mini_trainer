@@ -429,6 +429,12 @@ git pull --ff-only
   --output /work/mambo-results/card-5000 --stage report --count 1000
 ```
 
+If the old run is still in `fetch`, stop it with Ctrl-C and pull the update, then
+rerun the original stage loop with `--count 1000` in the same directory. Fetch
+reuses cached pages, images and taxonomy mappings with the original cutoff;
+`selection.json` retains the initial request and `samples.json` records the actual
+smaller selection. Increasing a selection requires a new directory.
+
 Use that existing directory in the packaging command below too. Do not restart
 local prediction stages after updating the code; their existing results remain
 usable for reporting. The summary records selected observation IDs, species count
