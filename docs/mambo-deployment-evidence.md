@@ -120,7 +120,7 @@ The [timing evidence](assets/mambo-promoted-speed.json) retains trial ranges
 and process-memory measurements. The [earlier comparison](mambo-deployment-defaults.md)
 uses the previous padded-scale TTA; the [frequency curves](mambo-frequency-comparison.md)
 compare single-view models only. Neither measures the new recipe.
-The [loading study](mambo-loading-scaling.md) explains scheduling limits;
+For [pipeline diagnosis](../dev/releases/mambo_v3/pipeline-probe.md),
 `preprocess_workers` / `--preprocess-workers` tunes preparation separately from
 ONNX runtime `threads` and defaults to it.
 

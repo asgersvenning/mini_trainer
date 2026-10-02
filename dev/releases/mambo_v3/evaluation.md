@@ -2,7 +2,7 @@
 
 This runbook collects same-model PyTorch/ONNX evidence on Flemming. For the
 five-pipeline V2/V3 in-domain campaign use [UCloud release evaluation](ucloud-release.md);
-for current release results and qualification use [the deployment freeze](deployment-freeze.md).
+for current release results and qualification use [installed qualification](final-qualification.md).
 
 ## Collect predictions
 
@@ -38,7 +38,7 @@ to updated Europe and, when requested, finite 1280-dimensional unit embeddings,
 written incrementally to NPY. Use the comparison command below to check label
 agreement between prediction and embedding collections; this is not automatic.
 Streaming controls and current ownership boundaries are described in the
-[pipeline review](../../../docs/mambo-inference-pipeline-review.md).
+[pipeline review](pipeline-probe.md#pipeline-ownership).
 
 Retained outputs include ordered sample identities, artifact/list hashes, precision,
 runtime versions, canonical prediction CSVs and completion/failure reports. Use only

@@ -93,10 +93,9 @@ separate preparation from backend execution:
 | ONNX | 8 | 134.5 | 50.6 | 42.8 |
 | ONNX | 32 | 559.4 | 180.6 | 42.4 |
 
-These separately timed medians are not additive. The
-[batch-scaling diagnosis](mambo-batch-scaling.md) retains shape/provider checks and
-controlled interventions identifying non-contiguous, partly float64 interpolation
-and strict FP32 execution. The linked acceleration study measures the resulting fixes.
+These separately timed medians are not additive. Historical profiling identified
+non-contiguous, partly float64 interpolation and strict FP32 execution; the linked
+acceleration study measures the resulting fixes.
 
 ## Memory and startup
 

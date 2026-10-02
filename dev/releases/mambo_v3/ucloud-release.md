@@ -165,7 +165,7 @@ time. `runtime_submit_seconds` excludes Torch output completion waits but includ
 ONNX's synchronous runtime; CUDA stream intervals are not kernel-only time or GPU
 utilization. Do not add overlapping phases or interpret low host storage-read bytes
 as proof of absent network-storage waits. Pinned storage consumes host RAM.
-[Pipeline decisions](../../../docs/mambo-inference-pipeline-review.md) explain the
+[Pipeline decisions](pipeline-probe.md#pipeline-ownership) explain the
 current ownership boundaries and remaining performance limits.
 
 ## Evidence and metric policy
@@ -309,63 +309,21 @@ outside the prediction cache. Threshold selection uses the pinned `mini_metrics`
 its calibration split and optimizer; we check that all models share the split.
 Figures show calibrated full/shared-support scores, acceptance rates and timing.
 
-### Recover the active run and preview results
-
-The older local caches omitted confidence scores. Leave the active iNaturalist
-process running. In a second tmux window, update the release checkout and rerun
-the three local variants (Nemo, Nemo + TTA and Meghan) in a new directory, reusing images and API responses:
-
-```bash
-cd /work/mini_trainer
-git pull --ff-only
-unset LD_LIBRARY_PATH LD_PRELOAD PYTHONPATH
-export CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
-export NEMO_CARD_PYTHON=/work/venvs/nemo-card/bin/python
-mkdir /work/mambo-results/card-calibrated
-for item in samples.json images inaturalist meghan.pt; do
-  ln -s "/work/mambo-results/card-5000/$item" "/work/mambo-results/card-calibrated/$item"
-done
-for stage in nemo nemo-tta meghan; do
-  "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
-    --output /work/mambo-results/card-calibrated --stage "$stage" --count 1000 --threads 4 || break
-done
-```
-
-Once all three local stages finish and the API has passed 600 observations:
+Generate reports in a separate directory; use `--count` for a completed prefix
+when previewing an ongoing collection:
 
 ```bash
 "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
-  --output /work/mambo-results/card-calibrated --stage report --count 600 \
-  --report-output /work/mambo-results/card-preview-600
+  --output /work/mambo-results/card-1000 --stage report --count 1000 \
+  --report-output /work/mambo-results/card-report
 ```
 
-After all 1,000 API predictions exist, run the same command with `--count 1000`
-and `--report-output /work/mambo-results/card-final`. The original shell loop
-has an obsolete report command; use the new command above instead. No iNaturalist requests need repeating. A report refuses old local caches
-without confidence scores. Use a fresh destination for each preview.
-
-For a new run collected entirely with the corrected script, use its prediction
-directory as `--output` instead. Missing or failed stages can resume with unchanged
-code/environment; keep predictions on persistent storage. If a metric-library
-problem occurs, retain the CSVs/error for an upstream issue rather than changing
-threshold-selection semantics in this repository.
-
-Package the final report and supporting predictions without images or weights:
-
-```bash
-tar -chzf /work/mambo-results/nemo-card-results.tar.gz \
-  -C /work/mambo-results card-final \
-  -C /work/mambo-results/card-calibrated samples.json nemo nemo-tta meghan \
-  -C /work/mambo-results/card-5000 selection.json inaturalist
-sha256sum /work/mambo-results/nemo-card-results.tar.gz > /work/mambo-results/nemo-card-results.tar.gz.sha256
-```
-
-Review the archive locally, then stage the summary and figures from `card-final`:
+After reviewing the completed report, stage its summary and figures locally:
 
 ```bash
 .venv/bin/python -m dev.releases.mambo_v3.inaturalist_card \
-  --stage card --output /path/to/extracted/card-final
+  --stage card --output /path/to/card-report
 ```
 
-The report archive stays local. Retire this one-off runner and its tests after
-reviewing the results and adding the concise comparison to the card.
+Raw results and run-specific recovery/transfer instructions stay local. Retire
+this one-off runner and its tests after adding the reviewed comparison to the card.

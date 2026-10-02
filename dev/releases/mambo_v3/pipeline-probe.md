@@ -11,10 +11,24 @@ fresh output directories. They do not require another quality evaluation.
 | `pipeline_stages` | Isolated preparation, result construction and CUDA operator trace | Inspecting a specific operation or allocation |
 | `gpu_ceiling` | Resident inputs through the deployed Torch model; outputs stay on-device | Comparing streaming throughput with sustained model execution |
 
-Current decisions, failed approaches and remaining targets belong in the
-[pipeline review](../../../docs/mambo-inference-pipeline-review.md); published
-measurements and provenance belong in [HPC evidence](../../../docs/mambo-hpc-evidence.md).
-Further throughput work is deferred for the release freeze.
+Published measurements and provenance belong in
+[HPC evidence](../../../docs/mambo-hpc-evidence.md).
+
+## Pipeline ownership
+
+Input admission owns bounded storage and preserves input order; I/O workers must
+not wait for capacity. Preparation fills reusable batch slots, the backend owns
+device buffers/events, and result consumers own completed outputs. CUDA event
+completion protects slot reuse and pinned-memory lifetime. ONNX has a synchronous
+output boundary. See [streaming](../../../deployment/mambo_deploy/streaming.py),
+[transfers](../../../deployment/mambo_deploy/transfers.py) and
+[result completion](../../../deployment/mambo_deploy/result_worker.py).
+
+Budget preparation and runtime threads separately. More workers, larger batches
+or asynchronous transfers do not help an underfed pipeline. Prior profiling
+favored native decoding and compiled image operations over extra NumPy gathers;
+output-copy pooling did not justify its complexity. Measure representative
+end-to-end throughput before retaining an optimization.
 
 ## Profile without model execution
 
@@ -55,14 +69,6 @@ The probe uses decoded 256-square/2048-square RGB images and synthetic scores,
 excluding filesystem, decoding and model execution. CPU stage timings go to
 `report.json`; `trace.json` and `operators.txt` record CUDA operators, allocations
 and strides. **CUDA trace timings are diagnostic, not unprofiled throughput.**
-
-Prior profiling justified native RGB gathering, reused interpolation/score scratch,
-lazy vocabulary maps and fused normalization. Output-copy pooling did not justify
-its added complexity. Native sampling perturbed execution and was used only to
-locate costs. Detailed local evidence is ignored under
-`local-evidence/pipeline-profile/` and `local-evidence/pipeline-stages/` (stage baseline
-`c497a9d`, RTX 3080 Ti Laptop); these paths are not guaranteed on another checkout.
-The linked HPC evidence qualifies the combined implementation.
 
 ## Measure resident GPU throughput
 

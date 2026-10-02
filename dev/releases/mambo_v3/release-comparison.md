@@ -136,5 +136,5 @@ MAMBO_METRICS_PYTHON=/path/to/metrics-env/bin/python \
   -k pinned_metrics_distinguish_micro_macro_and_known_truth
 ```
 
-For performance changes use the [pipeline review](../../../docs/mambo-inference-pipeline-review.md)
+For performance changes use the [pipeline review](pipeline-probe.md#pipeline-ownership)
 and [small speed check](speed-smoke.md), not a repeated full historical campaign.
