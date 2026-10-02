@@ -9,7 +9,7 @@ from pathlib import Path
 
 from deployment.mambo_deploy.bundle import Bundle
 
-CARD_COUNT = 1000
+CARD_SOURCE_COUNT = 1000
 
 
 def distribution_readme(ref="models/mambo-v3/v0.3.1"):
@@ -70,11 +70,19 @@ def card_performance(directory=None, *, required=False):
     directory = Path(directory) if directory else Path(__file__).with_name("card-performance")
     if not (directory / "summary.json").exists():
         if required:
-            raise ValueError(f"Run and review the {CARD_COUNT:,}-image iNaturalist comparison before publication")
-        return "The maintenance comparison is awaiting its UCloud run; no new results are claimed."
+            raise ValueError("Reviewed iNaturalist comparison is required before publication")
+        return "Comparison results are not included in this build."
     summary = json.loads((directory / "summary.json").read_text())
-    if summary["count"] != CARD_COUNT or summary["unmapped_truth"]:
-        raise ValueError(f"Card requires {CARD_COUNT:,} images and resolved ground-truth taxonomy")
+    selection = summary.get("selection", {})
+    if (
+        selection.get("source_count") != CARD_SOURCE_COUNT
+        or not 0 < summary["count"] <= selection.get("adult_count", 0) <= CARD_SOURCE_COUNT
+        or selection.get("adult_count", 0) - selection.get("excluded_taxonomy_count", -1) != summary["count"]
+        or summary.get("report_count", 0) + summary.get("calibration_count", 0) != summary["count"]
+        or selection.get("authority") != "GBIF"
+        or summary["unmapped_truth"]
+    ):
+        raise ValueError("Card requires a complete 1,000-observation source and accounted adult/species filtering")
     if set(summary["models"]) != {"nemo", "nemo-tta", "meghan", "inaturalist"}:
         raise ValueError("Card comparison is incomplete")
     if (
@@ -91,10 +99,10 @@ def card_performance(directory=None, *, required=False):
     return (
         "![Macro-Accuracy and Macro-F1](performance/quality.png)\n\n"
         "![Prediction speed](performance/speed.png)\n\n"
-        f"{summary['count']:,} recent Research Grade Lepidoptera observations across {summary['species_count']:,} species, "
-        f"frozen {summary['cutoff'][:10]}; "
-        f"{summary['report_count']:,} reporting images after mini_metrics threshold calibration. "
-        "Global scope, no location input; Nemo shown with and without TTA. "
+        f"{summary['count']:,} adult-screened images with GBIF species labels from "
+        f"{selection['source_count']:,} recent Research Grade iNaturalist observations "
+        f"({summary['cutoff'][:10]}). {summary['report_count']:,} reporting images; "
+        f"{summary['calibration_count']} separate calibration images. Global scope, no location input. "
         "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency."
     )
 

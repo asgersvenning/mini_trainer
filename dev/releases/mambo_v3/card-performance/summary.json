@@ -1,0 +1,106 @@
+{
+  "count": 941,
+  "species_count": 367,
+  "cutoff": "2026-10-02T09:34:25.483757+00:00",
+  "samples_sha256": "ac1337eac527e02fa989b4bf226bb6100f81d3c912090c1916301588c7e0bd02",
+  "mini_metrics_revision": "70cc69adc05362863439277048e06386c1f885e1",
+  "unmapped_truth": 0,
+  "threshold_selection": "mini_metrics.evaluate_file(optimal=True, seed=42, opt_crit=MacroF1)",
+  "report_count": 890,
+  "calibration_count": 51,
+  "shared_species_count": 15,
+  "figures": {
+    "quality.png": "4d31b20675b05b2859211bc5ba49046e8dd0f5793422e53ad926ddf5dff2496d",
+    "speed.png": "b246f14c9bd0605e5bc39c253060fa4cb8be8510c6a90849fe18f60034b8152a"
+  },
+  "selection": {
+    "source_count": 1000,
+    "adult_count": 954,
+    "excluded_taxonomy_count": 13,
+    "authority": "GBIF",
+    "screening": "Gemini 3.1 Flash-Lite adult-image audit",
+    "policy": "Accepted species references only; subspecies promoted to species; genus predictions incorrect; identical accepted keys merged",
+    "source_samples_sha256": "cd739037823ca14818aed36d7d1200bc53473f9a7b8d821ecb93b6cb5cd1eae4"
+  },
+  "models": {
+    "nemo": {
+      "threshold": 0.8742289245128632,
+      "coverage": 0.8764044943820225,
+      "macro_accuracy": 0.9764432040467022,
+      "macro_f1": 0.8343346964989047,
+      "median_ms": 91.08396898955107,
+      "csv_sha256": "5bc373e3bc9c2680dcbf4f55f543897ab36efab4222c1c8e08dfce493a369d53",
+      "macro_accuracy_shared": 0.989891395154553,
+      "macro_f1_shared": 0.9538167228771518,
+      "runtime": {
+        "cpu": "AMD EPYC 9535 64-Core Processor",
+        "threads": 4,
+        "backend": "onnx",
+        "versions": {
+          "torch": "2.12.0+cpu",
+          "numpy": "2.4.6",
+          "onnxruntime": "1.29.0"
+        },
+        "source": "5494b0670da7442994c2454a4634aada3c2b0b6e",
+        "script_sha256": "e429b7e0ae7d0713f9141786b66727b0f7dab42caba74e236447180f4979ebc3"
+      }
+    },
+    "nemo-tta": {
+      "threshold": 0.5849800407886505,
+      "coverage": 0.8910112359550562,
+      "macro_accuracy": 0.947967673036925,
+      "macro_f1": 0.8326101003767133,
+      "median_ms": 278.65285193547606,
+      "csv_sha256": "5091d4386c3b7657f09a2cbdfae1f6dd7e24f86b815a3ccae58bfcbe61892190",
+      "macro_accuracy_shared": 0.9958851674641148,
+      "macro_f1_shared": 0.9505554018273684,
+      "runtime": {
+        "cpu": "AMD EPYC 9535 64-Core Processor",
+        "threads": 4,
+        "backend": "onnx",
+        "versions": {
+          "torch": "2.12.0+cpu",
+          "numpy": "2.4.6",
+          "onnxruntime": "1.29.0"
+        },
+        "source": "909969327d4cb4938abb8e9460d39ce0c1a1adc3",
+        "script_sha256": "61b23cc0c063902783e8fc19310bce80a57ef3eddca041a84a4ba81601710b61"
+      }
+    },
+    "meghan": {
+      "threshold": 0.72243931889534,
+      "coverage": 0.7966292134831461,
+      "macro_accuracy": 0.9756278484348658,
+      "macro_f1": 0.7440076204410869,
+      "median_ms": 1215.3353868052363,
+      "csv_sha256": "62ceb463eb4e0de42fde3f4dbc28f030b661b8ccdc4f8d93f0fec2ac61c2320c",
+      "macro_accuracy_shared": 0.9952091767881243,
+      "macro_f1_shared": 0.9453270730215272,
+      "runtime": {
+        "cpu": "AMD EPYC 9535 64-Core Processor",
+        "threads": 4,
+        "backend": "torch",
+        "versions": {
+          "torch": "2.12.0+cpu",
+          "numpy": "2.4.6",
+          "open-clip-torch": "3.3.0"
+        },
+        "source": "909969327d4cb4938abb8e9460d39ce0c1a1adc3",
+        "script_sha256": "61b23cc0c063902783e8fc19310bce80a57ef3eddca041a84a4ba81601710b61"
+      }
+    },
+    "inaturalist": {
+      "threshold": 0.20815533399581904,
+      "coverage": 0.9674157303370786,
+      "macro_accuracy": 0.9395267049178931,
+      "macro_f1": 0.8538638500438227,
+      "median_ms": 809.7709668800235,
+      "csv_sha256": "a409bf5b867d26b128867f6eefb298957f78f0e5740ceb1d3c38b2e67c2e1a7d",
+      "macro_accuracy_shared": 0.9824320688727468,
+      "macro_f1_shared": 0.9737014225980248
+    }
+  },
+  "score_policy": "Cached top-1 predictions and confidence; normalization merges labels, not score vectors.",
+  "reporting_ids_sha256": "0de617f64c7d3be5a1765b7abedd8bd6807d57b0aa71338d9577d0b9a3e9fae3",
+  "calibration_ids_sha256": "629150211eb01db0ce8ed44b4c978430a6fb9ed0ef3e50f4a7412a4259204d77"
+}

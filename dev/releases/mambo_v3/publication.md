@@ -14,12 +14,10 @@ A maintenance Hub commit may advance only with identical checkpoint/ONNX,
 vocabulary, preprocessing and preset hashes. Shared-core fixes must be developed
 and validated separately before integration into this release branch.
 
-The iNaturalist comparison is still in progress. Keep its
-[runner and handoff](ucloud-release.md#nemo-v31-model-card-comparison-no-training-dataset-needed)
-available until the aggregate results and charts have been reviewed and added to
-the card. The card needs only the short introduction/example, performance charts
-and caption, variants/training summary, and license. Retire the one-off comparison
-scaffolding after that handoff; quantization is outside this maintenance release.
+The reviewed species comparison is retained in `card-performance/`; its original
+predictions, taxonomy audit and diagnostic tooling remain local. The model card
+also retains the in-domain and Flemming figures. Quantization is outside this
+maintenance release.
 
 Preparation never publishes. Qualify the final candidate using the
 [installed-artifact checks](final-qualification.md), then follow the steps below.

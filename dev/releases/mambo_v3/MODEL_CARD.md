@@ -14,7 +14,7 @@ tags:
 
 # Nemo
 
-Nemo (MAMBO_v3) identifies moths and butterflies in photographs, predicting
+Nemo (MAMBO_v3) identifies adult moths and butterflies in photographs, predicting
 {{vocabulary}}. Predictions use GBIF taxon IDs.
 
 [Try Nemo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) ·
@@ -35,12 +35,9 @@ print(prediction.label, prediction.confidence)
 
 ![Nemo and Meghan on in-domain and Flemming images](performance/nemo-card-quality.svg)
 
-Species-level results with confidence thresholds fitted on separate calibration
-images. Solid bars show full support; lighter tops show scores for shared species
-with >5 truth instances and accepted predictions in every compared pipeline.
-The extension changes the averaging set, not the predictions. Acceptance rates
-appear below each model. Nemo uses ONNX; TTA averages augmented views.
-Global scope in-domain, northern European scope on Flemming.
+Species-level scores after confidence filtering. Solid bars show full support;
+lighter extensions show shared-support scores. Acceptance rates appear below each
+model. Global scope in-domain; northern European scope on Flemming.
 
 **Suggested species-confidence thresholds for Nemo ONNX (without / with TTA):**
 **0.53 / 0.35** for general photographs (global scope);
