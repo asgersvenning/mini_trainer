@@ -332,3 +332,23 @@ held-out images against FP32. No environment changes, input preparation or large
 sample are needed. For a targeted diagnostic of this new candidate, use
 `--stage diagnose --calibration-method minmax`; its summary is
 `onnx-minmax-diagnostic.json`. Neither individual stage updates `summary.json`.
+
+To isolate backbone versus head damage, run both cross-combinations together:
+
+```sh
+env -u LD_LIBRARY_PATH -u LD_PRELOAD -u PYTHONPATH \
+  CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 \
+  /work/venvs/nemo-int8/bin/python -m dev.releases.mambo_v3.quantize \
+  --stage split --calibration-method minmax \
+  --output /work/mambo-results/nemo-int8-pilot --threads 4
+```
+
+This reuses existing MinMax weights/scales and the first 32 prepared test images.
+It writes extracted graphs and `report.json` under `onnx-minmax/split/`, which must
+not already exist. The cut is immediately before the trained hidden layer; the
+head includes that layer, normalization and final classification. FP32-backbone /
+QDQ-head and QDQ-backbone / FP32-head run alongside FP32/FP32 and QDQ/QDQ controls,
+with optimizations disabled. Each control is checked against its intact graph on
+one input. There is no recalibration, and these diagnostic combinations are not
+release artifacts. Choose `--calibration-method percentile` to apply the same
+experiment to an existing percentile result instead.

@@ -322,6 +322,93 @@ def backend(args):
         write_json(destination / "report.json", report)
 
 
+def split_models(directory):
+    """Cut existing graphs before the trained hidden layer, retaining QDQ scales."""
+    import onnx
+
+    calibration = directory / "calibration"
+    evidence = json.loads((calibration / "report.json").read_text())
+    for item in evidence["preprocessed_files"]:
+        if file_hash(item["path"]) != item["sha256"]:
+            raise ValueError("Preprocessed FP32 graph changed")
+    destination = directory / "split"
+    destination.mkdir(exist_ok=False)
+    paths = {}
+    boundary = None
+    for mode, source in (("fp32", "preprocessed.onnx"), ("qdq", "model.onnx")):
+        graph = onnx.load(calibration / source)
+        if mode == "fp32":
+            heads = [n for n in graph.graph.node if n.op_type == "Gemm" and n.input[1].endswith(".classifier.hidden.weight")]
+            if len(heads) != 1:
+                raise ValueError("Expected one Nemo hidden-layer Gemm to identify the backbone/head boundary")
+            boundary = heads[0].input[0]
+        extractor = onnx.utils.Extractor(graph)
+        for part, inputs, outputs in (("backbone", ["images"], [boundary]), ("head", [boundary, "images"], ["output_0", "embedding"])):
+            # Nemo also reads the original image shape when reshaping head outputs.
+            model = extractor.extract_model(inputs, outputs)
+            if part == "head" and any(node.op_type == "Conv" for node in model.graph.node):
+                raise ValueError("Head extraction unexpectedly retained backbone convolutions")
+            path = destination / f"{mode}-{part}.onnx"
+            onnx.save_model(model, path, save_as_external_data=True, all_tensors_to_one_file=True, location=f"{mode}-{part}.data")
+            paths[mode, part] = path
+    return paths, boundary
+
+
+def split_evaluate(args, directory, bundle, samples, images):
+    paths, boundary = split_models(directory)
+    sessions = {key: onnx_session(path, args.threads, optimize=False) for key, path in paths.items()}
+    values = {}
+    for backbone in ("fp32", "qdq"):
+        features = [sessions[backbone, "backbone"].run([boundary], {"images": image})[0] for image in images]
+        for head in ("fp32", "qdq"):
+            rows = [
+                sessions[head, "head"].run(["output_0", "embedding"], {boundary: feature, "images": image})
+                for feature, image in zip(features, images, strict=True)
+            ]
+            values[f"{backbone}_backbone_{head}_head"] = [np.concatenate([row[i] for row in rows]) for i in (0, 1)]
+    # Check each split control against its intact graph on one identical input.
+    for mode, source in (("fp32", "preprocessed.onnx"), ("qdq", "model.onnx")):
+        intact = onnx_session(directory / "calibration" / source, args.threads, optimize=False)
+        expected = intact.run(["output_0", "embedding"], {"images": images[0]})
+        for actual, reference in zip(values[f"{mode}_backbone_{mode}_head"], expected, strict=True):
+            np.testing.assert_allclose(actual[:1], reference, rtol=1e-4, atol=1e-4, err_msg="Graph split changed its control")
+        del intact
+    reference_scores, reference_embeddings = values["fp32_backbone_fp32_head"]
+    reference_predictions = reference_scores.argmax(axis=1)
+    results = {}
+    for name, (scores, embeddings) in values.items():
+        if (
+            scores.shape != reference_scores.shape
+            or embeddings.shape != reference_embeddings.shape
+            or not np.isfinite(scores).all()
+            or not np.isfinite(embeddings).all()
+        ):
+            raise ValueError(f"Invalid split outputs: {name}")
+        predictions = scores.argmax(axis=1)
+        cosine = np.sum(embeddings * reference_embeddings, axis=1) / np.maximum(
+            np.linalg.norm(embeddings, axis=1) * np.linalg.norm(reference_embeddings, axis=1), 1e-12
+        )
+        results[name] = {
+            "correct_species": sum(bundle.classes["labels"][0][i] == r["labels"][0] for i, r in zip(predictions, samples, strict=True)),
+            "predictions_agree_with_fp32": int(np.sum(predictions == reference_predictions)),
+            "embedding_cosine_mean": float(cosine.mean()),
+            "embedding_cosine_min": float(cosine.min()),
+        }
+    report = {
+        "samples": len(samples),
+        "sample_paths": [r["path"] for r in samples],
+        "calibration_method": args.calibration_method,
+        "boundary": boundary,
+        "results": results,
+        "scope": (
+            "Existing QDQ weights/scales, optimizations disabled; head includes trained hidden layer, normalization and final classifier; "
+            "first-image split controls verified; no recalibration"
+        ),
+    }
+    write_json(directory / "split/report.json", report)
+    print(json.dumps(report, indent=2))
+
+
 def diagnose(args):
     """Compare existing FP32, unoptimized QDQ and optimized INT8 on held-out images."""
     prepared = json.loads((args.output / "prepared.json").read_text())
@@ -342,6 +429,9 @@ def diagnose(args):
         if file_hash(path) != record["sha256"]:
             raise ValueError("Evaluation image changed after preparation")
         images.append(preprocess(path)[None])
+    if args.stage == "split":
+        split_evaluate(args, directory, bundle, samples, images)
+        return
     candidate = directory / "calibration/model.onnx"
     results, outputs = {}, {}
     for name, path, optimize in (("fp32", bundle.profile("onnx-embedding"), True), ("qdq", candidate, False), ("int8", candidate, True)):
@@ -412,9 +502,9 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--stage", choices=("all", "prepare", "torch", "onnx", "diagnose"), default="all")
+    parser.add_argument("--stage", choices=("all", "prepare", "torch", "onnx", "diagnose", "split"), default="all")
     args = parser.parse_args()
-    if args.stage == "diagnose":
+    if args.stage in ("diagnose", "split"):
         diagnose(args)
         return
     if args.stage in ("all", "prepare") and (args.metadata is None or args.root is None):

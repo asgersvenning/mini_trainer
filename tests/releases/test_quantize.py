@@ -163,7 +163,7 @@ def test_diagnostic_distinguishes_qdq_from_integer_execution(tmp_path, monkeypat
         )
 
     monkeypatch.setattr(quantize, "onnx_session", session)
-    quantize.diagnose(SimpleNamespace(output=tmp_path, threads=4, calibration_method="percentile"))
+    quantize.diagnose(SimpleNamespace(output=tmp_path, threads=4, calibration_method="percentile", stage="diagnose"))
     report = json.loads((tmp_path / "onnx-diagnostic.json").read_text())
     assert report["results"]["fp32"]["correct_species"] == 1
     assert report["results"]["qdq"]["predictions_agree_with_fp32"] == 1
@@ -180,3 +180,64 @@ def test_minmax_cli_reuses_prepared_inputs_without_preparation(tmp_path, monkeyp
     quantize.main()
     assert captured[0].calibration_method == "minmax"
     assert quantize.onnx_directory(captured[0]) == tmp_path / "onnx-minmax"
+
+
+def test_split_experiments_recombine_existing_graphs(tmp_path):
+    import numpy as np
+
+    onnx = pytest.importorskip("onnx")
+    pytest.importorskip("onnxruntime")
+    h = onnx.helper
+    calibration = tmp_path / "calibration"
+    calibration.mkdir()
+    files = []
+    for mode in ("fp32", "qdq"):
+        nodes = [h.make_node("Identity", ["images"], ["view"])]
+        tensors = [onnx.numpy_helper.from_array(np.eye(2, dtype=np.float32), "model.classifier.hidden.weight")]
+        incoming = "view"
+        if mode == "qdq":
+            tensors.extend(
+                [
+                    onnx.numpy_helper.from_array(np.array(1.0, dtype=np.float32), "scale"),
+                    onnx.numpy_helper.from_array(np.array(0, dtype=np.uint8), "zero"),
+                ]
+            )
+            nodes.extend(
+                [
+                    h.make_node("QuantizeLinear", ["view", "scale", "zero"], ["q"]),
+                    h.make_node("DequantizeLinear", ["q", "scale", "zero"], ["dq"]),
+                ]
+            )
+            incoming = "dq"
+        nodes.extend(
+            [
+                h.make_node("Gemm", [incoming, "model.classifier.hidden.weight"], ["embedding"]),
+                h.make_node("Shape", ["images"], ["original_shape"]),
+                h.make_node("Reshape", ["embedding", "original_shape"], ["output_0"]),
+            ]
+        )
+
+        def info(name):
+            return h.make_tensor_value_info(name, onnx.TensorProto.FLOAT, [1, 2])
+
+        graph = h.make_graph(nodes, mode, [info("images")], [info("output_0"), info("embedding")], tensors, value_info=[info("view")])
+        path = calibration / ("preprocessed.onnx" if mode == "fp32" else "model.onnx")
+        onnx.save(h.make_model(graph, opset_imports=[h.make_opsetid("", 18)], ir_version=10), path)
+        if mode == "fp32":
+            files.append({"path": str(path), "sha256": quantize.file_hash(path)})
+    quantize.write_json(calibration / "report.json", {"preprocessed_files": files})
+    images = [np.array([[0.1, 0.4]], dtype=np.float32)]
+    samples = [{"path": "held-out", "labels": ["b"]}]
+    quantize.split_evaluate(
+        SimpleNamespace(threads=1, calibration_method="minmax"),
+        tmp_path,
+        SimpleNamespace(classes={"labels": [["a", "b"]]}),
+        samples,
+        images,
+    )
+    report = json.loads((tmp_path / "split/report.json").read_text())
+    assert report["boundary"] == "view"
+    assert report["results"]["fp32_backbone_fp32_head"]["correct_species"] == 1
+    assert report["results"]["qdq_backbone_fp32_head"]["correct_species"] == 1
+    assert report["results"]["fp32_backbone_qdq_head"]["correct_species"] == 0
+    assert report["results"]["qdq_backbone_qdq_head"]["correct_species"] == 0
