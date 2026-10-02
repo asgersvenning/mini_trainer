@@ -194,6 +194,40 @@ def inaturalist(args):
             print(f"iNaturalist {i + 1}/{len(samples)}", flush=True)
 
 
+def runtime_environment(model):
+    return {
+        "platform": platform.platform(),
+        "cpu": Path("/proc/cpuinfo").read_text().split("model name", 1)[-1].splitlines()[0].lstrip("\t :"),
+        "versions": {
+            name: importlib.metadata.version(name)
+            for name in (("torch", "numpy", "onnxruntime") if model == "nemo" else ("torch", "numpy", "open-clip-torch"))
+        },
+    }
+
+
+def start_runtime(folder, provenance, environment):
+    path = folder / "runtime.json"
+    if path.exists():
+        previous = read(path)
+        if previous["identity"] != provenance or any(previous.get(key) != value for key, value in environment.items()):
+            raise ValueError("Cached predictions use a different source, model, CPU or runtime; use a new output")
+    write_json(path, {"identity": provenance, **environment, "status": "running"})
+
+
+def check_timing_environments(runtimes):
+    first, second = runtimes
+    if any(r["status"] != "complete" for r in runtimes):
+        raise ValueError("Finish both local prediction stages before reporting timings")
+    for key in ("cpu", "platform"):
+        if first[key] != second[key]:
+            raise ValueError(f"Local timings use different {key}; rerun on the same node")
+    if first["identity"]["threads"] != second["identity"]["threads"]:
+        raise ValueError("Local timings use different thread counts")
+    for name in first["versions"].keys() & second["versions"].keys():
+        if first["versions"][name] != second["versions"][name]:
+            raise ValueError(f"Local timings use different {name} versions")
+
+
 def local(args):
     import torch
 
@@ -230,9 +264,8 @@ def local(args):
         "samples_sha256": file_hash(args.output / "samples.json"),
         **identity,
     }
-    if (folder / "runtime.json").exists() and read(folder / "runtime.json")["identity"] != provenance:
-        raise ValueError("Cached predictions use a different source, model or thread count; use a new output")
-    write_json(folder / "runtime.json", {"identity": provenance, "status": "running"})
+    environment = runtime_environment(args.stage)
+    start_runtime(folder, provenance, environment)
     for _ in range(3):
         predictor.predict(args.output / records[0]["path"])
     for i, record in enumerate(records):
@@ -254,13 +287,8 @@ def local(args):
             "identity": provenance,
             "status": "complete",
             "load_seconds": load_seconds,
-            "platform": platform.platform(),
-            "cpu": Path("/proc/cpuinfo").read_text().split("model name", 1)[-1].splitlines()[0],
+            **environment,
             "peak_rss_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024,
-            "versions": {
-                name: importlib.metadata.version(name)
-                for name in (("torch", "numpy", "onnxruntime") if args.stage == "nemo" else ("torch", "numpy", "open-clip-torch"))
-            },
         },
     )
 
@@ -324,6 +352,7 @@ def summarize(args):
         }
         if model != "inaturalist":
             result["models"][model]["runtime"] = read(args.output / model / "runtime.json")
+    check_timing_environments([result["models"][name]["runtime"] for name in MODELS[:2]])
     charts(args.output, result)
     result["figures"] = {name: file_hash(args.output / name) for name in ("quality.png", "speed.png")}
     write_json(args.output / "summary.json", result)

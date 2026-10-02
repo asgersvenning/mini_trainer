@@ -85,7 +85,8 @@ def stage(candidate, output):
     shutil.copytree(candidate / "mambo-v3-bundle", model / "bundle")
     shutil.copytree(candidate / "mambo-v3-bundle/performance", model / "performance")
     stage_space(space, manifest["source_commit"], manifest["package_version"])
-    shutil.copyfile(candidate / "mambo-v3-bundle/MODEL_CARD.md", model / "README.md")
+    card = (candidate / "mambo-v3-bundle/MODEL_CARD.md").read_text()
+    (model / "README.md").write_text(card.replace("(MODEL_PROVENANCE.toml)", "(bundle/MODEL_PROVENANCE.toml)"))
     for name in ("MODEL_LICENSE.txt", "NOTICES.md"):
         shutil.copyfile(HERE / name, model / name)
     shutil.copyfile(ROOT / "deployment/CITATION.cff", model / "CITATION.cff")

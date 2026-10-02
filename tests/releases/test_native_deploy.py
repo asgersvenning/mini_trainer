@@ -212,3 +212,28 @@ def test_cli_writes_predictions_for_explicit_checkpoint(checkpoint, tmp_path, mo
     expected = native.forward(native.preproc(native.reader(str(image)).unsqueeze(0)))[0]
     saved = torch.load(tmp_path / "cli/predictions.pt", weights_only=False)
     torch.testing.assert_close(saved["predictions"], expected)
+
+
+@pytest.mark.parametrize("complete", [True, False])
+def test_cli_downloads_backbone_only_for_head_only_checkpoint(checkpoint, tmp_path, monkeypatch, complete):
+    import torchvision.models
+
+    # Exercise torchvision's actual getter; intercept its network/initialization boundary.
+    checkpoint["fc._extra_state"]["backbone_class"] = "resnet18"
+    if complete:
+        checkpoint["backbone.weight"] = torch.ones(1)
+    path = tmp_path / "weights.pt"
+    torch.save(checkpoint, path)
+    monkeypatch.setattr("mini_trainer.hierarchical.predict.cli", lambda **kw: {"model": None, "weights": str(path), "class_list": None})
+
+    class ReachedBackbone(Exception):
+        pass
+
+    def build_backbone(*args, **kwargs):
+        assert (kwargs["weights"] is None) == complete
+        raise ReachedBackbone
+
+    monkeypatch.setattr(torchvision.models, "get_model", build_backbone)
+    monkeypatch.setattr("mini_trainer.predict.main", lambda **kw: kw["builder"].build_model(weights=kw["weights"], device="cpu"))
+    with pytest.raises(ReachedBackbone):
+        deploy.run()

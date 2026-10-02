@@ -46,7 +46,7 @@ print(prediction.label, prediction.confidence)
 Nemo uses EfficientNetV2-S, trained for {{epochs}} epochs on {{training_images}}
 GBIF-sourced training images in the global-lepi collection.
 [Training configuration]({{training_config}}) ·
-[Provenance](bundle/MODEL_PROVENANCE.toml) ·
+[Provenance](MODEL_PROVENANCE.toml) ·
 [Migration from Meghan (MAMBO_v2)](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/docs/mambo-integration.md#moving-from-v2)
 
 ## License

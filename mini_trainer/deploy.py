@@ -110,6 +110,15 @@ class _Prediction(HierarchicalPrediction):
         return torch.stack([rank.softmax(-1).gather(1, self.indices[..., i]) for i, rank in enumerate(raw_prediction)], dim=-1)
 
 
+def _backbone_args(state):
+    config = Classifier.extract_metadata(state)
+    getter, _ = resolve_backbone_getter(config["backbone_class"])
+    prefix = config["backbone_output_name"] + "."
+    complete = any(isinstance(value, torch.Tensor) and not key.startswith(prefix) for key, value in state.items())
+    # Legacy frozen-backbone checkpoints contain only the trained head.
+    return {} if getter is get_dynamic_model else {"pretrained": not complete}
+
+
 class Predictor:
     """Eager native predictor; CUDA and European scope retain legacy defaults."""
 
@@ -141,13 +150,9 @@ class Predictor:
         state = load_training_weights(weights, map_location="cpu") if isinstance(weights, (str, Path)) else deepcopy(weights)
         state = state.get("model", state)
         is_nemo = not local or _checkpoint_digest(state) == release["state_sha256"]
-        config = Classifier.extract_metadata(state)
-        getter, _ = resolve_backbone_getter(config["backbone_class"])
-        prefix = config["backbone_output_name"] + "."
-        complete = any(isinstance(value, torch.Tensor) and not key.startswith(prefix) for key, value in state.items())
-        # Legacy frozen-backbone checkpoints contain only the trained head.
-        model_args = {} if getter is get_dynamic_model else {"pretrained": not complete}
-        self.model, self.preproc = BaseBuilder.build_model(weights=state, device="cpu", dtype=torch.float32, model_args=model_args)
+        self.model, self.preproc = BaseBuilder.build_model(
+            weights=state, device="cpu", dtype=torch.float32, model_args=_backbone_args(state)
+        )
         self.model.to(self.device).eval()
         head = classification_module(self.model)
         self._metadata = deepcopy(head.get_extra_state())
@@ -305,9 +310,12 @@ def run():
     class DeploymentBuilder(base):
         @staticmethod
         def build_model(**kwargs):
-            model, preproc = base.build_model(**kwargs)
             state = load_training_weights(kwargs["weights"], map_location="cpu")
-            if _checkpoint_digest(state.get("model", state)) == _release()["state_sha256"]:
+            state = state.get("model", state)
+            is_nemo = _checkpoint_digest(state) == _release()["state_sha256"]
+            kwargs["model_args"] = {**_backbone_args(state), **(kwargs.get("model_args") or {})}
+            model, preproc = base.build_model(**{**kwargs, "weights": state})
+            if is_nemo:
                 preproc = TorchPreprocess(torch, kwargs["device"])
             return model, lambda images: preproc(images).float()
 

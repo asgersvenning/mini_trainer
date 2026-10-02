@@ -92,3 +92,36 @@ def test_selection_reuses_only_frozen_prefix(tmp_path):
     selected = comparison.selected_records(SimpleNamespace(output=tmp_path, count=1000))
     assert selected == records[:1000]
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("changed", ["cpu", "platform", "versions", "identity"])
+def test_resume_rejects_changed_runtime_before_reusing_predictions(tmp_path, changed):
+    provenance = {"threads": 4}
+    environment = {"cpu": "CPU A", "platform": "Linux", "versions": {"numpy": "2"}}
+    comparison.start_runtime(tmp_path, provenance, environment)
+    comparison.start_runtime(tmp_path, provenance, environment)
+    previous = comparison.read(tmp_path / "runtime.json")
+    previous[changed] = "changed"
+    (tmp_path / "runtime.json").write_text(json.dumps(previous))
+    with pytest.raises(ValueError, match="CPU or runtime"):
+        comparison.start_runtime(tmp_path, provenance, environment)
+    assert comparison.read(tmp_path / "runtime.json") == previous
+
+
+def test_timing_report_requires_comparable_completed_local_runs():
+    from copy import deepcopy
+
+    first = {
+        "status": "complete",
+        "cpu": "CPU A",
+        "platform": "Linux",
+        "versions": {"numpy": "2", "onnxruntime": "1"},
+        "identity": {"threads": 4},
+    }
+    second = deepcopy(first)
+    second["versions"] = {"numpy": "2", "open-clip-torch": "3"}
+    comparison.check_timing_environments([first, second])
+    for key, value in [("cpu", "CPU B"), ("status", "running"), ("versions", {"numpy": "3"}), ("identity", {"threads": 8})]:
+        changed = {**second, key: value}
+        with pytest.raises(ValueError):
+            comparison.check_timing_environments([first, changed])

@@ -437,7 +437,7 @@ statistical power across all species.
 
 Stages cache completed work and run sequentially. Rerun a failed stage with the
 same arguments. Keep the directory on mounted persistent storage if the node may
-be replaced. Do not change the code or threads halfway through local predictions;
+be replaced. Do not change the code, CPU, runtime versions or threads halfway through local predictions;
 use a fresh output directory for a changed experiment. The API stage is deliberately
 paced and can take hours; this is not part of the 30-minute local implementation
 budget. Follow any additional limits attached to your API access.
