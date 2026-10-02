@@ -273,80 +273,99 @@ on 403, report the response and resolve access with iNaturalist. The script does
 not bypass access controls. On token expiration, replace the environment variable
 and resume the same stage. Observe the limits attached to your account/API access.
 
-Before the token is ready, run only `fetch`, `nemo` and `meghan`; those need no token.
+Before the token is ready, run only `fetch`, `nemo`, `nemo-tta` and `meghan`; those need no token.
 
 First qualify a separate ten-image run, including API access, legacy backbone
 loading, metrics and charts. The models and backbone download automatically.
 
 ```bash
-for stage in fetch check nemo meghan inaturalist report; do
+for stage in fetch check nemo nemo-tta meghan inaturalist; do
   "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
     --output /work/mambo-results/card-smoke --count 10 --stage "$stage" --threads 4 || break
 done
 ```
 
-Inspect `card-smoke/summary.json` and both PNGs. If all stages pass, use a new
+Generate the smoke report separately:
+
+```bash
+"$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+  --output /work/mambo-results/card-smoke --stage report --count 10 \
+  --report-output /work/mambo-results/card-smoke-report
+```
+
+Inspect `card-smoke-report/summary.json` and both PNGs. If all stages pass, use a new
 output directory for the actual comparison:
 
 ```bash
-for stage in fetch nemo meghan inaturalist report; do
+for stage in fetch nemo nemo-tta meghan inaturalist; do
   "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
     --output /work/mambo-results/card-1000 --stage "$stage" --threads 4 || break
 done
 ```
 
-The default is 1,000 observations. For an existing 5,000-observation run, retain
-`samples.json` and the predictions: reporting selects its first 1,000 records for
-all three models. Once those predictions exist and both local stages have finished,
-stop the remaining API loop with Ctrl-C, then pull the updated release branch and run:
+The default is 1,000 observations. Reporting always writes to a new directory
+outside the prediction cache. Threshold selection uses the pinned `mini_metrics`
+`evaluate_file(optimal=True, seed=42, opt_crit=MacroF1)` interface. The library owns
+its calibration split and optimizer; we check that all models share the split.
+Figures show calibrated full/shared-support scores, acceptance rates and timing.
+
+### Recover the active run and preview results
+
+The older local caches omitted confidence scores. Leave the active iNaturalist
+process running. In a second tmux window, update the release checkout and rerun
+the three local variants (Nemo, Nemo + TTA and Meghan) in a new directory, reusing images and API responses:
 
 ```bash
+cd /work/mini_trainer
 git pull --ff-only
-"$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
-  --output /work/mambo-results/card-5000 --stage report --count 1000
+unset LD_LIBRARY_PATH LD_PRELOAD PYTHONPATH
+export CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+export NEMO_CARD_PYTHON=/work/venvs/nemo-card/bin/python
+mkdir /work/mambo-results/card-calibrated
+for item in samples.json images inaturalist meghan.pt; do
+  ln -s "/work/mambo-results/card-5000/$item" "/work/mambo-results/card-calibrated/$item"
+done
+for stage in nemo nemo-tta meghan; do
+  "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+    --output /work/mambo-results/card-calibrated --stage "$stage" --count 1000 --threads 4 || break
+done
 ```
 
-If the old run is still in `fetch`, stop it with Ctrl-C and pull the update, then
-rerun the original stage loop with `--count 1000` in the same directory. Fetch
-reuses cached pages, images and taxonomy mappings with the original cutoff;
-`selection.json` retains the initial request and `samples.json` records the actual
-smaller selection. Increasing a selection requires a new directory.
-
-Use that existing directory in the packaging command below too. Do not restart
-local prediction stages after updating the code; their existing results remain
-usable for reporting. The summary records selected observation IDs, species count
-and the original manifest hash. This is a descriptive comparison, not a claim of
-statistical power across all species.
-
-Stages cache completed work and run sequentially. Rerun a failed stage with the
-same arguments. Keep the directory on mounted persistent storage if the node may
-be replaced. Do not change the code, CPU, runtime versions or threads halfway through local predictions;
-use a fresh output directory for a changed experiment. The API stage is deliberately
-paced and can take hours; this is not part of the 30-minute local implementation
-budget. Follow any additional limits attached to your API access.
-
-Reporting uses the same frozen observations for all three models and `mini_metrics`
-for species-level scores. API latency excludes rate-limit waits. Keep the complete
-result archive locally; the card needs only aggregate charts and a short caption.
-
-Package results without images, checkpoints or credentials:
+Once all three local stages finish and the API has passed 600 observations:
 
 ```bash
-tar -czf /work/mambo-results/nemo-card-results.tar.gz \
-  -C /work/mambo-results/card-1000 \
-  selection.json samples.json summary.json quality.png speed.png \
-  nemo.csv meghan.csv inaturalist.csv nemo meghan inaturalist responses
+"$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+  --output /work/mambo-results/card-calibrated --stage report --count 600 \
+  --report-output /work/mambo-results/card-preview-600
+```
+
+After all 1,000 API predictions exist, run the same command with `--count 1000`
+and `--report-output /work/mambo-results/card-final`. The original shell loop
+has an obsolete report command; use the new command above instead. No iNaturalist requests need repeating. A report refuses old local caches
+without confidence scores. Use a fresh destination for each preview.
+
+For a new run collected entirely with the corrected script, use its prediction
+directory as `--output` instead. Missing or failed stages can resume with unchanged
+code/environment; keep predictions on persistent storage. If a metric-library
+problem occurs, retain the CSVs/error for an upstream issue rather than changing
+threshold-selection semantics in this repository.
+
+Package the final report and supporting predictions without images or weights:
+
+```bash
+tar -chzf /work/mambo-results/nemo-card-results.tar.gz \
+  -C /work/mambo-results card-final \
+  -C /work/mambo-results/card-calibrated samples.json nemo nemo-tta meghan \
+  -C /work/mambo-results/card-5000 selection.json inaturalist
 sha256sum /work/mambo-results/nemo-card-results.tar.gz > /work/mambo-results/nemo-card-results.tar.gz.sha256
 ```
 
-After downloading and reviewing the archive locally, stage only the compact
-summary and figures (never sample images or raw observation/API responses):
+Review the archive locally, then stage the summary and figures from `card-final`:
 
 ```bash
 .venv/bin/python -m dev.releases.mambo_v3.inaturalist_card \
-  --stage card --output /path/to/extracted/results
+  --stage card --output /path/to/extracted/card-final
 ```
 
-This writes `dev/releases/mambo_v3/card-performance/`. Review and commit those
-three files separately from the script. Bundle/Hub staging includes their hashes;
-publication staging rejects missing, incomplete or altered comparison evidence.
+The report archive stays local. Retire this one-off runner and its tests after
+reviewing the results and adding the concise comparison to the card.

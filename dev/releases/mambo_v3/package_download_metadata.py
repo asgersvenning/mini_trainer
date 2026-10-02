@@ -75,8 +75,16 @@ def card_performance(directory=None, *, required=False):
     summary = json.loads((directory / "summary.json").read_text())
     if summary["count"] != CARD_COUNT or summary["unmapped_truth"]:
         raise ValueError(f"Card requires {CARD_COUNT:,} images and resolved ground-truth taxonomy")
-    if set(summary["models"]) != {"nemo", "meghan", "inaturalist"}:
+    if set(summary["models"]) != {"nemo", "nemo-tta", "meghan", "inaturalist"}:
         raise ValueError("Card comparison is incomplete")
+    if (
+        not summary.get("calibration_count")
+        or not summary.get("report_count")
+        or any(
+            not isinstance(row, dict) or row.get("threshold") is None or row.get("coverage") is None for row in summary["models"].values()
+        )
+    ):
+        raise ValueError("Card requires mini_metrics-calibrated results; regenerate the report")
     for name in ("quality.png", "speed.png"):
         if hashlib.sha256((directory / name).read_bytes()).hexdigest() != summary["figures"][name]:
             raise ValueError(f"Changed card figure: {name}")
@@ -85,7 +93,8 @@ def card_performance(directory=None, *, required=False):
         "![Prediction speed](performance/speed.png)\n\n"
         f"{summary['count']:,} recent Research Grade Lepidoptera observations across {summary['species_count']:,} species, "
         f"frozen {summary['cutoff'][:10]}; "
-        "one image per observation, global scope, no TTA or location input. "
+        f"{summary['report_count']:,} reporting images after mini_metrics threshold calibration. "
+        "Global scope, no location input; Nemo shown with and without TTA. "
         "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency."
     )
 
