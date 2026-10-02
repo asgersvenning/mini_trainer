@@ -163,6 +163,29 @@ def cv_prediction(response):
     return max(results, key=lambda r: float(r["vision_score"]))
 
 
+def score_image(client, path, token):
+    from urllib3.util.retry import Retry
+
+    for attempt in range(5):
+        with path.open("rb") as stream:
+            start = time.perf_counter()
+            response = client.post(
+                f"{API}/computervision/score_image",
+                headers={"Authorization": f"Bearer {token}"},
+                files={"image": (path.name, stream, "image/jpeg")},
+                data={"taxon_id": "47157", "skip_frequencies": "true"},
+                timeout=60,
+            )
+            elapsed = time.perf_counter() - start
+        if response.status_code != 429 or attempt == 4:
+            response.raise_for_status()
+            return response, elapsed
+        delay = max(Retry().get_retry_after(response) or 0, 60 * 2**attempt)
+        response.close()
+        print(f"iNaturalist rate limited; waiting {delay:.0f}s before retry {attempt + 1}/4", flush=True)
+        time.sleep(delay)
+
+
 def inaturalist(args):
     token = os.environ.get("INAT_API_TOKEN")
     if not token:
@@ -179,17 +202,7 @@ def inaturalist(args):
         if file_hash(path) != record["sha256"]:
             raise ValueError(f"Image changed: {path}")
         time.sleep(1)
-        with path.open("rb") as stream:
-            start = time.perf_counter()
-            response = client.post(
-                f"{API}/computervision/score_image",
-                headers={"Authorization": f"Bearer {token}"},
-                files={"image": (path.name, stream, "image/jpeg")},
-                data={"taxon_id": "47157", "skip_frequencies": "true"},
-                timeout=60,
-            )
-            elapsed = time.perf_counter() - start
-        response.raise_for_status()
+        response, elapsed = score_image(client, path, token)
         payload = response.json()
         prediction = cv_prediction(payload)
         taxon = species_taxon(client, prediction["taxon"], cache)
