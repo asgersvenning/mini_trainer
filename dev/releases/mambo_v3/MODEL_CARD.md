@@ -42,6 +42,10 @@ The extension changes the averaging set, not the predictions. Acceptance rates
 appear below each model. Nemo uses ONNX; TTA averages augmented views.
 Global scope in-domain, northern European scope on Flemming.
 
+**Suggested species-confidence thresholds for Nemo ONNX (without / with TTA):**
+**0.53 / 0.35** for general photographs (global scope);
+**0.82 / 0.75** for monitoring crops (`north_europe`).
+
 {{performance}}
 
 ## Variants and details
