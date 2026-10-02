@@ -9,6 +9,8 @@ from pathlib import Path
 
 from deployment.mambo_deploy.bundle import Bundle
 
+CARD_COUNT = 1000
+
 
 def distribution_readme(ref="models/mambo-v3/v0.3.1"):
     """Keep documentation links meaningful in PyPI metadata and extracted bundles."""
@@ -68,11 +70,11 @@ def card_performance(directory=None, *, required=False):
     directory = Path(directory) if directory else Path(__file__).with_name("card-performance")
     if not (directory / "summary.json").exists():
         if required:
-            raise ValueError("Run and review the 5,000-image iNaturalist comparison before publication")
+            raise ValueError(f"Run and review the {CARD_COUNT:,}-image iNaturalist comparison before publication")
         return "The maintenance comparison is awaiting its UCloud run; no new results are claimed."
     summary = json.loads((directory / "summary.json").read_text())
-    if summary["count"] != 5000 or summary["unmapped_truth"]:
-        raise ValueError("Card requires 5,000 images and resolved ground-truth taxonomy")
+    if summary["count"] != CARD_COUNT or summary["unmapped_truth"]:
+        raise ValueError(f"Card requires {CARD_COUNT:,} images and resolved ground-truth taxonomy")
     if set(summary["models"]) != {"nemo", "meghan", "inaturalist"}:
         raise ValueError("Card comparison is incomplete")
     for name in ("quality.png", "speed.png"):
@@ -81,7 +83,8 @@ def card_performance(directory=None, *, required=False):
     return (
         "![Macro-Accuracy and Macro-F1](performance/quality.png)\n\n"
         "![Prediction speed](performance/speed.png)\n\n"
-        f"5,000 recent Research Grade Lepidoptera observations, frozen {summary['cutoff'][:10]}; "
+        f"{summary['count']:,} recent Research Grade Lepidoptera observations across {summary['species_count']:,} species, "
+        f"frozen {summary['cutoff'][:10]}; "
         "one image per observation. Species-level macro metrics from `mini_metrics`, "
         "global vocabulary, no TTA, no location input. Meghan is MAMBO_v2. "
         "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency. "

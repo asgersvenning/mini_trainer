@@ -19,6 +19,7 @@ import numpy as np
 from dev.benchmarks.inference.onnx_inference import file_hash
 from dev.releases.mambo_v3.evaluation_data import CSV_COLUMNS, write_json
 from dev.releases.mambo_v3.metrics import REVISION, finite_json, require_pinned_metrics
+from dev.releases.mambo_v3.package_download_metadata import CARD_COUNT
 
 HERE = Path(__file__).parent
 API = "https://api.inaturalist.org/v1"
@@ -27,6 +28,11 @@ MODELS = ("nemo", "meghan", "inaturalist")
 
 def read(path):
     return json.loads(path.read_text())
+
+
+def selected_records(args):
+    """Use a deterministic prefix without modifying the frozen source manifest."""
+    return read(args.output / "samples.json")["records"][: args.count]
 
 
 def session():
@@ -158,7 +164,7 @@ def inaturalist(args):
         raise ValueError("Set INAT_API_TOKEN on UCloud to an authorized iNaturalist API JWT; never put it in arguments")
     client = session()
     cache = args.output / "responses"
-    samples = read(args.output / "samples.json")["records"]
+    samples = selected_records(args)
     for i, record in enumerate(samples[:1] if args.stage == "check" else samples):
         target = args.output / "inaturalist" / f"{record['id']}.json"
         target.parent.mkdir(exist_ok=True)
@@ -214,7 +220,7 @@ def local(args):
         identity = {"checkpoint_sha256": item["sha256"], "backbone": verify_backbone(), "backend": "torch"}
     load_seconds = time.perf_counter() - start
     vocabulary = set(predictor.classes[0])
-    records = read(args.output / "samples.json")["records"]
+    records = selected_records(args)
     folder = args.output / args.stage
     folder.mkdir(exist_ok=True)
     provenance = {
@@ -265,9 +271,11 @@ def summarize(args):
 
     require_pinned_metrics()
     manifest = read(args.output / "samples.json")
-    records = manifest["records"]
+    records = selected_records(args)
     result = {
         "count": len(records),
+        "species_count": len({r["label"] for r in records}),
+        "observation_ids": [r["id"] for r in records],
         "cutoff": manifest["cutoff"],
         "samples_sha256": file_hash(args.output / "samples.json"),
         "mini_metrics_revision": REVISION,
@@ -357,7 +365,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--stage", choices=("fetch", "check", *MODELS, "report", "card"), required=True)
-    parser.add_argument("--count", type=int, default=5000)
+    parser.add_argument(
+        "--count", type=int, default=CARD_COUNT, help="first N observations from the frozen manifest (default: %(default)s)"
+    )
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
     if args.count < 1 or args.threads < 1:

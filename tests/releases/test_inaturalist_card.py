@@ -39,7 +39,7 @@ def test_above_species_prediction_is_not_given_a_descendant(monkeypatch, tmp_pat
 
 
 def test_card_rejects_missing_smoke_and_tampered_evidence(tmp_path):
-    with pytest.raises(ValueError, match="5,000"):
+    with pytest.raises(ValueError, match="1,000"):
         card_performance(tmp_path, required=True)
     figures = {}
     for name in ("quality.png", "speed.png"):
@@ -47,6 +47,7 @@ def test_card_rejects_missing_smoke_and_tampered_evidence(tmp_path):
         figures[name] = hashlib.sha256(b"reviewed figure").hexdigest()
     summary = {
         "count": 10,
+        "species_count": 7,
         "unmapped_truth": 0,
         "models": dict.fromkeys(comparison.MODELS),
         "figures": figures,
@@ -54,9 +55,9 @@ def test_card_rejects_missing_smoke_and_tampered_evidence(tmp_path):
     }
     path = tmp_path / "summary.json"
     path.write_text(json.dumps(summary))
-    with pytest.raises(ValueError, match="5,000"):
+    with pytest.raises(ValueError, match="1,000"):
         card_performance(tmp_path, required=True)
-    summary["count"] = 5000
+    summary["count"] = 1000
     path.write_text(json.dumps(summary))
     assert "performance/quality.png" in card_performance(tmp_path, required=True)
     (tmp_path / "quality.png").write_bytes(b"changed figure")
@@ -79,3 +80,15 @@ def test_runtime_bootstrap_omits_binary_card_assets(tmp_path, monkeypatch):
     metadata = json.loads(target.read_text())["metadata"]
     assert json.loads(metadata["classes.json"]) == {"labels": []}
     assert "performance/quality.png" not in json.loads(metadata["release.json"])["files"]
+
+
+def test_selection_reuses_only_frozen_prefix(tmp_path):
+    from types import SimpleNamespace
+
+    records = [{"id": i} for i in range(1500)]
+    path = tmp_path / "samples.json"
+    path.write_text(json.dumps({"records": records}))
+    original = path.read_bytes()
+    selected = comparison.selected_records(SimpleNamespace(output=tmp_path, count=1000))
+    assert selected == records[:1000]
+    assert path.read_bytes() == original

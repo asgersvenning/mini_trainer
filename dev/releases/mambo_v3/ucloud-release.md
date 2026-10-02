@@ -414,9 +414,26 @@ output directory for the actual comparison:
 ```bash
 for stage in fetch nemo meghan inaturalist report; do
   "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
-    --output /work/mambo-results/card-5000 --stage "$stage" --threads 4 || break
+    --output /work/mambo-results/card-1000 --stage "$stage" --threads 4 || break
 done
 ```
+
+The default is 1,000 observations. For an existing 5,000-observation run, retain
+`samples.json` and the predictions: reporting selects its first 1,000 records for
+all three models. Once those predictions exist and both local stages have finished,
+stop the remaining API loop with Ctrl-C, then pull the updated release branch and run:
+
+```bash
+git pull --ff-only
+"$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+  --output /work/mambo-results/card-5000 --stage report --count 1000
+```
+
+Use that existing directory in the packaging command below too. Do not restart
+local prediction stages after updating the code; their existing results remain
+usable for reporting. The summary records selected observation IDs, species count
+and the original manifest hash. This is a descriptive comparison, not a claim of
+statistical power across all species.
 
 Stages cache completed work and run sequentially. Rerun a failed stage with the
 same arguments. Keep the directory on mounted persistent storage if the node may
@@ -450,7 +467,7 @@ Package results without images, checkpoints or credentials:
 
 ```bash
 tar -czf /work/mambo-results/nemo-card-results.tar.gz \
-  -C /work/mambo-results/card-5000 \
+  -C /work/mambo-results/card-1000 \
   selection.json samples.json summary.json quality.png speed.png \
   nemo.csv meghan.csv inaturalist.csv nemo meghan inaturalist responses
 sha256sum /work/mambo-results/nemo-card-results.tar.gz > /work/mambo-results/nemo-card-results.tar.gz.sha256

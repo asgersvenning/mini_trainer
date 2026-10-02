@@ -39,7 +39,7 @@ Existing quantization scripts are experiments, not promised release artifacts.
 
 The model card uses four sections: Nemo, Performance, Variants and details, License.
 Its new comparison must be run on UCloud using [the card workflow](ucloud-release.md#nemo-v31-model-card-comparison-no-training-dataset-needed).
-Review the 5,000-image sample, taxonomy mappings, all three model outputs and CPU/API
+Review the 1,000-image sample, taxonomy mappings, all three model outputs and CPU/API
 latency labels; then commit the compact summary and figures separately. The staging
 command rejects missing evidence, smoke runs and modified figures. Until authenticated
 iNaturalist CV scoring is verified, local data collection and Nemo/Meghan inference can
