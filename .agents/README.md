@@ -50,10 +50,18 @@ from file paths, independently of the message prefix. See
 
 ## Maintenance
 
-Keep tracked explanations and evidence only when they are highly useful for a
-current decision, maintained workflow or likely future development. Uniqueness
+Keep tracked explanations and evidence only when they support a maintained
+workflow, a published result or a concrete future development need. Uniqueness
 alone is not a reason to retain a finding. Condense superseded investigations to
 their consequential conclusion and provenance; use Git for the detailed history.
+
+Before adding a script, test, document or artifact, identify who will use it after
+the current run and why it belongs in Git. Run-specific recovery/transfer commands,
+node paths, progress notes, previews and diagnostic probes belong in chat or ignored
+`.agents/local/`, even when written for a human. Promote only reusable functionality
+or reviewed results with the provenance needed to interpret or regenerate them.
+Retire temporary experiment tooling together with its tests and instructions when
+its purpose is complete; do not build more scaffolding merely to preserve it.
 
 Keep one maintained home for each contract, procedure, result and backlog item.
 Update that section when evidence changes instead of appending another dated fix
