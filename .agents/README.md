@@ -50,6 +50,13 @@ from file paths, independently of the message prefix. See
 
 ## Maintenance
 
+Unless a change adds a genuine new feature, growth in tracked code, tests, docs or
+artifacts needs an explicit, evidence-backed justification in the change description:
+what concrete problem it solves and why a smaller change or existing mechanism is
+insufficient. Prefer neutral or reduced size for maintenance. Extra abstraction,
+coverage or explanation is not justification by itself; preserve necessary behavior
+and safeguards rather than optimizing line counts mechanically.
+
 Keep tracked explanations and evidence only when they support a maintained
 workflow, a published result or a concrete future development need. Uniqueness
 alone is not a reason to retain a finding. Condense superseded investigations to
