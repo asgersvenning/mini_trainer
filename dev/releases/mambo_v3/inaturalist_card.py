@@ -263,9 +263,9 @@ def local(args):
             device="cpu",
             model="full",
             threads=args.threads,
-            tta="default" if args.stage == "nemo-tta" else "none",
+            tta=args.stage == "nemo-tta",
         ).load()
-        identity = {"bundle": predictor.bundle.manifest, "backend": "onnx", "tta": predictor.tta}
+        identity = {"bundle": predictor.bundle.manifest, "backend": "onnx", "tta": predictor.tta.name if predictor.tta else None}
     else:
         item = next(
             a
