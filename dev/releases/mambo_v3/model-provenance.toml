@@ -8,6 +8,8 @@ best_epoch = 30
 best_epoch_source = "Checksum-verified training/console.log: Best model found at epoch 30"
 seed = 42
 training_epochs = 30
+training_images = 5063857
+training_images_definition = "Metadata rows in original training splits set=2..9; no additional deduplication. See docs/mambo-frequency-comparison.md."
 training_world_size = 4
 training_source_revision_status = "Not recorded in retained checkpoint, config, or console log; packaging checkout is not asserted as training source."
 initialization_status = "Source-based reconstruction: torchvision DEFAULT EfficientNetV2-S backbone and a new normalized hierarchical head, seed 42; original initialization checkpoint/hash and run-specific preparation manifest not retained."

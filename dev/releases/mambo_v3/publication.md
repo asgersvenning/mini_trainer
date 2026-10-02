@@ -28,6 +28,29 @@ Previous Hub revisions remain available. The model card and Space use **Nemo**;
 for the 0.3.1 loading/metadata API. The original publication procedure below records
 0.3.0 identities; substitute the maintenance tags and versions above for this release.
 
+## V3.1 scope and final review
+
+V3.1 is the user-facing maintenance update; package versions remain **0.3.1**.
+It delivers standalone native PyTorch compatibility, portable startup loading and
+metadata, Hub loading, faster checkpoint restoration, and clearer integration
+instructions. The trained Nemo weights, vocabulary and preprocessing are unchanged.
+Quantization and new training are explicitly outside this maintenance release.
+Existing quantization scripts are experiments, not promised release artifacts.
+
+The model card uses four sections: Nemo, Performance, Variants and details, License.
+Its new comparison must be run on UCloud using [the card workflow](ucloud-release.md#nemo-v31-model-card-comparison-no-training-dataset-needed).
+Review the 5,000-image sample, taxonomy mappings, all three model outputs and CPU/API
+latency labels; then commit the compact summary and figures separately. The staging
+command rejects missing evidence, smoke runs and modified figures. Until authenticated
+iNaturalist CV scoring is verified, local data collection and Nemo/Meghan inference can
+proceed, but the three-model card remains pending. No replacement or guessed scores.
+
+The final candidate needs a new clean source revision and installed-artifact
+qualification after the results arrive. Reuse existing model-quality evidence for
+unchanged weights; the new card benchmark supplements it. Publish training 0.3.1,
+then model 0.3.1, then the staged Hub/Space contents through the existing workflow.
+Do not create a replacement `MAMBO_v3` tag or describe V3.1 as a newly trained model.
+
 ## 1. Configure accounts and environments
 
 Configure pending trusted publishers for `mt-trainer` and `mambo-v3`. The owner

@@ -10,76 +10,46 @@ tags:
   - butterflies
   - pytorch
   - onnx
-  - hierarchical-classification
 ---
 
-# Nemo (MAMBO_v3)
+# Nemo
 
-EfficientNetV2-S trained on global-lepi in September
-2026. Predicts {{vocabulary}}, identified by GBIF taxon
-IDs. Native PyTorch and standard floating-point ONNX artifacts share this vocabulary.
-No quantized model is included. Embeddings have {{embedding_dim}} dimensions and unit length.
+Nemo (MAMBO_v3) identifies moths and butterflies in photographs, predicting
+{{vocabulary}}. Predictions use GBIF taxon IDs.
 
-[Try one image](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) ·
-[Python package](https://pypi.org/project/mambo-v3/) ·
-[Integration and comparison figures](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/deployment/README.md)
+[Try Nemo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) ·
+[Installation and API](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/deployment/README.md) ·
+[Source code](https://github.com/asgersvenning/mini_trainer)
+
+Install with `pip install 'mambo-v3[onnx,hub]==0.3.1'`:
 
 ```python
 from mambo_deploy import Predictor
-predictor = Predictor.from_pretrained("asgersvenning/MAMBO-v3", backend="onnx")
-result = predictor.predict("moth.jpg")
-print(result[0].label, result[0].confidence)
+
+model = Predictor.from_pretrained("asgersvenning/MAMBO-v3", backend="onnx")
+prediction = model.predict("moth.jpg")[0]
+print(prediction.label, prediction.confidence)
 ```
 
-Install with `uv pip install 'mambo-v3[onnx,hub]==0.3.1'`. `from_pretrained` uses Hugging Face Hub caching and accepts `revision`,
-`cache_dir`, `token`, and `local_files_only`. Pin a published commit SHA for
-reproducibility. Local snapshots and bundles are accepted too. Plain `Predictor()`
-retains verified ERDA downloads. This custom library supports Hub loading;
-Transformers `AutoModel`/`pipeline` and hosted inference are not provided.
-`CITATION.cff` identifies the release citation.
+## Performance
 
-Use the release README for installation, input/output formats and configuration.
-Global is the default. Region presets and custom class lists constrain eligible
-species; they are permissive occurrence filters, not native-range maps. Taxonomic
-ranks are predicted independently. Optional TTA uses `rotation30_pad25_3`.
+{{performance}}
 
-## Intended use and evidence
+## Variants and details
 
-Local moth/butterfly image classification and downstream integration. This is a
-closed-vocabulary classifier for images of individual animals, not an animal
-detector or a validated unknown-species rejection system. Both
-Flemming monitoring crops and the original global-lepi test split have completed
-V2/V3, backend and TTA comparisons. Their different domains produce different TTA
-responses; neither establishes accuracy for every deployment. Regional vocabulary
-and confidence thresholds affect the results. Consult the README's figures and
-linked evidence for macro metrics, acceptance coverage, support truncation and
-calibration policy. Laptop and B200 timings have distinct environment/workload
-boundaries and do not establish universal hardware throughput.
+- **ONNX:** CPU inference without PyTorch; the default Python backend.
+- **PyTorch:** native CPU/CUDA inference through `mini_trainer`, or the same portable API.
+- **Scope:** global by default; regional presets and custom species lists restrict predictions.
+  `model="europe"` selects geography, not the model generation.
+- **Embeddings:** {{embedding_dim}} dimensions for downstream applications.
 
-The Python adapter supports CPU and NVIDIA CUDA via separately installed runtimes.
-ONNX offers a path to browser and other native-runtime integrations; those require
-matching preprocessing and are not automatically qualified by Python execution.
-No complete Windows/macOS/edge-device compatibility claim is made.
-
-## Training and artifact identity
-
-The checksum-verified training console reports the best model at epoch **30**.
-`MODEL_PROVENANCE.toml` identifies the checkpoint, configuration, epoch summary and
-training log with immutable hashes and public source URLs. The retained materials
-do not identify the exact training Git revision or retain the starting checkpoint
-hash. The preparation source initializes a torchvision DEFAULT EfficientNetV2-S
-backbone (ImageNet-1K) and a new hierarchical head with seed 42; this is a source-based
-reconstruction rather than a verified identity for the original starting file. The recorded September 11 checkout is packaging provenance,
-not a claimed training revision. The trained checkpoint itself is identified and
-can be loaded without retraining or downloading an initialization model.
-
-`release.json` covers the graph/external-weight files, presets, preprocessing,
-vocabulary and documentation. `PRESET_DEFINITIONS.toml` and `PRESET_UPDATES.toml`
-record list construction. Read `NOTICES.md` for code, model and source-data boundaries.
+Nemo uses EfficientNetV2-S, trained for {{epochs}} epochs on {{training_images}}
+GBIF-sourced training images in the global-lepi collection.
+[Training configuration]({{training_config}}) ·
+[Provenance](bundle/MODEL_PROVENANCE.toml) ·
+[Migration from Meghan (MAMBO_v2)](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/docs/mambo-integration.md#moving-from-v2)
 
 ## License
 
-The model weights use **CC BY-NC-SA 4.0**: attribution,
-non-commercial use and share-alike terms for distributed adaptations. See
-`MODEL_LICENSE.txt` and `NOTICES.md` for the terms and upstream attribution.
-The adapter code remains MIT-licensed.
+Model weights: **[CC BY-NC-SA 4.0](MODEL_LICENSE.txt)** (attribution, non-commercial,
+share-alike). Code: **MIT**. See [notices and attribution](NOTICES.md).

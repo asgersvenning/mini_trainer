@@ -8,6 +8,7 @@ import tarfile
 import tomllib
 from pathlib import Path
 
+from dev.releases.mambo_v3.package_download_metadata import card_performance
 from dev.releases.mambo_v3.prepare_candidate import HERE, ROOT, digest
 
 
@@ -76,11 +77,13 @@ def stage_space(output, source=None, version=None):
 
 def stage(candidate, output):
     manifest = verify(candidate)
+    card_performance(candidate / "mambo-v3-bundle/performance", required=True)
     output.mkdir(parents=True, exist_ok=False)
     model, space, github = (output / name for name in ("model", "space", "github"))
     model.mkdir()
     github.mkdir()
     shutil.copytree(candidate / "mambo-v3-bundle", model / "bundle")
+    shutil.copytree(candidate / "mambo-v3-bundle/performance", model / "performance")
     stage_space(space, manifest["source_commit"], manifest["package_version"])
     shutil.copyfile(candidate / "mambo-v3-bundle/MODEL_CARD.md", model / "README.md")
     for name in ("MODEL_LICENSE.txt", "NOTICES.md"):

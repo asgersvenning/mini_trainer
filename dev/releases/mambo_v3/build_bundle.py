@@ -137,6 +137,11 @@ def build(source, destination):
             "files": {},
         }
         (root / "MODEL_CARD.md").write_text(model_card(manifest, {"labels": labels}))
+        performance = HERE / "card-performance"
+        if performance.exists():
+            (root / "performance").mkdir()
+            for name in ("summary.json", "quality.png", "speed.png"):
+                shutil.copyfile(performance / name, root / "performance" / name)
         for path in sorted(root.rglob("*")):
             if path.is_file():
                 manifest["files"][path.relative_to(root).as_posix()] = {"size": path.stat().st_size, "sha256": sha256(path)}

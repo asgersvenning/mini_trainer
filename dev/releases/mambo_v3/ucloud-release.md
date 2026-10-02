@@ -352,3 +352,118 @@ with optimizations disabled. Each control is checked against its intact graph on
 one input. There is no recalibration, and these diagnostic combinations are not
 release artifacts. Choose `--calibration-method percentile` to apply the same
 experiment to an existing percentile result instead.
+
+## Nemo V3.1 model-card comparison (no training dataset needed)
+
+This maintenance update covers APIs, compatibility, integration documentation and
+an iNaturalist comparison. Quantization is excluded. The following single-purpose
+script lives in this repository at `dev/releases/mambo_v3/inaturalist_card.py`;
+cloning/pulling `release/mambo-v3` brings it to the node. It downloads current
+Research Grade Lepidoptera observations and scores the same first photo with
+Nemo, Meghan and the authenticated iNaturalist visual-classification API.
+
+Allocate a CPU node (or use the CPU allocation of an existing node). Start with
+clean environment paths to avoid mixing the container's Python/Torch libraries:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+unset LD_LIBRARY_PATH LD_PRELOAD PYTHONPATH
+export CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+# On a fresh node; for an existing clone use git pull --ff-only instead.
+git clone --branch release/mambo-v3 --single-branch https://github.com/asgersvenning/mini_trainer.git /work/mini_trainer
+cd /work/mini_trainer
+UV_PROJECT_ENVIRONMENT=/work/venvs/nemo-card uv sync --locked --no-dev --python 3.13 \
+  --extra cpu --extra recommended --extra export --extra bioclip
+uv pip install --python /work/venvs/nemo-card/bin/python \
+  'mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@70cc69adc05362863439277048e06386c1f885e1' requests
+export NEMO_CARD_PYTHON=/work/venvs/nemo-card/bin/python
+# Enter an authorized API JWT without placing it in shell history or logs.
+read -rsp 'iNaturalist API JWT: ' INAT_API_TOKEN; echo
+export INAT_API_TOKEN
+```
+
+Sign into your own iNaturalist account in a browser and open
+<https://www.inaturalist.org/users/api_token>. Copy the token value (not the whole
+JSON object) into the hidden prompt above. This is the API JWT, not an application
+client secret. Do not paste it into chat or commit it. The token endpoint is
+listed in [iNaturalist's API guidance](https://www.inaturalist.org/pages/api+recommended+practices).
+
+The CV adapter follows the official repository's authenticated `score_image`
+request/response format. A normal data-API token does not guarantee this endpoint
+will accept scoring requests: test one image first. On 401, obtain a fresh token;
+on 403, report the response and resolve access with iNaturalist. The script does
+not bypass access controls. On token expiration, replace the environment variable
+and resume the same stage. Observe the limits attached to your account/API access.
+
+Before the token is ready, run only `fetch`, `nemo` and `meghan`; those need no token.
+
+First qualify a separate ten-image run, including API access, legacy backbone
+loading, metrics and charts. The models and backbone download automatically.
+
+```bash
+for stage in fetch check nemo meghan inaturalist report; do
+  "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+    --output /work/mambo-results/card-smoke --count 10 --stage "$stage" --threads 4 || break
+done
+```
+
+Inspect `card-smoke/summary.json` and both PNGs. If all stages pass, use a new
+output directory for the actual comparison:
+
+```bash
+for stage in fetch nemo meghan inaturalist report; do
+  "$NEMO_CARD_PYTHON" -m dev.releases.mambo_v3.inaturalist_card \
+    --output /work/mambo-results/card-5000 --stage "$stage" --threads 4 || break
+done
+```
+
+Stages cache completed work and run sequentially. Rerun a failed stage with the
+same arguments. Keep the directory on mounted persistent storage if the node may
+be replaced. Do not change the code or threads halfway through local predictions;
+use a fresh output directory for a changed experiment. The API stage is deliberately
+paced and can take hours; this is not part of the 30-minute local implementation
+budget. Follow any additional limits attached to your API access.
+
+The sample is frozen at retrieval time, ordered by observation publication time
+(`created_at`), with one first photo per observation. Species/subspecies-level
+Research Grade observations are eligible; subspecies are reduced to species.
+This measures a recent observation sample, not every independently uploaded photo.
+Nemo/Meghan use global vocabularies, batch one, CPU FP32 and no TTA. iNaturalist
+receives only the photo and Lepidoptera restriction, without coordinates; ranking
+uses `vision_score`. Research Grade labels are the reference, not predictions.
+GBIF exact species matches reconcile taxonomy; unresolved mappings are retained
+in diagnostics and must be resolved before card staging. Species outside model
+vocabularies remain in the primary metrics. `mini_metrics` computes macro accuracy
+and macro F1 at threshold zero, without threshold optimization. Confidence is not
+compared across services. Recent images are not proof of zero pretraining overlap.
+
+Speed excludes initial model downloads/loading and uses three warm-up predictions.
+Local latency includes reading/decoding/preprocessing and prediction; remote
+latency includes upload, network and service time, excluding our rate-limit sleep.
+The speed figure separates these workloads. Runtime metadata records CPU, threads,
+versions and process peak RSS; RSS includes Python/runtime overhead and is not a
+standalone model-memory estimate. This is a card illustration, not a new training
+benchmark or a universal hardware claim.
+
+Package results without images, checkpoints or credentials:
+
+```bash
+tar -czf /work/mambo-results/nemo-card-results.tar.gz \
+  -C /work/mambo-results/card-5000 \
+  selection.json samples.json summary.json quality.png speed.png \
+  nemo.csv meghan.csv inaturalist.csv nemo meghan inaturalist responses
+sha256sum /work/mambo-results/nemo-card-results.tar.gz > /work/mambo-results/nemo-card-results.tar.gz.sha256
+```
+
+After downloading and reviewing the archive locally, stage only the compact
+summary and figures (never sample images or raw observation/API responses):
+
+```bash
+.venv/bin/python -m dev.releases.mambo_v3.inaturalist_card \
+  --stage card --output /path/to/extracted/results
+```
+
+This writes `dev/releases/mambo_v3/card-performance/`. Review and commit those
+three files separately from the script. Bundle/Hub staging includes their hashes;
+publication staging rejects missing, incomplete or altered comparison evidence.

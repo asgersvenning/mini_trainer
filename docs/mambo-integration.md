@@ -132,6 +132,14 @@ Match class identities using GBIF IDs rather than positions. Nemo embeddings hav
 width 1,280; regenerate Meghan similarity indexes and recalibrate confidence
 thresholds. Compatible calls do not imply identical model predictions.
 
+For ACS and other existing native integrations, the dependency is
+`mt-trainer==0.3.1` and the import remains `from mini_trainer.deploy import Predictor`.
+A separate `mambo-v3` dependency is only needed when using `mambo_deploy`.
+Native construction loads eagerly; read `predictor.input_size` before the first
+image. For the portable wrapper, call `predictor.load()` at service startup and
+use the same public property. No dummy prediction or private model inspection is
+needed. The maintenance update retains the Nemo weights; quantization is not included.
+
 The portable `weights=` override must still match the bundle's checkpoint; use the
 native predictor for arbitrary supported checkpoints. `model=` selects geography,
 not a model generation. The portable `configure(model=..., class_list=..., tta=...)`

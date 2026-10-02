@@ -49,15 +49,54 @@ def model_card(manifest, classes):
     """Render public facts from the bundle; do not maintain parallel counts."""
     template = Path(__file__).with_name("MODEL_CARD.md").read_text()
     counts = [f"{len(labels):,} {rank}" for labels, rank in zip(classes["labels"], ("species", "genera", "families"), strict=True)]
-    return template.replace("{{vocabulary}}", f"{counts[0]}, {counts[1]} and {counts[2]}").replace(
-        "{{embedding_dim}}", f"{manifest['embedding']['dimension']:,}"
+    provenance = tomllib.loads(Path(__file__).with_name("model-provenance.toml").read_text())
+    facts = {
+        "vocabulary": f"{counts[0]}, {counts[1]} and {counts[2]}",
+        "embedding_dim": f"{manifest['embedding']['dimension']:,}",
+        "epochs": str(provenance["training_epochs"]),
+        "training_images": f"{provenance['training_images']:,}",
+        "training_config": provenance["configuration"]["url"],
+        "performance": card_performance(),
+    }
+    for key, value in facts.items():
+        template = template.replace("{{" + key + "}}", value)
+    return template
+
+
+def card_performance(directory=None, *, required=False):
+    """A smoke run or edited figure must never become published comparison evidence."""
+    directory = Path(directory) if directory else Path(__file__).with_name("card-performance")
+    if not (directory / "summary.json").exists():
+        if required:
+            raise ValueError("Run and review the 5,000-image iNaturalist comparison before publication")
+        return "The maintenance comparison is awaiting its UCloud run; no new results are claimed."
+    summary = json.loads((directory / "summary.json").read_text())
+    if summary["count"] != 5000 or summary["unmapped_truth"]:
+        raise ValueError("Card requires 5,000 images and resolved ground-truth taxonomy")
+    if set(summary["models"]) != {"nemo", "meghan", "inaturalist"}:
+        raise ValueError("Card comparison is incomplete")
+    for name in ("quality.png", "speed.png"):
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != summary["figures"][name]:
+            raise ValueError(f"Changed card figure: {name}")
+    return (
+        "![Macro-Accuracy and Macro-F1](performance/quality.png)\n\n"
+        "![Prediction speed](performance/speed.png)\n\n"
+        f"5,000 recent Research Grade Lepidoptera observations, frozen {summary['cutoff'][:10]}; "
+        "one image per observation. Species-level macro metrics from `mini_metrics`, "
+        "global vocabulary, no TTA, no location input. Meghan is MAMBO_v2. "
+        "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency. "
+        "[Method and results](performance/summary.json)."
     )
 
 
 def package(source, output):
     bundle = Bundle(source)
     metadata = {}
-    for relative in bundle.manifest["files"]:
+    # Model-card figures belong to Hub/offline assets, not the runtime's text bootstrap.
+    for relative in list(bundle.manifest["files"]):
+        if relative.startswith("performance/"):
+            del bundle.manifest["files"][relative]
+            continue
         if relative not in bundle.manifest["origins"]:
             metadata[relative] = bundle.file(relative).read_text()
     # Ship current integration guidance, not the README frozen in the local bundle.
