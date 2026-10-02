@@ -85,10 +85,8 @@ def card_performance(directory=None, *, required=False):
         "![Prediction speed](performance/speed.png)\n\n"
         f"{summary['count']:,} recent Research Grade Lepidoptera observations across {summary['species_count']:,} species, "
         f"frozen {summary['cutoff'][:10]}; "
-        "one image per observation. Species-level macro metrics from `mini_metrics`, "
-        "global vocabulary, no TTA, no location input. Meghan is MAMBO_v2. "
-        "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency. "
-        "[Method and results](performance/summary.json)."
+        "one image per observation, global scope, no TTA or location input. "
+        "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency."
     )
 
 

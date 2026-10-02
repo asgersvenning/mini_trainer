@@ -325,26 +325,9 @@ use a fresh output directory for a changed experiment. The API stage is delibera
 paced and can take hours; this is not part of the 30-minute local implementation
 budget. Follow any additional limits attached to your API access.
 
-The sample is frozen at retrieval time, ordered by observation publication time
-(`created_at`), with one first photo per observation. Species/subspecies-level
-Research Grade observations are eligible; subspecies are reduced to species.
-This measures a recent observation sample, not every independently uploaded photo.
-Nemo/Meghan use global vocabularies, batch one, CPU FP32 and no TTA. iNaturalist
-receives only the photo and Lepidoptera restriction, without coordinates; ranking
-uses `vision_score`. Research Grade labels are the reference, not predictions.
-GBIF exact species matches reconcile taxonomy; unresolved mappings are retained
-in diagnostics and must be resolved before card staging. Species outside model
-vocabularies remain in the primary metrics. `mini_metrics` computes macro accuracy
-and macro F1 at threshold zero, without threshold optimization. Confidence is not
-compared across services. Recent images are not proof of zero pretraining overlap.
-
-Speed excludes initial model downloads/loading and uses three warm-up predictions.
-Local latency includes reading/decoding/preprocessing and prediction; remote
-latency includes upload, network and service time, excluding our rate-limit sleep.
-The speed figure separates these workloads. Runtime metadata records CPU, threads,
-versions and process peak RSS; RSS includes Python/runtime overhead and is not a
-standalone model-memory estimate. This is a card illustration, not a new training
-benchmark or a universal hardware claim.
+Reporting uses the same frozen observations for all three models and `mini_metrics`
+for species-level scores. API latency excludes rate-limit waits. Keep the complete
+result archive locally; the card needs only aggregate charts and a short caption.
 
 Package results without images, checkpoints or credentials:
 

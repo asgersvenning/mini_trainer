@@ -33,6 +33,12 @@ print(prediction.label, prediction.confidence)
 
 ## Performance
 
+![Nemo and Meghan on in-domain and Flemming images](performance/nemo-card-quality.svg)
+
+Species-level results on the original held-out images and Flemming monitoring
+crops. No confidence filtering; full class support. Nemo uses ONNX; TTA means
+averaging augmented views. Global scope in-domain, northern European scope on Flemming.
+
 {{performance}}
 
 ## Variants and details

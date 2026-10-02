@@ -137,9 +137,10 @@ def build(source, destination):
             "files": {},
         }
         (root / "MODEL_CARD.md").write_text(model_card(manifest, {"labels": labels}))
+        (root / "performance").mkdir()
+        shutil.copyfile(HERE.parents[2] / "docs/assets/nemo-card-quality.svg", root / "performance/nemo-card-quality.svg")
         performance = HERE / "card-performance"
         if performance.exists():
-            (root / "performance").mkdir()
             for name in ("summary.json", "quality.png", "speed.png"):
                 shutil.copyfile(performance / name, root / "performance" / name)
         for path in sorted(root.rglob("*")):
