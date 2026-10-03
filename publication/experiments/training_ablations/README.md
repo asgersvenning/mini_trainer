@@ -1,6 +1,6 @@
 # Flat training ablations on UCloud
 
-Research protocol and executable harness, not measured evidence of a feature benefit.
+Research protocol, executable harness and exploratory screening results.
 The study uses production trainer APIs through a research builder; it changes no
 package defaults. It follows the [publication workflow](../README.md) conventions:
 frozen inputs, paired seeds, validation-only choices and retained individual results.
@@ -93,6 +93,68 @@ Muon; convolutional backbone parameters and the final classifier use auxiliary
 AdamW. Keep this routing fixed across factorial cells. Defer projection removal,
 optimizer choice, individual normalization operations, initialization, hierarchy,
 extra backbones and additional strengths until a specific result warrants them.
+
+## Initial screening results
+
+Campaign `factorial-11` completed all nine final-checkpoint evaluations on
+4 October 2026, source `d628ce5`, seed 42, using the recipe above. Both UCloud
+jobs (`12410957`, `12410958`) finished successfully. Retained evidence is under
+`/12348329/mini-trainer-ablations/results/factorial-11/study/runs/`, with each
+variant in `<variant>_seed42/attempt-000/`. Completion manifests record artifact
+hashes; all six JSON artifacts per run were independently downloaded and verified.
+Checkpoint and prediction bytes were not independently downloaded for this review.
+Backbone and projection initialization hashes match across all nine runs.
+
+Final validation results (recall and accuracy in percent):
+
+| Variant | Accuracy | Macro recall | Tail recall | NLL |
+| --- | ---: | ---: | ---: | ---: |
+| full | 97.9736 | 97.2469 | 96.5591 | 0.089494 |
+| no_normalization | 97.7519 | 96.9388 | 96.1375 | 0.097816 |
+| no_regularization | 97.8997 | 97.1650 | 96.6861 | 0.093018 |
+| ce | 98.0203 | 96.3054 | 94.1300 | 0.079053 |
+| no_normalization_no_regularization | 97.6314 | 96.5243 | 95.5263 | 0.097794 |
+| no_normalization_ce | 97.8414 | 96.0253 | 93.9457 | 0.094592 |
+| no_regularization_ce | 98.0009 | 96.2262 | 94.2670 | 0.080388 |
+| core_reference | 97.7714 | 95.8936 | 93.7296 | 0.094031 |
+| fixed_adjustment | 97.8803 | 97.4536 | 97.2217 | 0.097551 |
+
+Equal-cell contrasts computed by `study.factorial_contrasts` (recall differences
+in percentage points; positive NLL differences are worse):
+
+| Contrast | Macro recall | Tail recall | NLL |
+| --- | ---: | ---: | ---: |
+| Normalization | +0.3904 | +0.5758 | -0.010570 |
+| Regularization | +0.1768 | +0.1409 | -0.001069 |
+| EMLA versus CE | +0.8561 | +2.2092 | +0.007515 |
+| Normalization × regularization | -0.1926 | -0.5457 | -0.002721 |
+| Normalization × EMLA | +0.1681 | +0.4299 | +0.008042 |
+| Regularization × EMLA | +0.1427 | +0.2026 | -0.001364 |
+| Three-way interaction | -0.2800 | -0.3851 | -0.001649 |
+
+EMLA improves macro and tail recall in all four conditional comparisons with CE.
+Regularization's small average effect conceals a tail-recall sign reversal under
+EMLA: +0.6113 points without normalization versus -0.1270 with it (interaction
+-0.7382 points). This is an exploratory combination effect, not evidence of a
+mechanism or a repeatable effect. No averaged interaction crosses the predefined
+recall-magnitude flags; that does not establish absence of interactions.
+
+At the full recipe, adaptive EMLA minus fixed adjustment gives -0.2067 macro-recall
+points, -0.6625 tail-recall points, +0.0933 accuracy points and -0.008056 NLL.
+Thus this screen supports a recall benefit from adjustment versus CE, but does
+not establish that the adaptive gate improves recall over constant adjustment.
+All findings are validation-only, one-seed results within a ten-epoch budget.
+
+Proposed confirmation, pending selection: repeat the four EMLA cells (`full`,
+`no_normalization`, `no_regularization`, `no_normalization_no_regularization`)
+plus `fixed_adjustment`, with paired seeds 43 and 44 and the same ten-epoch
+budget. This is ten runs / 100 model-epochs, approximately 8.3 GPU-hours of
+training at the observed 50 minutes per run, excluding setup and queue time.
+It confirms the normalization × regularization interaction conditional on EMLA
+and the adaptive-versus-fixed trade-off. It does not confirm CE contrasts or
+the three-way interaction; those remain exploratory. Use the held-out test
+partition only after freezing the confirmation choices. No confirmation runs
+have been launched.
 
 ## Learning-rate qualification before screening
 
