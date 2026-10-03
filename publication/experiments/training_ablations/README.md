@@ -34,8 +34,8 @@ recipe only. `core_reference` retains projection and Muon: it is a factorial anc
 not a standard bare-linear training baseline. Defer optimizer/projection comparisons.
 
 The screening config sets `screening: true`, one seed and ten epochs; skip `tune`.
-The candidate head LR is 0.003, with weight decay 0.001; complete the bounded
-LR checks below before launching.
+The frozen head LR is 0.003, with weight decay 0.001, supported by the bounded
+LR checks below.
 Batch 512 / 32 workers comes from the retained B200 capacity evidence.
 The original long tuning and fixed-LR screening allocations were stopped; preserve
 their partial artifacts, but do not present them as completed ablations. Prepare a
@@ -96,10 +96,9 @@ extra backbones and additional strengths until a specific result warrants them.
 
 ## Learning-rate qualification before screening
 
-**The fixed-LR screen is on hold.** The original tuning only exercised LR 0.0003
-and did not bracket instability. The factorial LR
-settings are provisional until the following bounded probes are reviewed.
+The original tuning only exercised LR 0.0003 and did not bracket instability.
 The initial screen allocation was stopped; retain its artifacts as setup evidence.
+The replacement range and hold checks below support head LR 0.003 for screening.
 
 Run one fresh process per optimizer with the same frozen cohort and sampled images:
 
@@ -136,7 +135,14 @@ Check **one** conservative candidate per optimizer: `--hold --upper 0.003`. Hold
 warm up to that LR and keep it constant with the backbone active in the second
 epoch. Additional checks require an observed failure or concrete ambiguity; do not
 refine exact optima or instability thresholds. These short probes establish neither
-optimal hyperparameters nor long-run stability. Record their outcome before launch.
+optimal hyperparameters nor long-run stability.
+
+Both fixed-LR checks completed at revision `bb3ec42` in UCloud job `12410954`,
+with 128 head-warmup and 128 backbone-active batches each, zero AMP skips and
+decreasing training loss. Results and curves are retained under
+`/work/results/hold-09/{muon,adamw}` alongside the referenced frozen inputs in
+`/work/results/lr-08/study`. Freeze head LR 0.003 (backbone 0.001) and weight decay
+0.001 for the factorial. This is a qualified candidate, not an estimated optimum.
 
 Use two independent single-B200 allocations for the factorial, with disjoint shards
 of the same prepared root. Reuse the installed environment and prepared inputs for
