@@ -392,3 +392,35 @@ CPU train/reload runs. These do not establish CUDA correctness or live API behav
 For this research-only change, those focused checks cover the affected boundaries;
 the expensive architecture, deployment and quantization suites are not required.
 Broaden validation if a later change alters shared trainer/package behavior.
+
+## Dispatch across single-GPU allocations
+
+Prepare and qualify one campaign once, then mount the **same persistent study
+root** at the same path in each allocation. Pin the same revision, environment,
+dataset paths and credentials. Separate single-GPU nodes can execute disjoint
+strides of the frozen plan; this avoids waiting for several GPUs on one node:
+
+```bash
+# Separate allocations; each sees its own GPU as device 0.
+python -m publication.experiments.training_ablations.study tune /work/results/lepi-ablations --devices 0 --shard 0/2 --hours 10
+python -m publication.experiments.training_ablations.study tune /work/results/lepi-ablations --devices 0 --shard 1/2 --hours 10
+```
+
+Each shard exits successfully after its own work. Tuning selection and the main
+plan appear only after all eight tuning runs finish; the last completing shard
+writes them under the shared controller lock. Then use `run` with the same
+`--shard INDEX/COUNT` syntax for main experiments. Indices are zero-based; keep the
+shard count fixed for each stage. Unstarted runs need no `--retry`; failed or
+interrupted attempts require inspection followed by that flag as usual.
+
+Per-run POSIX file locks protect attempt creation and execution, including ordinary
+unsharded commands. Overlapping submissions fail visibly before duplicating a run.
+The results filesystem must honor these locks across nodes; qualify that behavior
+before concurrent dispatch. Sharded tuning does not write intermediate summaries;
+run `summarize` after the stage if needed. The final main shard writes the main
+summary. Existing commands without `--shard` retain their usual behavior.
+
+Preparation accepts batches 32, 64, 128, 256, 512 and 768. Qualification descends
+that ladder from the requested size **only on CUDA OOM**. Keep the default 128
+until measured capacity supports a different globally frozen batch and worker
+count; no automatic learning-rate scaling accompanies a batch change.

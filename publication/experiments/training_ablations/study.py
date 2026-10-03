@@ -111,8 +111,8 @@ def prepare(config_path, root):
     for key in ["species", "size", "epochs", "tuning_epochs", "batch_size", "threads"]:
         if not isinstance(config[key], int) or config[key] < 1:
             raise ValueError(f"Invalid {key}")
-    if config["workers"] < 0 or config["batch_size"] not in [32, 64, 128]:
-        raise ValueError("Nonnegative workers and batch size 32, 64 or 128 required")
+    if config["workers"] < 0 or config["batch_size"] not in [32, 64, 128, 256, 512, 768]:
+        raise ValueError("Nonnegative workers and batch size 32, 64, 128, 256, 512 or 768 required")
     if len(set(config["seeds"])) != len(config["seeds"]) or 41 in config["seeds"]:
         raise ValueError("Main seeds must be unique and distinct from tuning seed 41")
     root.mkdir(parents=True, exist_ok=False)
@@ -232,6 +232,12 @@ def child(root, attempt, stage, device, config, deadline):
 def execute(root, run, config, device, deadline, retry=False):
     directory = root / "runs" / run["id"]
     directory.mkdir(parents=True, exist_ok=True)
+    with (directory / ".run.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return execute_locked(root, run, config, device, deadline, retry, directory)
+
+
+def execute_locked(root, run, config, device, deadline, retry, directory):
     attempts = sorted(directory.glob("attempt-*"))
     attempt = attempts[-1] if attempts else None
     if attempt and completed(attempt, run):
@@ -307,7 +313,7 @@ def qualify(root, config, devices, deadline, retry):
     # Full class vocabulary; tiny train/validation sample. Never evaluates test.
     treatments = {name: VARIANTS[name] for name in ["full", "no_projection", "adamw", "no_normalization", "fixed_adjustment"]}
     treatments["adamw_no_projection"] = {"optimizer": "adamw", "hidden": False}
-    for batch in [v for v in [128, 64, 32] if v <= config["batch_size"]]:
+    for batch in [v for v in [768, 512, 256, 128, 64, 32] if v <= config["batch_size"]]:
         candidate = {**config, "batch_size": batch}
         runs = [
             {
@@ -409,10 +415,44 @@ def summarize(root):
         root / "summary.json",
         {
             "completed_main_runs": len(main),
-            "expected_main_runs": 9 * len(json.loads((root / "config.json").read_text())["seeds"]),
+            "expected_main_runs": len(VARIANTS) * len(json.loads((root / "config.json").read_text())["seeds"]),
             "interpretation": "Paired conditional effects; seed variation is not test-sample uncertainty. Incomplete runs remain visible.",
         },
     )
+
+
+def parse_shard(value):
+    try:
+        index, count = map(int, value.split("/"))
+        if not 0 <= index < count:
+            raise ValueError
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Shard must be INDEX/COUNT with 0 <= INDEX < COUNT") from exc
+    return index, count
+
+
+def shard_runs(runs, shard):
+    return runs if shard is None else runs[shard[0] :: shard[1]]
+
+
+def all_complete(root, runs):
+    paths = []
+    for run in runs:
+        attempts = sorted((root / "runs" / run["id"]).glob("attempt-*"))
+        if not attempts or not (attempts[-1] / "complete.json").exists():
+            return None
+        paths.append(latest_complete(root, run))
+    return paths
+
+
+def finalize_tuning(root, config):
+    paths = all_complete(root, tuning_runs(config))
+    if paths is None:
+        return False
+    selected = select_tuning(paths)
+    write_json(root / "tuning.json", selected)
+    write_json(root / "plan.json", main_runs(config, selected))
+    return True
 
 
 def main():
@@ -423,9 +463,12 @@ def main():
     parser.add_argument("--devices", default="0", help="Comma-separated equivalent GPU IDs; one process per GPU")
     parser.add_argument("--hours", type=float, default=24, help="Remaining allocation hours, including a cleanup reserve")
     parser.add_argument("--retry", action="store_true")
+    parser.add_argument("--shard", type=parse_shard, help="Zero-based INDEX/COUNT; tune/run on a shared prepared root")
     parser.add_argument("--attempt", type=Path)
     parser.add_argument("--stage", choices=["train", "evaluate"])
     args = parser.parse_args()
+    if args.shard is not None and args.command not in ["tune", "run"]:
+        parser.error("--shard is supported only for tune and run")
     root = args.root.resolve()
     if args.command == "prepare":
         if not args.config:
@@ -456,7 +499,8 @@ def main():
                 "complete" if (path / "complete.json").exists() else "failed" if (path / "failure.json").exists() else "incomplete",
             )
         return
-    with (root / ".controller.lock").open("w") as lock:
+    lock_name = ".controller.lock" if args.shard is None else f".controller-{args.command}-{args.shard[0]}-of-{args.shard[1]}.lock"
+    with (root / lock_name).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         signal.signal(signal.SIGINT, lambda *_: STOP.set())
         signal.signal(signal.SIGTERM, lambda *_: STOP.set())
@@ -478,10 +522,10 @@ def main():
                 raise ValueError("Qualification evidence incomplete")
         config["batch_size"] = qualified["batch_size"]
         if args.command == "tune":
-            paths = queue(root, tuning_runs(config), config, devices, deadline, args.retry)
-            selected = select_tuning(paths)
-            write_json(root / "tuning.json", selected)
-            write_json(root / "plan.json", main_runs(config, selected))
+            runs = tuning_runs(config)
+            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
+            if args.shard is None:
+                finalize_tuning(root, config)
         else:
             selected = json.loads((root / "tuning.json").read_text())
             paths = [latest_complete(root, run) for run in tuning_runs(config)]
@@ -490,8 +534,17 @@ def main():
             runs = main_runs(config, selected)
             if json.loads((root / "plan.json").read_text()) != runs:
                 raise ValueError("Main run plan differs from tuning selection")
-            queue(root, runs, config, devices, deadline, args.retry)
-        summarize(root)
+            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
+        if args.shard is None:
+            summarize(root)
+        else:
+            # Serialize shared JSON/summary writes; earlier shards exit successfully.
+            with (root / ".controller.lock").open("a") as finalization_lock:
+                fcntl.flock(finalization_lock, fcntl.LOCK_EX)
+                if args.command == "tune":
+                    finalize_tuning(root, config)
+                elif all_complete(root, runs) is not None:
+                    summarize(root)
 
 
 if __name__ == "__main__":
