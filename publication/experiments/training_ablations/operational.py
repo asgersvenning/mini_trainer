@@ -58,10 +58,18 @@ class ProfileBuilder(training.StudyBuilder):
         return ProfileLogger(**kwargs)
 
 
-def profile(root, output, samples):
-    config = study.verify(root)
-    if (root / "qualified.json").exists():
+def profile(root, output, samples, *, batch_size=None, workers=None):
+    config = dict(study.verify(root))
+    if batch_size is not None:
+        if batch_size < 1:
+            raise ValueError("Batch size must be positive")
+        config["batch_size"] = batch_size
+    elif (root / "qualified.json").exists():
         config["batch_size"] = json.loads((root / "qualified.json").read_text())["batch_size"]
+    if workers is not None:
+        if workers < 0:
+            raise ValueError("Workers must be nonnegative")
+        config["workers"] = workers
     if samples < 12 * config["batch_size"]:
         raise ValueError("Use at least 12 training batches for a timing window after warmup")
     output.mkdir(parents=True, exist_ok=False)
@@ -137,8 +145,20 @@ def main():
     parser.add_argument("root", type=Path, help="Prepared campaign at the current source/environment revision")
     parser.add_argument("output", type=Path, help="Fresh output directory, separate from campaign runs")
     parser.add_argument("--samples", type=int, default=4096)
+    parser.add_argument("--batch-size", type=int, help="Profile-only override; takes precedence over qualification")
+    parser.add_argument("--workers", type=int, help="Profile-only loader worker count")
     args = parser.parse_args()
-    profile(args.root.resolve(), args.output.resolve(), args.samples)
+    output = args.output.resolve()
+    existed = output.exists()
+    try:
+        profile(args.root.resolve(), output, args.samples, batch_size=args.batch_size, workers=args.workers)
+    except Exception as error:
+        if not existed and output.exists():
+            write_json(
+                output / "failure.json",
+                {"type": type(error).__name__, "message": str(error), "cuda_oom": isinstance(error, torch.cuda.OutOfMemoryError)},
+            )
+        raise
 
 
 if __name__ == "__main__":

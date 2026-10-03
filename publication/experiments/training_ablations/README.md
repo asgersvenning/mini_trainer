@@ -213,6 +213,22 @@ checkpoint/figure costs and the other recipes still require headroom. Interrupte
 training restarts from initialization, so a complete main run must fit an allocation.
 Use a larger `--samples` value only if timing variability leaves that decision unclear.
 
+To test larger batches and worker budgets without altering the prepared study,
+run separate profile processes with explicit overrides and the same sample count:
+
+```bash
+python -m publication.experiments.training_ablations.operational /work/results/lepi-ablations /work/results/capacity-b512-w32 --samples 12288 --batch-size 512 --workers 32
+python -m publication.experiments.training_ablations.operational /work/results/lepi-ablations /work/results/capacity-b768-w48 --samples 12288 --batch-size 768 --workers 48
+```
+
+An explicit batch overrides `qualified.json` only for that profile. Each output's
+`resolved.json` records the settings; frozen campaign files remain unchanged.
+A failed CLI run retains `failure.json` and exits nonzero. Continue with a smaller
+candidate only when `cuda_oom` is true; data or other failures need investigation.
+Use a fresh process/output for each candidate. These paired capacity probes change
+batch and workers together to select a practical operating point, not to attribute
+throughput to either parameter. Freeze the selected settings before optimizer tuning.
+
 On a fresh qualification directory, also send SIGTERM to the **study controller**
 while its first training worker is active, keeping the allocation alive. Confirm
 that the worker exits, `failure.json` records interruption, and no `complete.json`

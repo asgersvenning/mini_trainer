@@ -110,7 +110,14 @@ def test_profile_uses_real_trainer_and_reload_on_random_subset(tmp_path, monkeyp
     # Restore the builder after the dedicated-process helper is exercised in pytest.
     monkeypatch.setattr(training, "StudyBuilder", training.StudyBuilder)
     output = tmp_path / "profile"
-    operational.profile(root, output, 48)
+    config["batch_size"] = 8
+    (root / "qualified.json").write_text(json.dumps({"batch_size": 8}))
+    frozen_bytes = (root / "config.json").read_bytes()
+    operational.profile(root, output, 48, batch_size=4, workers=0)
+    resolved = json.loads((output / "resolved.json").read_text())
+    assert resolved["batch_size"] == 4 and resolved["workers"] == 0
+    assert config["batch_size"] == 8
+    assert (root / "config.json").read_bytes() == frozen_bytes
     result = json.loads((output / "profile.json").read_text())
     assert result["training_batches_measured"] == 8
     assert result["training_images_per_second"] > 0
@@ -120,3 +127,25 @@ def test_profile_uses_real_trainer_and_reload_on_random_subset(tmp_path, monkeyp
     assert evaluation["split"] == "validation"
     assert evaluation["backbone_parameters_changed"]
     assert not (root / "runs").exists()
+
+
+@pytest.mark.parametrize("oom", [False, True])
+def test_profile_cli_retains_oom_without_disguising_other_failures(tmp_path, monkeypatch, oom):
+    import torch
+
+    from publication.experiments.training_ablations import operational
+
+    output = tmp_path / "profile"
+    error = torch.cuda.OutOfMemoryError("capacity exhausted") if oom else ValueError("invalid image")
+
+    def fail(root, output, samples, **kwargs):
+        output.mkdir()
+        raise error
+
+    monkeypatch.setattr(operational, "profile", fail)
+    monkeypatch.setattr(sys, "argv", ["operational", str(tmp_path), str(output), "--batch-size", "768", "--workers", "48"])
+    with pytest.raises(type(error), match=str(error)):
+        operational.main()
+    failure = json.loads((output / "failure.json").read_text())
+    assert failure["cuda_oom"] is oom
+    assert failure["type"] == type(error).__name__
