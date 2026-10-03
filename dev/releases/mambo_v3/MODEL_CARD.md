@@ -33,17 +33,26 @@ print(prediction.label, prediction.confidence)
 
 ## Performance
 
-![Nemo and Meghan on in-domain and Flemming images](performance/nemo-card-quality.svg)
+The comparisons cover three image domains:
+
+1. **GBIF training domain:** held-out test images from the same collection used
+   to train Nemo (global scope; left panel).
+2. **Automated monitoring:** Danish AMI camera-light-trap image crops,
+   expert-reviewed by Flemming Helsing (northern European scope; right panel).
+3. **iNaturalist:** recent research-grade images from its own platform, comparing
+   Nemo, Nemo + TTA and Meghan with iNaturalist’s model (below).
+
+![Nemo and Meghan on GBIF test images and automated monitoring images](performance/nemo-card-quality.svg)
 
 Species-level scores after confidence filtering. Solid bars show full support;
 pale bars show shared support >5. Acceptance rates appear below each model.
-Global scope in-domain; northern European scope for Danish AMI camera-light-trap
-image crops, expert-reviewed by Flemming Helsing.
 
 **Suggested species-confidence thresholds for Nemo ONNX (without / with TTA):**
 **0.53 / 0.35** for general photographs (global scope);
 **0.82 / 0.75** for image crops of single individuals from camera light traps
 (e.g. AMI; `north_europe`).
+
+### Recent research-grade iNaturalist images
 
 {{performance}}
 
