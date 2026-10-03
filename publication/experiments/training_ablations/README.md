@@ -261,7 +261,8 @@ Qualification runs six tiny real-image treatments, retaining the full classifier
 vocabulary/counts and exercising four optimizer/projection combinations plus the
 unnormalized and fixed-adjustment branches. It uses training/validation only, two
 epochs (warmup followed by backbone updates), at most `max(2 × batch, 128)` records per partition. Only CUDA OOM permits
-global batch fallback 128 → 64 → 32; other failures stop. Reloaded backbone
+global batch fallback through 768 → 512 → 256 → 128 → 64 → 32, starting at the
+configured batch; other failures stop. Reloaded backbone
 parameters must differ from their initialization; BatchNorm buffer changes alone
 do not satisfy this check. Freeze the selected batch
 before tuning. This is infrastructure evidence, not convergence or representative
@@ -324,9 +325,30 @@ IDs, in full/no-projection/AdamW/AdamW-no-projection/unnormalized/fixed order, a
 
 These pilots predate the peak-memory reporting correction (`8440f49`): their
 `peak_allocated_bytes` fields underreport the batch peaks and must not size future
-allocations. The correction has focused regression coverage but has not yet run
-on UCloud. Cancellation/restart on the live platform, full-cohort IO and runtime,
-and multi-GPU concurrency remain unqualified. Main/tuning runs have not started.
+allocations. Operational job **12410903** (`2e8c752`) subsequently verified the
+corrected peaks, controller SIGTERM with worker cleanup, preservation of the failed
+attempt, and successful retry followed by all six qualification treatments.
+Evidence is under `/12348329/mini-trainer-ablations/results/operations-03`:
+`interruption.json`, `study/qualified.json`, and `profile/profile.json`.
+
+Capacity job **12410905** (`fb74a81`) completed both settings below on one full
+B200 using the same 12,288-image sample (507 species, seed 39). Both checkpoint
+reloads passed without OOM. Profiles and sample hashes are retained under
+`/12348329/mini-trainer-ablations/results/capacity-04`, in `b512-w32/` and `b768-w48/`.
+
+| Batch / workers | Training images/s | Validation images/s | Peak allocated GB |
+| --- | ---: | ---: | ---: |
+| 512 / 32 | 741.50 | 3040.10 | 117.59 |
+| 768 / 48 | 732.36 | 3147.48 | 176.15 |
+
+Select **512 / 32** for campaign qualification: both training rates are within 5%,
+and the smaller batch leaves substantially more memory headroom. These are single
+sampled measurements with warm-cache effects, not evidence of statistical speed
+superiority or sustained full-cohort throughput. The paired probes change batch
+and workers together. Freeze the qualified batch before tuning; do not change it
+between scientific treatments. Full-cohort runtime and concurrent storage load
+still need verification during tuning.
+
 Continue development on `research/training-ablations`; pin each node to a published
 commit and use a fresh prepared study when source changes.
 
