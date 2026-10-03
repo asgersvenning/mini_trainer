@@ -313,7 +313,7 @@ def qualify(root, config, devices, deadline, retry):
                 **FULL,
                 **VARIANTS[name],
                 "seed": 40,
-                "epochs": 1,
+                "epochs": 2,
                 "lr": 0.001,
                 "weight_decay": 0.01,
                 "qualification": True,

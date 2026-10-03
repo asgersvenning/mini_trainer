@@ -200,9 +200,11 @@ the study itself.
 
 Qualification runs six tiny real-image treatments, retaining the full classifier
 vocabulary/counts and exercising four optimizer/projection combinations plus the
-unnormalized and fixed-adjustment branches. It uses training/validation only, one
-epoch, at most `max(2 × batch, 128)` records per partition. Only CUDA OOM permits
-global batch fallback 128 → 64 → 32; other failures stop. Freeze the selected batch
+unnormalized and fixed-adjustment branches. It uses training/validation only, two
+epochs (warmup followed by backbone updates), at most `max(2 × batch, 128)` records per partition. Only CUDA OOM permits
+global batch fallback 128 → 64 → 32; other failures stop. Reloaded backbone
+parameters must differ from their initialization; BatchNorm buffer changes alone
+do not satisfy this check. Freeze the selected batch
 before tuning. This is infrastructure evidence, not convergence or representative
 full-dataset IO evidence. Its counts/metrics must not enter publication quality tables.
 
@@ -245,8 +247,10 @@ preparation. Allocated-memory peaks are phase peaks, not whole-device memory.
 The external [ucloud-api wrapper](https://github.com/GuillaumeMougeot/ucloud-api)
 documents submission, persistent client-side queues, mounting and batch termination.
 The pilot has submitted successfully on the configured SDU project and completed
-fresh-node installation and preparation. GPU qualification and shutdown still need
-confirmation. Keep the wrapper in its own tool environment and pin a reviewed Git revision.
+fresh-node installation, preparation, six warmup-only GPU runs with W&B uploads,
+checkpoint reload/evaluation, and automatic successful shutdown (job 12410894).
+That first pilot missed post-warmup backbone updates; the corrected two-epoch
+qualification must pass before tuning. Keep the wrapper in its own tool environment and pin a reviewed Git revision.
 Use interactive `ucloud login`; never copy tokens into configs, logs or this repository.
 
 Keep `ucloud-pilot.toml` beside the `ucloud/` bootstrap directory. Fill the product,

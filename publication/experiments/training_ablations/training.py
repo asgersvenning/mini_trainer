@@ -115,6 +115,7 @@ class StudyBuilder(BaseBuilder):
             cls.attempt / "initialization.json",
             {
                 "backbone": tensor_hash((k, v) for k, v in model.state_dict().items() if not k.startswith(head_name + ".")),
+                "backbone_parameters": tensor_hash((k, v) for k, v in model.named_parameters() if not k.startswith(head_name + ".")),
                 "projection": tensor_hash(head.hidden.state_dict().items()) if head.hidden else None,
                 "prototype": tensor_hash(head.linear.state_dict().items()),
             },
@@ -312,6 +313,11 @@ def evaluate(root, attempt, config, run):
         weights=str(weights), device=config["device"], model_args={"pretrained": False}, skip_spherical_init=True
     )
     model.eval()
+    backbone_hash = tensor_hash((k, v) for k, v in model.named_parameters() if not k.startswith(model._backbone_output_name + "."))
+    initial = json.loads((attempt / "initialization.json").read_text())
+    backbone_changed = backbone_hash != initial["backbone_parameters"]
+    if run.get("qualification") and not backbone_changed:
+        raise ValueError("Qualification did not update backbone parameters after warmup")
     predictions = []
     started = time.monotonic()
     with torch.inference_mode():
@@ -325,6 +331,7 @@ def evaluate(root, attempt, config, run):
     result.update(
         {
             "split": split,
+            "backbone_parameters_changed": backbone_changed,
             "wall_seconds": time.monotonic() - started,
             "weights_sha256": record["weights_sha256"],
             "predictions_sha256": digest(attempt / "predictions.npz"),

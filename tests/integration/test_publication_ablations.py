@@ -252,6 +252,7 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
     training.evaluate(root, attempt, config, run)
     result = json.loads((attempt / "evaluation.json").read_text())
     assert result["split"] == "validation"
+    assert result["backbone_parameters_changed"]
     assert sum(result["support"]) > 0
     assert np.isfinite(result["nll"])
     live, preprocess = built[0]
