@@ -1,5 +1,5 @@
 ---
-title: MAMBO V3
+title: Nemo
 emoji: 🦋
 colorFrom: green
 colorTo: blue
@@ -17,7 +17,7 @@ tags:
 license: mit
 ---
 
-# MAMBO V3 demonstration
+# Nemo (MAMBO_v3) demonstration
 
 One image, configurable runtime, geographic/custom class list, TTA and hierarchical
 predictions. The Space uses the release API on CPU and caches one predictor per backend
@@ -29,7 +29,7 @@ not save images, collect feedback or use uploads for training. Do not upload
 sensitive images. Prediction requests are serialized and the queue is bounded.
 
 The application code is MIT. Model weights are **CC BY-NC-SA 4.0**. See the
-[release documentation](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md)
+[release documentation](https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/deployment/README.md)
 for integration, comparisons and limitations. Readable names are displayed when
 provided in the accompanying `taxon-names.json`; GBIF IDs remain authoritative.
 This snapshot covers all 17,212 released taxa and is reconstructed from the pinned

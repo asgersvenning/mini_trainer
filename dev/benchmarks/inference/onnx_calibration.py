@@ -6,6 +6,7 @@ import io
 import json
 import math
 import platform
+import shutil
 from argparse import ArgumentParser
 from collections import Counter
 from pathlib import Path
@@ -84,6 +85,7 @@ def calibrate(
         import onnxruntime as ort
         from onnxruntime.quantization import CalibrationDataReader, CalibrationMethod, QuantFormat, QuantType, quantize_static
         from onnxruntime.quantization.calibrate import MinMaxCalibrater, PercentileCalibrater, save_tensors_data
+        from onnxruntime.quantization.shape_inference import quant_pre_process
     except ImportError as error:
         raise ImportError("Use an explicitly prepared ONNX/ONNX Runtime quantization environment; this command installs nothing") from error
     if "calibration_cache_path" not in inspect.signature(quantize_static).parameters:
@@ -145,21 +147,43 @@ def calibrate(
 
     try:
         report["source_files"] = model_files(Path(model), onnx)
-        source = onnx.load(model)
+        # ONNX rejects hard-linked external weights. Copy before loading data;
+        # this also isolates ORT's inferred-model sidecars from the source bundle.
+        snapshot_dir = output / "source"
+        snapshot_dir.mkdir()
+        source_root = Path(model).resolve().parent
+        for item in report["source_files"]:
+            destination = snapshot_dir / Path(item["path"]).relative_to(source_root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(item["path"], destination)
+            if file_hash(destination) != item["sha256"]:
+                raise ValueError("Source ONNX asset changed while copying")
+        snapshot = snapshot_dir / Path(model).name
+        source = onnx.load(snapshot)
         report["source_ops"] = dict(Counter(node.op_type for node in source.graph.node))
         if not set(op_types).intersection(report["source_ops"]):
             raise ValueError("No selected operator types occur in the source graph")
-        # ORT writes inferred-model sidecars beside its input. Isolate those writes.
-        snapshot_dir = output / "source"
-        snapshot_dir.mkdir()
-        snapshot = snapshot_dir / "model.onnx"
-        onnx.save_model(
-            source, snapshot, save_as_external_data=True, all_tensors_to_one_file=True, location="weights.data", size_threshold=0
-        )
         del source
         report["snapshot_files"] = model_files(snapshot, onnx)
-        collector = Calibrator(
+        prepared = output / "preprocessed.onnx"
+        # Symbolic inference is optional and fails on the released Nemo CNN graph.
+        quant_pre_process(
             snapshot,
+            prepared,
+            skip_symbolic_shape=True,
+            save_as_external_data=True,
+            all_tensors_to_one_file=True,
+            external_data_location="preprocessed.data",
+        )
+        report["preprocessed_files"] = model_files(prepared, onnx)
+        report["preprocessing"] = {"optimization": True, "symbolic_shape": False, "onnx_shape": True, "max_absolute_error": {}}
+        reference = ort.InferenceSession(str(snapshot), sess_options=options, providers=["CPUExecutionProvider"])
+        reference.disable_fallback()
+        transformed = ort.InferenceSession(str(prepared), sess_options=options, providers=["CPUExecutionProvider"])
+        transformed.disable_fallback()
+        output_names = [item.name for item in reference.get_outputs()]
+        collector = Calibrator(
+            prepared,
             list(op_types),
             augmented_model_path=str(output / "calibration.onnx"),
             use_external_data_format=True,
@@ -174,8 +198,18 @@ def calibrate(
             report["batches"].append(record)
             if set(feeds) != names:
                 raise ValueError("Calibration input names do not match the source model")
+            before = reference.run(output_names, feeds)
+            after = transformed.run(output_names, feeds)
+            for name, a, b in zip(output_names, before, after, strict=True):
+                if a.shape != b.shape or not np.isfinite(a).all() or not np.isfinite(b).all():
+                    raise ValueError(f"Preprocessing changed output shape or produced nonfinite values: {name}")
+                np.testing.assert_allclose(b, a, rtol=1e-4, atol=1e-4, err_msg=f"FP32 graph preprocessing changed {name}")
+                errors = report["preprocessing"]["max_absolute_error"]
+                errors[name] = max(errors.get(name, 0.0), float(np.max(np.abs(a - b))))
             collector.collect_data(OneBatch(feeds))
             del feeds
+        del reference, transformed
+        report["preprocessing"]["validated_batches"] = len(report["batches"])
         cache = output / "ranges.json"
         ranges = collector.compute_data()
         if not len(ranges.data):
@@ -186,7 +220,7 @@ def calibrate(
         report["ranges_sha256"] = file_hash(cache)
         quantized = output / "model.onnx"
         quantize_static(
-            snapshot,
+            prepared,
             quantized,
             None,
             quant_format=QuantFormat.QDQ,

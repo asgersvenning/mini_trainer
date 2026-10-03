@@ -49,6 +49,9 @@ numbers remain explicitly tied to their original environment.
 - `docs/assets/mambo-hpc-current-speed.csv` and provenance: latest B200 request and
   streaming observations. These replace only corresponding measured points.
 
-The public evidence pages link complete tables and reproducible report commands.
+The deployment guide links the current figures and compact metric/timing data.
+Superseded studies and exploratory outputs belong in local evidence, not the
+tracked release payload. Retain historical inputs in Git only while a maintained
+report generator needs them.
 The publication preparation manifest inventories the linked asset bytes; restricted
 per-image inputs remain in the retained local/UCloud archives and are not bundled.

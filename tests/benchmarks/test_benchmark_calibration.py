@@ -1,6 +1,5 @@
 import hashlib
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -104,21 +103,19 @@ def test_calibration_recipes_keep_all_batches_source_and_thread_limits(model, in
 
     manifest, metadata = inputs
     output = tmp_path / "output"
+    # Cache downloads may colocate external tensor storage with hard links.
+    (tmp_path / "cached-weights").hardlink_to(model.parent / "weights.data")
     original = {p.name: p.read_bytes() for p in model.parent.iterdir()}
-    sessions, inference_paths = [], []
-    real_session, real_infer = ort.InferenceSession, onnx.shape_inference.infer_shapes_path
+    sessions = []
+    real_session = ort.InferenceSession
 
     def session(*args, **kwargs):
-        options = kwargs["sess_options"]
-        sessions.append((options.intra_op_num_threads, options.inter_op_num_threads))
+        options = kwargs.get("sess_options") or args[1]
+        if not options.optimized_model_filepath:
+            sessions.append((options.intra_op_num_threads, options.inter_op_num_threads))
         return real_session(*args, **kwargs)
 
-    def infer(source, target, *args, **kwargs):
-        inference_paths.append(Path(target))
-        return real_infer(source, target, *args, **kwargs)
-
     monkeypatch.setattr(ort, "InferenceSession", session)
-    monkeypatch.setattr(onnx.shape_inference, "infer_shapes_path", infer)
     report = calibrate(
         model,
         manifest,
@@ -130,9 +127,11 @@ def test_calibration_recipes_keep_all_batches_source_and_thread_limits(model, in
         threads=2,
     )
     assert report["status"] == "passed"
+    assert (output / "source/weights.data").stat().st_nlink == 1
     assert report == json.loads((output / "report.json").read_text())
     assert set(sessions) == {(2, 1)}
-    assert inference_paths and all(output in p.parents for p in inference_paths)
+    assert report["preprocessing"]["validated_batches"] == len(metadata["batches"])
+    assert report["preprocessing"]["max_absolute_error"]["scores"] < 1e-4
     assert {p.name: p.read_bytes() for p in model.parent.iterdir()} == original
     assert [b["sample_ids"] for b in report["batches"]] == [b["sample_ids"] for b in metadata["batches"]]
     assert report["output_ops"]["QuantizeLinear"] > 0
@@ -166,4 +165,26 @@ def test_calibration_batch_failure_retains_failed_report(model, inputs, tmp_path
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "failed"
     assert len(report["batches"]) == 1
+    assert not (output / "model.onnx").exists()
+
+
+def test_preprocessing_output_change_stops_calibration(model, inputs, tmp_path, monkeypatch):
+    onnx = pytest.importorskip("onnx")
+    from onnxruntime.quantization import shape_inference
+
+    original = shape_inference.quant_pre_process
+
+    def changed(source, destination, **kwargs):
+        original(source, destination, **kwargs)
+        graph = onnx.load(destination)
+        weight = next(t for t in graph.graph.initializer if len(t.dims) == 2)
+        weight.CopyFrom(onnx.numpy_helper.from_array(onnx.numpy_helper.to_array(weight) * 2, weight.name))
+        onnx.save(graph, destination)
+
+    monkeypatch.setattr(shape_inference, "quant_pre_process", changed)
+    output = tmp_path / "failed-preprocessing"
+    with pytest.raises(AssertionError, match="FP32 graph preprocessing changed"):
+        calibrate(model, inputs[0], output, method="minmax")
+    assert json.loads((output / "report.json").read_text())["status"] == "failed"
+    assert not (output / "ranges.json").exists()
     assert not (output / "model.onnx").exists()

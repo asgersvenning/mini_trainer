@@ -1,51 +1,40 @@
-# MAMBO V3 installed-artifact qualification
+# Nemo installed-artifact qualification
 
-Publication remains an owner action. The current preparation path builds the
-candidate from a clean committed checkout, qualifies its installed wheels, and
-only then stages public files. The authoritative source revision and artifact
-hashes are the candidate's `release-candidate.json` and `SHA256SUMS`.
+Qualify each final candidate from a clean release commit before publication.
+`release-candidate.json` identifies its source and artifact hashes; a candidate
+with `qualification != "passed"` cannot be staged. Follow the
+[publication procedure](publication.md) to build, qualify and stage it.
 
-## Current candidate records
+## Candidate records
 
-Local output: `local-evidence/mambo-v3-publication-candidate/`. The corresponding
-Action output is `model-candidate`; the explicit upload set is
-`model-publication`. A manifest with `qualification != "passed"` cannot be
-staged. Inspect these retained records rather than treating this page as a
-completion marker:
+The `model-candidate` Action artifact contains the following evidence. Local
+preparation writes the same files to the chosen candidate directory.
 
 | Record | What it establishes |
 | --- | --- |
-| `qualification/validation.json` | Exact installed wheel hashes, source identity, fixture type and completed contract checks |
-| `qualification/download.json` | Actual pinned ERDA downloads through the installed ONNX-only package, global defaults, embeddings and offline cache reuse |
-| `qualification/cpu-none.json` | PyTorch/ONNX global, regional/custom-list and embedding contracts on four images |
-| `qualification/cpu-rotation30_pad25_3.json` | The same contracts with the default TTA recipe |
-| `qualification/demo.json` | UI construction and real model calls through both backends, dynamic preset/custom/TTA controls, top-K and runtime reuse |
-| `qualification/environment.txt` | Resolved runtime versions in the isolated qualification environment |
-| `publication/*/publication.json` | Exact staged file inventory for GitHub, the Hub model or the Space |
+| `qualification/validation.json` | Installed wheel hashes, source identity and completed contract checks |
+| `qualification/download.json` | ONNX-only installation, pinned downloads, embeddings and offline cache reuse |
+| `qualification/cpu-none.json` | PyTorch/ONNX global, regional/custom-list and embedding contracts |
+| `qualification/cpu-rotation30_pad25_3.json` | The same contracts with TTA |
+| `qualification/demo.json` | Both runtimes and the preset, custom-list, TTA and top-K controls |
+| `qualification/environment.txt` | Resolved versions in the isolated qualification environment |
+| `publication/*/publication.json` | Exact staged GitHub, Hub model and Space inventories |
 
-The CLI check writes JSON, evaluation CSV and unit embeddings using TTA and cached
-offline weights. The ONNX-only installation is checked before installing Torch or
-the training package. Dependency consistency is checked after installing both
-backends. Qualification leaves the working development environment unchanged.
+Qualification exercises the CLI and checks ONNX-only use before installing Torch.
+It uses a separate CPU environment and never synchronizes the working `.venv`.
+Synthetic CI images check runtime behavior; local qualification can use four
+retained real images with `--dataset`. Neither is a new accuracy benchmark.
 
 ## Evidence reuse and limits
 
-The prior September 25 candidate (`97521ac`) qualified offline/read-only bundle
-use and laptop RTX 3080 Ti CUDA execution, including embeddings and TTA. Its
-runtime execution reference was `0bfb5d7`. Those records remain historical and are
-not relabelled as measurements of the newly built packages. The package identity
-migration preserves `mini_trainer` imports; the new `configure()` interface changes
-scope/TTA without replacing model sessions. Current installed CPU qualification
-covers that interface.
+Maintenance preserves model weights, preprocessing, vocabulary and presets, so
+existing [deployment evidence](../../../deployment/README.md#release-comparison) and
+[in-domain results](../../../docs/assets/mambo-indomain-thresholds.json) retain their original
+scope. Reuse them without relabelling historical measurements as new runs.
+CPU qualification does not establish GPU correctness or universal platform support.
 
-Trained weights, graphs, preprocessing, preset membership and evaluation policy
-are unchanged. Existing Flemming/in-domain accuracy and laptop/B200 measurements
-remain applicable within their documented boundaries; no full quality or speed
-campaign is repeated. Synthetic CI images establish runtime contracts only; local
-qualification can supply retained real images. Neither establishes new accuracy
-or universal Windows/macOS/edge/CUDA compatibility.
-
-Training revision and original initialization-file identity remain unavailable;
-see the model card's provenance limits. The Space is qualified locally; public
-hosting, credentials, registry installation and live cross-links require the
-owner's publication and post-publication checks in [the handoff](publication.md).
+Keep local diagnostic scripts, intermediate test totals and environment reports
+outside tracked documentation. Final candidate records remain the authority for
+release qualification. Training provenance limitations are recorded in
+[model-provenance.toml](model-provenance.toml). Public package, model-page and Space
+checks follow publication; local preparation does not establish their live state.

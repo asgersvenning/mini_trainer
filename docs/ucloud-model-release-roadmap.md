@@ -1,10 +1,12 @@
-# MAMBO V3 release handoff
+# Nemo (MAMBO_v3) release handoff
 
-Updated 25 September 2026. **Preparation is complete; publication is separate.**
-This releases the model trained on UCloud on 10–11 September, without retraining
-or quantization. The [freeze record](../dev/releases/mambo_v3/deployment-freeze.md)
-owns the release contract and completion map; [final qualification](../dev/releases/mambo_v3/final-qualification.md)
-owns candidate hashes, installed checks and remaining provenance limitations.
+Updated 1 October 2026. The original 0.3.0 release is public; **0.3.1 maintenance
+publication is pending**. Maintenance restores the native entry point, adds public
+loading/metadata and Hub integration, and uses Nemo as the public name. It retains
+the September trained weights, presets and evaluation evidence. The
+[qualification record](../dev/releases/mambo_v3/final-qualification.md) and
+[publication procedure](../dev/releases/mambo_v3/publication.md) own the current
+checks and release actions. Historical preparation details below describe 0.3.0.
 
 ## Status and authoritative documents
 
@@ -13,8 +15,8 @@ owns candidate hashes, installed checks and remaining provenance limitations.
 | Installation, API/CLI, inputs/outputs, defaults and V2 migration | [Deployment README](../deployment/README.md) and [integration reference](mambo-integration.md) |
 | Weight identity, original V2 contract and preset reconstruction | [Input audit](../dev/releases/mambo_v3/README.md), inventory and model provenance alongside it |
 | Geographic scope and membership rules | [Preset catalogue](model-presets.md); 25 versioned lists, legacy and updated memberships preserved |
-| Flemming and complementary in-domain quality | [Flemming evidence](mambo-deployment-evidence.md), [in-domain evidence](mambo-indomain-evidence.md) |
-| Laptop and production-like speed | README figures and [HPC evidence](mambo-hpc-evidence.md), with historical/current measurement scopes separate |
+| Flemming and complementary in-domain quality | [Flemming evidence](../deployment/README.md#release-comparison), [in-domain evidence](assets/mambo-indomain-thresholds.json) |
+| Laptop and production-like speed | README figures and [HPC evidence](assets/mambo-hpc-current-provenance.json), with historical/current measurement scopes separate |
 | Runtime and artifact readiness | [Installed qualification](../dev/releases/mambo_v3/final-qualification.md) |
 | Future model comparability | [Evidence policy](../dev/releases/mambo_v3/evidence-policy.md) |
 | Human publication, integrity and rollback | [Publication handoff](../dev/releases/mambo_v3/publication.md) |

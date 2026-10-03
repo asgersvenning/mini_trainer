@@ -1,13 +1,13 @@
 # Repository roadmap
 
-Updated 27 September 2026. This is the cross-campaign priority map; specialist
+Updated 1 October 2026. This is the cross-campaign priority map; specialist
 pages own procedures and evidence. Delivered work is context, not a new checklist.
 
 ## Current state and next delivery
 
 | Area | Delivered | Remaining boundary |
 | --- | --- | --- |
-| MAMBO V3 | `mt-trainer` and `mambo-v3` 0.3.0 published on PyPI; [model weights/card](https://huggingface.co/asgersvenning/MAMBO-v3) and [Space demo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) deployed. PyTorch/ONNX, presets/custom lists, embeddings, TTA and Flemming/in-domain/laptop/B200 evidence are included. | Maintain the stable `release/mambo-v3` branch and immutable release artifacts. See the [released integration guide](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md), [qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication/recovery procedure](../dev/releases/mambo_v3/publication.md). Do not restart completed release experiments. |
+| Nemo (MAMBO_v3) | Original 0.3.0 release published. Maintenance 0.3.1 restores standalone native deployment, adds explicit loading/public metadata and Hub-native loading, and retains the trained model. | Complete maintenance publication from `release/mambo-v3`; preserve original tags and artifacts. See [qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication](../dev/releases/mambo_v3/publication.md). Reuse existing quality evidence. |
 | Training | Four-GPU UCloud production run completed; loader, optimizer-step and checkpoint safeguards implemented. | Before another production run, deliver the recovery/evaluation workflow below. |
 | Quantization | Merged opt-in native CUDA INT8 Linear training, x86 PTQ/QAT, checkpoint/export tools. | Useful target-machine trade-offs remain unqualified; [specialist roadmap](quantization-roadmap.md). |
 | Generic export | `mt_export`, manifests and CPU float32 ONNX qualification across representative heads/backbones. | Broader backend qualification and generic Hugging Face bundle integration; MAMBO packaging does not establish either for every model. |

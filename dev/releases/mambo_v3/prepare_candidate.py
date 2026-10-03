@@ -12,7 +12,7 @@ from pathlib import Path
 
 from deployment.mambo_deploy.download import fetch_file
 from dev.releases.mambo_v3.build_bundle import INPUTS, build
-from dev.releases.mambo_v3.package_download_metadata import distribution_readme, package
+from dev.releases.mambo_v3.package_download_metadata import distribution_readme, native_descriptor, package
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
@@ -40,6 +40,10 @@ def prepare(source, output):
     output.mkdir(parents=True)
     bundle = output / "mambo-v3-bundle"
     build(source, bundle)
+    # Both distributions carry generated metadata, with one manifest as authority.
+    descriptor = json.loads((ROOT / "deployment/mambo_deploy/default_bundle.json").read_text())["metadata"]
+    if json.loads((ROOT / "mini_trainer/nemo.json").read_text()) != native_descriptor(descriptor):
+        raise ValueError("Native bootstrap metadata is stale; regenerate from the deployment descriptor")
     dist = output / "dist"
     dist.mkdir()
     # Stage just the deployment project; no caches, experiments or training data.

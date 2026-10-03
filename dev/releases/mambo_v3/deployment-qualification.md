@@ -64,7 +64,7 @@ paths. Run from the repository root, with fresh output directories.
 The five displayed pipelines need their own shared support intersection; do not
 copy the eleven-pipeline exploratory tail scores. Both confidence settings use
 the same 52,788 reporting images, with 5,852 separate calibration images. Full
-metric semantics and results are in [deployment evidence](../../../docs/mambo-deployment-evidence.md).
+metric semantics and results are in [deployment evidence](../../../deployment/README.md#release-comparison).
 
 Reproduce the current quality tables and figure:
 
@@ -76,7 +76,7 @@ Reproduce the current quality tables and figure:
 ```
 
 The figure command writes `mambo-threshold-tail.svg`; publish it under the distinct
-name `mambo-promoted-quality.svg` to preserve earlier studies. JSON/CSV outputs use
+name `mambo-promoted-quality.svg`. JSON/CSV outputs use
 `mambo-promoted-*`. `quality-tables.md` supplies the README metric and support rows.
 The JSON threshold artifact retains full macro/micro scores, coverage, recipe,
 source hashes and exact reporting/calibration identities; thresholds are not
@@ -103,7 +103,7 @@ CPU batches 1/8 and GPU batches 1/8/32. Do not overlap model workloads. The repo
 combines these northern-Europe TTA timings with retained V2 and single-view V3
 measurements; campaign conditions can differ. RSS is a process high-water mark,
 not per-request memory. [Evaluation](evaluation.md#timing-and-summary) defines the
-measurement boundaries; [HPC evidence](../../../docs/mambo-hpc-evidence.md) owns
+measurement boundaries; [HPC evidence](../../../docs/assets/mambo-hpc-current-provenance.json) owns
 the later B200 measurements.
 
 ## CUDA compatibility boundary

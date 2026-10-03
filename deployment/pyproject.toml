@@ -1,7 +1,7 @@
 [project]
 name = "mambo-v3"
-version = "0.3.0"
-description = "Portable local inference for MAMBO model bundles"
+version = "0.3.1"
+description = "Nemo (MAMBO_v3) local inference with PyTorch and ONNX"
 requires-python = ">=3.12"
 dependencies = ["numpy>=2.4", "pillow>=11"]
 readme = "README.md"
@@ -11,15 +11,16 @@ authors = [{name = "Asger Svenning"}]
 keywords = ["image-classification", "biodiversity", "lepidoptera", "onnx", "pytorch"]
 
 [project.urls]
-Documentation = "https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md"
+Documentation = "https://github.com/asgersvenning/mini_trainer/blob/models/mambo-v3/v0.3.1/deployment/README.md"
 Repository = "https://github.com/asgersvenning/mini_trainer"
 Issues = "https://github.com/asgersvenning/mini_trainer/issues"
-Changelog = "https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v3"
+Changelog = "https://github.com/asgersvenning/mini_trainer/releases/tag/models/mambo-v3/v0.3.1"
 
 [project.optional-dependencies]
+hub = ["huggingface-hub>=1.0,<3"]
 onnx = ["onnxruntime>=1.20"]
 onnx-cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.21,<2"]
-torch = ["mt-trainer>=0.3.0,<0.4"]
+torch = ["mt-trainer>=0.3.1,<0.4"]
 
 [project.scripts]
 mambo_predict = "mambo_deploy.cli:run"

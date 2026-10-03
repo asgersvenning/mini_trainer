@@ -69,9 +69,9 @@ def classify(image, backend, preset, custom, tta, topk):
 
 def build_app():
     presets = Predictor().available_presets()
-    with gr.Blocks(title="MAMBO V3", delete_cache=(300, 300)) as app:
+    with gr.Blocks(title="Nemo", delete_cache=(300, 300)) as app:
         gr.Markdown(
-            "# MAMBO V3\nIdentify moths and butterflies at species, genus and family level. "
+            "# Nemo (MAMBO_v3)\nIdentify moths and butterflies at species, genus and family level. "
             "Images are processed on this server. Uploads are temporary and are not used for training. "
             "This classifies one individual; it does not detect animals or reliably reject unknown species."
         )
@@ -103,7 +103,7 @@ def build_app():
             "TTA helps the evaluated monitoring crops but can hurt on other image domains. "
             "Weights: **CC BY-NC-SA 4.0**; adapter: MIT. "
             "[Integration, evidence and limitations](https://github.com/asgersvenning/mini_trainer/"
-            "blob/MAMBO_v3/deployment/README.md)."
+            "blob/models/mambo-v3/v0.3.1/deployment/README.md)."
         )
         run.click(classify, [image, backend, preset, custom, tta, topk], [*tables, status], concurrency_limit=1, api_name=False)
     return app.queue(max_size=8, default_concurrency_limit=1)

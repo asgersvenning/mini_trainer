@@ -23,7 +23,6 @@ def qualify(args):
     _, records = load_records(args.manifest, args.root, args.count, 20260923)
     write_json(args.output / "samples.json", records)
     report = {"status": "running", "variants": {}, "samples_sha256": file_hash(args.output / "samples.json")}
-    shared = None
     try:
         paths = [args.root / r["path"] for r in records]
         if any(file_hash(p) != r["sha256"] for p, r in zip(paths, records, strict=True)):
@@ -40,8 +39,6 @@ def qualify(args):
             predictor = Predictor(
                 args.bundle, backend=args.backend, device="cuda:0", model="full", batch_size=32, threads=4, precision=precision
             )
-            if shared is not None:
-                predictor._torch_model = shared
             runtime = predictor._torch if args.backend == "torch" else predictor._onnx
             with ThreadPoolExecutor(max_workers=4) as pool:
                 outputs, vectors = [], []
@@ -77,7 +74,6 @@ def qualify(args):
             assert public.labels == predictor.predict(paths[:8]).labels
             _, direct_embedding = runtime(prepare_batch(paths[:8]), True)
             np.testing.assert_array_equal(embedding, direct_embedding)
-            shared = predictor._torch_model
             report["variants"][precision] = {
                 "seconds": time.perf_counter() - start,
                 "finite": True,

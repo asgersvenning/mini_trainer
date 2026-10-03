@@ -43,22 +43,24 @@ they are versioned separately from the general training framework. Additional
 models can cover other datasets, label sets and application domains.
 
 | Model | Scope | Use it |
-| --- | --- | --- |
-| **MAMBO V3** | Moths and butterflies (Lepidoptera); species, genus and family predictions | [PyPI package](https://pypi.org/project/mambo-v3/) · [Hugging Face weights/model card](https://huggingface.co/asgersvenning/MAMBO-v3) · [Interactive demo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) · [Release](https://github.com/asgersvenning/mini_trainer/releases/tag/MAMBO_v3) |
+|---|---|---|
+| **Nemo (MAMBO\_v3)** | Adult moths and butterflies (Lepidoptera); species, genus and family predictions | [PyPI package](https://pypi.org/project/mambo-v3/) · [Hugging Face model card and weights](https://huggingface.co/asgersvenning/MAMBO-v3) · [Interactive demo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) |
 
-The [MAMBO V3 deployment guide](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md)
-covers its Python API and CLI, PyTorch/ONNX runtimes, geographic presets, custom
-class lists, embeddings, optional test-time augmentation and measured quality/speed.
-ONNX/CPU integration needs neither the training package nor a GPU. **MAMBO weights
-are CC BY-NC-SA 4.0 (non-commercial, share-alike); framework and adapter code are MIT.**
-The model guide is pinned to the released source; `master` continues framework
-development independently of the `release/mambo-v3` maintenance branch.
+The [Nemo deployment guide](deployment/README.md) covers its Python API and CLI,
+PyTorch/ONNX runtimes, geographic presets, custom class lists, embeddings,
+optional test-time augmentation and measured quality/speed.
+
+ONNX/CPU integration needs neither the training package nor a GPU. Native
+PyTorch inference is available independently through `mini_trainer.deploy`.
+
+**Nemo weights are CC BY-NC-SA 4.0 (non-commercial, share-alike);**
+**framework and adapter code are MIT.**
 
 ## Find your workflow
 
 | Task | Start here |
 | --- | --- |
-| Integrate MAMBO V3 | [Released deployment API and CLI](https://github.com/asgersvenning/mini_trainer/blob/MAMBO_v3/deployment/README.md) |
+| Integrate the Nemo release | [Deployment API and CLI](deployment/README.md) |
 | Prepare data or adapt an example | [Examples](examples/README.md) |
 | Change the trainer or run checks | [Development guide](dev/README.md), [test map](tests/README.md) |
 | Compare models, backends or training settings | [Benchmarks](dev/benchmarks/README.md) |

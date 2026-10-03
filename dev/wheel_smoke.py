@@ -79,6 +79,13 @@ def main():
     with torch.inference_mode():
         scores = model(preprocess(torch.zeros(2, 3, 8, 8, dtype=torch.uint8)))
     assert scores.shape == (2, 2) and torch.isfinite(scores).all()
+    from mini_trainer.deploy import Predictor
+
+    assert importlib.util.find_spec("mambo_deploy") is None
+    native = Predictor(device="cpu", weights=weights)
+    assert native.model is not None and native.input_size == 8
+    assert len(native(torch.zeros(2, 3, 8, 8, dtype=torch.uint8))) == 2
+    assert native.load() is native
     predict(
         input=str(data),
         weights=weights,

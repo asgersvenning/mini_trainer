@@ -84,6 +84,7 @@ class Classifier(nn.Module):
         normalized: bool = True,
         active_indices: torch.Tensor | None = None,
         prior: torch.Tensor | list[float] | None = None,
+        skip_spherical_init: bool = False,
         **metadata,
     ):
         super().__init__()
@@ -130,7 +131,7 @@ class Classifier(nn.Module):
 
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.normalized = normalized
-        self.linear = self._normalize_layer(layer, True) if self.normalized else layer
+        self.linear = self._normalize_layer(layer, not skip_spherical_init) if self.normalized else layer
         if self._metadata.get("prior", None) is not None:
             self.linear.bias.data[:] = torch.tensor(
                 data=self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype
@@ -301,6 +302,11 @@ class Classifier(nn.Module):
                 raise NotImplementedError(
                     "DEPRECATED: This method of logit adjustment is currently defunct. Please use EMLACrossEntropy instead."
                 )
+        if state is not None and all(
+            isinstance(state.get(f"{architecture_output_name}.linear.parametrizations.weight.{name}"), torch.Tensor)
+            for name in ("original0", "original1")
+        ):
+            kwargs["skip_spherical_init"] = True
         with device:
             architecture.add_module(architecture_output_name, cls(**kwargs))
         for k, v in cfg.items():

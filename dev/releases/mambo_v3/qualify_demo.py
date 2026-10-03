@@ -24,7 +24,7 @@ def qualify(app_path, image_path, output):
             tables = demo["classify"](image, backend, preset, labels, tta, 5)
             if not all(table and all(0 <= row[3] <= 100 and row[2] for row in table) for table in tables[:3]):
                 raise AssertionError("Missing predictions, taxon IDs or valid confidences")
-            current = predictor._torch_model if backend == "torch" else predictor._sessions["onnx"]
+            current = predictor._native.model if backend == "torch" else predictor._sessions["onnx"]
             if runtime is not None and current is not runtime:
                 raise AssertionError("Changing demo configuration reloaded the runtime")
             runtime = current

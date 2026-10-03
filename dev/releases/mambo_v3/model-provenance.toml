@@ -8,6 +8,8 @@ best_epoch = 30
 best_epoch_source = "Checksum-verified training/console.log: Best model found at epoch 30"
 seed = 42
 training_epochs = 30
+training_images = 5063857
+training_images_definition = "Metadata rows in original training splits set=2..9; no additional deduplication."
 training_world_size = 4
 training_source_revision_status = "Not recorded in retained checkpoint, config, or console log; packaging checkout is not asserted as training source."
 initialization_status = "Source-based reconstruction: torchvision DEFAULT EfficientNetV2-S backbone and a new normalized hierarchical head, seed 42; original initialization checkpoint/hash and run-specific preparation manifest not retained."
@@ -17,6 +19,8 @@ weights_license = "CC-BY-NC-SA-4.0"
 weights_license_status = "Prepared for release following owner preference for non-commercial share-alike weights; code remains MIT"
 
 [checkpoint]
+# Tensor contents and class order; see mini_trainer.deploy._checkpoint_digest.
+state_sha256 = "9fbc6affe1618aa13a869c4a772ce629be6501e3019e0a89cf245d94ef592b1f"
 url = "https://anon.erda.au.dk/share_redirect/HE90eyuZCT/global-lepi-production-release-20260911T150236Z/models/pytorch/best.pt"
 sha256 = "174b9214bfea2df69e4f5c5d16afd841fec961db4274f3e6bf474cef9cab5e8a"
 

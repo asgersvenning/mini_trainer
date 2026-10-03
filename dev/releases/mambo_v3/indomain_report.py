@@ -98,7 +98,6 @@ def collect(root, output):
 
 def publish(output):
     tails = json.loads((output / "mambo-indomain-tail.json").read_text())
-    study = json.loads((output / "mambo-indomain-thresholds.json").read_text())
     compact = {k: v for k, v in tails.items() if k != "rows"}
     compact["rows"] = [
         {k: v for k, v in r.items() if k != "classes"}
@@ -114,75 +113,6 @@ def publish(output):
     render_paired(tails, output)
     for suffix in ("svg", "png"):
         (output / f"mambo-threshold-tail.{suffix}").rename(output / f"mambo-indomain-quality.{suffix}")
-
-    lookup = {(r["model"], r["scope"], r["rank"], r["cutoff"], r["domain"]): r for r in tails["rows"]}
-    text = "# In-domain deployment evidence\n\n"
-    text += (
-        f"Global vocabulary; {tails['report_images']:,} reporting images and {tails['calibration_images']:,} "
-        "separate calibration images from the original 632,913-image test split. "
-        "All truth is in vocabulary. Shared label-stratified 90/10 split, seed 42, grouped by image ID; "
-        "per-rank mini_metrics Macro-F1 calibration, eps=0.01, quantiles, no bootstraps.\n\n"
-        "The recipe was selected on Flemming. These general photographs complement the more deployment-relevant "
-        "Flemming monitoring crops; their different TTA response does not invalidate that deployment evidence.\n\n"
-        "Full support / >5 values use the same reporting rows. >5 requires truth and accepted-prediction support "
-        "in every pipeline, separately per confidence setting. No rows are removed; per-class FP/FN remain intact.\n\n"
-    )
-    for level, rank in enumerate(("species", "genus", "family")):
-        text += (
-            f"## {rank.title()}\n\n| Pipeline | Confidence | Threshold | "
-            "Macro accuracy (full / >5) | Macro-F1 (full / >5) | Coverage |\n|---|---|---:|---:|---:|---:|\n"
-        )
-        for model, label, _ in SERIES:
-            for scope, name in (("zero", "None"), ("optimized", "Calibrated")):
-                a = lookup[model, scope, rank, -1, "per_model"]
-                b = lookup[model, scope, rank, 5, "common"]
-                t = study["models"][model]["thresholds"][level] if scope == "optimized" else 0
-                text += (
-                    f"| {label} | {name} | {t:.4f} | {a['metrics']['accuracy']:.2%} / {b['metrics']['accuracy']:.2%} | "
-                    f"{a['metrics']['f1']:.4f} / {b['metrics']['f1']:.4f} | {a['overall_coverage']:.2%} |\n"
-                )
-        text += "\n"
-    text += (
-        "## Support outside the truncated average\n\n"
-        "| Confidence | Rank | Shared classes | Truth images outside | Proportion |\n|---|---|---:|---:|---:|\n"
-    )
-    for scope in ("zero", "optimized"):
-        for rank in ("species", "genus", "family"):
-            row = lookup["torch", scope, rank, 5, "common"]
-            n = row["report_images"] - row["truth_images_in_retained_classes"]
-            text += f"| {scope} | {rank} | {row['class_count']} | {n:,} | {n / row['report_images']:.2%} |\n"
-    text += (
-        "\nMachine-readable [metrics](assets/mambo-indomain-tail.csv), "
-        "[thresholds and split identities](assets/mambo-indomain-thresholds.json), and "
-        "[class domains](assets/mambo-indomain-support.json) retain provenance and supplementary metrics. "
-        "Thresholds are dataset-specific evidence, not new deployment defaults.\n"
-    )
-    text += (
-        "\n## Historical HPC timing boundaries\n\n"
-        "The latest V3 B200 timings are in the [current HPC evidence](mambo-hpc-evidence.md). "
-        "The observations below predate the pipeline improvements.\n\n"
-        "The EPYC 9655/B200 campaign retains 3 fresh-process trials per variant/device, 7 request observations "
-        "per cell and 3 streaming observations per cell. Global and northern-Europe timing presets are available. "
-        "CPU runtime threads: 4; streaming preparation workers: 48; readers: 256. "
-        "Request, streaming and prepared-input diagnostics have different boundaries; do not pool them. "
-        "The short streaming bank contains 1,024 images and includes pipeline startup. "
-        "Prepared-input diagnostics exclude decoding/hierarchy reduction but include transfers, and remain supplementary.\n\n"
-        "[Request observations](assets/mambo-indomain-speed.csv) and "
-        "[streaming observations](assets/mambo-indomain-streaming-speed.csv) retain all trials. "
-        "[Campaign provenance](assets/mambo-indomain-campaign.json) identifies source hashes and runtime environments. "
-        "Peak host memory spans each complete benchmark process and its tested batch sizes; it is not per-cell model memory. "
-        "V2 was tested through batch 32 on GPU, V3 through batch 256.\n\n"
-        "## Reproduce\n\n"
-        "Use the pinned mini_metrics environment described in the [UCloud workflow](../dev/releases/mambo_v3/ucloud-release.md). "
-        "From the repository root, with the extracted archive beneath `local-evidence/ucloud-2026-09-25/`:\n\n"
-        "```sh\npython -m dev.releases.mambo_v3.indomain_report \\\n"
-        "  --root local-evidence/ucloud-2026-09-25/mambo-results/runs-transfers \\\n"
-        "  --output local-evidence/ucloud-2026-09-25/presentation\n"
-        "python -m dev.releases.mambo_v3.indomain_speed \\\n"
-        "  --source local-evidence/ucloud-2026-09-25/mambo-results/summary-transfers \\\n"
-        "  --output local-evidence/ucloud-2026-09-25/presentation\n```\n"
-    )
-    (output / "mambo-indomain-evidence.md").write_text(text)
 
 
 if __name__ == "__main__":

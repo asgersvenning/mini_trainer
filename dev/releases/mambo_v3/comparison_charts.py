@@ -19,7 +19,7 @@ from .figure_export import save_figure
 REGIONS = ("north_europe", "europe", "full")
 REGION_LABELS = ("Northern Europe", "Europe", "Global")
 MODELS = ("v2", "v3-torch", "v3-onnx")
-MODEL_LABELS = ("MAMBO v2 · PyTorch", "MAMBO v3 · PyTorch", "MAMBO v3 · ONNX")
+MODEL_LABELS = ("Meghan (MAMBO_v2) · PyTorch", "Nemo (MAMBO_v3) · PyTorch", "Nemo (MAMBO_v3) · ONNX")
 COLORS = ("#7b629c", "#168b89", "#df8739")
 
 
@@ -195,7 +195,9 @@ def charts(data, output):
     fig, axes = plt.subplots(2, 2, figsize=(12, 7.5))
     axes = axes.ravel()
     x = np.arange(3)
-    for m, (model, label, color) in enumerate(zip(("v2", "v3"), ("MAMBO v2", "MAMBO v3 (both backends)"), COLORS, strict=False)):
+    for m, (model, label, color) in enumerate(
+        zip(("v2", "v3"), ("Meghan (MAMBO_v2)", "Nemo (MAMBO_v3) (both backends)"), COLORS, strict=False)
+    ):
         rows = [next(r for r in data["quality"] if r["model"] == model and r["preset"] == region) for region in REGIONS]
         values_by_rank = (
             [100 * r["ranks"]["species"]["macro_accuracy_all"] for r in rows],
@@ -218,7 +220,7 @@ def charts(data, output):
     axes[2].set(title="Genus macro accuracy · all truth classes", ylabel="Mean class accuracy (%)", ylim=(0, 100))
     axes[3].set(title="Family macro accuracy · all truth classes", ylabel="Mean class accuracy (%)", ylim=(0, 100))
     axes[0].legend(loc="upper left", fontsize=9)
-    fig.suptitle("Flemming: MAMBO v2 versus v3", fontsize=16, fontweight="bold")
+    fig.suptitle("Flemming: Meghan (MAMBO_v2) versus v3", fontsize=16, fontweight="bold")
     fig.tight_layout(rect=(0, 0.1, 1, 0.95))
     save(
         fig,
@@ -238,7 +240,9 @@ def charts(data, output):
     for scope in ("all", "known"):
         fig, axes = plt.subplots(2, 3, figsize=(14, 7.5))
         for ax, (metric, title) in zip(axes.ravel(), metric_panels, strict=True):
-            for m, (model, label, color) in enumerate(zip(("v2", "v3"), ("MAMBO v2", "MAMBO v3 (both backends)"), COLORS, strict=False)):
+            for m, (model, label, color) in enumerate(
+                zip(("v2", "v3"), ("Meghan (MAMBO_v2)", "Nemo (MAMBO_v3) (both backends)"), COLORS, strict=False)
+            ):
                 rows = [next(r for r in data["quality"] if r["model"] == model and r["preset"] == region) for region in REGIONS]
                 values = [r["scores"][scope][metric]["0"] for r in rows]
                 bars = ax.bar(x + (m - 0.5) * 0.34, values, 0.34, label=label, color=color)

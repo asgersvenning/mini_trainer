@@ -5,12 +5,13 @@ import json
 import os
 from pathlib import Path
 
-from .download import cached_model_file
+from .download import cached_model_file, fetch_file, link_file
 
 
 class Bundle:
-    def __init__(self, root, *, download=False):
+    def __init__(self, root, *, download=False, fetch=None):
         self.download = download
+        self.fetch = fetch
         self.root = Path(root).expanduser().resolve()
         manifest_bytes = (self.root / "release.json").read_bytes()
         self.manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
@@ -35,13 +36,22 @@ class Bundle:
                 raise ValueError("Invalid parent index")
 
     def file(self, relative):
-        path = (self.root / relative).resolve()
-        if not path.is_relative_to(self.root):
+        candidate = self.root / relative
+        if Path(relative).is_absolute() or ".." in Path(relative).parts:
+            raise ValueError(f"Bundle path escapes root: {relative}")
+        path = candidate.resolve()
+        hub_blob = self.root.parent.parent.name == "snapshots" and any(
+            path.is_relative_to(parent / "blobs") for parent in (self.root.parents[2], self.root.parents[3])
+        )
+        if not path.is_relative_to(self.root) and not hub_blob:
             raise ValueError(f"Bundle path escapes root: {relative}")
         item = self.manifest["files"].get(relative)
         if item is None:
             raise ValueError(f"Unlisted bundle file: {relative}")
         if relative not in self._verified:
+            if not candidate.exists() and self.fetch is not None:
+                self.fetch(relative)
+                return self.file(relative)
             if not path.exists() and self.download and relative in self.manifest.get("origins", {}):
                 cached_model_file(
                     self.manifest["origins"][relative],
@@ -57,7 +67,7 @@ class Bundle:
             if digest != item["sha256"]:
                 raise ValueError(f"Bundle hash mismatch: {relative}")
             self._verified.add(relative)
-        return path
+        return candidate
 
     def read_json(self, relative):
         return json.loads(self.file(relative).read_text())
@@ -66,4 +76,15 @@ class Bundle:
         profile = self.manifest["profiles"][name]
         for relative in profile["files"]:
             self.file(relative)
-        return self.file(profile["model"])
+        model = self.file(profile["model"])
+        if name.startswith("onnx") and self.root.parent.parent.name == "snapshots":
+            # ORT validates real paths of external weights. Hub symlinks can point
+            # into different blob directories, so colocate verified bytes once.
+            runtime = self.root.parents[3] / "mambo" / self.manifest_sha256
+            for relative in profile["files"]:
+                destination = runtime / relative
+                if not destination.exists():
+                    link_file(self.file(relative), destination)
+                fetch_file("", destination, **self.manifest["files"][relative], offline=True)
+            return runtime / profile["model"]
+        return model
