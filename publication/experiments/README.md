@@ -1,5 +1,10 @@
 # Research experiments
 
+The [flat training ablation study](training_ablations/README.md) provides a bounded
+UCloud campaign for normalized heads, prototype regularization, EMLA, projection
+and optimizer comparisons. It uses manual allocation with an optional API pilot;
+the SLURM generator below is a separate workflow.
+
 ## Generate a SLURM matrix
 
 From the repository root, use the [installed environment](../../README.md#local-installation)
