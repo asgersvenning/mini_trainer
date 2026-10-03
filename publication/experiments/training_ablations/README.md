@@ -267,6 +267,14 @@ After preparation, the default pilot waits up to 20 minutes for W&B login. In th
 web terminal, run the `wandb login` and `touch .../wandb-ready` commands printed in
 the pilot log; create the marker only after successful login. Use `--authenticated`
 in place of `--wait-for-wandb` when credentials are already available to the job.
+For file-based authentication, mount a separate private credential folder read-only
+and prefix the batch command with
+`MT_WANDB_API_KEY_FILE=/work/mini-trainer-secrets/wandb-api-key`. The bootstrap reads
+the file into `WANDB_API_KEY` with shell tracing disabled; it does not print or copy
+the key into the checkout, study config or results. Upload the credential directly
+from its local file using `ucloud files upload LOCAL_FILE REMOTE_FILE`; keep that
+folder out of source synchronization and result collection. This also requires
+`--authenticated` to bypass the interactive login marker.
 The pilot stores `bootstrap.log`, `exit-code` and the prepared study on the results
 mount. Each attempt requires a fresh output directory. A forced allocation stop
 may prevent the exit-code marker from being written; inspect both job state and
