@@ -139,8 +139,8 @@ def test_tuning_tiebreak_and_main_matrix(tmp_path):
     chosen = study.select_tuning(paths)
     assert all(v == {"lr": 0.0003, "weight_decay": 0.001} for v in chosen.values())
     runs = study.main_runs(study.DEFAULTS, chosen)
-    assert len(runs) == 27
-    assert len({r["id"] for r in runs}) == 27
+    assert len(runs) == 24
+    assert len({r["id"] for r in runs}) == 24
     assert {r["seed"] for r in runs} == {42, 43, 44}
 
 

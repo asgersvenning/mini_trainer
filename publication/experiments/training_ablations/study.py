@@ -44,7 +44,6 @@ VARIANTS = {
     "fixed_adjustment": {"loss": "fixed"},
     "no_projection": {"hidden": False},
     "adamw": {"optimizer": "adamw"},
-    "adamw_no_projection": {"optimizer": "adamw", "hidden": False},
     "reference": {"normalized": False, "hidden": False, "regularization": False, "loss": "ce", "optimizer": "adamw"},
 }
 
@@ -306,12 +305,14 @@ def select_tuning(paths):
 
 def qualify(root, config, devices, deadline, retry):
     # Full class vocabulary; tiny train/validation sample. Never evaluates test.
+    treatments = {name: VARIANTS[name] for name in ["full", "no_projection", "adamw", "no_normalization", "fixed_adjustment"]}
+    treatments["adamw_no_projection"] = {"optimizer": "adamw", "hidden": False}
     for batch in [v for v in [128, 64, 32] if v <= config["batch_size"]]:
         candidate = {**config, "batch_size": batch}
         runs = [
             {
                 **FULL,
-                **VARIANTS[name],
+                **changes,
                 "seed": 40,
                 "epochs": 2,
                 "lr": 0.001,
@@ -319,7 +320,7 @@ def qualify(root, config, devices, deadline, retry):
                 "qualification": True,
                 "id": f"qualify_b{batch}_{name}",
             }
-            for name in ["full", "no_projection", "adamw", "adamw_no_projection", "no_normalization", "fixed_adjustment"]
+            for name, changes in treatments.items()
         ]
         try:
             paths = queue(root, runs, candidate, devices, deadline, retry)
@@ -377,14 +378,6 @@ def summarize(root):
                         "macro_recall_difference": block["full"]["macro_recall"] - block[name]["macro_recall"],
                     }
                 )
-        if all(k in block for k in ["full", "no_projection", "adamw", "adamw_no_projection"]):
-            value = (
-                block["full"]["macro_recall"]
-                - block["no_projection"]["macro_recall"]
-                - block["adamw"]["macro_recall"]
-                + block["adamw_no_projection"]["macro_recall"]
-            )
-            contrasts.append({"seed": seed, "contrast": "optimizer x projection", "macro_recall_difference": value})
     write_json(root / "paired.json", contrasts)
     paired_summary = []
     for name in sorted({row["contrast"] for row in contrasts}):

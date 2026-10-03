@@ -21,10 +21,9 @@ used: that API freezes the backbone. Main training lasts 30 epochs, with seeds
 | fixed_adjustment | yes | yes | 0.1 | fixed adjustment | MuonAuxAdamW |
 | no_projection | yes | no | 0.1 | EMLA | MuonAuxAdamW |
 | adamw | yes | yes | 0.1 | EMLA | AdamW |
-| adamw_no_projection | yes | no | 0.1 | EMLA | AdamW |
 | reference | no | no | 0 | CE | AdamW |
 
-**27 main runs**, plus eight tuning runs. Each optimizer gets the same four
+**24 main runs**, plus eight tuning runs. Each optimizer gets the same four
 learning-rate/decay pairs: `{0.0003, 0.001}` × `{0.001, 0.01}`, ten epochs, seed 41,
 on the full projection-enabled recipe. Select final validation macro recall,
 breaking ties by lower NLL, learning rate, then decay. Carry the selected settings
@@ -47,8 +46,15 @@ linear classifier. Disabling projection also removes its dropout/activation.
 Fixed adjustment uses EMLA's identical counts, smoothing and centered log-count
 offsets with gate one. Inference uses raw classifier logits, with no added priors.
 
-Report removals as conditional effects. Cross optimizer × projection because final
-classifier matrices use the auxiliary optimizer while projections can receive Muon.
+Report removals as conditional effects. In EfficientNetV2-S, the added projection
+is the only trainable matrix eligible for Muon; convolutional backbone parameters
+and the final classifier use auxiliary AdamW. Removing the projection therefore
+removes its activation/dropout and the Muon-eligible matrix together. Keep that as
+a projection-package comparison, and compare `full` with `adamw` as equally tuned
+optimizer recipes. Do not report an optimizer-by-projection interaction: the
+no-projection models both use AdamW and would differ only through selected LR/decay.
+We omit that extra main-study cell rather than spend three seeds on this incidental
+hyperparameter comparison. The tiny qualification retains both code paths.
 Defer individual normalization operations, initialization, hierarchy, extra backbones
 and additional strengths until a specific result or claim warrants them.
 
