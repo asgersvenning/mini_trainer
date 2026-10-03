@@ -9,8 +9,9 @@ frozen inputs, paired seeds, validation-only choices and retained individual res
 
 EfficientNetV2-S, ImageNet1K V1 initialization, 384 pixels; all backbone parameters
 train after one epoch of head-only learning-rate warmup. `fine_tune=True` is **not**
-used: that API freezes the backbone. Main training lasts 30 epochs, with seeds
-42/43/44 and final-epoch evaluation. No test-driven stopping or extra sweeps.
+used: that API freezes the backbone. Start with **eight screening runs: seed 42,
+ten epochs each**, evaluated on validation only. Use final-epoch results, not the
+best validation checkpoint. The test partition is reserved for confirmation.
 
 | Variant | Normalized | Projection | Regularization | Loss | Optimizer |
 | --- | --- | --- | --- | --- | --- |
@@ -23,12 +24,32 @@ used: that API freezes the backbone. Main training lasts 30 epochs, with seeds
 | adamw | yes | yes | 0.1 | EMLA | AdamW |
 | reference | no | no | 0 | CE | AdamW |
 
-**24 main runs**, plus eight tuning runs. Each optimizer gets the same four
-learning-rate/decay pairs: `{0.0003, 0.001}` × `{0.001, 0.01}`, ten epochs, seed 41,
-on the full projection-enabled recipe. Select final validation macro recall,
-breaking ties by lower NLL, learning rate, then decay. Carry the selected settings
-to that optimizer's other variants. This is a small, short-horizon tuning budget;
-it does not establish globally optimal hyperparameters or tune each ablation.
+The screening config sets `screening: true`, one seed and ten epochs. Both
+optimizers use the same fixed head LR 0.0003 and weight decay 0.001; skip `tune`.
+These settings come from the initial operational/tuning campaign, where two Muon
+runs completed before this amendment and two AdamW runs were already in flight.
+Keep those exploratory results separate; do not present them as prospective
+confirmation or rerun their grid. This screen compares optimizers at shared
+settings, not equally tuned optima. Batch 512 / 32 workers comes from the retained
+B200 capacity evidence below.
+
+Before inspecting screening outcomes, use this follow-up rule: prioritize contrasts
+with an absolute macro-recall difference of at least 0.5 percentage points, a tail-
+recall difference of at least 1 point, or a clear optimization failure. Always keep
+the full recipe as the paired anchor. Confirm selected contrasts using fresh seeds
+43 and 44; freeze the selected variants and epoch budget before launching them.
+Report the selected confirmation results separately from the exploratory seed.
+Small unconfirmed differences are inconclusive, not evidence of equivalence.
+Inspect learning curves before choosing a longer budget; if convergence is still
+unresolved, extend only the relevant paired comparison with an identical schedule.
+No automatic confirmation launch or extra hyperparameter sweep.
+
+This replaces the original 24 runs × 30 epochs with **80 screening model-epochs**.
+The original campaign's frozen inputs/results remain unchanged. Its two pending
+higher-LR shards were canceled and its running shards stop after tuning; no main
+runs from that campaign are reused. Use a fresh output root for this protocol.
+Legacy `screening: false` retains the original four-pair-per-optimizer tuning path
+for reproducing the earlier protocol; the current template enables screening.
 
 Backbone LR is head LR/3; one-epoch warmup then the existing cosine schedule.
 Smoothing is explicitly `1/512`, projection dropout 0.1, existing augmentations,
@@ -50,11 +71,10 @@ Report removals as conditional effects. In EfficientNetV2-S, the added projectio
 is the only trainable matrix eligible for Muon; convolutional backbone parameters
 and the final classifier use auxiliary AdamW. Removing the projection therefore
 removes its activation/dropout and the Muon-eligible matrix together. Keep that as
-a projection-package comparison, and compare `full` with `adamw` as equally tuned
-optimizer recipes. Do not report an optimizer-by-projection interaction: the
-no-projection models both use AdamW and would differ only through selected LR/decay.
-We omit that extra main-study cell rather than spend three seeds on this incidental
-hyperparameter comparison. The tiny qualification retains both code paths.
+a projection-package comparison, and compare `full` with `adamw` at the shared screening
+hyperparameters. Do not report an optimizer-by-projection interaction: the
+no-projection models both use AdamW and are redundant at the shared settings.
+We omit that extra cell. The tiny qualification retains both code paths.
 Defer individual normalization operations, initialization, hierarchy, extra backbones
 and additional strengths until a specific result or claim warrants them.
 
@@ -175,7 +195,6 @@ Then, inside `tmux`, run:
 
 ```bash
 python -m publication.experiments.training_ablations.study qualify /work/results/lepi-ablations --hours 2
-python -m publication.experiments.training_ablations.study tune /work/results/lepi-ablations --hours 10
 python -m publication.experiments.training_ablations.study run /work/results/lepi-ablations --hours 20
 python -m publication.experiments.training_ablations.study summarize /work/results/lepi-ablations
 ```
@@ -290,7 +309,8 @@ changes are rejected rather than silently reused.
 Every attempt retains resolved settings, commands, initialization hashes, optimizer
 groups, trainer checkpoints/figures/learning curves, timings, hardware and logs.
 Evaluation reloads final weights in FP32 and saves logits, labels and sample IDs.
-Main runs evaluate test; tuning/qualification evaluate validation. Metrics are
+Screening, tuning and qualification evaluate validation; non-screening main runs
+evaluate test. Metrics are
 macro recall (primary), accuracy, NLL, multiclass Brier score and class-balanced
 recall in training-frequency tertiles. Ties in tertiles follow frozen class order.
 Missing-support recalls are null and excluded from macro means, with support saved.
@@ -424,14 +444,14 @@ strides of the frozen plan; this avoids waiting for several GPUs on one node:
 
 ```bash
 # Separate allocations; each sees its own GPU as device 0.
-python -m publication.experiments.training_ablations.study tune /work/results/lepi-ablations --devices 0 --shard 0/2 --hours 10
-python -m publication.experiments.training_ablations.study tune /work/results/lepi-ablations --devices 0 --shard 1/2 --hours 10
+python -m publication.experiments.training_ablations.study run /work/results/lepi-ablations --devices 0 --shard 0/2 --hours 10
+python -m publication.experiments.training_ablations.study run /work/results/lepi-ablations --devices 0 --shard 1/2 --hours 10
 ```
 
-Each shard exits successfully after its own work. Tuning selection and the main
-plan appear only after all eight tuning runs finish; the last completing shard
-writes them under the shared controller lock. Then use `run` with the same
-`--shard INDEX/COUNT` syntax for main experiments. Indices are zero-based; keep the
+Each shard exits successfully after its own work. Screening writes its shared
+plan under a lock and needs no tuning prerequisite. For a legacy non-screening
+campaign, dispatch `tune` first: tuning selection and the main plan appear only
+after all eight tuning runs finish. Indices are zero-based; keep the
 shard count fixed for each stage. Unstarted runs need no `--retry`; failed or
 interrupted attempts require inspection followed by that flag as usual.
 

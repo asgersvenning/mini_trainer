@@ -262,7 +262,7 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
         "weight_decay": 0.01,
         "epochs": 2,
         "id": "tiny",
-        "tuning": True,
+        "screening": True,
     }
     training.train(root, attempt, config, run)
     training.evaluate(root, attempt, config, run)

@@ -313,7 +313,7 @@ def metrics(logits, targets, counts):
 def evaluate(root, attempt, config, run):
     StudyBuilder.root, StudyBuilder.attempt = root, attempt
     StudyBuilder.config, StudyBuilder.run = config, run
-    split = "validation" if run.get("tuning") or run.get("qualification") else "test"
+    split = "validation" if run.get("screening") or run.get("tuning") or run.get("qualification") else "test"
     frame, loader = StudyBuilder.loader(split, config["device"])
     weights = attempt / "model/weights/last.pt"
     record = json.loads((attempt / "train.json").read_text())

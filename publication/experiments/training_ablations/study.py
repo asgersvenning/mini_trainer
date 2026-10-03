@@ -20,6 +20,7 @@ from .data import digest, prepare_data, write_json
 REPO = Path(__file__).resolve().parents[3]
 STOP = threading.Event()
 DEFAULTS = {
+    "screening": False,
     "species": 512,
     "selection_seed": 20261003,
     "size": 384,
@@ -96,6 +97,8 @@ def main_runs(config, selected):
         for name, changes in VARIANTS.items():
             run = {**FULL, **changes}
             run.update(selected[run["optimizer"]])
+            if config.get("screening"):
+                run["screening"] = True
             block.append({**run, "seed": seed, "epochs": config["epochs"], "variant": name, "id": f"{name}_seed{seed}"})
         random.Random(seed).shuffle(block)
         runs.extend(block)
@@ -106,6 +109,8 @@ def prepare(config_path, root):
     config = {**DEFAULTS, **json.loads(Path(config_path).read_text())}
     if set(config) - (set(DEFAULTS) | {"parquet", "images", "pretrained"}):
         raise ValueError("Unknown configuration keys")
+    if not isinstance(config["screening"], bool):
+        raise ValueError("screening must be boolean")
     for key in ["parquet", "images"]:
         config[key] = str(Path(config[key]).expanduser().resolve())
     for key in ["species", "size", "epochs", "tuning_epochs", "batch_size", "threads"]:
@@ -117,7 +122,7 @@ def prepare(config_path, root):
         raise ValueError("Main seeds must be unique and distinct from tuning seed 41")
     root.mkdir(parents=True, exist_ok=False)
     write_json(root / "config.json", config)
-    write_json(root / "tuning-plan.json", tuning_runs(config))
+    write_json(root / "tuning-plan.json", [] if config["screening"] else tuning_runs(config))
     prepare_data(config, root)
     import torch
     from torchvision.models import EfficientNet_V2_S_Weights
@@ -407,7 +412,7 @@ def summarize(root):
                 ax.scatter([i] * len(values), values)
                 ax.plot(i, np.mean(values), "k_")
         ax.set_xticks(range(len(VARIANTS)), VARIANTS, rotation=35, ha="right")
-        ax.set_ylabel("Test macro recall (points: individual seeds)")
+        ax.set_ylabel("Macro recall (points: individual seeds; split in results.csv)")
         fig.tight_layout()
         fig.savefig(root / "macro-recall.png")
         plt.close(fig)
@@ -521,11 +526,24 @@ def main():
             if not completed(path, json.loads((path / "run.json").read_text())):
                 raise ValueError("Qualification evidence incomplete")
         config["batch_size"] = qualified["batch_size"]
+        if config.get("screening") and args.command == "tune":
+            raise ValueError("Screening uses fixed shared hyperparameters; run directly after qualification")
         if args.command == "tune":
             runs = tuning_runs(config)
             queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
             if args.shard is None:
                 finalize_tuning(root, config)
+        elif config.get("screening"):
+            selected = {opt: {"lr": 0.0003, "weight_decay": 0.001} for opt in ["muon", "adamw"]}
+            runs = main_runs(config, selected)
+            with (root / ".screen-plan.lock").open("a") as plan_lock:
+                fcntl.flock(plan_lock, fcntl.LOCK_EX)
+                if (root / "plan.json").exists():
+                    if json.loads((root / "plan.json").read_text()) != runs:
+                        raise ValueError("Screening plan differs from frozen configuration")
+                else:
+                    write_json(root / "plan.json", runs)
+            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
         else:
             selected = json.loads((root / "tuning.json").read_text())
             paths = [latest_complete(root, run) for run in tuning_runs(config)]

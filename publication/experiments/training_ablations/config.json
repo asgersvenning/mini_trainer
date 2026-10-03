@@ -4,15 +4,16 @@
   "species": 512,
   "selection_seed": 20261003,
   "size": 384,
-  "seeds": [42, 43, 44],
-  "epochs": 30,
+  "seeds": [42],
+  "epochs": 10,
   "tuning_epochs": 10,
-  "batch_size": 128,
-  "workers": 8,
+  "batch_size": 512,
+  "workers": 32,
   "threads": 1,
   "dtype": "float16",
   "device": "cuda",
   "wandb": true,
   "project": "mini-trainer-ablations",
-  "entity": "asvenning"
+  "entity": "asvenning",
+  "screening": true
 }

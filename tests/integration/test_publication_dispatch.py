@@ -119,3 +119,25 @@ def test_cli_shards_finalize_after_last_tuning_and_main_shards(tmp_path, monkeyp
     assert set(launched[2]).isdisjoint(launched[3])
     assert sum(map(len, launched[:2])) == 8
     assert sum(map(len, launched[2:])) == len(study.VARIANTS) * len(config["seeds"])
+
+
+def test_screening_runs_without_tuning_and_rejects_changed_plan(tmp_path, monkeypatch):
+    config = {**study.DEFAULTS, "screening": True, "seeds": [42], "epochs": 10}
+    write_json(tmp_path / "qualified.json", {"batch_size": 512, "attempts": []})
+    monkeypatch.setattr(study, "verify", lambda root: dict(config))
+    monkeypatch.setattr(study.signal, "signal", lambda *args: None)
+    monkeypatch.setattr(study, "summarize", lambda root: None)
+    launched = []
+    monkeypatch.setattr(study, "queue", lambda root, runs, *args: launched.extend(runs))
+    monkeypatch.setattr(study.sys, "argv", ["study", "run", str(tmp_path)])
+    study.main()
+    assert {run["variant"] for run in launched} == set(study.VARIANTS)
+    assert all(run.get("screening") and run["seed"] == 42 and run["epochs"] == 10 for run in launched)
+    assert len({(run["lr"], run["weight_decay"]) for run in launched}) == 1
+    assert not (tmp_path / "tuning.json").exists()
+    write_json(tmp_path / "plan.json", [])
+    with pytest.raises(ValueError, match="Screening plan differs"):
+        study.main()
+    monkeypatch.setattr(study.sys, "argv", ["study", "tune", str(tmp_path)])
+    with pytest.raises(ValueError, match="fixed shared hyperparameters"):
+        study.main()
