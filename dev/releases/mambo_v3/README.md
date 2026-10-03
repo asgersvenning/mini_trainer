@@ -127,7 +127,7 @@ The 632,913-image global-lepi test split was evaluated on UCloud without resplit
 Preserve original sample identities when joining numeric staging filenames.
 Retained prediction/confidence archives support metric recomputation without images.
 
-Current results: [Flemming](../../../docs/mambo-deployment-evidence.md),
-[in-domain](../../../docs/mambo-indomain-evidence.md), [HPC timings](../../../docs/mambo-hpc-evidence.md).
+Current results: [Flemming](../../../deployment/README.md#release-comparison),
+[in-domain](../../../docs/assets/mambo-indomain-thresholds.json), [HPC timings](../../../docs/assets/mambo-hpc-current-provenance.json).
 Use the workflows linked above; historical first-pass reports do not describe the
 current default-TTA comparison.

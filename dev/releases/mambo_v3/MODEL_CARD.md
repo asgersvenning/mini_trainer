@@ -36,12 +36,14 @@ print(prediction.label, prediction.confidence)
 ![Nemo and Meghan on in-domain and Flemming images](performance/nemo-card-quality.svg)
 
 Species-level scores after confidence filtering. Solid bars show full support;
-lighter extensions show shared-support scores. Acceptance rates appear below each
-model. Global scope in-domain; northern European scope on Flemming.
+pale bars show shared support >5. Acceptance rates appear below each model.
+Global scope in-domain; northern European scope for Danish AMI camera-light-trap
+image crops, expert-reviewed by Flemming Helsing.
 
 **Suggested species-confidence thresholds for Nemo ONNX (without / with TTA):**
 **0.53 / 0.35** for general photographs (global scope);
-**0.82 / 0.75** for monitoring crops (`north_europe`).
+**0.82 / 0.75** for image crops of single individuals from camera light traps
+(e.g. AMI; `north_europe`).
 
 {{performance}}
 

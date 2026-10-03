@@ -6,7 +6,7 @@ clone the reviewed release revision with Git history. Install uv, create/activat
 the environment, then run the experiment. Use `tmux` and persist results under
 `/work`. These commands do not allocate a node.
 
-The completed campaign is documented in [in-domain evidence](../../../docs/mambo-indomain-evidence.md).
+The completed campaign is documented in [in-domain evidence](../../../docs/assets/mambo-indomain-thresholds.json).
 For a small throughput check rather than a full evaluation, use
 [speed-smoke.md](speed-smoke.md). Do not repeat the full campaign to validate
 unchanged quality or a documentation edit.
@@ -188,7 +188,7 @@ python -m dev.releases.mambo_v3.indomain_speed \
 `mini_metrics` selects thresholds on a disjoint calibration portion and evaluates
 them on reporting rows; do not fit on the reporting portion. Retain coverage and
 class-support domains alongside thresholded metrics. See
-[in-domain evidence](../../../docs/mambo-indomain-evidence.md) for exact policy and
+[in-domain evidence](../../../docs/assets/mambo-indomain-thresholds.json) for exact policy and
 [reusable evidence](evidence-policy.md) for identities required in future comparisons.
 
 Benchmark modes are distinct: request includes loading through completed predictions;

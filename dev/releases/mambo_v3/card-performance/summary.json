@@ -10,8 +10,8 @@
   "calibration_count": 51,
   "shared_species_count": 15,
   "figures": {
-    "quality.png": "4d31b20675b05b2859211bc5ba49046e8dd0f5793422e53ad926ddf5dff2496d",
-    "speed.png": "b246f14c9bd0605e5bc39c253060fa4cb8be8510c6a90849fe18f60034b8152a"
+    "quality.png": "d5cfa620e8fc52ae544cf9702cab24aeb3eff5dc59cb121a5e8a944afc72130c",
+    "speed.png": "ec087f206263e878c32f31634eebf9aafaa003b20aacf67a5c09426aea51d88e"
   },
   "selection": {
     "source_count": 1000,
@@ -97,7 +97,17 @@
       "median_ms": 809.7709668800235,
       "csv_sha256": "a409bf5b867d26b128867f6eefb298957f78f0e5740ceb1d3c38b2e67c2e1a7d",
       "macro_accuracy_shared": 0.9824320688727468,
-      "macro_f1_shared": 0.9737014225980248
+      "macro_f1_shared": 0.9737014225980248,
+      "collection_timing": {
+        "completed_requests": 1000,
+        "intervals": 999,
+        "first_completion": "2026-10-02T10:16:11.615101+00:00",
+        "last_completion": "2026-10-02T12:19:01.468880+00:00",
+        "elapsed_seconds": 7369.853779,
+        "mean_seconds_per_completion": 7.37723101001001,
+        "timestamps_sha256": "36dfa4c5fd80751dfb92f4d67868bcc6099f62b0ac1ac2c836feb55f2b1e443f",
+        "scope": "Original 1000-image collection, before adult/taxonomy filtering; completion-to-completion time includes pacing, rate-limit retries, taxonomy lookups and any pauses; not isolated rate-limit duration."
+      }
     }
   },
   "score_policy": "Cached top-1 predictions and confidence; normalization merges labels, not score vectors.",

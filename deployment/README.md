@@ -18,8 +18,11 @@ verified and cached. Reuse one predictor across calls.
 
 ## Quick start
 
-Create an environment, or use your application's existing environment. Python 3.12+
-is required. Install ONNX/CPU to start without a CUDA setup:
+Python 3.12+ is required. Choose the portable API for ONNX or backend switching,
+or the native API for an existing PyTorch integration. Expand either quick start.
+
+<details open>
+<summary>Portable API — ONNX/CPU, with optional PyTorch backend</summary>
 
 ```sh
 uv venv --python 3.13 .venv
@@ -27,7 +30,7 @@ source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 uv pip install 'mambo-v3[onnx]==0.3.1'
 ```
 
-**Python** — supply images directly:
+**Python:**
 
 ```python
 from mambo_deploy import Predictor
@@ -35,21 +38,61 @@ from mambo_deploy import Predictor
 predictor = Predictor()  # Global species list, ONNX, CPU
 result = predictor.predict(["moth.jpg", "butterfly.jpg"])
 print(result[0].label)       # (species_id, genus_id, family_id)
-print(result[0].confidence)  # confidence for each of those ranks
-records = result.to_dict()   # list of JSON-serializable records for your application
+print(result[0].confidence)  # confidence for each rank
+records = result.to_dict()  # JSON-serializable records
 ```
 
-**CLI** — the same defaults, for files or a directory:
+**CLI:**
 
 ```sh
 mambo_predict -i ./images -o ./output --name predictions
 ```
 
-This creates `output/predictions/predictions.json` and `mini_metric.csv`;
+This writes `output/predictions/predictions.json` and `mini_metric.csv`;
 `--embeddings` also writes `embeddings.npy`. Choose a new output name for each run.
-For a one-off command without installing into your application environment, replace
-`mambo_predict` with
+For one-off use, replace `mambo_predict` with
 `uvx --from 'mambo-v3[onnx]==0.3.1' mambo_predict`.
+
+</details>
+
+<details>
+<summary>Native PyTorch — mini_trainer only</summary>
+
+```sh
+uv venv --python 3.13 .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+uv pip install 'mt-trainer==0.3.1' --torch-backend=cpu
+```
+
+**Python:**
+
+```python
+from mini_trainer.deploy import Predictor
+
+predictor = Predictor(device="cpu", model="full")  # Loads Nemo immediately
+print(predictor.input_size)
+result = predictor("moth.jpg")
+print(result[0].label, result[0].confidence)
+```
+
+**CLI:**
+
+```sh
+python -m mini_trainer.deploy -i ./images -o ./output --name predictions \
+  --model full --device cpu --dtype float32
+```
+
+The native CLI downloads Nemo automatically and writes `mini_metric.csv` plus
+its resolved configuration. The Python API returns Torch prediction containers.
+Both examples explicitly select CPU/global scope; native defaults remain
+CUDA/Europe for compatibility. For a CUDA installation use `--torch-backend=auto`,
+then select `device="cuda"` or `--device cuda --dtype float16`.
+No `mambo-v3` installation is required. Generic `mt_predict` also supports local
+checkpoints via `--weights`.
+
+</details>
+
+The following input/output table and options describe the portable API.
 
 | Interface | Inputs | Outputs |
 |---|---|---|
@@ -73,7 +116,7 @@ or ONNX/CUDA to keep the training package out of your application.
 [Runtime installation and offline use](../docs/mambo-integration.md) covers these
 alternatives. Changing runtime does not change the input/output contract.
 
-**Enable `tta=True` / `--tta` for monitoring images when the quality gain below is
+**Enable `tta=True` / `--tta` for image crops from camera light traps when the quality gain below is
 worth roughly 3× lower throughput.** Keep the default recipe. Its benefit is
 image-domain dependent; the general-photograph comparison below provides context.
 
@@ -158,8 +201,9 @@ prediction service.
 ## Release comparison
 
 These results help choose TTA and runtime; they do not establish accuracy in every
-region. All models use legacy northern Europe on the same 52,788 Flemming reporting
-images, including out-of-vocabulary truth. `mini_metrics` selects calibrated
+region. All models use legacy northern Europe on the same 52,788 reporting
+image crops from Danish AMI camera light traps, expert-reviewed by Flemming Helsing
+(the Flemming dataset), including out-of-vocabulary truth. `mini_metrics` selects calibrated
 thresholds per pipeline/rank on 5,852 separate images. Recipe exploration used
 Flemming too, so this is descriptive evidence, not independent validation.
 
@@ -187,13 +231,25 @@ On this laptop, ONNX is faster on CPU; native PyTorch benefits more from larger
 GPU batches. TTA improves quality but reduces throughput, so enable it according
 to your accuracy and processing-budget requirements.
 
-The [complete evidence reference](../docs/mambo-deployment-evidence.md) retains
-exact metric tables, calibrated thresholds, timing ranges and limitations.
+[Flemming metrics](../docs/assets/mambo-promoted-tail.csv),
+[calibrated thresholds](../docs/assets/mambo-promoted-thresholds.json) and
+[laptop timing data](../docs/assets/mambo-promoted-speed.json) retain the exact values.
+
+<details>
+<summary>Confidence trade-offs: precision–recall and accuracy–coverage</summary>
+
+![Confidence trade-offs](../docs/assets/mambo-threshold-curves.svg)
+
+These historical curves use the previous `padded_scale` TTA recipe; single-view
+results are unchanged. They illustrate threshold trade-offs, not recommended
+thresholds for the current TTA recipe.
+
+</details>
 
 ### Complementary in-domain and HPC results
 
 The original global-lepi test split adds a comparison on general photographs using
-the global vocabulary. It complements Flemming's deployment-relevant monitoring
+the global vocabulary. It complements the expert-reviewed Danish AMI image
 crops; the image domains and class lists differ, so their absolute scores should
 not be compared as a controlled domain-effect estimate. The same `mini_metrics`
 calibration/support policy uses 568,939 reporting images and 63,974 separate
@@ -203,11 +259,12 @@ calibration images, with both confidence settings evaluated on the reporting spl
 
 V3 improves in-domain performance over V2. The Flemming-selected TTA recipe reduces
 in-domain performance, illustrating that its benefit depends on the input domain;
-this does not override its benefit on the more deployment-relevant Flemming crops.
+this does not override its benefit on the camera-light-trap image crops.
 Support >5 changes the class average, not the evaluation rows. Truth classes outside
 that average represent 1.70% / 0.34% / <0.01% of species/genus/family images without
 thresholds, and 1.88% / 0.38% / <0.01% after calibration. Thresholds and complete
-metrics are in the [in-domain evidence](../docs/mambo-indomain-evidence.md).
+metrics are retained as [thresholds](../docs/assets/mambo-indomain-thresholds.json)
+and [metric tables](../docs/assets/mambo-indomain-tail.csv).
 
 ![EPYC CPU and B200 request throughput, with updated B200 streaming measurements](../docs/assets/mambo-hpc-current-speed.svg)
 
@@ -218,7 +275,7 @@ smaller-batch results retain their earlier measurements; new request points are
 shown separately rather than joined to older scaling curves. These are measured
 application rates, not a promise of GPU saturation.
 
-[Timing details and provenance](../docs/mambo-hpc-evidence.md) record measurement
+[Timing details and provenance](../docs/assets/mambo-hpc-current-provenance.json) record measurement
 settings, memory and repeat ranges. Keep the laptop comparison above when choosing
 for consumer devices. ONNX's CPU advantage and independence from the training
 package make it especially relevant when a GPU or the full PyTorch stack is not

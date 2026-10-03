@@ -523,7 +523,7 @@ L 716.99976 251.700624
     <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="681.156691" y="72.018129" transform="rotate(-0 681.156691 72.018129)">86.3</text>
    </g>
    <g id="text_39">
-    <text style="font-size: 12px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="551.116286" y="29.732595" transform="rotate(-0 551.116286 29.732595)">Flemming · 52,788 monitoring images</text>
+    <text style="font-size: 12px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="551.116286" y="29.732595" transform="rotate(-0 551.116286 29.732595)">Danish AMI image crops · 52,788 images</text>
    </g>
   </g>
   <g id="text_40">
@@ -531,37 +531,37 @@ L 716.99976 251.700624
   </g>
   <g id="legend_1">
    <g id="patch_32">
-    <path d="M 163.392187 292.428281
-L 181.392187 292.428281
-L 181.392187 286.128281
-L 163.392187 286.128281
+    <path d="M 205.043203 292.428281
+L 223.043203 292.428281
+L 223.043203 286.128281
+L 205.043203 286.128281
 z
 " style="fill: #277da1; stroke: #277da1; stroke-linejoin: miter"/>
    </g>
    <g id="text_41">
-    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="188.592187" y="292.428281" transform="rotate(-0 188.592187 292.428281)">Macro-Accuracy</text>
+    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="230.243203" y="292.428281" transform="rotate(-0 230.243203 292.428281)">Macro-Accuracy</text>
    </g>
    <g id="patch_33">
-    <path d="M 278.129531 292.428281
-L 296.129531 292.428281
-L 296.129531 286.128281
-L 278.129531 286.128281
+    <path d="M 319.780547 292.428281
+L 337.780547 292.428281
+L 337.780547 286.128281
+L 319.780547 286.128281
 z
 " style="fill: #e58a20; stroke: #e58a20; stroke-linejoin: miter"/>
    </g>
    <g id="text_42">
-    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="303.329531" y="292.428281" transform="rotate(-0 303.329531 292.428281)">Macro-F1</text>
+    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="344.980547" y="292.428281" transform="rotate(-0 344.980547 292.428281)">Macro-F1</text>
    </g>
    <g id="patch_34">
-    <path d="M 362.881406 292.428281
-L 380.881406 292.428281
-L 380.881406 286.128281
-L 362.881406 286.128281
+    <path d="M 404.532422 292.428281
+L 422.532422 292.428281
+L 422.532422 286.128281
+L 404.532422 286.128281
 z
 " style="fill: #c8c8c8; stroke: #c8c8c8; stroke-linejoin: miter"/>
    </g>
    <g id="text_43">
-    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="388.081406" y="292.428281" transform="rotate(-0 388.081406 292.428281)">Lighter extension: shared support &gt;5</text>
+    <text style="font-size: 9px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start" x="429.732422" y="292.428281" transform="rotate(-0 429.732422 292.428281)">Shared support &gt;5</text>
    </g>
   </g>
  </g>

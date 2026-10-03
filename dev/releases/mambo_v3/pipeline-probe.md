@@ -12,7 +12,7 @@ fresh output directories. They do not require another quality evaluation.
 | `gpu_ceiling` | Resident inputs through the deployed Torch model; outputs stay on-device | Comparing streaming throughput with sustained model execution |
 
 Published measurements and provenance belong in
-[HPC evidence](../../../docs/mambo-hpc-evidence.md).
+[HPC evidence](../../../docs/assets/mambo-hpc-current-provenance.json).
 
 ## Pipeline ownership
 

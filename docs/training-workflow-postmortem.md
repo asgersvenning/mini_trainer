@@ -13,7 +13,7 @@ questions raised during training.
 | --- | --- |
 | Production recipe | EfficientNetV2-S, normalized hierarchical head, input 384; four full B200s, batch 256/rank, FP16 AMP, model compilation and 32 loader workers/rank. Optimizer compilation, explicit CUDA prefetch, INT8 training and EMA were off. |
 | Training | 30 epochs in 17:34:23; training timer 16:27:22, evaluation timer 43:33; best epoch reported as 30. Timers omit some logging/teardown. |
-| Quality | Validation species/genus/family micro accuracy 94.2353% / 97.6693% / 99.5047%, finite final losses. Preliminary test results agreed closely; expert data showed substantial domain/vocabulary shift. Use the [current deployment evidence](mambo-deployment-evidence.md) for comparisons. |
+| Quality | Validation species/genus/family micro accuracy 94.2353% / 97.6693% / 99.5047%, finite final losses. Preliminary test results agreed closely; expert data showed substantial domain/vocabulary shift. Use the [current deployment evidence](../deployment/README.md#release-comparison) for comparisons. |
 | Resume | Four ranks agreed on checkpoint hash, start epoch 3 and restoration of model/optimizer/scheduler/scaler. This is controlled restoration, not bit-exact arbitrary stochastic continuation. |
 | Export | FP32 ONNX synthetic batches 1/2/4 passed at rtol/atol 1e-4, maximum absolute error 3.84e-5. ONNX PTQ used 128 training images and Percentile 99.9; graph/finite-output smoke passed, without establishing integer placement or quality. No quantized `.pt` was created. |
 | Diagnostics/retention | Figures and W&B ran throughout production; 23.71 GiB before ZIP, reported ZIP integrity and archive checksum passed. |

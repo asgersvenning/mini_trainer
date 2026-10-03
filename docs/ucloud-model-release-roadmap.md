@@ -15,8 +15,8 @@ checks and release actions. Historical preparation details below describe 0.3.0.
 | Installation, API/CLI, inputs/outputs, defaults and V2 migration | [Deployment README](../deployment/README.md) and [integration reference](mambo-integration.md) |
 | Weight identity, original V2 contract and preset reconstruction | [Input audit](../dev/releases/mambo_v3/README.md), inventory and model provenance alongside it |
 | Geographic scope and membership rules | [Preset catalogue](model-presets.md); 25 versioned lists, legacy and updated memberships preserved |
-| Flemming and complementary in-domain quality | [Flemming evidence](mambo-deployment-evidence.md), [in-domain evidence](mambo-indomain-evidence.md) |
-| Laptop and production-like speed | README figures and [HPC evidence](mambo-hpc-evidence.md), with historical/current measurement scopes separate |
+| Flemming and complementary in-domain quality | [Flemming evidence](../deployment/README.md#release-comparison), [in-domain evidence](assets/mambo-indomain-thresholds.json) |
+| Laptop and production-like speed | README figures and [HPC evidence](assets/mambo-hpc-current-provenance.json), with historical/current measurement scopes separate |
 | Runtime and artifact readiness | [Installed qualification](../dev/releases/mambo_v3/final-qualification.md) |
 | Future model comparability | [Evidence policy](../dev/releases/mambo_v3/evidence-policy.md) |
 | Human publication, integrity and rollback | [Publication handoff](../dev/releases/mambo_v3/publication.md) |

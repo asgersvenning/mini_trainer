@@ -28,8 +28,8 @@ retained real images with `--dataset`. Neither is a new accuracy benchmark.
 ## Evidence reuse and limits
 
 Maintenance preserves model weights, preprocessing, vocabulary and presets, so
-existing [deployment evidence](../../../docs/mambo-deployment-evidence.md) and
-[in-domain results](../../../docs/mambo-indomain-evidence.md) retain their original
+existing [deployment evidence](../../../deployment/README.md#release-comparison) and
+[in-domain results](../../../docs/assets/mambo-indomain-thresholds.json) retain their original
 scope. Reuse them without relabelling historical measurements as new runs.
 CPU qualification does not establish GPU correctness or universal platform support.
 

@@ -70,9 +70,12 @@ The report retains macro accuracy (`accuracy`), `micro_accuracy`, F1, recall,
 precision, coverage and Theil U, plus per-class and known-only results at every rank.
 Undefined values remain null. Truth-vocabulary coverage differs from abstention
 coverage; the latter is 100% at this collector's zero threshold.
-[Threshold calibration](../../../docs/mambo-confidence-thresholds.md) uses a
-separate calibration partition, and [tail reporting](../../../docs/mambo-tail-metrics.md)
-changes the macro averaging domain. Those later analyses reuse predictions.
+Threshold calibration uses `mini_metrics`' built-in `OptimalConfidenceThreshold`
+with Macro-F1 on a separate calibration partition. Shared support >5 requires more
+than five truth instances and accepted predictions in every compared pipeline;
+it changes the macro averaging domain, not image rows. Accuracy averages accepted
+predictions by truth class; recall counts rejected predictions as misses. Macro-F1
+includes predicted-only classes. These analyses reuse saved predictions.
 
 ## Timing and summary
 
@@ -104,7 +107,7 @@ python -m dev.releases.mambo_v3.summarize \
 ```
 
 The summary rejects incomplete timing phases. Preserve its source CSVs, observations
-and reports. [Initial FP32 results](../../../docs/mambo-v3-evaluation.md) retain the
-original environment and installed-package checks; [accelerated results](../../../docs/mambo-accelerated-deployment.md)
-record the later AMP comparison. In-domain collection and presentation have since
-completed; cross-OS and additional hardware support must not be inferred from them.
+and reports. Historical FP32/acceleration investigations are retained locally and
+in Git history; the [deployment guide](../../../deployment/README.md#release-comparison)
+links the published comparison data. Cross-OS and additional hardware support must
+not be inferred from these measurements.

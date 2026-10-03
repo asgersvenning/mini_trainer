@@ -103,7 +103,8 @@ def card_performance(directory=None, *, required=False):
         f"{selection['source_count']:,} recent Research Grade iNaturalist observations "
         f"({summary['cutoff'][:10]}). {summary['report_count']:,} reporting images; "
         f"{summary['calibration_count']} separate calibration images. Global scope, no location input. "
-        "Speed: Nemo ONNX and Meghan PyTorch on the same CPU; iNaturalist includes network latency."
+        "Speed: Nemo ONNX and Meghan PyTorch on the same CPU. iNaturalist request time includes network latency; "
+        "the pale bar shows the original 1,000-image collection average, including pacing, retries and other overhead."
     )
 
 

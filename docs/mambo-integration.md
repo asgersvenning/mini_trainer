@@ -30,7 +30,7 @@ Linux measurements do not establish support for every OS or accelerator.
 CUDA requires a compatible NVIDIA driver and runtime build. The `onnx-cuda` extra
 requests CUDA/cuDNN dependencies; it cannot guarantee that a wheel includes kernels
 for every GPU architecture. The B200 evidence uses ONNX Runtime 1.22.0, recorded in
-[the measured environment](mambo-hpc-evidence.md), not a universal version pin.
+[the measured environment](assets/mambo-hpc-current-provenance.json), not a universal version pin.
 Requested unavailable CUDA raises an error rather than silently switching the
 whole model to CPU; ONNX may place individual operators on CPU.
 
@@ -145,6 +145,33 @@ native predictor for arbitrary supported checkpoints. `model=` selects geography
 not a model generation. The portable `configure(model=..., class_list=..., tta=...)`
 method changes selection/TTA without reloading the model. Finish active streams
 before reconfiguring.
+
+## Test-time augmentation
+
+TTA is off by default. `tta=True` / `--tta` selects `rotation30_pad25_3`;
+pass a profile name explicitly to choose another recipe.
+
+| Profile | Views | Spatial policy |
+|---|---:|---|
+| `none` | 1 | Ordinary single-view path; default |
+| `rotation30_pad25_3` | 3 | Original plus ±30° rotations, each with 25% edge padding; default when TTA is enabled |
+| `wide_rotation_mixed_padding_5` | 5 | Original, ±10° with 15% padding, ±30° with 25% padding |
+| `padded_scale` | 3 | Original plus 8% / 15% edge padding; previous default, available explicitly |
+| `hflip` | 2 | Original and horizontal reflection |
+| `five_crop` | 5 | Original and four corner crops, each 90% of original height/width |
+| `ten_crop` | 10 | Five-crop views and their horizontal reflections |
+| `d4` | 8 | Rotations of 0/90/180/270 degrees and their horizontal reflections |
+| `light_noise` | 3 | Original plus two independently seeded 1% salt-and-pepper views |
+
+
+Views are generated before ordinary preprocessing; species logits are averaged
+before class filtering and hierarchy reduction. Requested embeddings are averaged
+and normalized. TTA helps the evaluated camera-light-trap images but can reduce
+accuracy on general photographs. See the [quality and speed comparison](../deployment/README.md#release-comparison).
+
+For custom policies, `mambo_deploy.augmentation.TTA` accepts a finite sequence of
+callables, each receiving its own RGB uint8 CHW image and returning a CHW array or
+PIL image. Give the policy a descriptive name; custom randomness is caller-owned.
 
 ## Streaming controls
 
