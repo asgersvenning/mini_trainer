@@ -1,5 +1,6 @@
 # Mini trainer
 
+[![PyPI](https://img.shields.io/pypi/v/mt-trainer.svg)](https://pypi.org/project/mt-trainer/)
 [![Python version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://github.com/asgersvenning/mini_trainer/actions/workflows/ci.yml/badge.svg)](https://github.com/asgersvenning/mini_trainer/actions)
 [![codecov](https://codecov.io/github/asgersvenning/mini_trainer/graph/badge.svg?token=3BCL6NH5GC)](https://codecov.io/github/asgersvenning/mini_trainer)
@@ -7,17 +8,53 @@
 
 ---
 
-This is an attempt to create a minimal extendable framework for development and research on classification models.
+Mini trainer is an extensible PyTorch framework for training, evaluating and
+exporting image classifiers. It supports flat labels and hierarchical class
+structures on your own datasets; biological taxonomy is one application.
+The training framework is published on PyPI as **[mt-trainer](https://pypi.org/project/mt-trainer/)**.
+Python imports remain `mini_trainer`.
 
-For the Nemo (MAMBO_v3) model release, see the [local deployment guide](deployment/README.md)
-for PyTorch/ONNX inference, regional presets, custom class lists and embeddings.
+## Features and guides
 
-All code in `mini_trainer` should follow the following core principles:
+- **Flat and hierarchical classification:** train classifiers and predict at
+  multiple levels of a label hierarchy. Start with the [MNIST and hierarchical
+  Blair examples](examples/README.md).
+- **Choice of image backbone:** use Torchvision models, optional timm,
+  Transformers or BioCLIP backends, and customize training components through
+  [builders](mini_trainer/builders.py).
+- **Training and data:** image folders or supported metadata Parquet inputs,
+  mixed precision, distributed training, checkpoint loading and configurable
+  augmentation, optimizers and schedules. See the [training API](mini_trainer/train.py),
+  [distributed setup](ddp/README.md) and [runtime contracts and limitations](dev/README.md#behavioral-coverage-and-known-limits).
+- **Evaluation and inspection:** classification metrics, confusion matrices,
+  hierarchy visualizations and optional Weights & Biases logging. The
+  [benchmark guide](docs/benchmarks.md) explains maintained evaluation coverage.
+- **Deployment:** native PyTorch inference and optional [ONNX export](docs/onnx.md)
+  with class mappings and preprocessing metadata. See the separate
+  [quantization guide](docs/quantization.md) for opt-in x86 INT8 support and its limits.
 
-* Keep core dependencies minimal (see `pyproject.toml` for the current set); third-party integrations should remain optional.
-* The required portion of any API should be as minimal as possible (i.e. to train a model we only require `mt_train -i <TRAINING_DATA>`)
-* All hyperparameters and system configuration should have smart defaults that are as general as possible
-* All functionality should be extendable to custom model architectures, loss functions, training regimes, data formats etc.
+These guides and examples serve as the documentation entry points while a
+standalone documentation site is pending.
+
+## Released models
+
+Model packages contain a particular trained model and its integration interface;
+they are versioned separately from the general training framework. Additional
+models can cover other datasets, label sets and application domains.
+
+| Model | Scope | Use it |
+|---|---|---|
+| **Nemo (MAMBO\_v3)** | Adult moths and butterflies (Lepidoptera); species, genus and family predictions | [PyPI package](https://pypi.org/project/mambo-v3/) · [Hugging Face model card and weights](https://huggingface.co/asgersvenning/MAMBO-v3) · [Interactive demo](https://huggingface.co/spaces/asgersvenning/MAMBO-v3) |
+
+The [Nemo deployment guide](deployment/README.md) covers its Python API and CLI,
+PyTorch/ONNX runtimes, geographic presets, custom class lists, embeddings,
+optional test-time augmentation and measured quality/speed.
+
+ONNX/CPU integration needs neither the training package nor a GPU. Native
+PyTorch inference is available independently through `mini_trainer.deploy`.
+
+**Nemo weights are CC BY-NC-SA 4.0 (non-commercial, share-alike);**
+**framework and adapter code are MIT.**
 
 ## Find your workflow
 
@@ -37,7 +74,7 @@ and package management. Choose a published package or a source checkout.
 
 ### PyPI
 
-The distribution is `mt-trainer`; Python imports remain `mini_trainer`.
+The published distribution is [`mt-trainer`](https://pypi.org/project/mt-trainer/); Python imports remain `mini_trainer`.
 The similarly named `mini-trainer` / `mini_trainer` PyPI project is unrelated.
 
 ```bash
@@ -102,6 +139,11 @@ To use this feature you must install `mini_trainer` with the `recommended` extra
 This repository draws inspiration from https://github.com/pytorch/vision/tree/main/references/classification.
 
 ## Contribution
+
+Keep required dependencies and configuration small, provide useful defaults, and
+keep architectures, losses, data formats and training components extensible.
+Third-party integrations should remain optional.
+
 Feel free to contribute, but here are a few tips:
 
 * Follow the installation guide to setup a proper dev environment.
