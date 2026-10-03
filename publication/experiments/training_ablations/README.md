@@ -78,6 +78,47 @@ We omit that extra cell. The tiny qualification retains both code paths.
 Defer individual normalization operations, initialization, hierarchy, extra backbones
 and additional strengths until a specific result or claim warrants them.
 
+## Learning-rate qualification before screening
+
+**The fixed-LR screen is on hold.** The original tuning only exercised LR 0.0003
+and did not bracket instability. The eight-run screening budget remains, but its
+LR settings are provisional until the following bounded probes are reviewed.
+The initial screen allocation was stopped; retain its artifacts as setup evidence.
+
+Run one fresh process per optimizer with the same frozen cohort and sampled images:
+
+```bash
+python -m publication.experiments.training_ablations.lr_range /work/results/lr-study /work/results/lr-muon --optimizer muon
+python -m publication.experiments.training_ablations.lr_range /work/results/lr-study /work/results/lr-adamw --optimizer adamw
+```
+
+Prepare `lr-study` at the probe revision using the ordinary `prepare` command.
+Each probe uses 128 batches of uniformly sampled training images at batch 512,
+then reuses that sample for a second epoch. The first epoch warms up the head
+at a base LR of 0.0003 with backbone LR zero; the second increases head LR from
+1e-5 to 1 geometrically, with backbone LR one third of head LR. This shortened
+warmup tests the unfreezing transition, not the complete full-cohort schedule.
+AMP-skipped updates do not advance the schedule: inspect actual LR coverage.
+The head warmup is never run at the upper end of the range.
+
+`lr-curve.jsonl` records per-batch loss, actual group LRs, unscaled gradient norms
+before clipping for backbone/projection/classifier, and AMP scales/skips. The
+production clipping, optimizer, augmentation, loss and regularizer stay active.
+Stop on five consecutive AMP skips, persistent nonfinite losses/regularization,
+or smoothed full-model loss exceeding four times its best value after twenty
+batches. These are operational divergence signals; distinguish loss divergence
+from numerical overflow. A completed ramp without a signal does not establish a
+boundary. Unrelated errors, including OOM, fail rather than become LR evidence.
+
+Review the two curves before further allocation. Bracket any unresolved upper
+boundary with one targeted extension if necessary, then check at most two plausible
+LRs per optimizer in fresh `--hold --upper LR` probes. Holds warm up to their chosen
+LR and keep it constant with the backbone active in the second epoch. Use stability
+and useful loss descent, not closeness to failure alone, to select candidates.
+These short probes do not establish optimal hyperparameters or long-run stability.
+Record the chosen settings and rationale before a fresh screening campaign;
+there is no automatic main-study launch from the probes.
+
 ## Frozen cohort
 
 Preparation uses the supplied metadata only; no remote GBIF lookups. Species are
