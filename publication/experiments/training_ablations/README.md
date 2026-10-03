@@ -145,16 +145,71 @@ Thus this screen supports a recall benefit from adjustment versus CE, but does
 not establish that the adaptive gate improves recall over constant adjustment.
 All findings are validation-only, one-seed results within a ten-epoch budget.
 
-Proposed confirmation, pending selection: repeat the four EMLA cells (`full`,
-`no_normalization`, `no_regularization`, `no_normalization_no_regularization`)
-plus `fixed_adjustment`, with paired seeds 43 and 44 and the same ten-epoch
-budget. This is ten runs / 100 model-epochs, approximately 8.3 GPU-hours of
-training at the observed 50 minutes per run, excluding setup and queue time.
-It confirms the normalization × regularization interaction conditional on EMLA
-and the adaptive-versus-fixed trade-off. It does not confirm CE contrasts or
-the three-way interaction; those remain exploratory. Use the held-out test
-partition only after freezing the confirmation choices. No confirmation runs
-have been launched.
+### Frozen overnight replication
+
+The overnight budget is approximately ten wall-clock hours on two full B200 nodes.
+[overnight.json](overnight.json) repeats **all nine variants at seed 43,
+ten epochs each**: nine runs / 90 model-epochs. [duration.json](duration.json)
+defines the separate duration check, restricted to these six variants:
+`full`, `no_normalization`, `no_regularization`,
+`no_normalization_no_regularization`, `ce` and `fixed_adjustment`, seed 42,
+20 epochs from the same initialization, with all other settings unchanged.
+This adds 120 model-epochs, for approximately 17.5 GPU-hours total. Each node
+receives three long runs and either four or five short runs. At the observed
+50 minutes per ten epochs, the two queues take approximately 9 hours 10 minutes
+and 8 hours 20 minutes, plus setup and evaluation. Allocate 12 hours per node as
+a buffer, with automatic exit on completion; queue delay is outside this estimate.
+
+This replaces the narrower proposed confirmation subset. Retaining complete cubes
+replicates every conditional, averaged pairwise and three-way contrast, while the
+fixed-adjustment control tests the adaptive gate at the full recipe. Keep the
+fresh seed separate from the exploratory seed 42. Analyze the 20-epoch duration
+check separately; do not pool different epoch budgets. Its matched seed-42
+ten-epoch counterparts already exist. Because cosine decay spans the requested
+budget, this tests a longer training schedule, not simply ten extra epochs at
+the original terminal learning rate.
+
+All nine screening curves reached 99.8–99.9% training accuracy; validation accuracy
+changed by at most 0.06 points between epochs nine and ten, with flat or worsening
+validation loss. This does not establish convergence: the learning rate was
+approaching zero. Review of all 4,010 training-batch records per run showed
+epoch-boundary changes despite smooth learning rates, without sustained loss
+explosion; do not assign a cause to those changes from curves alone. Criterion
+loss excludes the separately logged regularizer and differs across loss recipes.
+
+Epoch confusion-count artifacts recover macro/tail recall despite their absence
+from scalar learning logs. Full-recipe EMLA's tail advantage over CE shrinks from
+about seven points at epoch two to 2.43 at epoch ten. Regularization's conditional
+effects also change during training. These are AMP epoch evaluations, distinct
+from the final reloaded FP32 evaluations above. The duration check tests these
+contrasts under a longer schedule, including normalization × regularization under
+EMLA. Its one seed cannot establish repeatability, and it does not cover the full
+three-way interaction at 20 epochs.
+
+The final class-distance figures show substantially more uniform prototype
+geometry with regularization and pronounced clusters/bands without it in both
+head families. These figures apply the same cosine-based transform, but do not
+establish taxonomic alignment or downstream representation quality. Quantify the
+geometry from retained artifacts before proposing another training sweep.
+
+Use the same cohort, splits, initialization family, batch 512, workers 32, LR and
+all other training settings. The `screening: true` execution option selects the
+fixed-LR path and validation-only evaluation; it does not mean hyperparameters
+will be selected again. Reserve test data for a later frozen assessment. Report
+each seed's contrasts and their agreement or disagreement before interpreting a
+mean. Two seeds cannot establish absence of a small effect.
+
+Each node installs uv, clones the pinned training source, loads the existing
+private W&B credential and runs its static shard unattended. The first node
+prepares and qualifies the shared study; the other waits for qualification, then
+runs independently. Retain node logs and exit codes, individual completion/failure
+markers, checkpoints, predictions and W&B runs on mounted storage. A failed
+treatment stops its shard rather than silently skipping it; the other shard can
+continue. The last successful shard writes the complete study summaries. No
+automatic tuning, changed batch size during the main study, retries or additional
+experiments are scheduled after these 15 runs. The duration stage uses its own
+prepared root and six-cell frozen plan, rather than filling out an unrequested
+20-epoch factorial. Both stages retain validation-only evaluation.
 
 ## Learning-rate qualification before screening
 

@@ -1,0 +1,21 @@
+{
+  "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
+  "images": "/work/global_lepi/images",
+  "species": 512,
+  "selection_seed": 20261003,
+  "size": 384,
+  "seeds": [
+    43
+  ],
+  "epochs": 10,
+  "tuning_epochs": 10,
+  "batch_size": 512,
+  "workers": 32,
+  "threads": 1,
+  "dtype": "float16",
+  "device": "cuda",
+  "wandb": true,
+  "project": "mini-trainer-ablations",
+  "entity": "asvenning",
+  "screening": true
+}
