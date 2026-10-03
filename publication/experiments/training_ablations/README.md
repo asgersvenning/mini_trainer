@@ -9,47 +9,68 @@ frozen inputs, paired seeds, validation-only choices and retained individual res
 
 EfficientNetV2-S, ImageNet1K V1 initialization, 384 pixels; all backbone parameters
 train after one epoch of head-only learning-rate warmup. `fine_tune=True` is **not**
-used: that API freezes the backbone. Start with **eight screening runs: seed 42,
+used: that API freezes the backbone. Start with a **2×2×2 factorial** over the
+normalization package, prototype regularization and EMLA versus CE. Keep projection
+and MuonAuxAdamW fixed. Add one fixed-adjustment control: **nine runs, seed 42,
 ten epochs each**, evaluated on validation only. Use final-epoch results, not the
 best validation checkpoint. The test partition is reserved for confirmation.
 
-| Variant | Normalized | Projection | Regularization | Loss | Optimizer |
-| --- | --- | --- | --- | --- | --- |
-| full | yes | yes | 0.1 | EMLA | MuonAuxAdamW |
-| no_normalization | no | yes | 0.1 | EMLA | MuonAuxAdamW |
-| no_regularization | yes | yes | 0 | EMLA | MuonAuxAdamW |
-| ce | yes | yes | 0.1 | CE | MuonAuxAdamW |
-| fixed_adjustment | yes | yes | 0.1 | fixed adjustment | MuonAuxAdamW |
-| no_projection | yes | no | 0.1 | EMLA | MuonAuxAdamW |
-| adamw | yes | yes | 0.1 | EMLA | AdamW |
-| reference | no | no | 0 | CE | AdamW |
+| Variant | Normalized | Regularization | Loss |
+| --- | --- | --- | --- |
+| full | yes | 0.1 | EMLA |
+| no_normalization | no | 0.1 | EMLA |
+| no_regularization | yes | 0 | EMLA |
+| ce | yes | 0.1 | CE |
+| no_normalization_no_regularization | no | 0 | EMLA |
+| no_normalization_ce | no | 0.1 | CE |
+| no_regularization_ce | yes | 0 | CE |
+| core_reference | no | 0 | CE |
+| fixed_adjustment | yes | 0.1 | fixed adjustment |
 
-The screening config sets `screening: true`, one seed and ten epochs. Both
-optimizers use the same fixed head LR 0.0003 and weight decay 0.001; skip `tune`.
-These settings come from the initial operational/tuning campaign, where two Muon
-runs completed before this amendment and two AdamW runs were already in flight.
-Keep those exploratory results separate; do not present them as prospective
-confirmation or rerun their grid. This screen compares optimizers at shared
-settings, not equally tuned optima. Batch 512 / 32 workers comes from the retained
-B200 capacity evidence below.
+The eight factorial cells identify average component effects, pairwise interactions
+and the three-way interaction within this recipe. The additional fixed-adjustment
+cell distinguishes adaptive EMLA from its constant-gate counterpart at the full
+recipe only. `core_reference` retains projection and Muon: it is a factorial anchor,
+not a standard bare-linear training baseline. Defer optimizer/projection comparisons.
 
-Before inspecting screening outcomes, use this follow-up rule: prioritize contrasts
-with an absolute macro-recall difference of at least 0.5 percentage points, a tail-
-recall difference of at least 1 point, or a clear optimization failure. Always keep
-the full recipe as the paired anchor. Confirm selected contrasts using fresh seeds
-43 and 44; freeze the selected variants and epoch budget before launching them.
-Report the selected confirmation results separately from the exploratory seed.
-Small unconfirmed differences are inconclusive, not evidence of equivalence.
-Inspect learning curves before choosing a longer budget; if convergence is still
-unresolved, extend only the relevant paired comparison with an identical schedule.
-No automatic confirmation launch or extra hyperparameter sweep.
+The screening config sets `screening: true`, one seed and ten epochs; skip `tune`.
+The candidate head LR is 0.003, with weight decay 0.001; complete the bounded
+LR checks below before launching.
+Batch 512 / 32 workers comes from the retained B200 capacity evidence.
+The original long tuning and fixed-LR screening allocations were stopped; preserve
+their partial artifacts, but do not present them as completed ablations. Prepare a
+fresh output root at the revised source. Earlier protocols remain reproducible from
+their pinned commits rather than by mixing old plans with this factorial design.
 
-This replaces the original 24 runs × 30 epochs with **80 screening model-epochs**.
-The original campaign's frozen inputs/results remain unchanged. Its two pending
-higher-LR shards were canceled and its running shards stop after tuning; no main
-runs from that campaign are reused. Use a fresh output root for this protocol.
-Legacy `screening: false` retains the original four-pair-per-optimizer tuning path
-for reproducing the earlier protocol; the current template enables screening.
+### Contrasts and confirmation
+
+`factorial.json` reports each seed separately for macro recall, tail recall and NLL.
+For a factor set S, the marginal contrast sums cell outcomes with alternating signs
+(+ when every factor in S is on), then divides by 2^(3-|S|) to average over the
+remaining factors. Main effects are average on-minus-off differences; pairwise
+interactions are average differences of differences; the three-way interaction is
+a difference of those pairwise interactions. Conditional versions hold the remaining
+factors at each on/off setting, so averaging cannot hide opposing interactions.
+Recall contrasts are in fractions (multiply by 100 for percentage points); lower
+NLL is better. Interactions depend on the outcome scale and are not mechanisms.
+Incomplete cubes produce no factorial estimate; never pool seeds to fill cells.
+The fixed-adjustment control is excluded from the cube. `paired.json` additionally
+retains full-recipe removal contrasts, including full minus fixed adjustment.
+
+A small marginal or full-recipe removal effect is **not** a reason to discard a
+factor. Review conditional effects, pairwise and three-way interactions regardless
+of marginal size. As practical screening flags, use absolute contrasts of at least
+0.5 macro-recall points or 1 tail-recall point, sign reversals, or optimization
+failure; these are prioritization thresholds, not significance tests. One seed
+cannot establish repeatability or absence of an effect.
+
+Confirm selected contrasts using fresh paired seeds 43 and 44. Replicate **all cells
+needed for the contrast**: four for a pairwise interaction at a fixed third-factor
+setting, all eight for the three-way or a pairwise interaction averaged over the
+third factor. Do not replicate only the best combination. Freeze the selected cells
+and epoch budget first, and report confirmation separately from the exploratory
+seed. Extend training only if the relevant paired curves leave convergence unresolved.
+The initial budget is **90 model-epochs**, with no automatic confirmation sweep.
 
 Backbone LR is head LR/3; one-epoch warmup then the existing cosine schedule.
 Smoothing is explicitly `1/512`, projection dropout 0.1, existing augmentations,
@@ -67,22 +88,17 @@ linear classifier. Disabling projection also removes its dropout/activation.
 Fixed adjustment uses EMLA's identical counts, smoothing and centered log-count
 offsets with gate one. Inference uses raw classifier logits, with no added priors.
 
-Report removals as conditional effects. In EfficientNetV2-S, the added projection
-is the only trainable matrix eligible for Muon; convolutional backbone parameters
-and the final classifier use auxiliary AdamW. Removing the projection therefore
-removes its activation/dropout and the Muon-eligible matrix together. Keep that as
-a projection-package comparison, and compare `full` with `adamw` at the shared screening
-hyperparameters. Do not report an optimizer-by-projection interaction: the
-no-projection models both use AdamW and are redundant at the shared settings.
-We omit that extra cell. The tiny qualification retains both code paths.
-Defer individual normalization operations, initialization, hierarchy, extra backbones
-and additional strengths until a specific result or claim warrants them.
+In EfficientNetV2-S, the added projection is the only trainable matrix eligible for
+Muon; convolutional backbone parameters and the final classifier use auxiliary
+AdamW. Keep this routing fixed across factorial cells. Defer projection removal,
+optimizer choice, individual normalization operations, initialization, hierarchy,
+extra backbones and additional strengths until a specific result warrants them.
 
 ## Learning-rate qualification before screening
 
 **The fixed-LR screen is on hold.** The original tuning only exercised LR 0.0003
-and did not bracket instability. The eight-run screening budget remains, but its
-LR settings are provisional until the following bounded probes are reviewed.
+and did not bracket instability. The factorial LR
+settings are provisional until the following bounded probes are reviewed.
 The initial screen allocation was stopped; retain its artifacts as setup evidence.
 
 Run one fresh process per optimizer with the same frozen cohort and sampled images:
@@ -110,14 +126,24 @@ batches. These are operational divergence signals; distinguish loss divergence
 from numerical overflow. A completed ramp without a signal does not establish a
 boundary. Unrelated errors, including OOM, fail rather than become LR evidence.
 
-Review the two curves before further allocation. Bracket any unresolved upper
-boundary with one targeted extension if necessary, then check at most two plausible
-LRs per optimizer in fresh `--hold --upper LR` probes. Holds warm up to their chosen
-LR and keep it constant with the backbone active in the second epoch. Use stability
-and useful loss descent, not closeness to failure alone, to select candidates.
-These short probes do not establish optimal hyperparameters or long-run stability.
-Record the chosen settings and rationale before a fresh screening campaign;
-there is no automatic main-study launch from the probes.
+The completed ramps at revision `bb3ec42` used identical sampled images and model
+initialization for both optimizers. Both showed useful descent in the broad head-LR
+region 0.001–0.01 and deterioration above it. Muon reached 1 without AMP skips;
+AdamW recorded two skips near 0.072 and recovered, reaching 0.834. This does not
+pinpoint a numerical boundary, nor is that needed for selecting a useful LR.
+
+Check **one** conservative candidate per optimizer: `--hold --upper 0.003`. Holds
+warm up to that LR and keep it constant with the backbone active in the second
+epoch. Additional checks require an observed failure or concrete ambiguity; do not
+refine exact optima or instability thresholds. These short probes establish neither
+optimal hyperparameters nor long-run stability. Record their outcome before launch.
+
+Use two independent single-B200 allocations for the factorial, with disjoint shards
+of the same prepared root. Reuse the installed environment and prepared inputs for
+same-revision stages; prepare once for the new scientific revision. The first
+allocated node can prepare/qualify and begin its shard without waiting for the
+second allocation. Check stage completion or failures rather than polling every
+batch. Existing focused test evidence is sufficient for unchanged code.
 
 ## Frozen cohort
 
@@ -317,15 +343,15 @@ values are limits, not runtime predictions. A minute is reserved for termination
 cleanup; tmux does not extend an allocation. No GPU allocation is performed by
 the study itself.
 
-Qualification runs six tiny real-image treatments, retaining the full classifier
-vocabulary/counts and exercising four optimizer/projection combinations plus the
-unnormalized and fixed-adjustment branches. It uses training/validation only, two
+Qualification runs four tiny real-image treatments (full, no normalization, core
+reference and fixed adjustment), retaining the full classifier vocabulary/counts
+and exercising both head types, both loss paths and disabled regularization. It uses training/validation only, two
 epochs (warmup followed by backbone updates), at most `max(2 × batch, 128)` records per partition. Only CUDA OOM permits
 global batch fallback through 768 → 512 → 256 → 128 → 64 → 32, starting at the
 configured batch; other failures stop. Reloaded backbone
 parameters must differ from their initialization; BatchNorm buffer changes alone
 do not satisfy this check. Freeze the selected batch
-before tuning. This is infrastructure evidence, not convergence or representative
+before screening. This is infrastructure evidence, not convergence or representative
 full-dataset IO evidence. Its counts/metrics must not enter publication quality tables.
 
 Start with one GPU (`--devices 0`). To qualify concurrent IO and run independent

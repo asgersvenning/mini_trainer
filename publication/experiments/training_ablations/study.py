@@ -42,10 +42,11 @@ VARIANTS = {
     "no_normalization": {"normalized": False},
     "no_regularization": {"regularization": False},
     "ce": {"loss": "ce"},
+    "no_normalization_no_regularization": {"normalized": False, "regularization": False},
+    "no_normalization_ce": {"normalized": False, "loss": "ce"},
+    "no_regularization_ce": {"regularization": False, "loss": "ce"},
+    "core_reference": {"normalized": False, "regularization": False, "loss": "ce"},
     "fixed_adjustment": {"loss": "fixed"},
-    "no_projection": {"hidden": False},
-    "adamw": {"optimizer": "adamw"},
-    "reference": {"normalized": False, "hidden": False, "regularization": False, "loss": "ce", "optimizer": "adamw"},
 }
 
 
@@ -316,8 +317,7 @@ def select_tuning(paths):
 
 def qualify(root, config, devices, deadline, retry):
     # Full class vocabulary; tiny train/validation sample. Never evaluates test.
-    treatments = {name: VARIANTS[name] for name in ["full", "no_projection", "adamw", "no_normalization", "fixed_adjustment"]}
-    treatments["adamw_no_projection"] = {"optimizer": "adamw", "hidden": False}
+    treatments = {name: VARIANTS[name] for name in ["full", "no_normalization", "core_reference", "fixed_adjustment"]}
     for batch in [v for v in [768, 512, 256, 128, 64, 32] if v <= config["batch_size"]]:
         candidate = {**config, "batch_size": batch}
         runs = [
@@ -326,8 +326,8 @@ def qualify(root, config, devices, deadline, retry):
                 **changes,
                 "seed": 40,
                 "epochs": 2,
-                "lr": 0.001,
-                "weight_decay": 0.01,
+                "lr": 0.003,
+                "weight_decay": 0.001,
                 "qualification": True,
                 "id": f"qualify_b{batch}_{name}",
             }
@@ -346,6 +346,42 @@ def qualify(root, config, devices, deadline, retry):
             root / "qualified.json", {"batch_size": batch, "hardware": hardware[0], "attempts": [str(p.relative_to(root)) for p in paths]}
         )
         return
+
+
+def factorial_contrasts(rows):
+    """Equal-cell marginal and conditional finite differences, separately by seed."""
+    factors = ("normalization", "regularization", "emla")
+    result = []
+    for seed in sorted({row["seed"] for row in rows}):
+        block = [r for r in rows if r["seed"] == seed and r["loss"] in ["emla", "ce"]]
+        cells = {(int(r["normalized"]), int(r["regularization"]), int(r["loss"] == "emla")): r for r in block}
+        if len(cells) != len(block):
+            raise ValueError("Duplicate factorial cell within a seed")
+        if len(cells) != 8:
+            continue  # Never fill missing cells or pool seeds to complete a cube.
+        for key in ["split", "optimizer", "hidden", "lr", "weight_decay", "epochs"]:
+            if len({r[key] for r in block}) != 1:
+                raise ValueError(f"Factorial cells differ in {key}")
+        for order in [1, 2, 3]:
+            for axes in itertools.combinations(range(3), order):
+                other = [i for i in range(3) if i not in axes]
+                contexts = [None, *itertools.product([0, 1], repeat=len(other))] if other else [None]
+                for context in contexts:
+                    selected = {k: r for k, r in cells.items() if context is None or tuple(k[i] for i in other) == context}
+                    divisor = 2 ** len(other) if context is None else 1
+                    for metric in ["macro_recall", "tail_recall", "nll"]:
+                        value = sum((-1) ** (order - sum(k[i] for i in axes)) * r[metric] for k, r in selected.items()) / divisor
+                        result.append(
+                            {
+                                "seed": seed,
+                                "split": block[0]["split"],
+                                "metric": metric,
+                                "factors": [factors[i] for i in axes],
+                                "condition": {} if context is None else dict(zip([factors[i] for i in other], context)),
+                                "difference": value,
+                            }
+                        )
+    return result
 
 
 def summarize(root):
@@ -377,6 +413,7 @@ def summarize(root):
         rows.extend({**run, "status": "not_started"} for run in json.loads((root / "plan.json").read_text()) if run["id"] not in present)
     pd.DataFrame(rows).to_csv(root / "results.csv", index=False)
     main = [row for row in rows if row.get("variant") and row["status"] == "complete"]
+    write_json(root / "factorial.json", factorial_contrasts(main))
     contrasts = []
     for seed in sorted({row["seed"] for row in main}):
         block = {row["variant"]: row for row in main if row["seed"] == seed}
@@ -534,7 +571,7 @@ def main():
             if args.shard is None:
                 finalize_tuning(root, config)
         elif config.get("screening"):
-            selected = {opt: {"lr": 0.0003, "weight_decay": 0.001} for opt in ["muon", "adamw"]}
+            selected = {"muon": {"lr": 0.003, "weight_decay": 0.001}}
             runs = main_runs(config, selected)
             with (root / ".screen-plan.lock").open("a") as plan_lock:
                 fcntl.flock(plan_lock, fcntl.LOCK_EX)

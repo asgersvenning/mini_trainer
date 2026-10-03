@@ -141,3 +141,24 @@ def test_screening_runs_without_tuning_and_rejects_changed_plan(tmp_path, monkey
     monkeypatch.setattr(study.sys, "argv", ["study", "tune", str(tmp_path)])
     with pytest.raises(ValueError, match="fixed shared hyperparameters"):
         study.main()
+
+
+def test_factorial_detects_pure_interaction_with_zero_marginal_effects():
+    selected = {"muon": {"lr": 0.003, "weight_decay": 0.001}}
+    rows = study.main_runs({**study.DEFAULTS, "seeds": [42]}, selected)
+    for row in rows:
+        n, r, e = int(row["normalized"]), int(row["regularization"]), int(row["loss"] == "emla")
+        value = 0.5 + 0.08 * (n - 0.5) * (r - 0.5) * (e - 0.5)
+        row.update(split="validation", macro_recall=value, tail_recall=value, nll=1 - value)
+    effects = study.factorial_contrasts(rows)
+    marginal = [x for x in effects if not x["condition"] and x["metric"] == "macro_recall"]
+    assert len(marginal) == 7
+    assert all(x["difference"] == pytest.approx(0) for x in marginal if len(x["factors"]) < 3)
+    assert next(x["difference"] for x in marginal if len(x["factors"]) == 3) == pytest.approx(0.08)
+    nr = [x for x in effects if x["factors"] == ["normalization", "regularization"] and x["condition"]]
+    assert next(x["difference"] for x in nr if x["metric"] == "macro_recall" and x["condition"] == {"emla": 1}) == pytest.approx(0.04)
+    assert next(x["difference"] for x in nr if x["metric"] == "macro_recall" and x["condition"] == {"emla": 0}) == pytest.approx(-0.04)
+    assert study.factorial_contrasts([r for r in rows if r["variant"] != "full"]) == []
+    next(r for r in rows if r["variant"] == "full")["split"] = "test"
+    with pytest.raises(ValueError, match="differ in split"):
+        study.factorial_contrasts(rows)

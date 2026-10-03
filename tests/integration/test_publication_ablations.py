@@ -139,8 +139,7 @@ def test_tuning_tiebreak_and_main_matrix(tmp_path):
     chosen = study.select_tuning(paths)
     assert all(v == {"lr": 0.0003, "weight_decay": 0.001} for v in chosen.values())
     runs = study.main_runs(study.DEFAULTS, chosen)
-    assert len(runs) == 24
-    assert len({r["id"] for r in runs}) == 24
+    assert len({r["id"] for r in runs}) == len(runs)
     assert {r["seed"] for r in runs} == {42, 43, 44}
 
 
@@ -217,6 +216,8 @@ def test_deadline_terminates_running_process(tmp_path, monkeypatch):
         (False, "muon", True, "emla"),
         (True, "muon", True, "emla"),
         (True, "muon", False, "fixed"),
+        (True, "muon", False, "ce"),
+        (True, "muon", False, "emla"),
         (False, "adamw", False, "ce"),
     ],
 )
