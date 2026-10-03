@@ -184,6 +184,43 @@ The screenshot's one-hour allocation is a starting limit, not a budget for the
 complete campaign. Set each stage's deadline to the actual time remaining after
 installation and preparation, and use measured tuning runtimes to size later jobs.
 
+### Operational timing and recovery qualification
+
+Before scheduling the campaign, use one bounded timing run on the same allocated
+GPU and mounts, after ordinary qualification. The helper arrives with the clone:
+
+```bash
+python -m publication.experiments.training_ablations.operational /work/results/lepi-ablations /work/results/lepi-operational-01
+```
+
+It uses the frozen study revision/environment and a fresh output directory outside
+`runs/`. It samples 4,096 training images uniformly across the selected cohort with
+seed 39, retaining the full class vocabulary/counts and original partitions. It
+trains the full recipe for two epochs, measures epoch two after four warmup batches,
+and verifies checkpoint reload and backbone updates on sampled validation images.
+`sample.parquet`, batch timings and `profile.json` preserve the sampled IDs, rates,
+GPU peak memory and provenance. W&B uses the separate `operational_profile` name.
+The helper does not change qualification, tuning or publication results.
+
+Training intervals include loading, augmentation, compute and logging; explicit
+CUDA synchronization makes their completion boundaries observable. A separate
+loader-only pass follows training. Both reuse sampled images and may benefit from
+filesystem caches: they are not sustained cold-storage measurements. Full-epoch
+projections include sampled training and validation rates. The allocation scenarios
+show steady rates and a deliberately slower case (half throughput plus the entire
+pilot wall time per epoch); neither is a confidence bound. Startup, storage tails,
+checkpoint/figure costs and the other recipes still require headroom. Interrupted
+training restarts from initialization, so a complete main run must fit an allocation.
+Use a larger `--samples` value only if timing variability leaves that decision unclear.
+
+On a fresh qualification directory, also send SIGTERM to the **study controller**
+while its first training worker is active, keeping the allocation alive. Confirm
+that the worker exits, `failure.json` records interruption, and no `complete.json`
+exists for that attempt. Then rerun the same `qualify` command with `--retry`.
+The failed attempt must remain and a new attempt must complete. Completed training
+with interrupted evaluation is reused instead; CPU recovery tests cover that path.
+This is a workflow check, not evidence of checkpoint continuation after interruption.
+
 ### Unattended execution through the Web UI
 
 The app's **Batch Mode** accepts a Bash script, executes it when the job starts,
