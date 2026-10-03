@@ -80,12 +80,22 @@ def initialize_head(head, seed):
 
 
 class StudyLogger(MultiLogger):
+    def update(self, epoch, type):
+        super().update(epoch, type)
+        self._phase_peak = 0
+
+    def log_memory_use(self):
+        if torch.cuda.is_available():
+            self._phase_peak = max(self._phase_peak, torch.cuda.max_memory_allocated())
+        super().log_memory_use()
+
     def save(self, *args, **kwargs):
         if self.output_dir and self._epoch is not None:
             record = {"epoch": self._epoch, "phase": self._type}
             record.update({key: float(value) for key, value in self.summary().items() if value is not None and np.isfinite(value)})
             if torch.cuda.is_available():
-                record["peak_allocated_bytes"] = torch.cuda.max_memory_allocated()
+                # MultiLogger resets CUDA peaks after each batch; retain their maximum.
+                record["peak_allocated_bytes"] = max(self._phase_peak, torch.cuda.max_memory_allocated())
             with (Path(self.output_dir) / "learning.jsonl").open("a") as stream:
                 stream.write(json.dumps(record) + "\n")
 

@@ -17,6 +17,22 @@ from publication.experiments.training_ablations import study, training
 from publication.experiments.training_ablations.data import prepare_data, select_species, species_table, write_json
 
 
+def test_phase_memory_retains_peak_across_batch_resets(tmp_path, monkeypatch):
+    logger = training.StudyLogger.__new__(training.StudyLogger)
+    logger.output_dir, logger._epoch, logger._type = str(tmp_path), 0, "train"
+    logger._phase_peak = 0
+    monkeypatch.setattr(logger, "summary", lambda: {})
+    monkeypatch.setattr(training.MultiLogger, "log_memory_use", lambda self: None)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    peaks = iter([1000, 600, 200])
+    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda: next(peaks))
+    logger.log_memory_use()
+    logger.log_memory_use()
+    logger.save()
+    record = json.loads((tmp_path / "learning.jsonl").read_text())
+    assert record["peak_allocated_bytes"] == 1000
+
+
 def metadata():
     return pd.DataFrame(
         [
