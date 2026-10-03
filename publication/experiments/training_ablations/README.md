@@ -442,6 +442,24 @@ and workers together. Freeze the qualified batch before tuning; do not change it
 between scientific treatments. Full-cohort runtime and concurrent storage load
 still need verification during tuning.
 
+The bounded MIG trial (`12410956`, revision `bb3ec42`, exit 0) used the same
+12,288-image sample hash as the capacity probe. Its artifacts are retained at
+`/work/results/mig-10/profile`. UCloud reports the product
+`gpu-nvidia-b200-1-mig.1g` as a 1/7 allocation with 23 GB GPU memory, six vCPUs and
+36 GB host memory. Batch 64 / eight workers achieved 168.72 training images/s,
+488.93 validation images/s and 15.23 GB peak allocated GPU memory.
+
+Compared with full-B200 batch 512 / 32 workers (741.50 training images/s), this is
+4.4 times slower per run but 1.59 times the training throughput per allocated GPU
+fraction. Seven such slices would project to 1,181 images/s; simultaneous-slice
+contention and queue availability were not measured, so this is not demonstrated
+aggregate throughput. Setup and evaluation overhead are excluded from those rates.
+Both configurations used the same images, but different batch sizes/step counts:
+this is an operational comparison, not evidence of equivalent optimization.
+MIG is promising for independent runs configured for smaller batches; do not mix
+batch-64 MIG results into the frozen batch-512 factorial. A change of batch size
+requires a separate scientific configuration, including its LR qualification.
+
 Continue development on `research/training-ablations`; pin each node to a published
 commit and use a fresh prepared study when source changes.
 
