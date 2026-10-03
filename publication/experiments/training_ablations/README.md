@@ -249,8 +249,29 @@ documents submission, persistent client-side queues, mounting and batch terminat
 The pilot has submitted successfully on the configured SDU project and completed
 fresh-node installation, preparation, six warmup-only GPU runs with W&B uploads,
 checkpoint reload/evaluation, and automatic successful shutdown (job 12410894).
-That first pilot missed post-warmup backbone updates; the corrected two-epoch
-qualification must pass before tuning. Keep the wrapper in its own tool environment and pin a reviewed Git revision.
+That first pilot missed post-warmup backbone updates. Corrected job **12410899**
+(commit `932dfa9`, 3 October 2026) passed all six two-epoch treatments at batch 128
+on one full B200, with changed backbone parameters verified after checkpoint
+reload. Mounted-key authentication worked; all six W&B runs finished with metrics,
+and the batch exited with code 0 and UCloud state SUCCESS.
+
+Persistent evidence is on the member drive at
+`/12348329/mini-trainer-ablations/results/pilot-authenticated-02` (mounted as
+`/work/results/pilot-authenticated-02`). Retain `bootstrap.log`, `exit-code`,
+`study/qualified.json`, prepared manifests, and all per-attempt artifacts. W&B run
+IDs, in full/no-projection/AdamW/AdamW-no-projection/unnormalized/fixed order, are
+`xe611ncd`, `lx1pmlvf`, `r12qrs5x`, `4q4qebia`, `iduoy7bz`, and `1qum5bq2` in
+[the study project](https://forge.coreweave.com/wandb/asvenning/mini-trainer-ablations).
+
+These pilots predate the peak-memory reporting correction (`8440f49`): their
+`peak_allocated_bytes` fields underreport the batch peaks and must not size future
+allocations. The correction has focused regression coverage but has not yet run
+on UCloud. Cancellation/restart on the live platform, full-cohort IO and runtime,
+and multi-GPU concurrency remain unqualified. Main/tuning runs have not started.
+Continue development on `research/training-ablations`; pin each node to a published
+commit and use a fresh prepared study when source changes.
+
+Keep the wrapper in its own tool environment and pin a reviewed Git revision.
 Use interactive `ucloud login`; never copy tokens into configs, logs or this repository.
 
 Keep `ucloud-pilot.toml` beside the `ucloud/` bootstrap directory. Fill the product,
