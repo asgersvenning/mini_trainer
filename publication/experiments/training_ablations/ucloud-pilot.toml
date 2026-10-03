@@ -1,5 +1,4 @@
-# Copy beside setup.sh in an immutable snapshot; fill account-specific identifiers.
-# The remote snapshot folder must be fresh and named mini_trainer for these paths.
+# Keep beside ucloud/; fill account-specific identifiers and the Git commit below.
 name = "mini-trainer-ablation-api-pilot"
 replicas = 1
 ssh_enabled = false
@@ -18,7 +17,7 @@ hours = 1
 
 [[resources]]
 type = "file"
-path = "/REPLACE_DRIVE/datasets"
+path = "/REPLACE_DRIVE/global_lepi"
 read_only = true
 
 [[resources]]
@@ -27,12 +26,11 @@ path = "/REPLACE_DRIVE/results"
 read_only = false
 
 [sync]
-local = "../../.."
-remote = "/REPLACE_DRIVE/REPLACE_FRESH_SNAPSHOT/mini_trainer"
+local = "ucloud"
+remote = "/REPLACE_DRIVE/REPLACE_FRESH_SNAPSHOT/ablation-bootstrap"
 
 [setup]
-# Set the study config's data paths beneath /work/datasets before submission.
+# Mount global_lepi directly to match the study config's /work/global_lepi paths.
 # Do not set python="uv": that scaffold performs an implicit uv sync.
-script = "setup.sh"
-run = "python -m publication.experiments.training_ablations.study prepare /work/results/ablation-api-pilot --config publication/experiments/training_ablations/config.json && python -m publication.experiments.training_ablations.study qualify /work/results/ablation-api-pilot --hours 0.5"
+run = "bash /work/ablation-bootstrap/bootstrap.sh REPLACE_FULL_GIT_COMMIT /work/results/ablation-api-pilot --wait-for-wandb"
 # No schedule/auto-extension: this pilot has a hard one-hour allocation.

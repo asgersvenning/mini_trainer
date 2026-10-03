@@ -244,16 +244,33 @@ preparation. Allocated-memory peaks are phase peaks, not whole-device memory.
 
 The external [ucloud-api wrapper](https://github.com/GuillaumeMougeot/ucloud-api)
 documents submission, persistent client-side queues, mounting and batch termination.
-This integration is a **template awaiting live qualification**, not verified account
-support. Keep the wrapper in its own tool environment and pin a reviewed Git revision.
+The pilot has submitted successfully on the configured SDU project and completed
+fresh-node installation and preparation. GPU qualification and shutdown still need
+confirmation. Keep the wrapper in its own tool environment and pin a reviewed Git revision.
 Use interactive `ucloud login`; never copy tokens into configs, logs or this repository.
 
-Copy `ucloud-pilot.toml` and `setup.sh` together within the immutable checkout.
-Fill project/application/product/drive values using `ucloud projects`, `ucloud
-products`, and `ucloud apps show`; alternatively export a known-working GUI job.
-Use a fresh remote snapshot folder ending in `mini_trainer`, and edit mounted paths
-in the study config. The setup script installs uv on the fresh node. The spec deliberately
-omits `setup.python="uv"`, which otherwise invokes an implicit sync.
+Keep `ucloud-pilot.toml` beside the `ucloud/` bootstrap directory. Fill the product,
+drive paths and full Git commit before submission; select the project using
+`ucloud login --project ID`. Use `ucloud products` and `ucloud apps show` to verify
+account-specific values. PyTorch 26.05 supports batch scripts and a web terminal,
+but its API application definition does not support SSH.
+
+The wrapper uploads only the bootstrap. It installs uv, clones the repository,
+checks out the requested commit, and sources `setup.sh` with the explicit CUDA extra.
+Do not upload a working tree as the training checkout: the wrapper excludes `.git`,
+which preparation needs to record provenance. Mount `global_lepi` directly for the
+committed `/work/global_lepi` input paths, and a writable `results` folder. An
+alternative configuration can be supplied using `MT_ABLATION_CONFIG` in the batch
+command. The spec omits `setup.python="uv"` to avoid its implicit sync.
+
+After preparation, the default pilot waits up to 20 minutes for W&B login. In the
+web terminal, run the `wandb login` and `touch .../wandb-ready` commands printed in
+the pilot log; create the marker only after successful login. Use `--authenticated`
+in place of `--wait-for-wandb` when credentials are already available to the job.
+The pilot stores `bootstrap.log`, `exit-code` and the prepared study on the results
+mount. Each attempt requires a fresh output directory. A forced allocation stop
+may prevent the exit-code marker from being written; inspect both job state and
+study completion markers.
 
 ```bash
 ucloud q submit publication/experiments/training_ablations/ucloud-pilot.toml --name ablation-pilot
