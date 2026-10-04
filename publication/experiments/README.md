@@ -147,8 +147,14 @@ Follow the useful separation in
 readers download evaluation inputs and precomputed statistics; training is a
 separate, optional workflow. Use immutable versioned ERDA folders with a public
 read-only download link. Keep upload access separate from reader access. ERDA
-publication is pending configuration of the destination and access; no public
-mini_trainer archive link has been established yet.
+storage is available through `sftp erda` under
+`/publications/hierarchical_classification`. The first verified snapshot is
+`evidence-20261004-f50f668/`: historical PlantNet prediction evidence, Global
+Lepidoptera analysis tables and preliminary ablation mechanism reports, with
+per-bundle and snapshot SHA-256 manifests and reproduction instructions. It does
+not include model checkpoints or the original Global Lepidoptera prediction CSVs.
+Keep later complete reports and optional models in new versioned snapshots.
+A public read-only download link has not yet been established.
 
 Retain three explicit artifact sets, with a manifest per set:
 
