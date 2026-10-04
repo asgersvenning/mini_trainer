@@ -69,6 +69,25 @@ the original image CSV for split verification, class-merge/exclusion reporting a
 an inherited observation-overlap audit. Missing source metadata must be resolved
 before the replication is qualified; it is never silently reconstructed.
 
+The transferred corrected cohort contains **987 species, 325 genera and 111
+families**, with **243,744 training / 31,097 validation / 31,088 test images**.
+The source audit identifies six excluded original labels and three merged
+accepted-species groups, with zero cross-partition observations. Training-count
+Gini is 0.8421; 19.45% of species are in singleton genera. These are properties of
+the preserved corrected cohort, not additional selection criteria.
+
+The source image metadata matches the official V2 MD5
+`87e7d4b94f2b709524a7e90c7e9060ba`. The dataset's original `format.py` is retained
+with SHA256 `14ef0273fb1bf153af3f14d9581cf89aa56c3eddb7ff39939c5aeb6cb0f7c0a4`;
+it differs from the later repository copy in its script header and integrity-error
+handling. The corrected data and retained labels were not regenerated.
+
+On UCloud the dataset is stored at
+`/12348329/mini-trainer-ablations/datasets/plantnet`. Its `_transfer/transfer-manifest.json`
+records nine archive checksums and the original metadata/formatter checksums;
+`source-audit/` retains the original-to-corrected class map and audit. The node
+verifies the transferred archive bytes and extracted metadata before preparation.
+
 ### Frozen targeted matrix
 
 Run seeds 42 and 43 for ten epochs: normalization × regularization under EMLA
