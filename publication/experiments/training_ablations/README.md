@@ -74,22 +74,43 @@ rare-to-rare error probability changes from 2.378 to 2.769% in seed 42 and from
 confusion is not yet a consistent consequence. Image-embedding occupancy remains
 unmeasured by these prototype diagnostics.
 
-### Initial PlantNet contrast
+### PlantNet normalization × regularization: first seed
 
-The first completed comparison is seed 42, ten epochs, normalized versus
-unnormalized heads with regularization and EMLA held fixed. On the frozen validation
-partition (31,097 images, 987 species), normalization changes macro recall from
-52.39 to 55.31%, rare-class recall from 29.79 to 34.50%, and overall accuracy from
-78.96 to 79.07%. Equal-class NLL falls from 2.406 to 1.930 and equal-class ECE from
-22.08 to 12.13%. These are promising conditional effects, not yet a replicated
-normalization × regularization interaction or proof of calibrated posteriors.
+All four EMLA cells at seed 42 and ten epochs are complete on the frozen validation
+partition (31,097 images, 987 species). Percentages below use raw reloaded FP32
+predictions; rare recall averages the least frequent third of classes.
 
-The normalized model's mean training gate rises from .31/.41 for rare/common
+| Normalization | Regularization | Accuracy | Macro recall | Rare recall | Equal-class ECE |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Off | Off | 78.15% | 52.45% | 31.16% | 26.22% |
+| Off | On | 78.96% | 52.39% | 29.79% | 22.08% |
+| On | Off | 78.83% | 57.45% | 40.43% | 11.85% |
+| On | On | 79.07% | 55.31% | 34.50% | 12.13% |
+
+Normalization improves macro/rare recall and equal-class calibration under both
+regularization settings. Regularization improves empirical accuracy but reduces
+rare recall, especially with normalization (-5.93 points versus -1.37 without it).
+The normalization × regularization finite difference is -2.08 macro-recall and
+-4.56 rare-recall points. This interaction needs second-seed replication.
+
+Regularization reduces rare-to-rare error probability from 11.85 to 9.88% with
+normalization, and from 13.37 to 10.49% without it. With normalization, however,
+rare-to-medium and rare-to-common errors increase by 3.80 and 4.10 points. This
+supports a changed confusion pattern, not a net rare-class benefit. Equal-class
+NLL is 1.828 without regularization versus 1.930 with it for normalized heads;
+the regularized pairing does not dominate probability quality in this comparison.
+
+The normalized full model's mean training gate rises from .31/.41 for rare/common
 classes during the first epoch to .95/.91 during the last. This verifies adaptive
 confidence-dependent adjustment; it is not direct detection of overfitting.
-CE/fixed-adjustment and second-seed comparisons are still required. Preserve the
-planned matrix before selecting any additional training. Historical PlantNet test
-results and these validation results must remain separate.
+In the first three completed epoch evaluations of the still-active CE/fixed runs,
+EMLA preserves more image-weighted accuracy than fixed adjustment: 72.01 versus
+62.68% at epoch three, while rare recall is lower (15.50 versus 23.86%). Unlike the
+small Lepidoptera cohort, the rare-class gap has not closed by epoch three. These
+AMP epoch metrics are provisional trajectories, not final FP32 endpoint results.
+Finish CE/fixed, hierarchy and second-seed comparisons before selecting additional
+training. Historical PlantNet test results and these validation results remain
+separate.
 
 ### Corrected PlantNet inputs
 
