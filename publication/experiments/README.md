@@ -77,6 +77,20 @@ Hierarchical minus flat micro recall is also negative for all three backbones
 `mini_metric_metrics.csv` values answer a different question and can change the
 apparent ordering. Recompute a common metric before comparing architectures.
 
+The same raw-prediction analysis on Global Lepidoptera found hierarchical minus
+flat macro-recall differences of +0.085, +0.146 and +0.122 percentage points for
+B0, V2-S and ViT-L/16. Each evaluates 632,913 images from 12,632 species. The sample
+and label sets match within each backbone; normalizing dataset path prefixes also
+matches the flat exports across backbones. Their exact train/test partition
+provenance still needs reconciliation against the historical run indexes. These
+small, single-run differences do not establish statistical or practical superiority.
+
+Flemming exports contain 50,991 known-species and 7,649 unknown-species images.
+The closed-set reproduction command deliberately rejects this mixture. Analyze
+known-species transfer and unknown-species behavior separately, with a common
+vocabulary policy and ancestor-level scoring where appropriate, before combining
+this evidence with in-domain results. Do not silently discard unknown labels.
+
 Reproduce this table and the per-class/confusion inputs with:
 
 ```sh
