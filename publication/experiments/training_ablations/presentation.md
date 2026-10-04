@@ -66,6 +66,14 @@ Outputs include:
 - Small source tables in `analysis/`, frozen plan and input hashes in provenance.
   `analysis_plots` can rerender these diagnostics without models or logits.
 
+A presentation directory is also a self-contained input for rebuilding all paired
+results and figures, with no original study mount:
+
+```bash
+uv run --no-sync python -m publication.experiments.training_ablations.presentation \
+  SAVED_PRESENTATION REBUILT_PRESENTATION SAVED_PRESENTATION/analysis
+```
+
 CSV rates use fractions; rate differences multiply by 100 to obtain percentage
 points. Figure contrasts explicitly label their units. Equal-class ECE uses
 pooled confidence bins after weighting each true class equally; it is not the

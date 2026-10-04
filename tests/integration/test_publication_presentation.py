@@ -38,6 +38,8 @@ def test_assembly_exposes_missing_runs_and_rejects_wrong_or_duplicate_reports(tm
     coverage = json.loads((tmp_path / "out/coverage.json").read_text())
     assert not coverage["complete"]
     assert coverage["missing_runs"] == ["full_seed43"]
+    assemble(tmp_path / "out", [tmp_path / "out/analysis"], tmp_path / "reproduced", plots=False)
+    assert (tmp_path / "reproduced/endpoints.csv").read_bytes() == (tmp_path / "out/endpoints.csv").read_bytes()
     with pytest.raises(ValueError, match="Missing 1 planned"):
         assemble(study, [report], tmp_path / "strict", require_complete=True, plots=False)
     assert not (tmp_path / "strict").exists()

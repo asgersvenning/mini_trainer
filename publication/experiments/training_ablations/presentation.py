@@ -153,7 +153,15 @@ def assemble(study, reports, output, require_complete=False, plots=True):
             sources[str(path.resolve())] = digest(path)
             shutil.copyfile(path, destination / path.name)
     write_json(combined / "report.json", {"runs": list(runs.values()), "skipped_incomplete": missing_runs})
-    write_json(combined / "provenance.json", {"source_reports": source_reports})
+    write_json(
+        combined / "provenance.json",
+        {
+            "prepared_sha256": prepared_hash,
+            "analysis_sha256": next(iter(versions))[0],
+            "contrast_code_sha256": next(iter(versions))[1],
+            "source_reports": source_reports,
+        },
+    )
     pd.DataFrame(endpoints).to_csv(output / "endpoints.csv", index=False)
     frame = pd.DataFrame(
         pairs, columns=["contrast", "seed", "treatment", "comparator", "metric", "treatment_value", "comparator_value", "difference"]
@@ -175,6 +183,7 @@ def assemble(study, reports, output, require_complete=False, plots=True):
         },
     )
     shutil.copyfile(study / "plan.json", output / "plan.json")
+    shutil.copyfile(study / "prepared.json", output / "prepared.json")
     if plots:
         plot_report(combined, output / "diagnostics")
         plot_pairs(frame, output)
