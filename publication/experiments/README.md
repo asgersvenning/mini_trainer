@@ -194,3 +194,7 @@ The latter tools use the repository's pinned CPU environment. Geometry additiona
 needs retained checkpoints; do not require readers to download them for ordinary
 metric reproduction. Reproduce figures from regenerated tables and compare numeric
 tables with recorded tolerances, rather than demanding byte-identical image files.
+
+The [metric protocol and legacy R audit](statistics/metrics-protocol.md) specifies
+the proposed selective evaluation contract, confirmed mini_metrics issues, and
+qualification required before consolidating final main tables.

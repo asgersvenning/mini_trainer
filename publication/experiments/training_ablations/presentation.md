@@ -15,6 +15,11 @@ external context, not extra ablation replicates.
 | Hierarchy | Genus/family macro recall from identical aggregation of leaf probabilities | Species/rare recall, taxonomic error destinations and H×R; retain natural branching imbalance |
 | Replication and duration | Individual paired seed effects; corrected PlantNet comparison | Twenty-epoch schedule separately; do not describe it as continuation or pool its endpoint with ten epochs |
 
+The [metric protocol audit](../statistics/metrics-protocol.md) adds a separate
+qualification step for selective main tables and legacy R analyses. The workflow
+below covers the existing unthresholded reports; it does not certify those legacy
+metric definitions.
+
 The current evidence is mixed: normalization improves the first PlantNet seed;
 regularization spreads prototypes but does not consistently improve rare recall;
 EMLA preserves early common-class learning relative to fixed adjustment in
@@ -94,8 +99,9 @@ accuracy or lower NLL. Preserve reliability diagrams alongside the scalar ECE.
    different evaluation paths and should remain labelled.
 4. Keep the historical Gefion backbone/head results in a separate table. Their
    recipes, ranks and taxonomy differ. Their saved top-1 CSVs support accuracy and
-   confusion analysis, not reconstruction of NLL, Brier or ECE. Likewise, do not
-   invent duration-study calibration where final probability analysis is unavailable.
+   confusion analysis and top-confidence ECE when confidence/correctness are retained;
+   they cannot reconstruct NLL, Brier or summed parent probabilities. Do not invent
+   duration-study calibration where the necessary prediction evidence is unavailable.
 5. Archive a versioned presentation bundle plus manifest on ERDA under
    `/publications/hierarchical_classification`. Preserve the earlier snapshots.
    Tables suffice to rerender; raw probabilities are additionally required to
