@@ -30,6 +30,9 @@ DEFAULTS = {
     "hierarchy": False,
     "cohort_families": [],
     "train_image_budget": None,
+    "train_support_cap": None,
+    "train_support_seed": 0,
+    "variants": None,
     "species": 512,
     "selection_seed": 20261003,
     "size": 384,
@@ -102,7 +105,14 @@ def tuning_runs(config):
 
 def main_runs(config, selected):
     runs = []
-    variants = campaign_variants(config)
+    available = campaign_variants(config)
+    requested = config.get("variants")
+    if requested is not None:
+        if not requested or len(set(requested)) != len(requested) or set(requested) - set(available):
+            raise ValueError("variants must be a nonempty unique subset of this campaign's treatments")
+        variants = {name: available[name] for name in requested}
+    else:
+        variants = available
     for seed in config["seeds"]:
         block = []
         for name, changes in variants.items():
@@ -162,6 +172,16 @@ def prepare(config_path, root):
             raise ValueError(f"Invalid {key}")
     if config["workers"] < 0 or config["batch_size"] not in [32, 64, 128, 256, 512, 768]:
         raise ValueError("Nonnegative workers and batch size 32, 64, 128, 256, 512 or 768 required")
+    if config["train_support_cap"] is not None and (
+        not isinstance(config["train_support_cap"], int) or config["train_support_cap"] < 1
+    ):
+        raise ValueError("train_support_cap must be a positive integer or null")
+    if not isinstance(config["train_support_seed"], int):
+        raise ValueError("train_support_seed must be an integer")
+    if config["variants"] is not None:
+        available = campaign_variants(config)
+        if not config["variants"] or len(set(config["variants"])) != len(config["variants"]) or set(config["variants"]) - set(available):
+            raise ValueError("variants must be a nonempty unique subset of this campaign's treatments")
     if len(set(config["seeds"])) != len(config["seeds"]) or 41 in config["seeds"]:
         raise ValueError("Main seeds must be unique and distinct from tuning seed 41")
     if config.get("source_metadata"):
@@ -413,7 +433,9 @@ def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll"), fa
             raise ValueError("Cannot mix targeted and original protocols")
         geometry = [r for r in rows if r.get("rank_weights") is None and r["loss"] == "emla"]
         hierarchy_rows = [
-            {**r, "rank_weights": (r.get("rank_weights") or [1.0, 0.0, 0.0])} for r in rows if r["normalized"] and r["loss"] == "emla"
+            {**r, "rank_weights": r.get("rank_weights") or [1.0, 0.0, 0.0]}
+            for r in rows
+            if r["normalized"] and r["loss"] == "emla"
         ]
         return factorial_contrasts(geometry, metrics, ("normalization", "regularization")) + factorial_contrasts(
             hierarchy_rows, metrics, ("hierarchy", "regularization")

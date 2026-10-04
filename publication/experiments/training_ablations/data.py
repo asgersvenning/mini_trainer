@@ -119,6 +119,51 @@ def hierarchy_spec(table, classes):
     return {"cls2idx": mappings, "num_classes": list(map(len, keys)), "masks": masks, "counts": counts}
 
 
+def lower_unique_support(samples, table, cap, seed):
+    """Cap the least-supported training third and restore original class draws."""
+    if cap is None:
+        return samples, None
+    if not isinstance(cap, int) or cap < 1:
+        raise ValueError("train_support_cap must be a positive integer or null")
+    counts = table.train
+    ordered = sorted(counts.index, key=lambda species: (int(counts[species]), str(species)))
+    tail = ordered[: max(1, (len(ordered) + 2) // 3)]
+    if any(int(counts[species]) < cap for species in tail):
+        raise ValueError("train_support_cap exceeds support in the lowest-frequency third")
+
+    rng = np.random.default_rng(seed)
+    train = samples[samples.split == "train"]
+    held_out = samples[samples.split != "train"]
+    draws = []
+    for species, group in train.groupby("speciesKey", sort=True):
+        original_count = len(group)
+        if species not in tail or original_count <= cap:
+            draws.append(group)
+            continue
+        selected = group.iloc[np.sort(rng.choice(original_count, size=cap, replace=False))]
+        repeated = rng.choice(cap, size=original_count - cap, replace=True)
+        indices = rng.permutation(np.concatenate([np.arange(cap), repeated]))
+        draws.append(selected.iloc[indices])
+    sampled_train = pd.concat(draws, ignore_index=True)
+    result = pd.concat([sampled_train, held_out], ignore_index=True)
+    result = result.sort_values(["split", "speciesKey", "sample_id"], kind="stable").reset_index(drop=True)
+    unique = sampled_train.groupby("speciesKey").sample_id.nunique()
+    if len(sampled_train) != len(train) or any(unique[species] != min(int(counts[species]), cap) for species in tail):
+        raise RuntimeError("Support reduction violated its draw-count or support target")
+    return result, {
+        "method": "lowest_frequency_third_capped_with_replacement_to_original_class_draws",
+        "cap": cap,
+        "seed": seed,
+        "tail_species": [str(species) for species in tail],
+        "tail_species_count": len(tail),
+        "original_train_draws": len(train),
+        "unique_train_images_before": int(train.sample_id.nunique()),
+        "unique_train_images_after": int(sampled_train.sample_id.nunique()),
+        "train_draws_after": len(sampled_train),
+        "held_out_rows_unchanged": len(held_out),
+    }
+
+
 def prepare_data(config, root):
     if config.get("data_index"):
         return prepare_index(config, root)
@@ -161,6 +206,9 @@ def prepare_data(config, root):
     samples["label"] = samples.speciesKey.map(mapping)
     samples = samples.sort_values(["split", "speciesKey", "filename"], kind="stable").reset_index(drop=True)
     samples["sample_id"] = samples.speciesKey + "/" + samples.filename
+    samples, support_reduction = lower_unique_support(
+        samples, table.loc[classes], config.get("train_support_cap"), config.get("train_support_seed", 0)
+    )
     samples.to_parquet(root / "samples.parquet", index=False)
     counts = table.loc[classes, "train"].astype(int).tolist()
     spec = {"num_classes": len(classes), "cls2idx": mapping, "counts": counts, "resize_size": config["size"]}
@@ -169,6 +217,10 @@ def prepare_data(config, root):
     write_json(root / "classes.json", spec)
     support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0).reindex(classes, fill_value=0)
     support = table.loc[classes].join(support.rename(columns={"train": "train_support"}))
+    if support_reduction:
+        support["unique_train_support"] = support.train
+        support.loc[support_reduction["tail_species"], "unique_train_support"] = config["train_support_cap"]
+        support["training_draws"] = support.train_support
     support.to_csv(root / "species.csv")
     write_json(
         root / "selection.json",
@@ -190,6 +242,7 @@ def prepare_data(config, root):
             "split_counts": samples.split.value_counts().to_dict(),
             "cross_partition_observations": 0,
             "split_species_support": samples.groupby("split").speciesKey.nunique().to_dict(),
+            **({"support_reduction": support_reduction} if support_reduction else {}),
         },
     )
 
@@ -228,6 +281,10 @@ def prepare_index(config, root):
     missing = [p for p in samples.sample_id if not (Path(config["images"]) / p).is_file()]
     if missing:
         raise ValueError(f"Corrected dataset has {len(missing)} missing images; first: {missing[0]}")
+    source_audit = audit_source_metadata(samples, config, root)
+    samples, support_reduction = lower_unique_support(
+        samples, table, config.get("train_support_cap"), config.get("train_support_seed", 0)
+    )
     samples.to_parquet(root / "samples.parquet", index=False)
     write_json(
         root / "classes.json",
@@ -240,8 +297,12 @@ def prepare_index(config, root):
         },
     )
     support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0)
-    table.join(support.rename(columns={"train": "train_support"})).to_csv(root / "species.csv")
-    source_audit = audit_source_metadata(samples, config, root)
+    support_table = table.join(support.rename(columns={"train": "train_support"}))
+    if support_reduction:
+        support_table["unique_train_support"] = support_table.train
+        support_table.loc[support_reduction["tail_species"], "unique_train_support"] = config["train_support_cap"]
+        support_table["training_draws"] = support_table.train_support
+    support_table.to_csv(root / "species.csv")
     write_json(
         root / "selection.json",
         {
@@ -255,6 +316,7 @@ def prepare_index(config, root):
             "split_counts": samples.split.value_counts().to_dict(),
             "split_species_support": samples.groupby("split").speciesKey.nunique().to_dict(),
             "cross_partition_observations": source_audit.get("cross_partition_observations"),
+            **({"support_reduction": support_reduction} if support_reduction else {}),
             "observation_audit": "Inherited overlap retained; see source_audit"
             if source_audit["available"]
             else "Index lacks observation IDs; audit original metadata separately",

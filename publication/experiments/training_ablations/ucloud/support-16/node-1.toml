@@ -1,0 +1,38 @@
+# Reviewed campaign template; substitute the commit recorded for this cohort.
+name = "mini-trainer-support-16-1"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "gpu-nvidia-b200-1-gpu"
+category = "gpu-nvidia-b200"
+provider = "ucloud"
+
+[time_allocation]
+hours = 8
+
+[[resources]]
+type = "file"
+path = "/12383016/global_lepi"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/training_ablations/ucloud/support-16"
+remote = "/12348329/mini-trainer-ablations/support-16/support-bootstrap"
+
+[setup]
+run = "bash /work/support-bootstrap/run.sh 1 REVIEWED_COMMIT"

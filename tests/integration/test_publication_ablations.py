@@ -355,6 +355,41 @@ def test_corrected_index_preserves_taxonomy_splits_and_paths(tmp_path):
         prepare_data(config, root)
 
 
+def test_lower_unique_support_preserves_draws_and_held_out_examples(tmp_path):
+    index = {"path": [], "split": [], "label": []}
+    for label in range(6):
+        for split in ["train", "validation", "test"]:
+            for sample in range(2 if split == "train" else 1):
+                relative = f"images_gbif/{label}/{label}-{split}-{sample}.jpg"
+                path = tmp_path / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+                index["path"].append(relative)
+                index["split"].append(split)
+                index["label"].append([str(label), str(label // 2), str(label // 4)])
+    source = tmp_path / "data_index.json"
+    write_json(source, index)
+    root = tmp_path / "prepared"
+    root.mkdir()
+    config = {"data_index": str(source), "images": str(tmp_path), "size": 16, "train_support_cap": 1, "train_support_seed": 42}
+    prepare_data(config, root)
+
+    samples = pd.read_parquet(root / "samples.parquet")
+    train = samples[samples.split == "train"]
+    assert len(train) == 12
+    assert train.groupby("speciesKey").sample_id.nunique().tolist() == [1, 1, 2, 2, 2, 2]
+    assert set(samples[samples.split != "train"].sample_id) == {
+        path for path, split in zip(index["path"], index["split"]) if split != "train"
+    }
+    species = pd.read_csv(root / "species.csv", index_col=0)
+    assert species.train.tolist() == [2] * 6
+    assert species.unique_train_support.tolist() == [1, 1, 2, 2, 2, 2]
+    assert species.training_draws.tolist() == [2] * 6
+    selection = json.loads((root / "selection.json").read_text())
+    assert selection["support_reduction"]["unique_train_images_before"] == 12
+    assert selection["support_reduction"]["unique_train_images_after"] == 10
+
+
 def test_gate_observer_preserves_loss_gradients_and_rng():
     inputs = torch.tensor([[0.0, 0, 0], [8.0, 0, 0], [0, 0, 8.0]], requires_grad=True)
     target = torch.tensor([0, 1, 2])

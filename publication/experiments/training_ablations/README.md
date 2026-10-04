@@ -987,3 +987,42 @@ confusion, calibration and prototype geometry. Relate these outcomes to descenda
 counts as well as image frequency. Parent-EMLA decomposition and additional
 seeds/durations are follow-ups motivated by the observed contrasts, not an
 automatic expansion of this campaign.
+
+### Lower unique support within the same classes
+
+`support-sensitivity.json` caps the least-supported third (505 of the same 1,513
+species) at 16 distinct training images. For each affected species, the selected
+images are sampled deterministically and drawn with replacement until that species
+has its original number of training examples. This preserves per-class image
+exposures, total batches, optimizer updates, LR schedule, class-frequency counts
+used by EMLA/regularization, and all validation/test rows. It isolates unique-image
+support in the tail from changes to the learned class prior. On the frozen cohort,
+it reduces distinct training images from 499,986 to 477,377 while keeping 499,986
+training draws; the capped tail has original support 38–92 images (median 58).
+
+The four new runs compare the regularized species-only and hierarchical objectives
+at seeds 42/43. Pair each against the corresponding completed full-support runs in
+`hierarchy-14`; interpret the difference-in-differences as whether hierarchy changes
+sensitivity to reduced unique tail data. This is a targeted interaction check, not a
+support dose-response or a second full factorial. Keep test evaluation reserved
+until the validation contrasts and analysis choices are frozen.
+
+The two single-GPU UCloud jobs share the prepared study root and claim runs through
+the existing cross-node lock protocol. Their fresh-node bootstrap installs `uv`,
+clones the pinned repository revision, prepares and qualifies once, then launches
+the shared queue. Fill `REVIEWED_COMMIT` in both TOML commands after pushing the
+reviewed branch revision. Submit independently so UCloud can allocate them whenever
+capacity becomes available:
+
+```bash
+ucloud login --project 6a9d3c0b-52bc-4652-94a6-1411d59b958e
+ucloud q submit publication/experiments/training_ablations/ucloud/support-16/node-0.toml
+ucloud q submit publication/experiments/training_ablations/ucloud/support-16/node-1.toml
+ucloud q daemon --until-idle
+```
+
+Retain both node logs and exit markers under
+`/12348329/mini-trainer-ablations/results/support-16`. The coordinator fails before
+training if the shared filesystem lock test fails, the frozen tail count/cap differs,
+qualification changes batch size, or less than five hours remain for the paired run
+lanes.
