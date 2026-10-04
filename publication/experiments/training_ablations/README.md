@@ -49,6 +49,48 @@ hierarchy comparisons. Embedding extraction is validation-only, with at most 32
 images per species selected identically across runs; it reports centroid separation
 and within-class angular spread. It does not replace full-cohort evaluation.
 
+### Completed hierarchy comparison
+
+All eight ten-epoch runs on the complete-family cohort are complete (1,513 species,
+seeds 42/43). A final-report exception in one old controller does not invalidate
+the completed, hashed training/evaluation artifacts; reporting was regenerated
+with the corrected analysis code. No retraining was required.
+
+With regularization enabled, hierarchy minus species-only supervision changes
+species macro recall by -0.211/+0.075 percentage points and rare-species recall by
+-0.439/+0.212 points (seeds 42/43). Genus macro recall improves by +0.682/+0.527
+points and family macro recall by +0.753/+1.068, using the same leaf-probability
+aggregation for both objectives. Thus coarse-rank utility is more repeatable than
+species-level improvement. The loss-weight contrast includes reallocating species
+supervision across ranks; it does not isolate an architectural change alone.
+
+Regularization's rare-recall effect within the hierarchical objective is
++0.507/+0.906 points, versus +0.570/-0.401 for species-only supervision. The resulting
+hierarchy × regularization contrast is -0.063/+1.307 points: a strong seed-dependent
+interaction, not established synergy. Prototype effective rank rises from about
+445–452 without regularization to 979–1,017 with it. However, hierarchical
+rare-to-rare error probability changes from 2.378 to 2.769% in seed 42 and from
+2.967 to 2.438% in seed 43. Geometric spreading is replicated; reduced rare-class
+confusion is not yet a consistent consequence. Image-embedding occupancy remains
+unmeasured by these prototype diagnostics.
+
+### Initial PlantNet contrast
+
+The first completed comparison is seed 42, ten epochs, normalized versus
+unnormalized heads with regularization and EMLA held fixed. On the frozen validation
+partition (31,097 images, 987 species), normalization changes macro recall from
+52.39 to 55.31%, rare-class recall from 29.79 to 34.50%, and overall accuracy from
+78.96 to 79.07%. Equal-class NLL falls from 2.406 to 1.930 and equal-class ECE from
+22.08 to 12.13%. These are promising conditional effects, not yet a replicated
+normalization × regularization interaction or proof of calibrated posteriors.
+
+The normalized model's mean training gate rises from .31/.41 for rare/common
+classes during the first epoch to .95/.91 during the last. This verifies adaptive
+confidence-dependent adjustment; it is not direct detection of overfitting.
+CE/fixed-adjustment and second-seed comparisons are still required. Preserve the
+planned matrix before selecting any additional training. Historical PlantNet test
+results and these validation results must remain separate.
+
 ### Corrected PlantNet inputs
 
 Reuse the previously corrected V2 `images_gbif/` and `data_index.json`, originally
