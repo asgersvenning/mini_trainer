@@ -20,8 +20,8 @@ GROUPS = ("tail", "mid", "head")
 def frequency_groups(counts):
     """Match the study's stable, equal-class-count frequency thirds."""
     counts = np.asarray(counts)
-    if counts.ndim != 1 or len(counts) < 3 or not np.isfinite(counts).all() or (counts <= 0).any():
-        raise ValueError("At least three positive finite training counts required")
+    if counts.ndim != 1 or len(counts) < 1 or not np.isfinite(counts).all() or (counts <= 0).any():
+        raise ValueError("Positive finite training counts required")
     groups = np.empty(len(counts), dtype=int)
     for index, members in enumerate(np.array_split(np.argsort(counts, kind="stable"), 3)):
         groups[members] = index
@@ -212,6 +212,106 @@ def verified(path, expected):
     return path
 
 
+def taxonomic_errors(pairs, classes):
+    """Class-balanced leaf error probabilities and destination shares."""
+    rows = []
+    for group in ["all", *GROUPS]:
+        source = classes[(classes.support > 0) & ((classes.frequency_group == group) if group != "all" else True)]
+        errors = pairs[pairs.true_class.isin(source.class_index)]
+        total = errors.conditional_probability.sum()
+        masks = {
+            "within_genus": errors.same_genusKey,
+            "different_genus_same_family": ~errors.same_genusKey & errors.same_familyKey,
+            "different_family": ~errors.same_familyKey,
+        }
+        for name, mask in masks.items():
+            mass = errors.loc[mask, "conditional_probability"].sum()
+            rows.append(
+                {
+                    "true_group": group,
+                    "destination": name,
+                    "source_classes": len(source),
+                    "error_probability": float(mass / len(source)) if len(source) else None,
+                    "share_of_source_errors": float(mass / total) if total else None,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def parent_analysis(logits, target, counts, taxa):
+    """Identical probability aggregation for flat and hierarchical checkpoints."""
+    reports, tables = {}, {}
+    for rank, column in [("genus", "genusKey"), ("family", "familyKey")]:
+        keys, mapping = np.unique(taxa[column].to_numpy(), return_inverse=True)
+        if len(keys) < 3:
+            reports[rank] = {"skipped": "Fewer than three parents for frequency thirds"}
+            continue
+        parent_logits = np.column_stack([logsumexp(logits[:, mapping == i], axis=1) for i in range(len(keys))])
+        parent_counts = np.bincount(mapping, weights=counts)
+        report, classes, flows, reliability, _ = prediction_analysis(parent_logits, mapping[target], parent_counts)
+        descendants = np.bincount(mapping)
+        classes["taxon"] = keys
+        classes["descendant_species"] = descendants
+        report["descendants_balanced_hard_mass"] = association(np.log(descendants), classes.predicted_mass_balanced)
+        report["descendants_balanced_soft_mass"] = association(np.log(descendants), classes.soft_prediction_mass_balanced)
+        report["descendants_recall"] = association(np.log(descendants), classes.recall)
+        reports[rank] = report
+        tables.update({f"{rank}_classes": classes, f"{rank}_flows": flows, f"{rank}_reliability": reliability})
+    return reports, tables
+
+
+def epoch_analysis(attempt, counts):
+    """Recover frequency trajectories from sparse AMP epoch confusion counts."""
+    rows, hashes = [], {}
+    groups = frequency_groups(counts)
+    for path in sorted((attempt / "model/logs/figures").glob("epoch-*/Confusion_matrix_lvl0/counts.npz")):
+        epoch = int(path.parents[1].name.split("-")[-1])
+        with np.load(path, allow_pickle=False) as data:
+            if tuple(data["shape"]) != (len(counts), len(counts)):
+                raise ValueError("Epoch confusion vocabulary differs from prepared classes")
+            source, destination, values = data["rows"], data["columns"], data["counts"]
+            support = np.bincount(source, weights=values, minlength=len(counts))
+            diagonal = source == destination
+            hits = np.bincount(source[diagonal], weights=values[diagonal], minlength=len(counts))
+        recall = np.divide(hits, support, out=np.full(len(counts), np.nan), where=support > 0)
+        row = {
+            "epoch": epoch,
+            "evaluation": "AMP epoch confusion",
+            "accuracy": float(hits.sum() / support.sum()),
+            "macro_recall": float(np.nanmean(recall)),
+        }
+        for i, group in enumerate(GROUPS):
+            valid = (groups == i) & (support > 0)
+            row[group + "_recall"] = float(recall[valid].mean()) if valid.any() else None
+        rows.append(row)
+        hashes[str(path.relative_to(attempt))] = digest(path)
+    log = attempt / "model/logs/learning.jsonl"
+    learning = pd.DataFrame([json.loads(line) for line in log.read_text().splitlines()]) if log.exists() else pd.DataFrame()
+    if log.exists():
+        hashes[str(log.relative_to(attempt))] = digest(log)
+    return pd.DataFrame(rows), learning, hashes
+
+
+def taxonomic_geometry(weights, taxa):
+    directions = weights / np.linalg.norm(weights, axis=1, keepdims=True)
+    cosine = np.clip(directions @ directions.T, -1, 1)
+    np.fill_diagonal(cosine, -np.inf)
+    nearest = cosine.argmax(1)
+    genus, family = taxa.genusKey.to_numpy(), taxa.familyKey.to_numpy()
+    i, j = np.triu_indices(len(weights), 1)
+    angles = np.degrees(np.arccos(cosine[i, j]))
+    masks = {
+        "same_genus": genus[i] == genus[j],
+        "different_genus_same_family": (genus[i] != genus[j]) & (family[i] == family[j]),
+        "different_family": family[i] != family[j],
+    }
+    return {
+        "nearest_same_genus_fraction": float(np.mean(genus == genus[nearest])),
+        "nearest_same_family_fraction": float(np.mean(family == family[nearest])),
+        "median_pair_angle": {name: float(np.median(angles[mask])) if mask.any() else None for name, mask in masks.items()},
+    }
+
+
 def analyze(root, output, variants=None, geometry=False, samples=8192, seed=20261004):
     """Consume a prepared study or verified local mirror, leaving inputs untouched."""
     root, output = Path(root).resolve(), Path(output).resolve()
@@ -252,6 +352,8 @@ def analyze(root, output, variants=None, geometry=False, samples=8192, seed=2026
         ):
             raise ValueError("Prediction sample identity/order or split differs from prepared cohort")
         summary, classes, flows, reliability, pairs = prediction_analysis(data["logits"], data["target"], spec["counts"])
+        parents, parent_tables = parent_analysis(data["logits"], data["target"], spec["counts"], taxa)
+        summary["parents"] = parents
         data.close()
         for rank in ["genusKey", "familyKey"]:
             labels = taxa[rank].to_numpy()
@@ -263,16 +365,30 @@ def analyze(root, output, variants=None, geometry=False, samples=8192, seed=2026
             weights = verified(attempt / "model/weights/last.pt", manifest["model/weights/last.pt"])
             from mini_trainer.hierarchical.model import HierarchicalClassifier
 
-            head_cls = HierarchicalClassifier if "hierarchy" in spec else Classifier
+            head_cls = HierarchicalClassifier if run.get("rank_weights") is not None else Classifier
             model, _ = head_cls.build(weights=str(weights), device="cpu", model_args={"pretrained": False}, skip_spherical_init=True)
             head = classification_module(model)
             geometry_summary, geometry_classes = prototype_analysis(head.linear.weight.detach().numpy(), spec["counts"], samples, seed)
+            geometry_summary["taxonomy"] = taxonomic_geometry(head.linear.weight.detach().numpy(), taxa)
             summary["geometry"] = geometry_summary
             classes = classes.merge(geometry_classes, on="class_index", validate="one_to_one")
             del model, head
         destination = output / directory.name
         destination.mkdir()
-        for name, table in [("classes", classes), ("confusion_flows", flows), ("reliability", reliability), ("error_pairs", pairs)]:
+        epochs, learning, log_hashes = epoch_analysis(attempt, spec["counts"])
+        tables = {
+            "classes": classes,
+            "confusion_flows": flows,
+            "reliability": reliability,
+            "error_pairs": pairs,
+            "taxonomic_errors": taxonomic_errors(pairs, classes),
+            **parent_tables,
+        }
+        if not epochs.empty:
+            tables["epochs"] = epochs
+        if not learning.empty:
+            tables["learning"] = learning
+        for name, table in tables.items():
             table.to_csv(destination / f"{name}.csv", index=False)
         report = {"run": run, "split": evaluation["split"], "metrics": summary}
         contrast_rows.append(
@@ -291,6 +407,7 @@ def analyze(root, output, variants=None, geometry=False, samples=8192, seed=2026
         provenance[directory.name] = {
             "attempt": str(attempt),
             "completion_manifest_sha256": digest(attempt / "complete.json"),
+            "supplementary_log_hashes": log_hashes,
             "verified": {n: manifest[n] for n in ["run.json", "evaluation.json", "predictions.npz"]},
         }
         if geometry:

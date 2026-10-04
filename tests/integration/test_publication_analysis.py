@@ -101,3 +101,59 @@ def test_artifact_analysis_checks_integrity_and_alignment(tmp_path):
     write_json(attempt / "complete.json", marker)
     with pytest.raises(ValueError, match="sample identity"):
         analyze(root, tmp_path / "misaligned")
+
+
+def test_taxonomic_error_denominators_and_parent_aggregation():
+    from publication.experiments.training_ablations.analysis import parent_analysis, taxonomic_errors
+
+    target = np.array([0, 0, 1, 2, 3, 4, 5])
+    pred = np.array([1, 2, 1, 0, 5, 4, 5])
+    logits = np.full((7, 6), -20.0)
+    logits[np.arange(7), pred] = 20
+    _, classes, _, _, pairs = prediction_analysis(logits, target, [1, 2, 3, 4, 5, 6])
+    taxa = pd.DataFrame({"genusKey": ["a", "a", "b", "b", "c", "c"], "familyKey": ["x", "x", "y", "y", "z", "z"]})
+    for column in taxa:
+        labels = taxa[column].to_numpy()
+        pairs["same_" + column] = labels[pairs.true_class] == labels[pairs.predicted_class]
+    flows = taxonomic_errors(pairs, classes)
+    total = flows[flows.true_group == "all"]
+    assert total.error_probability.sum() == pytest.approx(3 / 6)
+    assert total.share_of_source_errors.sum() == pytest.approx(1)
+    reports, tables = parent_analysis(logits, target, [1, 2, 3, 4, 5, 6], taxa)
+    assert reports["genus"]["empirical"]["accuracy"] == pytest.approx(4 / 7)
+    assert tables["genus_classes"].descendant_species.tolist() == [2, 2, 2]
+
+
+def test_embedding_sample_and_geometry_are_reproducible():
+    from publication.experiments.training_ablations.embeddings import embedding_geometry, select_samples
+
+    frame = pd.DataFrame({"label": [0, 0, 1, 1, 2, 2], "sample_id": list("abcdef")})
+    assert select_samples(frame, 1).equals(select_samples(frame.sample(frac=1, random_state=2), 1))
+    values = np.repeat(np.eye(3), 2, axis=0)
+    result = embedding_geometry(values, frame.label.to_numpy(), [1, 2, 3])
+    np.testing.assert_allclose(result.mean_within_class_angle, 0)
+    np.testing.assert_allclose(result.nearest_centroid_angle, 90)
+
+
+def test_epoch_dynamics_preserves_missing_support_and_artifact_provenance(tmp_path):
+    from publication.experiments.training_ablations.dynamics import analyze_dynamics
+
+    root = tmp_path / "study"
+    attempt = artifact_fixture(root)
+    run = json.loads((attempt / "run.json").read_text())
+    run["id"] = "full_seed42"
+    write_json(attempt / "run.json", run)
+    manifest = json.loads((attempt / "complete.json").read_text())
+    manifest["run.json"] = digest(attempt / "run.json")
+    write_json(attempt / "complete.json", manifest)
+    write_json(root / "plan.json", [run])
+    path = attempt / "model/logs/figures/epoch-0001/Confusion_matrix_lvl0/counts.npz"
+    path.parent.mkdir(parents=True)
+    np.savez(path, rows=[0, 1], columns=[0, 0], counts=[1, 2], shape=[3, 3])
+    analyze_dynamics(root, tmp_path / "curves")
+    frame = pd.read_csv(tmp_path / "curves/epochs.csv")
+    assert frame.accuracy.iloc[0] == pytest.approx(1 / 3)
+    assert frame.macro_recall.iloc[0] == pytest.approx(1 / 2)
+    assert np.isnan(frame.head_recall.iloc[0])
+    provenance = json.loads((tmp_path / "curves/provenance.json").read_text())
+    assert provenance["inputs"][run["id"]]["logs"][str(path.relative_to(attempt))] == digest(path)

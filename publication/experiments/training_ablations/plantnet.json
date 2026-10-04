@@ -1,0 +1,24 @@
+{
+  "images": "/work/plantnet",
+  "selection_seed": 20261003,
+  "size": 384,
+  "seeds": [
+    42,
+    43
+  ],
+  "epochs": 10,
+  "tuning_epochs": 10,
+  "batch_size": 512,
+  "workers": 32,
+  "threads": 1,
+  "dtype": "float16",
+  "device": "cuda",
+  "wandb": true,
+  "project": "mini-trainer-ablations",
+  "entity": "asvenning",
+  "screening": true,
+  "data_index": "/work/plantnet/data_index.json",
+  "targeted": true,
+  "log_gates": true,
+  "source_metadata": "/work/plantnet/plantnet300K_metadata.csv"
+}

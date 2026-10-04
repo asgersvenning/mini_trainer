@@ -1,9 +1,104 @@
-# Flat training ablations on UCloud
+# Training ablations on UCloud
 
 Research protocol, executable harness and exploratory screening results.
 The study uses production trainer APIs through a research builder; it changes no
 package defaults. It follows the [publication workflow](../README.md) conventions:
 frozen inputs, paired seeds, validation-only choices and retained individual results.
+
+## Mechanism analysis and corrected PlantNet replication
+
+The scientific questions are distinct: frequency adjustment should reduce learned
+frequency preference; EMLA's adaptive gate should preserve early common-class
+learning; HGLL plus prototype repulsion should change class geometry and rare-class
+confusions; parent supervision should preserve useful taxonomic distinctions under
+naturally imbalanced branching. A prototype effect alone does not establish an
+embedding or predictive benefit. Equal prediction mass is evaluated under equal
+true-class weighting, not demanded on naturally imbalanced images. The angular
+reference distribution does not by itself establish posterior calibration.
+
+The two nine-treatment, ten-epoch Lepidoptera studies and the six seed-42,
+twenty-epoch duration checks are complete. EMLA's full-recipe tail-recall advantage
+over CE is 2.43/2.53 points at ten epochs (seeds 42/43). At twenty epochs it is
+2.73 points. Full-recipe macro/tail recall barely changes with the longer schedule.
+The regularization interaction is schedule-dependent: its positive unnormalized
+EMLA tail effect at ten epochs becomes negative at twenty epochs. Do not claim
+that the ten-epoch sign reversal is invariant to training duration.
+
+The existing warmup-epoch confusion matrices show EMLA-minus-fixed common-class
+recall gains of 6.88/5.81 points, with rare-class costs of 11.91/11.84 points;
+the rare-class gap nearly disappears by epoch two. This supports deferred correction,
+not numerical-stability superiority or universal endpoint improvement. Compare
+full trajectories, not adjusted training loss magnitudes across different objectives.
+
+Use the existing commands to consolidate immutable artifacts:
+
+```bash
+python -m publication.experiments.training_ablations.dynamics STUDY NEW_CURVES
+python -m publication.experiments.training_ablations.analysis STUDY NEW_REPORT --geometry
+python -m publication.experiments.training_ablations.analysis_plots NEW_REPORT NEW_FIGURES
+python -m publication.experiments.training_ablations.embeddings STUDY NEW_EMBEDDINGS --device cuda
+```
+
+Analysis now includes identical leaf-probability aggregation for flat/hierarchical
+parent metrics, parent frequency/descendant associations, taxonomic error probability
+and destination shares, prototype taxonomic neighbourhoods, and per-epoch frequency
+recall from sparse confusion counts. Existing scalar logs retain dense gate summaries
+when available. Supplementary logs are hashed independently; old completion manifests
+are not rewritten. Figures include paired early-learning trajectories and geometry/
+hierarchy comparisons. Embedding extraction is validation-only, with at most 32
+images per species selected identically across runs; it reports centroid separation
+and within-class angular spread. It does not replace full-cohort evaluation.
+
+### Corrected PlantNet inputs
+
+Reuse the previously corrected V2 `images_gbif/` and `data_index.json`, originally
+referenced at `/dcai/projects/iu_0126/datasets/plantnet`. The existing converter in
+`plantnet_hierarchical/general/plantnet300k/format.py` removes genus-only labels,
+merges accepted-species synonyms and resizes images to 512 pixels. Reuse its frozen
+outputs; do not rerun live GBIF resolution. Retain available conversion provenance
+alongside the dataset. Source revision alone does not establish the historical
+conversion revision.
+
+[plantnet.json](plantnet.json) expects the dataset root mounted as `/work/plantnet`:
+the index's relative paths already include `images_gbif/`. The adapter consumes
+`path`, `split`, and leaf-first hierarchical `label` arrays, retains every corrected
+species and supplied split, and validates paths and taxonomy without fabricating
+GBIF observation IDs or numeric source splits. Class counts come from the index;
+the legacy `species` selection limit does not apply. `source_metadata` points to
+the original image CSV for split verification, class-merge/exclusion reporting and
+an inherited observation-overlap audit. Missing source metadata must be resolved
+before the replication is qualified; it is never silently reconstructed.
+
+### Frozen targeted matrix
+
+Run seeds 42 and 43 for ten epochs: normalization × regularization under EMLA
+(four species-supervised cells), CE and fixed adjustment at the full recipe,
+and hierarchical supervision with regularization off/on. The two normalized
+species controls are shared with the hierarchy comparison: eight treatments per
+seed, sixteen runs / 160 model-epochs. No additional subsetting or rebalancing.
+The hierarchy uses the same three ranks and equal rank weights as the existing
+hierarchy campaign. Loss contrasts are confined to species supervision; this is
+not a complete normalization × loss or hierarchy × loss factorial.
+
+Use the established EfficientNetV2-S, 384-pixel, one-warmup-epoch recipe, head LR
+0.003, backbone LR 0.001, batch 512, workers 32, FP16, regularization 0.1, and
+no EMA/compilation. Gate logging observes the detached per-example uncertainty
+factor by rank and frequency third, preserving the criterion's outputs, gradients
+and RNG. It measures uncertainty, not a direct detector of frequency overfitting.
+
+Prepare and qualify once, then run `study run STUDY --shared-queue --hours HOURS`
+on two equivalent single-B200 nodes. Reject an unplanned qualification batch change
+before main training. Freeze source/environment, W&B identity, artifacts and data
+hashes. Initial wall-time planning is 8–12 hours excluding transfer/allocation;
+replace this with qualification throughput and validation overhead before launch.
+After healthy startup, leave the queue unattended and stop active polling.
+
+No automatic epoch extension or third seed: a duration follow-up must address a
+still-changing paired contrast, and an interaction replication must include all
+four necessary cells. Keep cohorts, budgets and seeds separate. Preserve test
+partitions until analysis choices are frozen, then evaluate every cell entering a
+reported contrast, not only the best variant. Optimizer/backbone/strength sweeps
+and individual HGLL-component attribution remain outside this increment.
 
 ## Questions and budget
 

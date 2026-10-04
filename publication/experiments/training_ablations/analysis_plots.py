@@ -11,6 +11,59 @@ from .analysis import GROUPS
 from .data import digest, write_json
 
 
+def plot_comparisons(root, output, reports, sources):
+    """Show every seed and treatment; never pool different study roots/budgets."""
+    from matplotlib import pyplot as plt
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    any_epochs = False
+    for report in reports:
+        run = report["run"]
+        name = run.get("id", f"{run['variant']}_seed{run['seed']}")
+        path = root / name / "epochs.csv"
+        if path.exists() and run["variant"] in ("full", "fixed_adjustment", "ce"):
+            sources[str(path.relative_to(root))] = digest(path)
+            rows = pd.read_csv(path)
+            for ax, metric in zip(axes, ("accuracy", "head_recall", "tail_recall")):
+                ax.plot(rows.epoch, rows[metric] * 100, label=f"{run['variant']} / {run['seed']}")
+                ax.set(xlabel="Completed epoch", ylabel=metric + " (%)")
+                ax.axvline(1, color="gray", linestyle=":")
+            any_epochs = True
+    if any_epochs:
+        axes[0].legend(fontsize=7)
+        fig.suptitle("AMP epoch trajectories; dotted line: end of head-only warmup")
+        fig.tight_layout()
+        fig.savefig(output / "learning-dynamics.png", dpi=160)
+    plt.close(fig)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    for i, report in enumerate(reports):
+        run, metrics = report["run"], report["metrics"]
+        name = run.get("id", f"{run['variant']}_seed{run['seed']}")
+        label = f"{run['variant']} / {run['seed']}"
+        flows = pd.read_csv(root / name / "confusion_flows.csv")
+        tail_error = flows[(flows.true_group == "tail") & (flows.predicted_group == "tail")].error_probability.iloc[0] * 100
+        if "geometry" in metrics:
+            axes[0].scatter(metrics["geometry"]["effective_rank"], tail_error, label=label)
+        else:
+            axes[0].scatter(i, tail_error, label=label)
+        for j, rank in enumerate(("genus", "family")):
+            result = metrics.get("parents", {}).get(rank, {})
+            if "balanced" in result:
+                axes[1].scatter(i + j * 0.2, result["balanced"]["accuracy"] * 100, marker=("o", "x")[j])
+    axes[0].set(xlabel="Prototype effective rank (run index if unavailable)", ylabel="Rare-to-rare error probability (%)")
+    axes[0].legend(fontsize=6)
+    axes[1].set(
+        ylabel="Equal-parent recall (%)",
+        title="Genus: circles; family: crosses",
+        xticks=range(len(reports)),
+        xticklabels=[f"{r['run']['variant']} / {r['run']['seed']}" for r in reports],
+    )
+    axes[1].tick_params(axis="x", rotation=75, labelsize=7)
+    fig.tight_layout()
+    fig.savefig(output / "geometry-and-hierarchy.png", dpi=160)
+    plt.close(fig)
+
+
 def plot_report(root, output):
     import matplotlib
 
@@ -72,6 +125,7 @@ def plot_report(root, output):
         fig.tight_layout()
         fig.savefig(output / f"{name}.png", dpi=160)
         plt.close(fig)
+    plot_comparisons(root, output, reports, sources)
     write_json(
         output / "provenance.json",
         {"input_root": str(root), "source_sha256": digest(Path(__file__)), "matplotlib": matplotlib.__version__, "inputs": sources},

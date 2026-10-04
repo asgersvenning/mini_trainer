@@ -23,6 +23,10 @@ REPO = Path(__file__).resolve().parents[3]
 STOP = threading.Event()
 DEFAULTS = {
     "screening": False,
+    "targeted": False,
+    "data_index": None,
+    "source_metadata": None,
+    "log_gates": False,
     "hierarchy": False,
     "cohort_families": [],
     "train_image_budget": None,
@@ -98,18 +102,33 @@ def tuning_runs(config):
 
 def main_runs(config, selected):
     runs = []
-    variants = hierarchy_variants() if config.get("hierarchy") else VARIANTS
+    variants = campaign_variants(config)
     for seed in config["seeds"]:
         block = []
         for name, changes in variants.items():
             run = {**FULL, **changes}
             run.update(selected[run["optimizer"]])
+            if config.get("targeted"):
+                run["targeted"] = True
             if config.get("screening"):
                 run["screening"] = True
             block.append({**run, "seed": seed, "epochs": config["epochs"], "variant": name, "id": f"{name}_seed{seed}"})
-        random.Random(seed).shuffle(block)
+        if not config.get("targeted"):
+            random.Random(seed).shuffle(block)
         runs.extend(block)
     return runs
+
+
+def campaign_variants(config):
+    if config.get("targeted"):
+        return {
+            **{
+                k: VARIANTS[k]
+                for k in ["full", "no_normalization", "no_regularization", "no_normalization_no_regularization", "ce", "fixed_adjustment"]
+            },
+            **{k: v for k, v in hierarchy_variants().items() if k.startswith("hierarchy_")},
+        }
+    return hierarchy_variants() if config.get("hierarchy") else VARIANTS
 
 
 def hierarchy_variants():
@@ -132,7 +151,11 @@ def prepare(config_path, root):
         raise ValueError("Hierarchy campaign requires screening and explicit complete families")
     if not isinstance(config["screening"], bool):
         raise ValueError("screening must be boolean")
-    for key in ["parquet", "images"]:
+    if config["targeted"] and (not config["data_index"] or not config["screening"] or config["hierarchy"]):
+        raise ValueError("Targeted replication requires a corrected index, screening and per-run hierarchy")
+    if bool(config.get("parquet")) == bool(config.get("data_index")):
+        raise ValueError("Supply exactly one of parquet or data_index")
+    for key in ["data_index" if config["data_index"] else "parquet", "images"]:
         config[key] = str(Path(config[key]).expanduser().resolve())
     for key in ["species", "size", "epochs", "tuning_epochs", "batch_size", "threads"]:
         if not isinstance(config[key], int) or config[key] < 1:
@@ -141,6 +164,8 @@ def prepare(config_path, root):
         raise ValueError("Nonnegative workers and batch size 32, 64, 128, 256, 512 or 768 required")
     if len(set(config["seeds"])) != len(config["seeds"]) or 41 in config["seeds"]:
         raise ValueError("Main seeds must be unique and distinct from tuning seed 41")
+    if config.get("source_metadata"):
+        config["source_metadata"] = str(Path(config["source_metadata"]).expanduser().resolve())
     root.mkdir(parents=True, exist_ok=False)
     write_json(root / "config.json", config)
     write_json(root / "tuning-plan.json", [] if config["screening"] else tuning_runs(config))
@@ -168,6 +193,7 @@ def prepare(config_path, root):
                     "selection.json",
                     "pretrained.pt",
                 ]
+                + (["source-class-map.csv"] if (root / "source-class-map.csv").exists() else [])
             },
             "source": source_identity(),
             "environment": environment(),
@@ -346,6 +372,8 @@ def select_tuning(paths):
 def qualify(root, config, devices, deadline, retry):
     # Full class vocabulary; tiny train/validation sample. Never evaluates test.
     treatments = {name: VARIANTS[name] for name in ["full", "no_normalization", "core_reference", "fixed_adjustment"]}
+    if config.get("targeted"):
+        treatments["hierarchy_regularized"] = hierarchy_variants()["hierarchy_regularized"]
     if config.get("hierarchy"):
         treatments = {k: v for k, v in hierarchy_variants().items() if v["regularization"]}
     for batch in [v for v in [768, 512, 256, 128, 64, 32] if v <= config["batch_size"]]:
@@ -378,12 +406,22 @@ def qualify(root, config, devices, deadline, retry):
         return
 
 
-def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll")):
+def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll"), factors=None):
     """Equal-cell marginal and conditional finite differences, separately by seed."""
+    if any(r.get("targeted") for r in rows) and factors is None:
+        if not all(r.get("targeted") for r in rows):
+            raise ValueError("Cannot mix targeted and original protocols")
+        geometry = [r for r in rows if r.get("rank_weights") is None and r["loss"] == "emla"]
+        hierarchy_rows = [
+            {**r, "rank_weights": (r.get("rank_weights") or [1.0, 0.0, 0.0])} for r in rows if r["normalized"] and r["loss"] == "emla"
+        ]
+        return factorial_contrasts(geometry, metrics, ("normalization", "regularization")) + factorial_contrasts(
+            hierarchy_rows, metrics, ("hierarchy", "regularization")
+        )
     hierarchy = any(r.get("rank_weights") is not None for r in rows)
     if hierarchy and any(r.get("rank_weights") is None for r in rows):
         raise ValueError("Cannot mix hierarchical and original factorial protocols")
-    factors = ("hierarchy", "regularization") if hierarchy else ("normalization", "regularization", "emla")
+    factors = factors or (("hierarchy", "regularization") if hierarchy else ("normalization", "regularization", "emla"))
     result = []
     for seed in sorted({row["seed"] for row in rows}):
         block = [r for r in rows if r["seed"] == seed and r["loss"] in ["emla", "ce"]]
@@ -394,7 +432,13 @@ def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll")):
                 if len(weights) > 1:
                     raise ValueError("Factorial cells differ in rank weights within an objective")
         else:
-            cells = {(int(r["normalized"]), int(r["regularization"]), int(r["loss"] == "emla")): r for r in block}
+            cells = {
+                tuple(
+                    {"normalization": int(r["normalized"]), "regularization": int(r["regularization"]), "emla": int(r["loss"] == "emla")}[f]
+                    for f in factors
+                ): r
+                for r in block
+            }
         if len(cells) != len(block):
             raise ValueError("Duplicate factorial cell within a seed")
         if len(cells) != 2 ** len(factors):
@@ -456,7 +500,7 @@ def summarize(root):
     pd.DataFrame(rows).to_csv(root / "results.csv", index=False)
     main = [row for row in rows if row.get("variant") and row["status"] == "complete"]
     write_json(root / "factorial.json", factorial_contrasts(main))
-    variants = hierarchy_variants() if json.loads((root / "config.json").read_text()).get("hierarchy") else VARIANTS
+    variants = campaign_variants(json.loads((root / "config.json").read_text()))
     contrasts = []
     for seed in sorted({row["seed"] for row in main}):
         block = {row["variant"]: row for row in main if row["seed"] == seed}

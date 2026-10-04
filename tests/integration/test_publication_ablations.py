@@ -228,6 +228,7 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
     from tests.integration.test_integration_train import TinyMockModel
 
     root, config = fixture_campaign(tmp_path)
+    config["log_gates"] = True
     if rank_weights is not None:
         config.update(
             hierarchy=True,
@@ -285,6 +286,22 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
     assert result["backbone_parameters_changed"]
     assert sum(result["support"]) > 0
     assert np.isfinite(result["nll"])
+    if hidden and optimizer == "adamw" and normalized and rank_weights is None:
+        import shutil
+
+        from publication.experiments.training_ablations.data import digest
+        from publication.experiments.training_ablations.embeddings import extract
+
+        write_json(attempt / "run.json", {**run, "variant": "full"})
+        write_json(attempt / "complete.json", {name: digest(attempt / name) for name in ["run.json", "model/weights/last.pt"]})
+        shutil.copytree(attempt, root / "runs/tiny/attempt-000")
+        write_json(
+            root / "prepared.json", {"files": {name: digest(root / name) for name in ["config.json", "classes.json", "samples.parquet"]}}
+        )
+        extract(root, tmp_path / "embeddings", per_class=2)
+        observed = pd.read_csv(tmp_path / "embeddings/tiny.csv")
+        assert observed.samples.tolist() == [2] * 4
+        assert np.isfinite(observed.mean_within_class_angle).all()
     live, preprocess = built[0]
     from mini_trainer.hierarchical.model import HierarchicalClassifier
 
@@ -295,3 +312,107 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
     images = torch.randint(0, 256, (3, 3, 16, 16), dtype=torch.uint8)
     with torch.inference_mode():
         torch.testing.assert_close(live(preprocess(images)), loaded(loaded_preprocess(images)))
+
+
+def test_corrected_index_preserves_taxonomy_splits_and_paths(tmp_path):
+    index = {"path": [], "split": [], "label": []}
+    for label in range(6):
+        for split in ["train", "validation", "test"]:
+            relative = f"images_gbif/{label}/{label}-{split}.jpg"
+            path = tmp_path / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+            index["path"].append(relative)
+            index["split"].append(split)
+            index["label"].append([str(label), str(label // 2), str(label // 4)])
+    source = tmp_path / "data_index.json"
+    write_json(source, index)
+    root = tmp_path / "prepared"
+    root.mkdir()
+    config = {"data_index": str(source), "images": str(tmp_path), "size": 384}
+    prepare_data(config, root)
+    frame = pd.read_parquet(root / "samples.parquet")
+    assert set(frame.sample_id) == set(index["path"])
+    assert frame.groupby("speciesKey").split.nunique().tolist() == [3] * 6
+    assert "gbifID" not in frame and "set" not in frame
+    spec = json.loads((root / "classes.json").read_text())
+    assert spec["hierarchy"]["masks"] == [[0, 0, 1, 1, 2, 2], [0, 0, 1]]
+    index["label"][1][1] = "different-genus"
+    write_json(source, index)
+    with pytest.raises(ValueError, match="Conflicting taxonomy"):
+        prepare_data(config, root)
+    index["label"][1][1] = "0"
+    index["path"][1] = index["path"][0]
+    write_json(source, index)
+    with pytest.raises(ValueError, match="Duplicate image"):
+        prepare_data(config, root)
+    index["path"][1] = "../outside.jpg"
+    write_json(source, index)
+    with pytest.raises(ValueError, match="relative"):
+        prepare_data(config, root)
+
+
+def test_gate_observer_preserves_loss_gradients_and_rng():
+    inputs = torch.tensor([[0.0, 0, 0], [8.0, 0, 0], [0, 0, 8.0]], requires_grad=True)
+    target = torch.tensor([0, 1, 2])
+    loss = EMLACrossEntropy([1, 10, 100])
+    baseline = loss(inputs, target)
+    gradient = torch.autograd.grad(baseline, inputs)[0]
+    recorder = training.GateRecorder()
+    loss.register_forward_pre_hook(recorder.observe("species", [1, 10, 100]))
+    before = torch.get_rng_state().clone()
+    observed = loss(inputs, target)
+    torch.testing.assert_close(observed, baseline, rtol=0, atol=0)
+    torch.testing.assert_close(torch.autograd.grad(observed, inputs)[0], gradient, rtol=0, atol=0)
+    assert torch.equal(before, torch.get_rng_state())
+    summary = recorder.summary()
+    assert summary["gate/species/tail/mean"] == pytest.approx(0, abs=1e-6)
+    assert summary["gate/species/head/mean"] > 0.99
+
+
+def test_targeted_comparisons_share_controls_and_keep_complete_cells():
+    runs = study.main_runs(
+        {**study.DEFAULTS, "targeted": True, "seeds": [42], "epochs": 10}, {"muon": {"lr": 0.003, "weight_decay": 0.001}}
+    )
+    assert len(runs) == 8
+    rows = [
+        {
+            **r,
+            "split": "validation",
+            "score": 2 * r["normalized"] + 3 * r["regularization"] + 5 * bool(r.get("rank_weights")) * r["regularization"],
+        }
+        for r in runs
+    ]
+    results = study.factorial_contrasts(rows, metrics=("score",))
+    interaction = [r for r in results if r["factors"] == ["hierarchy", "regularization"]]
+    assert interaction[0]["difference"] == 5
+    assert [r for r in results if r["factors"] == ["normalization", "regularization"]][0]["difference"] == 0
+    missing = study.factorial_contrasts([r for r in rows if r["variant"] != "no_normalization"], metrics=("score",))
+    assert all("normalization" not in r["factors"] for r in missing)
+    with pytest.raises(ValueError, match="Duplicate"):
+        study.factorial_contrasts(rows + [rows[0]], metrics=("score",))
+
+
+def test_corrected_source_audit_retains_overlap_and_merge_evidence(tmp_path):
+    from publication.experiments.training_ablations.data import audit_source_metadata
+
+    source = pd.DataFrame(
+        {
+            "PN_hash": ["a", "b", "c"],
+            "PN_observation_id": ["o1", "o1", "o2"],
+            "species_id": ["1", "2", "3"],
+            "split": ["train", "val", "test"],
+        }
+    )
+    path = tmp_path / "source.csv"
+    source.to_csv(path, index=False)
+    samples = pd.DataFrame(
+        {"sample_id": ["images_gbif/10/a.jpg", "images_gbif/10/b.jpg"], "speciesKey": ["10", "10"], "split": ["train", "validation"]}
+    )
+    audit = audit_source_metadata(samples, {"source_metadata": str(path)}, tmp_path)
+    assert audit["cross_partition_observations"] == 1
+    assert audit["merged_corrected_classes"] == 1
+    assert audit["excluded_source_classes"] == ["3"]
+    samples.loc[1, "split"] = "train"
+    with pytest.raises(ValueError, match="preserve"):
+        audit_source_metadata(samples, {"source_metadata": str(path)}, tmp_path)

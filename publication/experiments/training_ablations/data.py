@@ -120,6 +120,8 @@ def hierarchy_spec(table, classes):
 
 
 def prepare_data(config, root):
+    if config.get("data_index"):
+        return prepare_index(config, root)
     source = config["parquet"]
     columns = ["speciesKey", "familyKey", "genusKey", "set"]
     frame = pd.read_parquet(source, columns=columns).astype(str)
@@ -190,3 +192,100 @@ def prepare_data(config, root):
             "split_species_support": samples.groupby("split").speciesKey.nunique().to_dict(),
         },
     )
+
+
+def prepare_index(config, root):
+    """Reuse an already corrected hierarchical index without taxonomy lookups."""
+    source = Path(config["data_index"])
+    index = json.loads(source.read_text())
+    fields = [index[key] for key in ("path", "split", "label")]
+    if not fields[0] or len({len(values) for values in fields}) != 1:
+        raise ValueError("Index fields must have equal nonzero lengths")
+    rows = []
+    for path, split, labels in zip(*fields):
+        relative = Path(path)
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ValueError("Index image paths must be relative without parent traversal")
+        if split not in ("train", "validation", "test") or len(labels) < 3 or any(v is None or str(v) == "" for v in labels[:3]):
+            raise ValueError("Expected supplied splits and species/genus/family labels")
+        rows.append((relative.as_posix(), split, *map(str, labels[:3])))
+    samples = pd.DataFrame(rows, columns=["sample_id", "split", "speciesKey", "genusKey", "familyKey"])
+    if samples.sample_id.duplicated().any() or samples.sample_id.map(lambda p: Path(p).name).duplicated().any():
+        raise ValueError("Duplicate image identity in corrected index")
+    if (samples.groupby("speciesKey")[["genusKey", "familyKey"]].nunique() > 1).any().any():
+        raise ValueError("Conflicting taxonomy in corrected index")
+    train = samples[samples.split == "train"]
+    table = train.groupby("speciesKey", sort=True).agg(
+        train=("split", "size"), genusKey=("genusKey", "first"), familyKey=("familyKey", "first")
+    )
+    if set(samples.speciesKey) != set(table.index):
+        raise ValueError("Held-out class has no training examples")
+    description = hierarchy_description(table)
+    classes = table.index.tolist()
+    mapping = {key: i for i, key in enumerate(classes)}
+    samples["label"] = samples.speciesKey.map(mapping)
+    samples = samples.sort_values(["split", "speciesKey", "sample_id"], kind="stable").reset_index(drop=True)
+    missing = [p for p in samples.sample_id if not (Path(config["images"]) / p).is_file()]
+    if missing:
+        raise ValueError(f"Corrected dataset has {len(missing)} missing images; first: {missing[0]}")
+    samples.to_parquet(root / "samples.parquet", index=False)
+    write_json(
+        root / "classes.json",
+        {
+            "num_classes": len(classes),
+            "cls2idx": mapping,
+            "counts": table.train.tolist(),
+            "resize_size": config["size"],
+            "hierarchy": hierarchy_spec(table, classes),
+        },
+    )
+    support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0)
+    table.join(support.rename(columns={"train": "train_support"})).to_csv(root / "species.csv")
+    source_audit = audit_source_metadata(samples, config, root)
+    write_json(
+        root / "selection.json",
+        {
+            "source_audit": source_audit,
+            "source_sha256": digest(source),
+            "source": str(source),
+            "selection": "all corrected-index classes and images",
+            "selected": description,
+            "hierarchy_selected": description,
+            "samples_content_sha256": table_digest(samples),
+            "split_counts": samples.split.value_counts().to_dict(),
+            "split_species_support": samples.groupby("split").speciesKey.nunique().to_dict(),
+            "cross_partition_observations": source_audit.get("cross_partition_observations"),
+            "observation_audit": "Inherited overlap retained; see source_audit"
+            if source_audit["available"]
+            else "Index lacks observation IDs; audit original metadata separately",
+        },
+    )
+
+
+def audit_source_metadata(samples, config, root):
+    """Describe inherited observation overlap and corrected source class merges."""
+    path = config.get("source_metadata")
+    if not path:
+        return {"available": False}
+    source = pd.read_csv(path, dtype=str)
+    required = ["PN_hash", "PN_observation_id", "species_id", "split"]
+    if source[required].isna().any().any() or source.PN_hash.duplicated().any():
+        raise ValueError("Source metadata has missing identities or duplicate image hashes")
+    selected = samples.assign(PN_hash=samples.sample_id.map(lambda p: Path(p).stem)).merge(
+        source[required], on="PN_hash", how="left", validate="one_to_one", suffixes=("", "_source")
+    )
+    if selected.species_id.isna().any() or not selected.split.equals(selected.split_source.replace({"val": "validation"})):
+        raise ValueError("Corrected index does not preserve source image identities and splits")
+    mapping = selected.groupby(["species_id", "speciesKey"]).size().rename("images").reset_index()
+    if (mapping.groupby("species_id").speciesKey.nunique() != 1).any():
+        raise ValueError("An original class maps to multiple corrected species")
+    mapping.to_csv(root / "source-class-map.csv", index=False)
+    return {
+        "available": True,
+        "source_sha256": digest(path),
+        "retained_images": len(selected),
+        "excluded_images": len(source) - len(selected),
+        "excluded_source_classes": sorted(set(source.species_id) - set(selected.species_id)),
+        "merged_corrected_classes": int((mapping.groupby("speciesKey").species_id.nunique() > 1).sum()),
+        "cross_partition_observations": int((selected.groupby("PN_observation_id").split.nunique() > 1).sum()),
+    }

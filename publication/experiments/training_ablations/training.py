@@ -21,6 +21,7 @@ from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.train import main as train_main
 from mini_trainer.training import EMLACrossEntropy, MuonAuxAdamW
 
+from .analysis import frequency_groups
 from .data import digest, write_json
 
 
@@ -36,6 +37,41 @@ class FixedAdjustment(EMLACrossEntropy):
             reduction=self.reduction,
             label_smoothing=self.label_smoothing,
         )
+
+
+class GateRecorder:
+    """Observe detached uncertainty gates without modifying loss or RNG state."""
+
+    def __init__(self):
+        self.totals = {}
+
+    def observe(self, rank, counts):
+        groups = torch.tensor(frequency_groups(counts), dtype=torch.long)
+
+        @torch.no_grad()
+        def hook(module, inputs):
+            logits, targets = inputs
+            logp = logits.detach().log_softmax(-1)
+            gate = 1 + (logp.exp() * logp).sum(-1) / np.log(logits.shape[-1])
+            group = groups.to(targets.device)[targets]
+            totals = torch.stack(
+                [torch.bincount(group, weights=value.float(), minlength=3) for value in [torch.ones_like(gate), gate, gate.square()]]
+            )
+            self.totals[rank] = self.totals.get(rank, torch.zeros_like(totals)) + totals
+
+        return hook
+
+    def summary(self):
+        result = {}
+        for rank, tensor in self.totals.items():
+            count, total, squared = tensor.cpu().numpy()
+            for i, name in enumerate(("tail", "mid", "head")):
+                if count[i]:
+                    mean = total[i] / count[i]
+                    result[f"gate/{rank}/{name}/mean"] = float(mean)
+                    result[f"gate/{rank}/{name}/sd"] = float(np.sqrt(max(0, squared[i] / count[i] - mean**2)))
+                    result[f"gate/{rank}/{name}/count"] = int(count[i])
+        return result
 
 
 class RandomStream:
@@ -85,6 +121,8 @@ class StudyLogger(MultiLogger):
     def update(self, epoch, type):
         super().update(epoch, type)
         self._phase_peak = 0
+        if StudyBuilder.gate_recorder is not None:
+            StudyBuilder.gate_recorder.totals.clear()
 
     def log_memory_use(self):
         if torch.cuda.is_available():
@@ -94,6 +132,8 @@ class StudyLogger(MultiLogger):
     def save(self, *args, **kwargs):
         if self.output_dir and self._epoch is not None:
             record = {"epoch": self._epoch, "phase": self._type}
+            if StudyBuilder.gate_recorder is not None:
+                record.update(StudyBuilder.gate_recorder.summary())
             record.update({key: float(value) for key, value in self.summary().items() if value is not None and np.isfinite(value)})
             if torch.cuda.is_available():
                 # MultiLogger resets CUDA peaks after each batch; retain their maximum.
@@ -104,6 +144,7 @@ class StudyLogger(MultiLogger):
 
 class StudyBuilder(BaseBuilder):
     # Configured only in a dedicated subprocess, never shared between runs.
+    gate_recorder = None
     config = {}
     run = {}
     root = Path()
@@ -115,7 +156,7 @@ class StudyBuilder(BaseBuilder):
 
     @classmethod
     def build_model(cls, **kwargs):
-        if cls.config.get("hierarchy"):
+        if cls.run.get("rank_weights") is not None:
             spec = cls.build_class_spec()["hierarchy"]
             kwargs.update(cls=HierarchicalClassifier, cls2idx=spec["cls2idx"], sparse_masks=[torch.tensor(m) for m in spec["masks"]])
         model, preprocess = super().build_model(**kwargs)
@@ -154,7 +195,7 @@ class StudyBuilder(BaseBuilder):
             "path": [str(Path(cls.config["images"]) / key) for key in frame.sample_id],
             "class": frame.label.tolist(),
         }
-        if cls.config.get("hierarchy"):
+        if cls.run.get("rank_weights") is not None:
             spec = cls.build_class_spec()["hierarchy"]
             metadata["class"] = [[label, spec["masks"][0][label], spec["masks"][1][spec["masks"][0][label]]] for label in frame.label]
         _, loaders = get_dataset_dataloader(
@@ -189,9 +230,10 @@ class StudyBuilder(BaseBuilder):
     def build_criterion(cls, device, **kwargs):
         spec = cls.build_class_spec()
         smoothing = 1 / spec["num_classes"]
-        if cls.config.get("hierarchy"):
+        cls.gate_recorder = GateRecorder() if cls.config.get("log_gates") and cls.run["loss"] == "emla" else None
+        if cls.run.get("rank_weights") is not None:
             hierarchy = spec["hierarchy"]
-            return MultiLevelWeightedCrossEntropyLoss(
+            criterion = MultiLevelWeightedCrossEntropyLoss(
                 num_classes=hierarchy["num_classes"],
                 device=device,
                 dtype=torch.float32,
@@ -200,10 +242,17 @@ class StudyBuilder(BaseBuilder):
                 loss_cls=EMLACrossEntropy,
                 class_frequencies=hierarchy["counts"],
             )
-        if cls.run["loss"] == "ce":
+            losses, counts = list(criterion._loss_fns), hierarchy["counts"]
+        elif cls.run["loss"] == "ce":
             return nn.CrossEntropyLoss(label_smoothing=smoothing)
-        loss = EMLACrossEntropy if cls.run["loss"] == "emla" else FixedAdjustment
-        return loss(spec["counts"], label_smoothing=smoothing, device=device)
+        else:
+            loss = EMLACrossEntropy if cls.run["loss"] == "emla" else FixedAdjustment
+            criterion = loss(spec["counts"], label_smoothing=smoothing, device=device)
+            losses, counts = [criterion], [spec["counts"]]
+        if cls.gate_recorder is not None:
+            for rank, loss, frequencies in zip(("species", "genus", "family"), losses, counts):
+                loss.register_forward_pre_hook(cls.gate_recorder.observe(rank, frequencies))
+        return criterion
 
     @classmethod
     def parameter_groups(cls, model, **kwargs):
@@ -339,7 +388,7 @@ def evaluate(root, attempt, config, run):
     record = json.loads((attempt / "train.json").read_text())
     if digest(weights) != record["weights_sha256"]:
         raise ValueError("Completed training weights changed")
-    head_cls = HierarchicalClassifier if config.get("hierarchy") else Classifier
+    head_cls = HierarchicalClassifier if run.get("rank_weights") is not None else Classifier
     model, preprocess = head_cls.build(
         weights=str(weights), device=config["device"], model_args={"pretrained": False}, skip_spherical_init=True
     )
@@ -357,7 +406,7 @@ def evaluate(root, attempt, config, run):
             predictions.append((output[0] if isinstance(output, list) else output).float().cpu())
     logits = torch.cat(predictions).numpy()
     result = metrics(logits, frame.label.to_numpy(), StudyBuilder.build_class_spec()["counts"])
-    if config.get("hierarchy"):
+    if run.get("rank_weights") is not None:
         hierarchy = StudyBuilder.build_class_spec()["hierarchy"]
         rank_logits, rank_targets = torch.as_tensor(logits), torch.tensor(frame.label.to_numpy())
         from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
