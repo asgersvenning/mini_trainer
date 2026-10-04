@@ -13,6 +13,15 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def table_digest(frame):
+    """Hash ordered column names and values, independent of Parquet metadata."""
+    sha = hashlib.sha256()
+    sha.update((json.dumps(list(frame.columns), ensure_ascii=True, separators=(",", ":")) + "\n").encode())
+    for row in frame.itertuples(index=False, name=None):
+        sha.update((json.dumps(row, ensure_ascii=True, separators=(",", ":")) + "\n").encode())
+    return sha.hexdigest()
+
+
 def write_json(path, value):
     path = Path(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -168,7 +177,11 @@ def prepare_data(config, root):
             "candidates": candidates,
             "selected": describe(table.loc[classes]),
             **(
-                {"hierarchy_full": hierarchy_description(table), "hierarchy_selected": hierarchy_description(table.loc[classes])}
+                {
+                    "hierarchy_full": hierarchy_description(table),
+                    "hierarchy_selected": hierarchy_description(table.loc[classes]),
+                    "samples_content_sha256": table_digest(samples),
+                }
                 if config.get("hierarchy")
                 else {}
             ),

@@ -760,7 +760,10 @@ and 75.4% in the previous 512-species subset. The largest families cannot fit th
 budget; inference is conditional on the selected complete families, not a claim
 that all source-family distributions are represented. `selection.json` records
 source and cohort branching, abundance and split support; `classes.json` records
-rank vocabularies, training counts and child-to-parent mappings.
+rank vocabularies, training counts and child-to-parent mappings. Cross-environment
+cohort verification uses the ordered table-content hash in `selection.json`;
+Parquet byte hashes include writer metadata and can differ across pandas versions.
+Prepared-node artifact integrity continues to use byte hashes.
 
 All treatments use the same bottom-up `HierarchicalClassifier`, initialization,
 loader, rank labels and aggregated parent predictions. The flat control sets loss

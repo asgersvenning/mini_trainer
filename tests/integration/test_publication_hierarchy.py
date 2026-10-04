@@ -7,7 +7,7 @@ import torch
 from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier
 from mini_trainer.training import EMLACrossEntropy
-from publication.experiments.training_ablations.data import hierarchy_spec, select_families, write_json
+from publication.experiments.training_ablations.data import hierarchy_spec, select_families, table_digest, write_json
 from publication.experiments.training_ablations.training import StudyBuilder
 
 
@@ -57,3 +57,13 @@ def test_species_control_matches_flat_emla_gradient(tmp_path, monkeypatch):
     torch.testing.assert_close(
         flat.linear.parametrizations.weight.original1.grad, hierarchical.linear.parametrizations.weight.original1.grad, rtol=0, atol=0
     )
+
+
+def test_cohort_content_digest_preserves_values_order_and_columns():
+    frame = pd.DataFrame({"label": [0, 1], "path": ["a,b", "c\nd"]})
+    assert table_digest(frame) == table_digest(frame.copy())
+    assert table_digest(frame) != table_digest(frame.iloc[::-1])
+    assert table_digest(frame) != table_digest(frame.rename(columns={"path": "other"}))
+    changed = frame.copy()
+    changed.loc[0, "path"] = "ab"
+    assert table_digest(frame) != table_digest(changed)
