@@ -196,3 +196,24 @@ def test_shared_queue_skips_busy_work_and_does_not_duplicate(tmp_path, monkeypat
         first.result()
     assert sorted(trained) == ["long", "next", "short"]
     assert all(study.latest_complete(tmp_path, run) is not None for run in runs)
+
+
+def test_hierarchy_factorial_preserves_conditional_effects_and_rejects_mismatches():
+    rows = study.main_runs({**study.DEFAULTS, "hierarchy": True, "seeds": [42]}, {"muon": {"lr": 0.003, "weight_decay": 0.001}})
+    for row in rows:
+        h, r = int(any(row["rank_weights"][1:])), int(row["regularization"])
+        row.update(split="validation", score=0.5 + 0.02 * h + 0.01 * r + 0.04 * h * r)
+    effects = study.factorial_contrasts(rows, metrics=("score",))
+    assert len(effects) == 7
+    interaction = next(e for e in effects if e["factors"] == ["hierarchy", "regularization"])
+    assert interaction["difference"] == pytest.approx(0.04)
+    for value in [0, 1]:
+        effect = next(e for e in effects if e["factors"] == ["hierarchy"] and e["condition"] == {"regularization": value})
+        assert effect["difference"] == pytest.approx(0.02 + 0.04 * value)
+    assert study.factorial_contrasts(rows[:-1], metrics=("score",)) == []
+    with pytest.raises(ValueError, match="Duplicate factorial"):
+        study.factorial_contrasts([*rows, rows[0]], metrics=("score",))
+    row = next(r for r in rows if any(r["rank_weights"][1:]))
+    row["rank_weights"] = [0.5, 0.25, 0.25]
+    with pytest.raises(ValueError, match="rank weights"):
+        study.factorial_contrasts(rows, metrics=("score",))

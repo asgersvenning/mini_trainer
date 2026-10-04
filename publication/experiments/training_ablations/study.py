@@ -380,21 +380,31 @@ def qualify(root, config, devices, deadline, retry):
 
 def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll")):
     """Equal-cell marginal and conditional finite differences, separately by seed."""
-    factors = ("normalization", "regularization", "emla")
+    hierarchy = any(r.get("rank_weights") is not None for r in rows)
+    if hierarchy and any(r.get("rank_weights") is None for r in rows):
+        raise ValueError("Cannot mix hierarchical and original factorial protocols")
+    factors = ("hierarchy", "regularization") if hierarchy else ("normalization", "regularization", "emla")
     result = []
     for seed in sorted({row["seed"] for row in rows}):
         block = [r for r in rows if r["seed"] == seed and r["loss"] in ["emla", "ce"]]
-        cells = {(int(r["normalized"]), int(r["regularization"]), int(r["loss"] == "emla")): r for r in block}
+        if hierarchy:
+            cells = {(int(any(w > 0 for w in r["rank_weights"][1:])), int(r["regularization"])): r for r in block}
+            for enabled in [0, 1]:
+                weights = {tuple(r["rank_weights"]) for cell, r in cells.items() if cell[0] == enabled}
+                if len(weights) > 1:
+                    raise ValueError("Factorial cells differ in rank weights within an objective")
+        else:
+            cells = {(int(r["normalized"]), int(r["regularization"]), int(r["loss"] == "emla")): r for r in block}
         if len(cells) != len(block):
             raise ValueError("Duplicate factorial cell within a seed")
-        if len(cells) != 8:
+        if len(cells) != 2 ** len(factors):
             continue  # Never fill missing cells or pool seeds to complete a cube.
-        for key in ["split", "optimizer", "hidden", "lr", "weight_decay", "epochs"]:
+        for key in ["split", "optimizer", "hidden", "lr", "weight_decay", "epochs", *(["normalized", "loss"] if hierarchy else [])]:
             if len({r[key] for r in block}) != 1:
                 raise ValueError(f"Factorial cells differ in {key}")
-        for order in [1, 2, 3]:
-            for axes in itertools.combinations(range(3), order):
-                other = [i for i in range(3) if i not in axes]
+        for order in range(1, len(factors) + 1):
+            for axes in itertools.combinations(range(len(factors)), order):
+                other = [i for i in range(len(factors)) if i not in axes]
                 contexts = [None, *itertools.product([0, 1], repeat=len(other))] if other else [None]
                 for context in contexts:
                     selected = {k: r for k, r in cells.items() if context is None or tuple(k[i] for i in other) == context}
