@@ -261,7 +261,10 @@ def analyze(root, output, variants=None, geometry=False, samples=8192, seed=2026
             from mini_trainer.modeling import Classifier, classification_module
 
             weights = verified(attempt / "model/weights/last.pt", manifest["model/weights/last.pt"])
-            model, _ = Classifier.build(weights=str(weights), device="cpu", model_args={"pretrained": False}, skip_spherical_init=True)
+            from mini_trainer.hierarchical.model import HierarchicalClassifier
+
+            head_cls = HierarchicalClassifier if "hierarchy" in spec else Classifier
+            model, _ = head_cls.build(weights=str(weights), device="cpu", model_args={"pretrained": False}, skip_spherical_init=True)
             head = classification_module(model)
             geometry_summary, geometry_classes = prototype_analysis(head.linear.weight.detach().numpy(), spec["counts"], samples, seed)
             summary["geometry"] = geometry_summary

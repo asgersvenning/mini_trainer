@@ -27,6 +27,7 @@
 # Tracked configuration and local output directories
 !/dev/ucloud/*.json
 !/publication/experiments/training_ablations/config.json
+!/publication/experiments/training_ablations/hierarchy.json
 examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml

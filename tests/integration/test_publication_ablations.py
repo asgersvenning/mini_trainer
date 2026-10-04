@@ -14,7 +14,7 @@ from PIL import Image
 from mini_trainer.modeling import Classifier
 from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_regularization
 from publication.experiments.training_ablations import study, training
-from publication.experiments.training_ablations.data import prepare_data, select_species, species_table, write_json
+from publication.experiments.training_ablations.data import prepare_data, select_families, select_species, species_table, write_json
 
 
 def test_phase_memory_retains_peak_across_batch_resets(tmp_path, monkeypatch):
@@ -209,23 +209,33 @@ def test_deadline_terminates_running_process(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "hidden,optimizer,normalized,loss",
+    "hidden,optimizer,normalized,loss,rank_weights",
     [
-        (False, "adamw", True, "emla"),
-        (True, "adamw", True, "emla"),
-        (False, "muon", True, "emla"),
-        (True, "muon", True, "emla"),
-        (True, "muon", False, "fixed"),
-        (True, "muon", False, "ce"),
-        (True, "muon", False, "emla"),
-        (False, "adamw", False, "ce"),
+        (False, "adamw", True, "emla", None),
+        (True, "adamw", True, "emla", None),
+        (False, "muon", True, "emla", None),
+        (True, "muon", True, "emla", None),
+        (True, "muon", False, "fixed", None),
+        (True, "muon", False, "ce", None),
+        (True, "muon", False, "emla", None),
+        (False, "adamw", False, "ce", None),
+        (True, "muon", True, "emla", [1.0, 0.0, 0.0]),
+        (True, "muon", True, "emla", [1 / 3] * 3),
     ],
 )
-def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, normalized, loss):
+def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, normalized, loss, rank_weights):
     from mini_trainer.modeling import classifier
     from tests.integration.test_integration_train import TinyMockModel
 
     root, config = fixture_campaign(tmp_path)
+    if rank_weights is not None:
+        config.update(
+            hierarchy=True,
+            cohort_families=select_families(species_table(metadata()), 1000, config["selection_seed"]),
+            species=8,
+            train_image_budget=1000,
+        )
+        prepare_data(config, root)
     for row in pd.read_parquet(root / "samples.parquet").itertuples():
         path = tmp_path / "images" / row.sample_id
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -263,17 +273,23 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
         "weight_decay": 0.01,
         "epochs": 2,
         "id": "tiny",
+        "rank_weights": rank_weights,
         "screening": True,
     }
     training.train(root, attempt, config, run)
     training.evaluate(root, attempt, config, run)
     result = json.loads((attempt / "evaluation.json").read_text())
+    if rank_weights is not None:
+        assert np.isfinite(result["genus"]["nll"]) and np.isfinite(result["family"]["nll"])
     assert result["split"] == "validation"
     assert result["backbone_parameters_changed"]
     assert sum(result["support"]) > 0
     assert np.isfinite(result["nll"])
     live, preprocess = built[0]
-    loaded, loaded_preprocess = Classifier.build(weights=str(attempt / "model/weights/last.pt"), device="cpu")
+    from mini_trainer.hierarchical.model import HierarchicalClassifier
+
+    head_cls = HierarchicalClassifier if rank_weights is not None else Classifier
+    loaded, loaded_preprocess = head_cls.build(weights=str(attempt / "model/weights/last.pt"), device="cpu")
     live.eval()
     loaded.eval()
     images = torch.randint(0, 256, (3, 3, 16, 16), dtype=torch.uint8)

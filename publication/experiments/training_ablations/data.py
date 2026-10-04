@@ -69,6 +69,47 @@ def describe(table):
     }
 
 
+def select_families(table, image_budget, seed):
+    """Seeded complete-family packing; never truncate a family or rebalance it."""
+    counts = table.groupby("familyKey", sort=True).train.sum()
+    chosen, used = [], 0
+    for family in np.random.default_rng(seed).permutation(counts.index):
+        if used + counts[family] <= image_budget:
+            chosen.append(str(family))
+            used += int(counts[family])
+    return chosen
+
+
+def hierarchy_description(table):
+    """Describe natural branching and abundance without using held-out images."""
+    if (table.groupby("genusKey").familyKey.nunique() > 1).any():
+        raise ValueError("Genus belongs to multiple families")
+    genera = table.groupby("genusKey").size()
+    families = table.groupby("familyKey").genusKey.nunique()
+    return {
+        **describe(table),
+        "singleton_genera": int((genera == 1).sum()),
+        "species_in_singleton_genera_fraction": float((genera == 1).sum() / len(table)),
+        "species_per_genus": {str(k): int(v) for k, v in genera.items()},
+        "genera_per_family": {str(k): int(v) for k, v in families.items()},
+    }
+
+
+def hierarchy_spec(table, classes):
+    """Freeze leaf-first rank vocabularies and contiguous child-to-parent maps."""
+    rows = table.loc[classes]
+    keys = [classes, sorted(rows.genusKey.unique()), sorted(rows.familyKey.unique())]
+    mappings = {str(i): {key: j for j, key in enumerate(values)} for i, values in enumerate(keys)}
+    masks = [
+        [mappings["1"][key] for key in rows.genusKey],
+        [mappings["2"][key] for key in rows.groupby("genusKey").familyKey.first().reindex(keys[1])],
+    ]
+    counts = [rows.train.astype(int).tolist()]
+    for column, values in zip(["genusKey", "familyKey"], keys[1:]):
+        counts.append(rows.groupby(column).train.sum().reindex(values).astype(int).tolist())
+    return {"cls2idx": mappings, "num_classes": list(map(len, keys)), "masks": masks, "counts": counts}
+
+
 def prepare_data(config, root):
     source = config["parquet"]
     columns = ["speciesKey", "familyKey", "genusKey", "set"]
@@ -78,7 +119,17 @@ def prepare_data(config, root):
     for n in [256, 512, 1024]:
         if n <= len(table):
             candidates[str(n)] = describe(table.loc[select_species(table, n, config["selection_seed"])])
-    selected = select_species(table, config["species"], config["selection_seed"])
+    if config.get("hierarchy"):
+        families = list(map(str, config["cohort_families"]))
+        if families != select_families(table, config["train_image_budget"], config["selection_seed"]):
+            raise ValueError("Selected families differ from frozen selection rule")
+        if len(set(families)) != len(families) or set(families) - set(table.familyKey):
+            raise ValueError("Unknown or duplicate cohort family")
+        selected = table.index[table.familyKey.isin(families)].tolist()
+        if len(selected) != config["species"]:
+            raise ValueError("Complete-family species count differs from frozen protocol")
+    else:
+        selected = select_species(table, config["species"], config["selection_seed"])
     classes = sorted(selected)
     mapping = {key: i for i, key in enumerate(classes)}
     # Predicate pushdown avoids loading all image identifiers into memory.
@@ -102,6 +153,8 @@ def prepare_data(config, root):
     samples.to_parquet(root / "samples.parquet", index=False)
     counts = table.loc[classes, "train"].astype(int).tolist()
     spec = {"num_classes": len(classes), "cls2idx": mapping, "counts": counts, "resize_size": config["size"]}
+    if config.get("hierarchy"):
+        spec["hierarchy"] = hierarchy_spec(table, classes)
     write_json(root / "classes.json", spec)
     support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0).reindex(classes, fill_value=0)
     support = table.loc[classes].join(support.rename(columns={"train": "train_support"}))
@@ -114,6 +167,11 @@ def prepare_data(config, root):
             "full": describe(table),
             "candidates": candidates,
             "selected": describe(table.loc[classes]),
+            **(
+                {"hierarchy_full": hierarchy_description(table), "hierarchy_selected": hierarchy_description(table.loc[classes])}
+                if config.get("hierarchy")
+                else {}
+            ),
             "split_counts": samples.split.value_counts().to_dict(),
             "cross_partition_observations": 0,
             "split_species_support": samples.groupby("split").speciesKey.nunique().to_dict(),

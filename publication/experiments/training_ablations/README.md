@@ -738,3 +738,69 @@ Preparation accepts batches 32, 64, 128, 256, 512 and 768. Qualification descend
 that ladder from the requested size **only on CUDA OOM**. Keep the default 128
 until measured capacity supports a different globally frozen batch and worker
 count; no automatic learning-rate scaling accompanies a batch change.
+
+### Complete-family hierarchical comparison
+
+`hierarchy.json` defines a separate, validation-only cohort and eight paired runs:
+normalization and Muon fixed, species-only versus species/genus/family EMLA,
+crossed with prototype regularization off/on, seeds 42 and 43. Ten epochs retain
+the prior screen's schedule; earlier duration evidence did not establish a
+consistent benefit from twenty epochs. Existing-cohort runs are selection evidence,
+not controls for this cohort.
+
+Selection uses training metadata only. Permute sorted family keys with NumPy's
+seeded generator (seed 20261004), retaining each whole family if its training
+images fit the remaining 500,000-image budget. Preserve every training-observed
+species in each retained family and every source sample/split for those species.
+There is no class balancing, per-class cap or selection on validation performance.
+Freeze and verify the resulting family list and species count in the configuration.
+This yields 1,513 species, 517 genera, 30 families and 499,986 training images.
+Species in singleton genera comprise 19.8%, compared with 19.3% in the source
+and 75.4% in the previous 512-species subset. The largest families cannot fit this
+budget; inference is conditional on the selected complete families, not a claim
+that all source-family distributions are represented. `selection.json` records
+source and cohort branching, abundance and split support; `classes.json` records
+rank vocabularies, training counts and child-to-parent mappings.
+
+All treatments use the same bottom-up `HierarchicalClassifier`, initialization,
+loader, rank labels and aggregated parent predictions. The flat control sets loss
+weights to `[1, 0, 0]`; the hierarchical objective uses `[1/3, 1/3, 1/3]`. This
+explicit fixed-total weighting choice changes how supervision is distributed
+across ranks while avoiding an automatic threefold coefficient increase. It does
+not guarantee equal gradient magnitudes. EMLA and the production rank-specific
+smoothing rule apply at each rank; no empirical prior is installed in the head.
+The treatment is **adding the weighted hierarchical EMLA objective**, not an
+isolated architecture effect or isolated parent-EMLA effect. Uniform leaf and
+uniform parent priors need not agree under unequal branching.
+
+Use the existing prepare/qualify/run commands with this configuration. Qualification
+covers both objectives with regularization enabled, two tiny epochs (including
+backbone updates), checkpoint reload and final FP32 evaluation. Keep batch 512,
+32 workers and the original LR/optimizer settings unless a revised protocol is
+explicitly frozen. The general runner can reduce batch on OOM; the campaign
+bootstrap must reject such a reduction before main dispatch.
+
+For two independent single-GPU nodes mounting the same prepared root, run on each:
+
+```sh
+python -m publication.experiments.training_ablations.study run /work/results/CAMPAIGN/study \
+  --shared-queue --devices 0 --hours REMAINING_HOURS
+```
+
+Both controllers scan the same frozen, seed-blocked plan. A nonblocking run lock
+claims work; busy runs are skipped and completed runs verified rather than
+repeated. Failures retain evidence and require explicit `--retry`. There are no
+fixed node shards or implicit retries. The last controller writes the summary
+once all runs have verified completion. Confirm cross-node filesystem locking
+before dispatch; local concurrency tests cannot establish remote lock behavior.
+
+`paired.json` records hierarchy-minus-species effects conditional on regularization
+and their difference-in-differences, per seed. Report both seeds rather than
+claiming population confidence from two replicates. Final evaluation records
+species, genus and family metrics from the same leaf probabilities for every
+arm. Retained leaf logits also support the existing mechanism analysis: class
+frequency versus prediction mass/performance, within/across-parent and rare-class
+confusion, calibration and prototype geometry. Relate these outcomes to descendant
+counts as well as image frequency. Parent-EMLA decomposition and additional
+seeds/durations are follow-ups motivated by the observed contrasts, not an
+automatic expansion of this campaign.

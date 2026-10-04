@@ -14,6 +14,8 @@ from torchvision import transforms
 
 from mini_trainer.builders import BaseBuilder
 from mini_trainer.data.loader import get_dataset_dataloader
+from mini_trainer.hierarchical.loss import MultiLevelWeightedCrossEntropyLoss
+from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.logging import MultiLogger, configure_loggers
 from mini_trainer.modeling import Classifier, classification_module
 from mini_trainer.train import main as train_main
@@ -113,6 +115,9 @@ class StudyBuilder(BaseBuilder):
 
     @classmethod
     def build_model(cls, **kwargs):
+        if cls.config.get("hierarchy"):
+            spec = cls.build_class_spec()["hierarchy"]
+            kwargs.update(cls=HierarchicalClassifier, cls2idx=spec["cls2idx"], sparse_masks=[torch.tensor(m) for m in spec["masks"]])
         model, preprocess = super().build_model(**kwargs)
         head = classification_module(model)
         head_name = model._backbone_output_name
@@ -149,6 +154,9 @@ class StudyBuilder(BaseBuilder):
             "path": [str(Path(cls.config["images"]) / key) for key in frame.sample_id],
             "class": frame.label.tolist(),
         }
+        if cls.config.get("hierarchy"):
+            spec = cls.build_class_spec()["hierarchy"]
+            metadata["class"] = [[label, spec["masks"][0][label], spec["masks"][1][spec["masks"][0][label]]] for label in frame.label]
         _, loaders = get_dataset_dataloader(
             metadata,
             resize_size=cls.config["size"],
@@ -157,6 +165,7 @@ class StudyBuilder(BaseBuilder):
             num_workers=cls.config["workers"],
             device=device,
             cache=None,
+            multilabel=cls.config.get("hierarchy", False),
         )
         loader = loaders[0]
         loader.generator = torch.Generator().manual_seed(cls.run["seed"] + 201)
@@ -180,6 +189,17 @@ class StudyBuilder(BaseBuilder):
     def build_criterion(cls, device, **kwargs):
         spec = cls.build_class_spec()
         smoothing = 1 / spec["num_classes"]
+        if cls.config.get("hierarchy"):
+            hierarchy = spec["hierarchy"]
+            return MultiLevelWeightedCrossEntropyLoss(
+                num_classes=hierarchy["num_classes"],
+                device=device,
+                dtype=torch.float32,
+                weights=cls.run["rank_weights"],
+                label_smoothing=smoothing,
+                loss_cls=EMLACrossEntropy,
+                class_frequencies=hierarchy["counts"],
+            )
         if cls.run["loss"] == "ce":
             return nn.CrossEntropyLoss(label_smoothing=smoothing)
         loss = EMLACrossEntropy if cls.run["loss"] == "emla" else FixedAdjustment
@@ -319,7 +339,8 @@ def evaluate(root, attempt, config, run):
     record = json.loads((attempt / "train.json").read_text())
     if digest(weights) != record["weights_sha256"]:
         raise ValueError("Completed training weights changed")
-    model, preprocess = Classifier.build(
+    head_cls = HierarchicalClassifier if config.get("hierarchy") else Classifier
+    model, preprocess = head_cls.build(
         weights=str(weights), device=config["device"], model_args={"pretrained": False}, skip_spherical_init=True
     )
     model.eval()
@@ -332,9 +353,20 @@ def evaluate(root, attempt, config, run):
     started = time.monotonic()
     with torch.inference_mode():
         for images, _ in loader:
-            predictions.append(model(preprocess(images.to(config["device"]))).float().cpu())
+            output = model(preprocess(images.to(config["device"])))
+            predictions.append((output[0] if isinstance(output, list) else output).float().cpu())
     logits = torch.cat(predictions).numpy()
     result = metrics(logits, frame.label.to_numpy(), StudyBuilder.build_class_spec()["counts"])
+    if config.get("hierarchy"):
+        hierarchy = StudyBuilder.build_class_spec()["hierarchy"]
+        rank_logits, rank_targets = torch.as_tensor(logits), torch.tensor(frame.label.to_numpy())
+        from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
+
+        for rank, mask, counts in zip(["genus", "family"], hierarchy["masks"], hierarchy["counts"][1:]):
+            mapping = torch.tensor(mask)
+            rank_logits = batched_scatter_logsumexp(rank_logits, mapping)
+            rank_targets = mapping[rank_targets]
+            result[rank] = metrics(rank_logits.numpy(), rank_targets.numpy(), counts)
     np.savez_compressed(
         attempt / "predictions.npz", logits=logits, target=frame.label.to_numpy(), sample_id=frame.sample_id.to_numpy(dtype=str)
     )

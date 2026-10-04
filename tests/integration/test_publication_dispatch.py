@@ -163,3 +163,36 @@ def test_factorial_detects_pure_interaction_with_zero_marginal_effects():
     next(r for r in rows if r["variant"] == "full")["split"] = "test"
     with pytest.raises(ValueError, match="differ in split"):
         study.factorial_contrasts(rows)
+
+
+def test_shared_queue_skips_busy_work_and_does_not_duplicate(tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    trained = []
+
+    def child(root, attempt, stage, *args):
+        if stage == "train":
+            run = json.loads((attempt / "run.json").read_text())
+            trained.append(run["id"])
+            if run["id"] == "long":
+                entered.set()
+                assert release.wait(10)
+            (attempt / "model/weights").mkdir(parents=True)
+            for name in ["model/weights/last.pt", "train.json", "initialization.json", "parameter_groups.json"]:
+                (attempt / name).write_text("{}")
+        else:
+            for name in ["evaluation.json", "predictions.npz"]:
+                (attempt / name).write_text("{}")
+
+    monkeypatch.setattr(study, "child", child)
+    runs = [{"id": name} for name in ["long", "short", "next"]]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(study.queue, tmp_path, runs, {}, ["0"], 100, False, True)
+        try:
+            assert entered.wait(5)
+            study.queue(tmp_path, runs, {}, ["0"], 100, False, shared=True)
+            assert trained == ["long", "short", "next"]
+        finally:
+            release.set()
+        first.result()
+    assert sorted(trained) == ["long", "next", "short"]
+    assert all(study.latest_complete(tmp_path, run) is not None for run in runs)

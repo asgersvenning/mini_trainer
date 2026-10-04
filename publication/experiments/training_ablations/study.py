@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -22,6 +23,9 @@ REPO = Path(__file__).resolve().parents[3]
 STOP = threading.Event()
 DEFAULTS = {
     "screening": False,
+    "hierarchy": False,
+    "cohort_families": [],
+    "train_image_budget": None,
     "species": 512,
     "selection_seed": 20261003,
     "size": 384,
@@ -94,9 +98,10 @@ def tuning_runs(config):
 
 def main_runs(config, selected):
     runs = []
+    variants = hierarchy_variants() if config.get("hierarchy") else VARIANTS
     for seed in config["seeds"]:
         block = []
-        for name, changes in VARIANTS.items():
+        for name, changes in variants.items():
             run = {**FULL, **changes}
             run.update(selected[run["optimizer"]])
             if config.get("screening"):
@@ -107,10 +112,24 @@ def main_runs(config, selected):
     return runs
 
 
+def hierarchy_variants():
+    """A shared leaf head; only rank supervision and prototype penalty differ."""
+    return {
+        f"{objective}_{'regularized' if regularization else 'unregularized'}": {
+            "rank_weights": weights,
+            "regularization": regularization,
+        }
+        for objective, weights in [("species", [1.0, 0.0, 0.0]), ("hierarchy", [1 / 3] * 3)]
+        for regularization in [False, True]
+    }
+
+
 def prepare(config_path, root):
     config = {**DEFAULTS, **json.loads(Path(config_path).read_text())}
     if set(config) - (set(DEFAULTS) | {"parquet", "images", "pretrained"}):
         raise ValueError("Unknown configuration keys")
+    if config["hierarchy"] and (not config["screening"] or len(config["cohort_families"]) < 2 or not config["train_image_budget"]):
+        raise ValueError("Hierarchy campaign requires screening and explicit complete families")
     if not isinstance(config["screening"], bool):
         raise ValueError("screening must be boolean")
     for key in ["parquet", "images"]:
@@ -283,10 +302,18 @@ def execute_locked(root, run, config, device, deadline, retry, directory):
         raise
 
 
-def queue(root, runs, config, devices, deadline, retry):
+def queue(root, runs, config, devices, deadline, retry, shared=False):
     # Deterministic static lanes; paired seed blocks rotate across devices.
     def lane(index):
-        return [execute(root, run, config, devices[index], deadline, retry) for run in runs[index :: len(devices)]]
+        results = []
+        for run in runs if shared else runs[index :: len(devices)]:
+            try:
+                results.append(execute(root, run, config, devices[index], deadline, retry))
+            except BlockingIOError:
+                if not shared:
+                    raise
+                # Another controller owns this run. Continue to unclaimed work.
+        return results
 
     with ThreadPoolExecutor(max_workers=len(devices)) as pool:
         futures = [pool.submit(lane, index) for index in range(len(devices))]
@@ -319,6 +346,8 @@ def select_tuning(paths):
 def qualify(root, config, devices, deadline, retry):
     # Full class vocabulary; tiny train/validation sample. Never evaluates test.
     treatments = {name: VARIANTS[name] for name in ["full", "no_normalization", "core_reference", "fixed_adjustment"]}
+    if config.get("hierarchy"):
+        treatments = {k: v for k, v in hierarchy_variants().items() if v["regularization"]}
     for batch in [v for v in [768, 512, 256, 128, 64, 32] if v <= config["batch_size"]]:
         candidate = {**config, "batch_size": batch}
         runs = [
@@ -417,10 +446,11 @@ def summarize(root):
     pd.DataFrame(rows).to_csv(root / "results.csv", index=False)
     main = [row for row in rows if row.get("variant") and row["status"] == "complete"]
     write_json(root / "factorial.json", factorial_contrasts(main))
+    variants = hierarchy_variants() if json.loads((root / "config.json").read_text()).get("hierarchy") else VARIANTS
     contrasts = []
     for seed in sorted({row["seed"] for row in main}):
         block = {row["variant"]: row for row in main if row["seed"] == seed}
-        for name in VARIANTS:
+        for name in variants:
             if name != "full" and name in block and "full" in block:
                 contrasts.append(
                     {
@@ -429,9 +459,35 @@ def summarize(root):
                         "macro_recall_difference": block["full"]["macro_recall"] - block[name]["macro_recall"],
                     }
                 )
+    if json.loads((root / "config.json").read_text()).get("hierarchy"):
+        for seed in sorted({row["seed"] for row in main}):
+            block = {row["variant"]: row for row in main if row["seed"] == seed}
+            for metric in ["macro_recall", "tail_recall", "nll"]:
+                effects = {}
+                for regularization in ["unregularized", "regularized"]:
+                    flat, hierarchical = f"species_{regularization}", f"hierarchy_{regularization}"
+                    if flat in block and hierarchical in block:
+                        effects[regularization] = block[hierarchical][metric] - block[flat][metric]
+                        contrasts.append(
+                            {
+                                "seed": seed,
+                                "contrast": f"hierarchy - species ({regularization})",
+                                "metric": metric,
+                                "difference": effects[regularization],
+                            }
+                        )
+                if len(effects) == 2:
+                    contrasts.append(
+                        {
+                            "seed": seed,
+                            "contrast": "hierarchy x regularization",
+                            "metric": metric,
+                            "difference": effects["regularized"] - effects["unregularized"],
+                        }
+                    )
     write_json(root / "paired.json", contrasts)
     paired_summary = []
-    for name in sorted({row["contrast"] for row in contrasts}):
+    for name in sorted({row["contrast"] for row in contrasts if "macro_recall_difference" in row}):
         values = [row["macro_recall_difference"] for row in contrasts if row["contrast"] == name]
         paired_summary.append(
             {
@@ -446,12 +502,12 @@ def summarize(root):
     write_json(root / "paired-summary.json", paired_summary)
     if main:
         fig, ax = plt.subplots(figsize=(10, 5))
-        for i, name in enumerate(VARIANTS):
+        for i, name in enumerate(variants):
             values = [row["macro_recall"] for row in main if row["variant"] == name]
             if values:
                 ax.scatter([i] * len(values), values)
                 ax.plot(i, np.mean(values), "k_")
-        ax.set_xticks(range(len(VARIANTS)), VARIANTS, rotation=35, ha="right")
+        ax.set_xticks(range(len(variants)), list(variants), rotation=35, ha="right")
         ax.set_ylabel("Macro recall (points: individual seeds; split in results.csv)")
         fig.tight_layout()
         fig.savefig(root / "macro-recall.png")
@@ -460,7 +516,7 @@ def summarize(root):
         root / "summary.json",
         {
             "completed_main_runs": len(main),
-            "expected_main_runs": len(VARIANTS) * len(json.loads((root / "config.json").read_text())["seeds"]),
+            "expected_main_runs": len(variants) * len(json.loads((root / "config.json").read_text())["seeds"]),
             "interpretation": "Paired conditional effects; seed variation is not test-sample uncertainty. Incomplete runs remain visible.",
         },
     )
@@ -509,11 +565,14 @@ def main():
     parser.add_argument("--hours", type=float, default=24, help="Remaining allocation hours, including a cleanup reserve")
     parser.add_argument("--retry", action="store_true")
     parser.add_argument("--shard", type=parse_shard, help="Zero-based INDEX/COUNT; tune/run on a shared prepared root")
+    parser.add_argument("--shared-queue", action="store_true", help="Claim the next free run on a shared filesystem")
     parser.add_argument("--attempt", type=Path)
     parser.add_argument("--stage", choices=["train", "evaluate"])
     args = parser.parse_args()
     if args.shard is not None and args.command not in ["tune", "run"]:
         parser.error("--shard is supported only for tune and run")
+    if args.shared_queue and (args.command != "run" or args.shard is not None):
+        parser.error("--shared-queue requires run and cannot be combined with --shard")
     root = args.root.resolve()
     if args.command == "prepare":
         if not args.config:
@@ -545,6 +604,8 @@ def main():
             )
         return
     lock_name = ".controller.lock" if args.shard is None else f".controller-{args.command}-{args.shard[0]}-of-{args.shard[1]}.lock"
+    if args.shared_queue:
+        lock_name = f".controller-{uuid.uuid4().hex}.lock"
     with (root / lock_name).open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         signal.signal(signal.SIGINT, lambda *_: STOP.set())
@@ -570,7 +631,9 @@ def main():
             raise ValueError("Screening uses fixed shared hyperparameters; run directly after qualification")
         if args.command == "tune":
             runs = tuning_runs(config)
-            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
+            queue(
+                root, shard_runs(runs, args.shard), config, devices, deadline, args.retry, **({"shared": True} if args.shared_queue else {})
+            )
             if args.shard is None:
                 finalize_tuning(root, config)
         elif config.get("screening"):
@@ -583,7 +646,9 @@ def main():
                         raise ValueError("Screening plan differs from frozen configuration")
                 else:
                     write_json(root / "plan.json", runs)
-            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
+            queue(
+                root, shard_runs(runs, args.shard), config, devices, deadline, args.retry, **({"shared": True} if args.shared_queue else {})
+            )
         else:
             selected = json.loads((root / "tuning.json").read_text())
             paths = [latest_complete(root, run) for run in tuning_runs(config)]
@@ -592,8 +657,10 @@ def main():
             runs = main_runs(config, selected)
             if json.loads((root / "plan.json").read_text()) != runs:
                 raise ValueError("Main run plan differs from tuning selection")
-            queue(root, shard_runs(runs, args.shard), config, devices, deadline, args.retry)
-        if args.shard is None:
+            queue(
+                root, shard_runs(runs, args.shard), config, devices, deadline, args.retry, **({"shared": True} if args.shared_queue else {})
+            )
+        if args.shard is None and not args.shared_queue:
             summarize(root)
         else:
             # Serialize shared JSON/summary writes; earlier shards exit successfully.
