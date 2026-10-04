@@ -237,6 +237,9 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
             train_image_budget=1000,
         )
         prepare_data(config, root)
+        # Targeted campaigns mix heads without enabling campaign-wide hierarchy.
+        if rank_weights[1] > 0:
+            config["hierarchy"] = False
     for row in pd.read_parquet(root / "samples.parquet").itertuples():
         path = tmp_path / "images" / row.sample_id
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -206,7 +206,7 @@ class StudyBuilder(BaseBuilder):
             num_workers=cls.config["workers"],
             device=device,
             cache=None,
-            multilabel=cls.config.get("hierarchy", False),
+            multilabel=cls.run.get("rank_weights") is not None,
         )
         loader = loaders[0]
         loader.generator = torch.Generator().manual_seed(cls.run["seed"] + 201)
