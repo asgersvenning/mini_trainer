@@ -5,6 +5,9 @@ The study uses production trainer APIs through a research builder; it changes no
 package defaults. It follows the [publication workflow](../README.md) conventions:
 frozen inputs, paired seeds, validation-only choices and retained individual results.
 
+See [presentation protocol and completion workflow](presentation.md) for the
+claim-to-evidence mapping, paired tables, figures and final completeness gate.
+
 ## Mechanism analysis and corrected PlantNet replication
 
 The scientific questions are distinct: frequency adjustment should reduce learned

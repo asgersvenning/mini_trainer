@@ -11,6 +11,12 @@ from .analysis import GROUPS
 from .data import digest, write_json
 
 
+def save_figure(fig, path):
+    """Keep a lightweight preview and a vector version for publication."""
+    for extension in ("png", "pdf"):
+        fig.savefig(path.with_suffix(f".{extension}"), dpi=160)
+
+
 def plot_comparisons(root, output, reports, sources):
     """Show every seed and treatment; never pool different study roots/budgets."""
     from matplotlib import pyplot as plt
@@ -33,7 +39,7 @@ def plot_comparisons(root, output, reports, sources):
         axes[0].legend(fontsize=7)
         fig.suptitle("AMP epoch trajectories; dotted line: end of head-only warmup")
         fig.tight_layout()
-        fig.savefig(output / "learning-dynamics.png", dpi=160)
+        save_figure(fig, output / "learning-dynamics")
     plt.close(fig)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     for i, report in enumerate(reports):
@@ -60,7 +66,7 @@ def plot_comparisons(root, output, reports, sources):
     )
     axes[1].tick_params(axis="x", rotation=75, labelsize=7)
     fig.tight_layout()
-    fig.savefig(output / "geometry-and-hierarchy.png", dpi=160)
+    save_figure(fig, output / "geometry-and-hierarchy")
     plt.close(fig)
 
 
@@ -123,13 +129,48 @@ def plot_report(root, output):
         axes[1, 1].legend()
         fig.suptitle(f"{run['variant']} | seed {run['seed']} | {run['epochs']} epochs | {report['split']}")
         fig.tight_layout()
-        fig.savefig(output / f"{name}.png", dpi=160)
+        save_figure(fig, output / name)
         plt.close(fig)
     plot_comparisons(root, output, reports, sources)
+    plot_gates(root, output, reports, sources)
     write_json(
         output / "provenance.json",
         {"input_root": str(root), "source_sha256": digest(Path(__file__)), "matplotlib": matplotlib.__version__, "inputs": sources},
     )
+
+
+def plot_gates(root, output, reports, sources):
+    """Training gates use zero-based log epochs; show completed epochs consistently."""
+    from matplotlib import pyplot as plt
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    found = False
+    for report in reports:
+        run = report["run"]
+        name = run.get("id", f"{run['variant']}_seed{run['seed']}")
+        path = root / name / "learning.csv"
+        if not path.exists() or path.stat().st_size <= 1:
+            continue
+        rows = pd.read_csv(path)
+        if "phase" not in rows:
+            continue
+        rows = rows[rows.phase == "train"]
+        sources[str(path.relative_to(root))] = digest(path)
+        for ax, group in zip(axes, GROUPS):
+            column = f"gate/species/{group}/mean"
+            if column not in rows or not rows[column].notna().any():
+                continue
+            ax.plot(rows.epoch + 1, rows[column], label=f"{run['variant']} / {run['seed']}")
+            found = True
+    if found:
+        for ax, group in zip(axes, GROUPS):
+            ax.set(xlabel="Completed epoch", ylabel="Mean training gate", title=group, ylim=(0, 1))
+            ax.axvline(1, color="gray", linestyle=":")
+        axes[0].legend(fontsize=6)
+        fig.suptitle("EMLA confidence gates; epoch aggregates, not an overfitting detector")
+        fig.tight_layout()
+        save_figure(fig, output / "adjustment-gates")
+    plt.close(fig)
 
 
 def main():
