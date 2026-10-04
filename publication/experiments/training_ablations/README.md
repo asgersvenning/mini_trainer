@@ -512,6 +512,70 @@ is distinct from finite-test-set uncertainty. Wall timing includes training-stag
 construction, validation, diagnostics and saving; it excludes environment setup and
 preparation. Allocated-memory peaks are phase peaks, not whole-device memory.
 
+### Reproducible mechanism analysis
+
+Analyze existing final predictions; no training or image inference is required:
+
+```bash
+.venv/bin/python -m publication.experiments.training_ablations.analysis \
+  /path/to/study /path/to/new-analysis
+.venv/bin/python -m publication.experiments.training_ablations.analysis_plots \
+  /path/to/new-analysis /path/to/new-figures
+```
+
+The input can be the mounted study or a local mirror containing `prepared.json`,
+`classes.json`, `samples.parquet` and completed `runs/*/attempt-*` artifacts:
+`complete.json`, `run.json`, `evaluation.json` and `predictions.npz`. Consumed
+artifacts are hash-verified; prediction IDs, labels and order must match the
+recorded split and class vocabulary. Only the latest attempt is considered;
+incomplete attempts are reported, never replaced by an older successful attempt.
+Outputs use a new directory outside the study. Training artifacts are unchanged.
+
+The array-based analysis functions are independent of campaign paths and seeds.
+They share frequency groups, prior definitions and output tables across treatments:
+
+- Per-class recall, support, hard prediction mass, soft probability mass, and descriptive frequency associations
+  (Spearman and slope against natural-log training count). Equal-class prediction
+  mass averages the row-normalized confusion matrix over observed true classes;
+  it does not require uniform predictions on an imbalanced image population.
+- Tail/mid/head error flows exclude correct predictions. `error_probability` is
+  the average per-class probability of that error destination; the separate
+  conditional error share uses total source errors as its denominator. Pair tables
+  retain counts, conditional probabilities and same-genus/family indicators. These
+  support stratification, not a claim that taxonomy has already been controlled.
+- NLL, multiclass Brier, fixed-bin top-label reliability and ECE under empirical
+  and equal-observed-class priors. Empty reliability bins and missing class support
+  remain explicit. ECE depends on bins and is not proof of calibration.
+- Complete-cube contrasts for balanced NLL/Brier and rare-to-rare error use the
+  existing factorial implementation and comparability guards. Partial cubes and
+  undefined metric contrasts are omitted, not imputed; fixed adjustment remains
+  outside the cube. Analyze different epoch budgets in separate roots.
+
+Add `--geometry` to load verified `model/weights/last.pt` checkpoints on CPU.
+Use `--variants full no_regularization no_normalization
+no_normalization_no_regularization` to restrict the workload. Geometry includes
+effective rank of the unit-prototype Gram matrix, mean resultant length,
+nearest-prototype angles and frequency-pair mean angles. This measures prototype
+coverage, not the full distribution of learned image embeddings.
+
+The spherical-null diagnostic uses common random directions (`--seed 20261004`,
+`--null-samples 8192` by default), unit prototypes, the cosine-to-z transform and
+zero bias for every treatment. It is an angular reference comparison, **not**
+the actual unnormalized head's BatchNorm/bias forward pass. Hard class occupancy,
+mean softmax mass and plug-in Monte Carlo standard errors are retained; the default
+sample size gives coarse occupancy estimates for 512 classes. Duplicate/tied
+prototypes are rejected rather than assigning all tied wins to the first class.
+
+Each run writes `summary.json`, `classes.csv`, `confusion_flows.csv`,
+`reliability.csv` and `error_pairs.csv`. Top-level `report.json`, `factorial.json`
+and `provenance.json` retain run identities, split, source/artifact hashes,
+analysis settings and package versions. The plotting command consumes only these
+tables and records their hashes. It does not refit metrics or load models.
+Correlations near ceiling recall require inspection of support, ties and the
+frequency-stratified plots; neither correlation nor error-flow changes alone
+identify a causal mechanism. Seed variation and Monte Carlo uncertainty are
+distinct from finite-validation-set uncertainty.
+
 ## Optional API pilot
 
 The external [ucloud-api wrapper](https://github.com/GuillaumeMougeot/ucloud-api)

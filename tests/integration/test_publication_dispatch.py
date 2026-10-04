@@ -158,6 +158,7 @@ def test_factorial_detects_pure_interaction_with_zero_marginal_effects():
     nr = [x for x in effects if x["factors"] == ["normalization", "regularization"] and x["condition"]]
     assert next(x["difference"] for x in nr if x["metric"] == "macro_recall" and x["condition"] == {"emla": 1}) == pytest.approx(0.04)
     assert next(x["difference"] for x in nr if x["metric"] == "macro_recall" and x["condition"] == {"emla": 0}) == pytest.approx(-0.04)
+    assert study.factorial_contrasts(rows, metrics=("tail_recall",)) == [x for x in effects if x["metric"] == "tail_recall"]
     assert study.factorial_contrasts([r for r in rows if r["variant"] != "full"]) == []
     next(r for r in rows if r["variant"] == "full")["split"] = "test"
     with pytest.raises(ValueError, match="differ in split"):

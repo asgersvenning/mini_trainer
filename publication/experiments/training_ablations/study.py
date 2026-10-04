@@ -5,6 +5,7 @@ import fcntl
 import importlib.metadata
 import itertools
 import json
+import math
 import os
 import random
 import signal
@@ -348,7 +349,7 @@ def qualify(root, config, devices, deadline, retry):
         return
 
 
-def factorial_contrasts(rows):
+def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll")):
     """Equal-cell marginal and conditional finite differences, separately by seed."""
     factors = ("normalization", "regularization", "emla")
     result = []
@@ -369,7 +370,9 @@ def factorial_contrasts(rows):
                 for context in contexts:
                     selected = {k: r for k, r in cells.items() if context is None or tuple(k[i] for i in other) == context}
                     divisor = 2 ** len(other) if context is None else 1
-                    for metric in ["macro_recall", "tail_recall", "nll"]:
+                    for metric in metrics:
+                        if any(r[metric] is None or not math.isfinite(r[metric]) for r in selected.values()):
+                            continue
                         value = sum((-1) ** (order - sum(k[i] for i in axes)) * r[metric] for k, r in selected.items()) / divisor
                         result.append(
                             {
