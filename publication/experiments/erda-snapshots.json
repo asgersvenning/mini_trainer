@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "root": "/publications/hierarchical_classification",
-  "read_base_url": null,
+  "read_base_url": "https://anon.erda.au.dk/share_redirect/GbBZgO8E0l",
   "upload": "sftp erda (maintainer only)",
   "snapshots": [
     {
