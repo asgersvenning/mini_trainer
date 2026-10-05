@@ -30,8 +30,8 @@ if [[ ! -x .venv/bin/python ]]; then
 fi
 
 if [[ "$mode" == static || "$mode" == all ]]; then
-    .venv/bin/python -m ruff check mini_trainer tests dev
-    .venv/bin/python -m ruff format --check --diff mini_trainer tests dev
+    .venv/bin/python -m ruff check mini_trainer tests dev publication
+    .venv/bin/python -m ruff format --check --diff mini_trainer tests dev publication
     .venv/bin/lint-imports
 fi
 

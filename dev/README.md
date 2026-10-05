@@ -28,7 +28,7 @@ bash dev/check-wheel.sh
 `static` checks Ruff formatting/lint and import contracts without importing the
 package. `test` forwards arguments to pytest; `all` runs static checks before tests.
 The harness also works by absolute path. Apply formatting with
-`.venv/bin/python -m ruff format mini_trainer tests dev`.
+`.venv/bin/python -m ruff format mini_trainer tests dev publication`.
 
 Tests hide CUDA and use a headless plotting backend by default. Set
 `CUDA_VISIBLE_DEVICES=0` for intentional GPU checks; some also require
