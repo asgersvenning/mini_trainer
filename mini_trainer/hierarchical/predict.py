@@ -35,7 +35,7 @@ def cli(description: str = "Predict with a trained hierarchical model", **extra_
     if head is not None:
         kwargs["model_builder_kwargs"]["cls"] = head
     kwargs["builder"] = HierarchicalBuilder
-    if kwargs["collector_cls"] is not RawResultCollector:
+    if not issubclass(kwargs["collector_cls"], RawResultCollector):
         kwargs["collector_cls"] = HierarchicalResultCollector
     return kwargs
 
