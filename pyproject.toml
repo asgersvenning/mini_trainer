@@ -75,9 +75,9 @@ dev = [
     "pytest-cov>=5.0.0",
     "import-linter>=2.0",
 ]
-# Publication metrics: mini_metrics 0.4.0 (Python 3.13+) is not on PyPI, so pin its frozen commit.
+# Publication metrics: mini_metrics 0.4.1 (Python 3.13+) is not on PyPI, so pin its frozen commit.
 metrics = [
-    "mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@a78e91be9e0543e8b3b10d94e59aed838c3ab9d4 ; python_version >= '3.13'",
+    "mini_metrics @ git+https://github.com/GuillaumeMougeot/mini_metrics.git@61db37319fa54ec26e7ffb0d5efc06bf0e3a575d ; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]
