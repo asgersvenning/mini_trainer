@@ -156,13 +156,11 @@ not include model checkpoints or the original Global Lepidoptera prediction CSVs
 Keep later complete reports and optional models in new versioned snapshots.
 A public read-only download link has not yet been established.
 
-`training-ablations-20261005-v1/` (`.tar.zst` with `SHA256SUMS`) holds the
-validation-only PlantNet replication, hierarchy and lower-support cohorts. Its
-bundled analysis code equals commit `77ce436`. Its README names `d830d85` as the
-training revision of every cohort; each cohort's `prepared.json` is authoritative:
-`plantnet-16` `d830d85`, `hierarchy-14` `22afe03`, `support-16` `dc16d36`. Snapshots
-are iterated toward one frozen final results record; the separately developed R
-analysis will consume that record and be added here for reproducibility.
+[erda-snapshots.json](erda-snapshots.json) records each published snapshot's commits,
+manifest hash, studies and splits; it and each snapshot's own configs and manifests are
+authoritative over bundle READMEs. Snapshots are iterated toward one frozen final
+results record; the separately developed R analysis will consume that record and be
+added here for reproducibility.
 
 [evidence.py](evidence.py) exports completed cohorts (`study/` plus optional `analysis/`)
 into that record's layout: `catalog.csv` selects files, `runs.parquet` holds per-run

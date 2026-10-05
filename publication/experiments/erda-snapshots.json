@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "root": "/publications/hierarchical_classification",
+  "access": "sftp erda",
+  "snapshots": [
+    {
+      "name": "evidence-20261004-f50f668",
+      "kind": "historical evidence bundle"
+    },
+    {
+      "name": "training-ablations-20261005-v1",
+      "kind": "ablation analysis bundle",
+      "archive": "training-ablations-20261005-v1.tar.zst",
+      "archive_sha256": "7978e0a95ef8b97473fcc98b76a941b22c9ef003c303aa4a138e0092323428a3",
+      "analysis_commit": "77ce436",
+      "training_commits": {
+        "plantnet-16": "d830d85",
+        "hierarchy-14": "22afe03",
+        "support-16": "dc16d36"
+      }
+    },
+    {
+      "name": "evidence-20261005-a60614d",
+      "kind": "tidy evidence snapshot",
+      "export_commit": "a60614d6dd22dd666a7312685d2f1a4088e28439",
+      "manifest_sha256": "8bdfdac3b7d55716170f8b43303c24e1a3e876bc264c9b510036e7661caa8e97",
+      "files": 161,
+      "bytes": 11551420215,
+      "studies": [
+        "duration-12",
+        "factorial-11",
+        "hierarchy-14",
+        "overnight-12",
+        "plantnet-16",
+        "support-16"
+      ],
+      "runs": 52,
+      "splits": [
+        "validation"
+      ]
+    }
+  ]
+}

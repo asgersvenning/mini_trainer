@@ -28,6 +28,7 @@
 !/dev/ucloud/*.json
 !/publication/experiments/training_ablations/config.json
 !/publication/experiments/training_ablations/hierarchy.json
+!/publication/experiments/erda-snapshots.json
 examples/test.ipynb
 !/.github/workflows/*.yml
 !conda.yaml
