@@ -138,3 +138,16 @@ def test_inference_streams_native_rank_outputs_and_embeddings(tmp_path, monkeypa
     index = pq.read_table(out / "index.parquet").to_pandas()
     assert index.path.tolist() == paths and index.label_1.tolist() == [0, 1, 0]
     assert json.loads((out / "classes.json").read_text())["1"] == {"g": 0, "h": 1}
+
+
+def test_hierarchical_cli_keeps_raw_collector_subclasses(tmp_path, monkeypatch):
+    from mini_trainer.hierarchical.integration import HierarchicalResultCollector
+    from mini_trainer.hierarchical.predict import cli as hierarchical_cli
+    from mini_trainer.logging import ParquetResultCollector
+
+    config = tmp_path / "config.yaml"
+    config.write_text("input: images\nweights: model.pt\ncollector_cls: mini_trainer.logging.collector.ParquetResultCollector\n")
+    monkeypatch.setattr("sys.argv", ["mt_hpredict", "--config", str(config), "--head", "conditional"])
+    assert hierarchical_cli()["collector_cls"] is ParquetResultCollector
+    config.write_text("input: images\nweights: model.pt\n")
+    assert hierarchical_cli()["collector_cls"] is HierarchicalResultCollector
