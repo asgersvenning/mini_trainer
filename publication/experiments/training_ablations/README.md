@@ -1021,7 +1021,12 @@ python -m publication.experiments.training_ablations.support_sensitivity \
 
 The script verifies both analyses against their prepared-study hashes, checks
 identical class definitions and validation sample IDs/labels/taxonomy, and rejects
-recipe or seed mismatches. It writes per-seed support effects and hierarchy-by-support
+recipe or seed mismatches. It also rejects differences in the recorded trainer source,
+lockfile or torch/CUDA versions, and records both training commits and any differing
+publication scripts. Between `hierarchy-14` (`22afe03`) and `support-16` (`dc16d36`) only
+those scripts differ: an observational gate logger (tested to preserve losses, gradients and
+RNG) and selecting the hierarchical head from `rank_weights`, which every run in both
+cohorts sets. It writes per-seed support effects and hierarchy-by-support
 difference-in-differences; two seeds remain descriptive replicates, not population
 uncertainty estimates.
 

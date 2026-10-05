@@ -299,3 +299,41 @@ def test_support_sensitivity_rejects_changed_held_out_rows():
     changed.loc[0, "sample_id"] = "image-b"
     with pytest.raises(ValueError, match="samples differ"):
         support_sensitivity.validate_evaluation_rows(rows, changed, "validation")
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("prepared", "source", "publication/script.py"), "changed", "validation samples differ"),
+        (("prepared", "source", "mini_trainer/train.py"), "changed", "Core training code"),
+        (("prepared", "environment", "torch"), "changed", "Core training code"),
+        (("classes", "num_classes"), 2, "Class vocabulary"),
+        (("analysis_provenance", "analysis_sha256"), "changed", "different code"),
+        (("endpoints", (support_sensitivity.VARIANTS[0], 42), "run", "lr"), 1.0, "Training recipes"),
+    ],
+)
+def test_support_comparison_accepts_only_publication_script_differences(path, value, message):
+    import pandas as pd
+
+    def cohort():
+        run = {"seed": 42, **dict.fromkeys(support_sensitivity.RUN_FIELDS, 0)}
+        return {
+            "classes": {"num_classes": 1},
+            "prepared": {
+                "source": {"mini_trainer/train.py": "a", "publication/script.py": "b"},
+                "environment": {"torch": "2", "cuda": "13"},
+            },
+            "analysis_provenance": {"analysis_sha256": "c", "contrast_code_sha256": "d"},
+            "plans": [run],
+            "endpoints": {(variant, 42): {"run": dict(run), "split": "validation"} for variant in support_sensitivity.VARIANTS},
+            "samples": pd.DataFrame(columns=["split", "sample_id", "label", "speciesKey", "genusKey", "familyKey"]),
+        }
+
+    limited = cohort()
+    target = limited
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    # Empty held-out rows make an otherwise accepted comparison stop at the sample check.
+    with pytest.raises(ValueError, match=message):
+        support_sensitivity.compare(cohort(), limited, None)

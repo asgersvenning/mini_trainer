@@ -11,6 +11,7 @@ from .analysis import verified
 from .data import digest, write_json
 
 VARIANTS = ("species_regularized", "hierarchy_regularized")
+BOOKKEEPING = {"n", "samples", "null_samples", "null_seed", "observed_classes"}
 RUN_FIELDS = ("normalized", "hidden", "regularization", "loss", "optimizer", "rank_weights", "lr", "weight_decay", "epochs", "screening")
 
 
@@ -30,6 +31,8 @@ def flattened(values, prefix=""):
         name = f"{prefix}.{key}" if prefix else key
         if isinstance(value, dict):
             result.update(flattened(value, name))
+        elif key in BOOKKEEPING:
+            continue
         elif isinstance(value, (int, float)) or value is None:
             result[name] = value
     return result
@@ -61,6 +64,8 @@ def load_cohort(study, analysis):
         if not attempts:
             raise ValueError(f"No retained run attempt: {run['id']}")
         attempt = attempts[-1]
+        if not (attempt / "complete.json").exists():
+            raise ValueError(f"Run attempt is not complete: {attempt}")
         manifest = json.loads((attempt / "complete.json").read_text())
         for filename in ("run.json", "evaluation.json", "predictions.npz"):
             verified(attempt / filename, manifest[filename])
@@ -145,6 +150,12 @@ def compare(full, limited, output):
     """Write paired support effects after strict held-out and recipe checks."""
     if full["classes"] != limited["classes"]:
         raise ValueError("Class vocabulary, ordering, taxonomy or training counts differ")
+    # Publication scripts may differ (e.g. observational logging); the trainer and environment may not.
+    left, right = full["prepared"]["source"], limited["prepared"]["source"]
+    source_differences = sorted(key for key in left.keys() | right.keys() if left.get(key) != right.get(key))
+    environments = [{key: cohort["prepared"]["environment"][key] for key in ("torch", "cuda")} for cohort in (full, limited)]
+    if environments[0] != environments[1] or any(not key.startswith("publication/") for key in source_differences):
+        raise ValueError("Core training code or environment differs between support cohorts")
     for key in ("analysis_sha256", "contrast_code_sha256"):
         if full["analysis_provenance"][key] != limited["analysis_provenance"][key]:
             raise ValueError("Support cohorts were analyzed with different code")
@@ -192,6 +203,8 @@ def compare(full, limited, output):
             "full_support_analysis_sha256": digest(full["analysis"] / "provenance.json"),
             "lower_support_analysis_sha256": digest(limited["analysis"] / "provenance.json"),
             "script_sha256": digest(Path(__file__)),
+            "training_commits": [full["prepared"]["git_commit"], limited["prepared"]["git_commit"]],
+            "publication_source_differences": source_differences,
             "evaluation_split": split,
             "identical_evaluation_samples": samples,
             "lower_unique_support_cap": json.loads((limited["study"] / "config.json").read_text()).get("train_support_cap"),
