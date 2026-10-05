@@ -1,42 +1,81 @@
 #!/usr/bin/env bash
-# Predict the test split of completed ablation studies, export one evidence snapshot and,
-# unless MT_UPLOAD=0, upload it to ERDA with the dedicated key from the secrets mount.
-# Arguments: REVISION NAME=STUDY_ROOT [NAME=STUDY_ROOT ...]. Reruns resume finished runs.
+# MT_STAGE=predict (GPU node): predict the test split of completed ablation studies, export one
+# evidence snapshot and upload it. MT_STAGE=bootstrap (CPU node): run the mini_metrics bootstrap
+# of that snapshot on all cores and upload it as a separate replicates folder. Uploads go to ERDA
+# with the dedicated key from the secrets mount unless MT_UPLOAD=0.
+# Arguments: REVISION NAME=STUDY_ROOT [NAME=STUDY_ROOT ...]. Reruns resume finished work.
 set -euo pipefail
 revision="$1"
 shift
+stage="${MT_STAGE:?Set MT_STAGE=predict or MT_STAGE=bootstrap}"
 root="/work/results/test-predictions-${revision:0:7}"
-snapshot="evidence-$(date +%Y%m%d)-${revision:0:7}"
 mkdir -p "$root/cohorts"
-exec > >(tee -a "$root/job.log") 2>&1
-trap 'printf "%s\n" "$?" > "$root/exit-code"' EXIT
+# Keep the first run's snapshot name so resumed and bootstrap jobs use the same snapshot.
+[[ -e "$root/snapshot-name" ]] || echo "evidence-$(date +%Y%m%d)-${revision:0:7}" > "$root/snapshot-name"
+snapshot="$(< "$root/snapshot-name")"
+exec > >(tee -a "$root/$stage.log") 2>&1
+trap 'printf "%s\n" "$?" > "$root/$stage.exit-code"' EXIT
 source /work/mini_trainer/publication/experiments/training_ablations/setup.sh
-nvidia-smi
-
-cohorts=()
-for spec in "$@"; do
-    name="${spec%%=*}" study="${spec#*=}"
-    cohort="$root/cohorts/$name"
-    mkdir -p "$cohort"
-    ln -sfn "$study" "$cohort/study"
-    python -m publication.experiments.training_ablations.study predict "$study" --output "$cohort/predictions"
-    cohorts+=("$cohort")
-done
-
-[[ ! -e "$root/$snapshot" ]] || { echo "Snapshot already exists: $root/$snapshot" >&2; exit 2; }
-python -m publication.experiments.evidence "$root/$snapshot" "${cohorts[@]}" \
-    --source-metadata /work/plantnet/plantnet300K_metadata.csv
-python -m publication.experiments.artifacts verify "$root/$snapshot/manifest.json" "$root/$snapshot"
-[[ "${MT_UPLOAD:-1}" == 1 ]] || { echo "Upload skipped: $root/$snapshot"; exit 0; }
 
 key="$(mktemp)"
-trap 'code=$?; rm -f "$key"; printf "%s\n" "$code" > "$root/exit-code"' EXIT
+trap 'code=$?; rm -f "$key"; printf "%s\n" "$code" > "$root/$stage.exit-code"' EXIT
 install -m 600 /work/mini-trainer-secrets/erda-upload-key "$key"
 erda=(sftp -F /dev/null -i "$key" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes
     -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/work/mini-trainer-secrets/erda-known-hosts
     -o GlobalKnownHostsFile=/dev/null -P 2222 -b - asgersvenning@ecos.au.dk@io.erda.au.dk)
-remote="/publications/hierarchical_classification/$snapshot"
-printf 'mkdir %s\nput -r %s/* %s/\n' "$remote" "$root/$snapshot" "$remote" | "${erda[@]}"
-printf 'get %s/manifest.json %s/uploaded-manifest.json\n' "$remote" "$root" | "${erda[@]}"
-cmp "$root/uploaded-manifest.json" "$root/$snapshot/manifest.json"
-echo "Uploaded $remote"
+upload() {  # Upload a verified folder once, to an immutable ERDA folder of the same name.
+    local folder="$1" remote
+    remote="/publications/hierarchical_classification/$(basename "$1")"
+    [[ "${MT_UPLOAD:-1}" == 1 ]] || { echo "Upload skipped: $folder"; return 0; }
+    [[ ! -e "$folder.uploaded" ]] || return 0
+    printf 'mkdir %s\nput -r %s/* %s/\n' "$remote" "$folder" "$remote" | "${erda[@]}"
+    printf 'get %s/manifest.json %s.remote-manifest.json\n' "$remote" "$folder" | "${erda[@]}"
+    cmp "$folder.remote-manifest.json" "$folder/manifest.json"
+    touch "$folder.uploaded"
+    echo "Uploaded $remote"
+}
+
+cohorts=()
+for spec in "$@"; do
+    cohorts+=("$root/cohorts/${spec%%=*}")
+done
+
+if [[ "$stage" == predict ]]; then
+    nvidia-smi
+    for spec in "$@"; do
+        cohort="$root/cohorts/${spec%%=*}"
+        mkdir -p "$cohort"
+        ln -sfn "${spec#*=}" "$cohort/study"
+        python -m publication.experiments.training_ablations.study predict "${spec#*=}" --output "$cohort/predictions"
+    done
+    if [[ ! -e "$root/$snapshot/manifest.json" ]]; then
+        rm -rf "${root:?}/$snapshot"
+        python -m publication.experiments.evidence "$root/$snapshot" "${cohorts[@]}" \
+            --source-metadata /work/plantnet/plantnet300K_metadata.csv
+    fi
+    python -m publication.experiments.artifacts verify "$root/$snapshot/manifest.json" "$root/$snapshot"
+    upload "$root/$snapshot"
+elif [[ "$stage" == bootstrap ]]; then
+    python -m publication.experiments.artifacts verify "$root/$snapshot/manifest.json" "$root/$snapshot"
+    # The metrics dependency group pins mini_metrics.
+    uv sync --project /work/mini_trainer --python 3.13 --frozen --extra recommended \
+        --extra "${MT_TORCH_BACKEND:-cu130}" --group metrics
+    replicates="$root/replicates-${snapshot#evidence-}"
+    mkdir -p "$replicates"
+    for cohort in "${cohorts[@]}"; do
+        out="$replicates/$(basename "$cohort")"
+        [[ -e "$out/resampling.json" ]] && continue
+        rm -rf "$out"
+        PYTHONHASHSEED=0 python -m publication.experiments.statistics.replicates "$root/$snapshot" "$(basename "$cohort")" \
+            "$out" --replicates "${MT_REPLICATES:-1000}" --workers "$(( $(nproc) - 4 ))" --chunk 10
+    done
+    if [[ ! -e "$replicates/manifest.json" ]]; then
+        (cd "$replicates" && find . -type f | sed 's#^\./##' | sort > "$root/replicate-files.txt")
+        python -m publication.experiments.artifacts create "$replicates" "$replicates/manifest.json" \
+            --files "$root/replicate-files.txt" --revision "$revision"
+    fi
+    upload "$replicates"
+else
+    echo "Unknown MT_STAGE: $stage" >&2
+    exit 2
+fi

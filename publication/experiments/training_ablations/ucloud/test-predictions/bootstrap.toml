@@ -1,7 +1,7 @@
-# Stage 1 (GPU): test-split predictions, evidence export and ERDA upload for all completed
-# ablation studies. bootstrap.toml runs stage 2 on a CPU node afterwards with the same arguments.
+# Stage 2 (CPU): mini_metrics bootstrap of the stage-1 evidence snapshot on all cores, uploaded to
+# ERDA as a separate replicates folder. Submit after job.toml has finished, with the same arguments.
 # Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
-name = "mini-trainer-test-predictions"
+name = "mini-trainer-test-bootstrap"
 replicas = 1
 ssh_enabled = false
 
@@ -10,12 +10,12 @@ name = "pytorch-te"
 version = "26.05"
 
 [product]
-id = "gpu-nvidia-b200-1-gpu"
-category = "gpu-nvidia-b200"
+id = "cpu-amd-zen5-128-vcpu"
+category = "cpu-amd-zen5"
 provider = "ucloud"
 
 [time_allocation]
-hours = 4
+hours = 6
 
 [[resources]]
 type = "file"
@@ -42,4 +42,4 @@ local = "publication/experiments/training_ablations/ucloud/test-predictions"
 remote = "/12348329/mini-trainer-ablations/test-predictions/test-predictions-bootstrap"
 
 [setup]
-run = "MT_STAGE=predict bash /work/test-predictions-bootstrap/run.sh REVIEWED_COMMIT factorial-11=/work/results/factorial-11/study overnight-12=/work/results/overnight-12/study duration-12=/work/results/overnight-12/duration hierarchy-14=/work/results/hierarchy-14/study support-16=/work/results/support-16/study plantnet-16=/work/results/plantnet-16/study"
+run = "MT_STAGE=bootstrap bash /work/test-predictions-bootstrap/run.sh REVIEWED_COMMIT factorial-11=/work/results/factorial-11/study overnight-12=/work/results/overnight-12/study duration-12=/work/results/overnight-12/duration hierarchy-14=/work/results/hierarchy-14/study support-16=/work/results/support-16/study plantnet-16=/work/results/plantnet-16/study"
