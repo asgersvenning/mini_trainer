@@ -75,3 +75,6 @@ Inspect and retain ignored reports before removal. Do not use `--force` to
 discard work. Branch deletion is a separate decision after integration.
 
 Agents must also follow the [worktree coordination rules](../.agents/rules/worktrees.md).
+The repository convention is `.worktrees/`; in Claude Code, create trees with the
+commands above and enter them with `EnterWorktree` by `path` rather than by `name`,
+which would create a second tree root under `.claude/worktrees/`.
