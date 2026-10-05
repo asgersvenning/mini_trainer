@@ -164,6 +164,17 @@ training revision of every cohort; each cohort's `prepared.json` is authoritativ
 are iterated toward one frozen final results record; the separately developed R
 analysis will consume that record and be added here for reproducibility.
 
+[evidence.py](evidence.py) exports completed cohorts (`study/` plus optional `analysis/`)
+into that record's layout: `catalog.csv` selects files, `runs.parquet` holds per-run
+factors and training commits, and `taxonomy/`, `images/`, full per-image species logits
+(`scores/`), `curves/` and convenience `aggregates/` are long Parquet tables keyed by
+`study`, `run_id`, `image_id` and `class_id`. It refuses runs whose logits do not reproduce
+their recorded accuracy and macro recall:
+
+```sh
+python -m publication.experiments.evidence NEW_SNAPSHOT COHORT [COHORT ...]
+```
+
 Retain three explicit artifact sets, with a manifest per set:
 
 | Set | Contents | What readers can reproduce |

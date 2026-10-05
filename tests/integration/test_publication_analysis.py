@@ -157,3 +157,30 @@ def test_epoch_dynamics_preserves_missing_support_and_artifact_provenance(tmp_pa
     assert np.isnan(frame.head_recall.iloc[0])
     provenance = json.loads((tmp_path / "curves/provenance.json").read_text())
     assert provenance["inputs"][run["id"]]["logs"][str(path.relative_to(attempt))] == digest(path)
+
+
+def test_evidence_snapshot_keeps_planned_runs_and_reproduces_evaluation(tmp_path):
+    from publication.experiments.evidence import export
+
+    (tmp_path / "cohort").mkdir()
+    study = tmp_path / "cohort/study"
+    attempt = artifact_fixture(study)
+    planned = [{**json.loads((attempt / "run.json").read_text()), "id": "full_seed42"}, {"variant": "ce", "seed": 42, "id": "ce_seed42"}]
+    write_json(study / "plan.json", planned)
+    write_json(study / "config.json", {"screening": True})
+    write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 1.0, "macro_recall": 1.0})
+    marker = json.loads((attempt / "complete.json").read_text())
+    write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})
+
+    catalog = export([tmp_path / "cohort"], tmp_path / "snapshot")
+    runs = pd.read_parquet(tmp_path / "snapshot/runs.parquet").set_index("run_id")
+    assert runs.status.to_dict() == {"full_seed42": "complete", "ce_seed42": "not_started"}
+    scores = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "scores", "path"].item())
+    np.testing.assert_array_equal(scores[["c0", "c1", "c2"]].to_numpy(), np.eye(3))
+    manifest = json.loads((tmp_path / "snapshot/manifest.json").read_text())["files"]
+    assert set(manifest) == set(catalog.path) | {"catalog.csv", "schemas.json", "README.md"}
+
+    write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 0.5, "macro_recall": 1.0})
+    write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})
+    with pytest.raises(ValueError, match="do not reproduce"):
+        export([tmp_path / "cohort"], tmp_path / "corrupt")
