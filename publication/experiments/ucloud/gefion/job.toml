@@ -1,0 +1,54 @@
+# Gefion backbone x head checkpoints: test-set (and Flemming) predictions, export and ERDA upload.
+# Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
+name = "mini-trainer-gefion-predictions"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "gpu-nvidia-b200-1-gpu"
+category = "gpu-nvidia-b200"
+provider = "ucloud"
+
+[time_allocation]
+hours = 12
+
+[[resources]]
+type = "file"
+path = "/12383016/global_lepi"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/datasets/plantnet"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/datasets/flemming"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/gefion-transfer"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/ucloud/gefion"
+remote = "/12348329/mini-trainer-ablations/gefion-predictions/gefion-bootstrap"
+
+[setup]
+run = "bash /work/gefion-bootstrap/run.sh REVIEWED_COMMIT"

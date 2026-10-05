@@ -17,23 +17,8 @@ exec > >(tee -a "$root/$stage.log") 2>&1
 trap 'printf "%s\n" "$?" > "$root/$stage.exit-code"' EXIT
 source /work/mini_trainer/publication/experiments/training_ablations/setup.sh
 
-key="$(mktemp)"
-trap 'code=$?; rm -f "$key"; printf "%s\n" "$code" > "$root/$stage.exit-code"' EXIT
-install -m 600 /work/mini-trainer-secrets/erda-upload-key "$key"
-erda=(sftp -F /dev/null -i "$key" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes
-    -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/work/mini-trainer-secrets/erda-known-hosts
-    -o GlobalKnownHostsFile=/dev/null -P 2222 -b - asgersvenning@ecos.au.dk@io.erda.au.dk)
-upload() {  # Upload a verified folder once, to an immutable ERDA folder of the same name.
-    local folder="$1" remote
-    remote="/publications/hierarchical_classification/$(basename "$1")"
-    [[ "${MT_UPLOAD:-1}" == 1 ]] || { echo "Upload skipped: $folder"; return 0; }
-    [[ ! -e "$folder.uploaded" ]] || return 0
-    printf 'mkdir %s\nput -r %s/* %s/\n' "$remote" "$folder" "$remote" | "${erda[@]}"
-    printf 'get %s/manifest.json %s.remote-manifest.json\n' "$remote" "$folder" | "${erda[@]}"
-    cmp "$folder.remote-manifest.json" "$folder/manifest.json"
-    touch "$folder.uploaded"
-    echo "Uploaded $remote"
-}
+trap 'code=$?; rm -f "${erda_key:-}"; printf "%s\n" "$code" > "$root/$stage.exit-code"' EXIT
+source /work/mini_trainer/publication/experiments/ucloud/erda.sh
 
 cohorts=()
 for spec in "$@"; do

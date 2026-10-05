@@ -28,7 +28,13 @@ RUN_SETTINGS = ("size", "dtype", "batch_size")
 TRAINING = ("wall_seconds", "images_per_second_including_validation_and_logging", "peak_allocated_bytes")
 
 
+RANK_KEYS = ("speciesKey", "genusKey", "familyKey", "orderKey", "classKey")
+RANK_NAMES = ("species", "genus", "family", "order", "class")
+
+
 def dataset_name(config):
+    if "dataset" in config:
+        return config["dataset"]
     return "plantnet300k" if "data_index" in config else "global_lepidoptera"
 
 
@@ -77,9 +83,14 @@ def export_cohort(cohort, output, source_metadata=None):
     for column in ("observation_id", "scientificName"):
         if column not in samples:
             samples[column] = pd.Series(dtype="string", index=samples.index)
-    # Source names can vary within a species; keep its first name as a label only.
-    taxonomy = samples[["class_id", "speciesKey", "genusKey", "familyKey"]].drop_duplicates().sort_values("class_id")
-    taxonomy["scientificName"] = taxonomy.class_id.map(samples.groupby("class_id").scientificName.first())
+    ranks = [key for key in RANK_KEYS if key in samples]
+    if "taxonomy" in classes:  # The vocabulary's own taxonomy; evaluated images may miss or exceed it.
+        rows = [[index, *path] for index, path in enumerate(classes["taxonomy"].values())]
+        taxonomy = pd.DataFrame(rows, columns=["class_id", *RANK_KEYS[: len(rows[0]) - 1]])
+        taxonomy["scientificName"] = pd.Series(dtype="string")
+    else:  # Source names can vary within a species; keep its first name as a label only.
+        taxonomy = samples[["class_id", *ranks]].drop_duplicates().sort_values("class_id")
+        taxonomy["scientificName"] = taxonomy.class_id.map(samples.groupby("class_id").scientificName.first())
     if taxonomy.class_id.tolist() != list(range(len(classes["counts"]))):
         raise ValueError(f"Taxonomy does not cover the class ordering: {name}")
     taxonomy = taxonomy.assign(
@@ -87,7 +98,7 @@ def export_cohort(cohort, output, source_metadata=None):
     )
     write(taxonomy, "taxonomy", "taxonomy")
     # Training rows of capped-support cohorts are draws, so image_id repeats there.
-    image_columns = ["image_id", "split", "class_id", "speciesKey", "genusKey", "familyKey", "observation_id"]
+    image_columns = ["image_id", "split", "class_id", *ranks, "observation_id"]
     write(samples[image_columns].assign(study=name), "images", "images")
 
     qualified = study / "qualified.json"
@@ -129,7 +140,13 @@ def export_cohort(cohort, output, source_metadata=None):
             raise ValueError(f"Species indices differ from the prepared class order: {run['id']}")
         index = pq.read_table(predicted / "index.parquet").to_pandas()
         selected = samples[samples.split == record["split"]]
-        aligned = np.array_equal(index.path, selected.image_id) and np.array_equal(index.label_0, selected.class_id)
+        # Labels are class indices (ablations) or species keys (Gefion data indexes).
+        truth = selected.class_id if pd.api.types.is_integer_dtype(index.label_0) else selected.speciesKey
+        # Stored paths are image IDs (ablations) or full paths ending in them (mt_predict).
+        ids = selected.image_id.to_numpy().astype(str)
+        paths = index.path.to_numpy().astype(str)
+        same_images = len(paths) == len(ids) and all(p == i or p.endswith("/" + i) for p, i in zip(paths, ids))
+        aligned = same_images and np.array_equal(index.label_0.astype(str), truth.astype(str))
         if not aligned or index.row.tolist() != list(range(len(index))):
             raise ValueError(f"Predictions are not aligned with the prepared split: {run['id']}")
         # rank-<r> holds float16 log-probabilities of each native output rank; embeddings the head input.
@@ -141,7 +158,7 @@ def export_cohort(cohort, output, source_metadata=None):
                 if not np.array_equal(rows, np.arange(expected, expected + len(rows))):
                     raise ValueError(f"Shard rows are not contiguous: {shard}")
                 identity = [pa.array([name] * len(rows)).dictionary_encode(), pa.array([run["id"]] * len(rows)).dictionary_encode()]
-                identity.append(pa.array(index.path.to_numpy()[rows]))
+                identity.append(pa.array(ids[rows]))
                 values = table.drop_columns(["row"])
                 shards.append(pa.table(identity + values.columns, names=["study", "run_id", "image_id", *values.column_names]))
                 expected += len(rows)
@@ -168,10 +185,10 @@ def export_cohort(cohort, output, source_metadata=None):
             metrics = json.loads((analysis / "summary.json").read_text())["metrics"]
             aggregates.setdefault("summary", []).append(pd.json_normalize(metrics).assign(study=name, run_id=run["id"]))
     if rank_classes:
-        rows = [(name, int(rank), index, key) for rank, mapping in rank_classes.items() for key, index in mapping.items()]
-        write(
-            pd.DataFrame(rows, columns=["study", "rank", "class_index", "key"]).sort_values(["rank", "class_index"]), "taxonomy", "classes"
-        )
+        rank_names = classes.get("rank_names", RANK_NAMES)
+        rows = [(name, int(r), rank_names[int(r)], index, key) for r, mapping in rank_classes.items() for key, index in mapping.items()]
+        columns = ["study", "rank", "rank_name", "class_index", "key"]
+        write(pd.DataFrame(rows, columns=columns).sort_values(["rank", "class_index"]), "taxonomy", "classes")
     if confusions:
         write(pd.concat(confusions, ignore_index=True), "curves", "epoch_confusion")
     if learning:
