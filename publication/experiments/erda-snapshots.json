@@ -1,7 +1,8 @@
 {
   "schema": 1,
   "root": "/publications/hierarchical_classification",
-  "access": "sftp erda",
+  "read_base_url": null,
+  "upload": "sftp erda (maintainer only)",
   "snapshots": [
     {
       "name": "evidence-20261004-f50f668",
