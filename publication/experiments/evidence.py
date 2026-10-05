@@ -81,6 +81,8 @@ def export_cohort(cohort, output):
     runs, aggregates = [], {}
     for run in json.loads((study / "plan.json").read_text()):
         row = {"study": name, "dataset": dataset, "run_id": run["id"], "git_commit": prepared.get("git_commit")}
+        # Equal hashes mark studies that share classes and images, so R can pair them.
+        row |= {"classes_sha256": prepared["files"]["classes.json"], "samples_sha256": prepared["files"]["samples.parquet"]}
         row |= {key: json.dumps(value) if isinstance(value, (list, dict)) else value for key, value in run.items() if key != "id"}
         attempts = sorted((study / "runs" / run["id"]).glob("attempt-*"))
         complete = attempts and (attempts[-1] / "complete.json").exists()
