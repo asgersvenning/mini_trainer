@@ -5,6 +5,7 @@ export PATH="$HOME/.local/bin:$PATH"
 export PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 index="${1:?Specify node index}"
 revision="${2:?Specify reviewed repository commit}"
+[[ "$revision" =~ ^[0-9a-f]{7,40}$ ]] || { echo "Not a commit hash: $revision" >&2; exit 2; }
 started="$(date +%s)"
 root=/work/results/support-16
 mkdir -p "$root"
@@ -17,4 +18,5 @@ git clone https://github.com/asgersvenning/mini_trainer.git /work/mini_trainer
 git -C /work/mini_trainer checkout --detach "$revision"
 source /work/mini_trainer/publication/experiments/training_ablations/setup.sh
 export WANDB_API_KEY="$(< /work/mini-trainer-secrets/wandb-api-key)"
-python /work/support-bootstrap/coordinate.py "$index" "$started"
+# Run the coordinator from the pinned clone, not the synced working copy.
+python /work/mini_trainer/publication/experiments/training_ablations/ucloud/support-16/coordinate.py "$index" "$started"

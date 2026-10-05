@@ -22,7 +22,8 @@ def study(*args):
 
 
 def wait_for(path):
-    deadline = time.monotonic() + 2400
+    # Any later start would fail the minimum-run-time check anyway.
+    deadline = time.monotonic() + (HOURS - MINIMUM_RUN_HOURS) * 3600
     while not path.exists():
         failures = [p.name for p in ROOT.glob("node-*.exit-code") if p.read_text().strip() not in ("", "0")]
         if failures:
@@ -61,7 +62,7 @@ def main(index, started):
             except BlockingIOError:
                 (ROOT / "lock-verified").write_text(json.dumps({"verified": True, "node": os.environ["HOSTNAME"]}))
             else:
-                raise RuntimeError("Cross-node exclusion failed; do not launch shared work")
+                raise RuntimeError("Cross-node lock was free: the owner exited or flock is not shared; check node logs")
         wait_for(ROOT / "ready")
 
     remaining = HOURS - (time.time() - float(started)) / 3600
