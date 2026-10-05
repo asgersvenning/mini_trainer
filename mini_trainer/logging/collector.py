@@ -1,5 +1,7 @@
 import json
 import os
+import shutil
+import tempfile
 from collections import defaultdict
 from itertools import repeat
 from types import GeneratorType
@@ -9,7 +11,7 @@ import numpy as np
 import torch
 
 from mini_trainer.integrations import id_to_name
-from mini_trainer.modeling import Prediction, classification_module
+from mini_trainer.modeling import EmbeddingContext, Prediction, classification_module
 from mini_trainer.training import named_confusion_matrix
 from mini_trainer.utils import write_csv_from_dict
 from mini_trainer.visualization import plot_heatmap
@@ -121,6 +123,78 @@ class RawResultCollector(_ResultsCollector):
         if os.path.isdir(dst):
             dst = os.path.join(dst, "predictions.pt")
         torch.save(self.data, dst)
+
+
+class ParquetResultCollector(RawResultCollector):
+    """Stream every rank's float16 log-probabilities, and optionally embeddings, to Parquet shards.
+
+    ``save(dst)`` writes ``rank-<r>/part-<k>.parquet`` with columns ``row, c0..cK`` (log-softmax of
+    each rank's native output), ``embeddings/part-<k>.parquet`` with ``row, e0..eD`` (the tensor the
+    head publishes through ``EmbeddingContext``), ``index.parquet`` with ``row, path`` and any
+    ``label_<r>`` columns, and ``classes.json`` with the model's class indices. Shards are buffered
+    in a temporary directory so memory stays bounded by ``shard_size`` rows.
+    """
+
+    def __init__(self, model: torch.nn.Module | None = None, embeddings: bool = True, shard_size: int = 8192, **kwargs):
+        try:
+            import pyarrow  # noqa: F401
+        except ImportError as error:
+            raise ImportError("ParquetResultCollector requires pyarrow. Install with `pip install mt-trainer[recommended]`.") from error
+        super().__init__()
+        self.embeddings, self.shard_size = embeddings, shard_size
+        self.cls2idx = classification_module(model).metadata.get("cls2idx") if model is not None else None
+        self._directory = tempfile.mkdtemp(prefix="mt-predictions-")
+        self._rows, self._shards, self._buffer, self._index = 0, 0, defaultdict(list), defaultdict(list)
+
+    def collect(self, paths=None, predictions=None, labels=None, **kwargs):
+        outputs = list(predictions) if isinstance(predictions, (list, tuple)) else [predictions]
+        for rank, output in enumerate(outputs):
+            self._buffer[f"rank-{rank}"].append(torch.log_softmax(output.float(), -1).to(torch.float16).cpu().numpy())
+        embeddings = EmbeddingContext.get() if self.embeddings else None
+        if embeddings is not None:
+            self._buffer["embeddings"].append(embeddings.detach().to(torch.float16).cpu().numpy())
+        count = len(outputs[0])
+        self._index["row"].extend(range(self._rows, self._rows + count))
+        self._index["path"].extend(paths if paths is not None else [None] * count)
+        if labels is not None and len(labels):
+            per_rank = zip(*labels) if isinstance(labels[0], (list, tuple)) else [labels]
+            for rank, values in enumerate(per_rank):
+                self._index[f"label_{rank}"].extend(values)
+        self._rows += count
+        if sum(len(part) for part in self._buffer["rank-0"]) >= self.shard_size:
+            self._flush()
+
+    def _flush(self):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        if not self._buffer["rank-0"]:
+            return
+        for name, parts in self._buffer.items():
+            values = np.concatenate(parts)
+            first = self._rows - len(values)
+            prefix = "e" if name == "embeddings" else "c"
+            columns = {"row": pa.array(np.arange(first, self._rows))}
+            columns |= {f"{prefix}{j}": pa.array(values[:, j]) for j in range(values.shape[1])}
+            os.makedirs(os.path.join(self._directory, name), exist_ok=True)
+            pq.write_table(pa.table(columns), os.path.join(self._directory, name, f"part-{self._shards:05d}.parquet"))
+        self._buffer.clear()
+        self._shards += 1
+
+    def save(self, dst: str, *args, **kwargs):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        self._flush()
+        os.makedirs(dst, exist_ok=True)
+        if os.listdir(dst):
+            raise FileExistsError(f"Prediction output directory is not empty: {dst}")
+        pq.write_table(pa.table(dict(self._index)), os.path.join(dst, "index.parquet"))
+        with open(os.path.join(dst, "classes.json"), "w") as handle:
+            json.dump(self.cls2idx, handle)
+        for name in sorted(os.listdir(self._directory)):
+            shutil.move(os.path.join(self._directory, name), os.path.join(dst, name))
+        shutil.rmtree(self._directory, ignore_errors=True)
 
 
 class BaseResultCollector(_ResultsCollector):

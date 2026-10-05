@@ -1,4 +1,4 @@
-from .collector import BaseResultCollector, RawResultCollector, _ResultsCollector
+from .collector import BaseResultCollector, ParquetResultCollector, RawResultCollector, _ResultsCollector
 from .core import BaseStatistic, MetricLogger, MultiLogger, _Logger, _Statistic
 from .tensorboard import TensorboardLogger
 from .wandb import WandbLogger
@@ -19,6 +19,7 @@ __all__ = [
     "MetricLogger",
     "MultiLogger",
     "RawResultCollector",
+    "ParquetResultCollector",
     "BaseResultCollector",
     "_ResultsCollector",
     "_Logger",
