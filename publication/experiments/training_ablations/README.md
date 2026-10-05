@@ -686,7 +686,9 @@ recall in training-frequency tertiles. Ties in tertiles follow frozen class orde
 Missing-support recalls are null and excluded from macro means, with support saved.
 
 `summarize` writes `results.csv`, `paired.json`, `paired-summary.json`, `summary.json`
-and `macro-recall.png` when main results exist. Seed points and paired mean/SD/range
+and `macro-recall.png` when main results exist. Expected main-run coverage follows
+the frozen `plan.json` (including deliberately targeted subsets), and paired summaries
+are grouped by both contrast and metric. Seed points and paired mean/SD/range
 are descriptive; three seeds are not strong significance evidence. Seed variability
 is distinct from finite-test-set uncertainty. Wall timing includes training-stage
 construction, validation, diagnostics and saving; it excludes environment setup and
@@ -1006,6 +1008,22 @@ at seeds 42/43. Pair each against the corresponding completed full-support runs 
 sensitivity to reduced unique tail data. This is a targeted interaction check, not a
 support dose-response or a second full factorial. Keep test evaluation reserved
 until the validation contrasts and analysis choices are frozen.
+
+Generate the cross-cohort validation contrasts only after running `analysis` on
+both studies:
+
+```bash
+python -m publication.experiments.training_ablations.support_sensitivity \
+  /path/to/hierarchy-14/study /path/to/support-16/study \
+  /path/to/hierarchy-14/analysis /path/to/support-16/analysis \
+  /path/to/new-support-comparison
+```
+
+The script verifies both analyses against their prepared-study hashes, checks
+identical class definitions and validation sample IDs/labels/taxonomy, and rejects
+recipe or seed mismatches. It writes per-seed support effects and hierarchy-by-support
+difference-in-differences; two seeds remain descriptive replicates, not population
+uncertainty estimates.
 
 The two single-GPU UCloud jobs share the prepared study root and claim runs through
 the existing cross-node lock protocol. Their fresh-node bootstrap installs `uv`,

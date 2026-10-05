@@ -562,12 +562,18 @@ def summarize(root):
                         }
                     )
     write_json(root / "paired.json", contrasts)
+    paired_groups = {}
+    for row in contrasts:
+        metric = row.get("metric", "macro_recall")
+        value = row.get("difference", row.get("macro_recall_difference"))
+        if value is not None:
+            paired_groups.setdefault((row["contrast"], metric), []).append(value)
     paired_summary = []
-    for name in sorted({row["contrast"] for row in contrasts if "macro_recall_difference" in row}):
-        values = [row["macro_recall_difference"] for row in contrasts if row["contrast"] == name]
+    for (name, metric), values in sorted(paired_groups.items()):
         paired_summary.append(
             {
                 "contrast": name,
+                "metric": metric,
                 "n": len(values),
                 "mean": float(np.mean(values)),
                 "seed_sd": float(np.std(values, ddof=1)) if len(values) > 1 else None,
@@ -588,11 +594,18 @@ def summarize(root):
         fig.tight_layout()
         fig.savefig(root / "macro-recall.png")
         plt.close(fig)
+    planned = (
+        [run for run in json.loads((root / "plan.json").read_text()) if run.get("variant")]
+        if (root / "plan.json").exists()
+        else None
+    )
     write_json(
         root / "summary.json",
         {
             "completed_main_runs": len(main),
-            "expected_main_runs": len(variants) * len(json.loads((root / "config.json").read_text())["seeds"]),
+            "expected_main_runs": len(planned)
+            if planned is not None
+            else len(variants) * len(json.loads((root / "config.json").read_text())["seeds"]),
             "interpretation": "Paired conditional effects; seed variation is not test-sample uncertainty. Incomplete runs remain visible.",
         },
     )

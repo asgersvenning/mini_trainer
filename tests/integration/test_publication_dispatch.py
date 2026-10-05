@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from publication.experiments.training_ablations import study
+from publication.experiments.training_ablations import study, support_sensitivity
 from publication.experiments.training_ablations.data import write_json
 
 
@@ -217,3 +217,85 @@ def test_hierarchy_factorial_preserves_conditional_effects_and_rejects_mismatche
     row["rank_weights"] = [0.5, 0.25, 0.25]
     with pytest.raises(ValueError, match="rank weights"):
         study.factorial_contrasts(rows, metrics=("score",))
+
+
+def test_campaign_summary_uses_frozen_subset_and_summarizes_each_metric(tmp_path):
+    config = {**study.DEFAULTS, "hierarchy": True, "seeds": [42, 43]}
+    write_json(tmp_path / "config.json", config)
+    runs = []
+    for seed, delta in [(42, 0.01), (43, -0.02)]:
+        for variant, hierarchy in [("species_regularized", False), ("hierarchy_regularized", True)]:
+            run = {
+                "id": f"{variant}_seed{seed}",
+                "variant": variant,
+                "seed": seed,
+                "rank_weights": [1.0, 0.0, 0.0] if not hierarchy else [1 / 3] * 3,
+                "normalized": True,
+                "regularization": True,
+                "loss": "emla",
+                "split": "validation",
+                "optimizer": "adamw",
+                "hidden": 0,
+                "lr": 0.001,
+                "weight_decay": 0.01,
+                "epochs": 10,
+            }
+            runs.append(run)
+            attempt = tmp_path / "runs" / run["id"] / "attempt-000"
+            attempt.mkdir(parents=True)
+            write_json(attempt / "run.json", run)
+            write_json(
+                attempt / "evaluation.json",
+                {"macro_recall": 0.5 + delta * hierarchy, "tail_recall": 0.3 + delta * hierarchy, "nll": 1.0 - delta * hierarchy},
+            )
+            write_json(attempt / "train.json", {"wall_seconds": 1})
+            write_json(attempt / "complete.json", {})
+    write_json(tmp_path / "plan.json", runs)
+
+    study.summarize(tmp_path)
+
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["completed_main_runs"] == summary["expected_main_runs"] == 4
+    paired = json.loads((tmp_path / "paired-summary.json").read_text())
+    macro = next(row for row in paired if row["contrast"] == "hierarchy - species (regularized)" and row["metric"] == "macro_recall")
+    tail = next(row for row in paired if row["contrast"] == "hierarchy - species (regularized)" and row["metric"] == "tail_recall")
+    nll = next(row for row in paired if row["contrast"] == "hierarchy - species (regularized)" and row["metric"] == "nll")
+    assert (macro["n"], macro["mean"]) == (2, pytest.approx(-0.005))
+    assert tail["mean"] == pytest.approx(-0.005)
+    assert nll["mean"] == pytest.approx(0.005)
+
+
+def test_support_sensitivity_pairs_seeds_and_uses_difference_in_differences():
+    full, limited = {}, {}
+    for seed, effect in [(42, 0.02), (43, -0.01)]:
+        for variant, base, interaction in [("species_regularized", 0.5, 0), ("hierarchy_regularized", 0.52, 0.03)]:
+            full[(variant, seed)] = {"macro_recall": base, "run": {}, "split": "validation"}
+            limited[(variant, seed)] = {"macro_recall": base - effect + interaction, "run": {}, "split": "validation"}
+    rows = support_sensitivity.effect_rows(full, limited)
+    by_seed = {row["seed"]: row for row in rows}
+    assert by_seed[42]["species_support_effect"] == pytest.approx(-0.02)
+    assert by_seed[42]["hierarchy_support_effect"] == pytest.approx(0.01)
+    assert by_seed[42]["hierarchy_x_support_difference_in_differences"] == pytest.approx(0.03)
+    assert by_seed[43]["hierarchy_x_support_difference_in_differences"] == pytest.approx(0.03)
+    with pytest.raises(ValueError, match="matching seeds"):
+        support_sensitivity.effect_rows(full, {key: value for key, value in limited.items() if key[1] == 42})
+
+
+def test_support_sensitivity_rejects_changed_held_out_rows():
+    import pandas as pd
+
+    rows = pd.DataFrame(
+        {
+            "split": ["validation", "train"],
+            "sample_id": ["image-a", "train-a"],
+            "label": [0, 0],
+            "speciesKey": ["s0", "s0"],
+            "genusKey": ["g0", "g0"],
+            "familyKey": ["f0", "f0"],
+        }
+    )
+    assert support_sensitivity.validate_evaluation_rows(rows, rows.copy(), "validation") == 1
+    changed = rows.copy()
+    changed.loc[0, "sample_id"] = "image-b"
+    with pytest.raises(ValueError, match="samples differ"):
+        support_sensitivity.validate_evaluation_rows(rows, changed, "validation")
