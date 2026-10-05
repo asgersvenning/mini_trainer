@@ -116,7 +116,7 @@ def test_inference_streams_native_rank_outputs_and_embeddings(tmp_path, monkeypa
     paths = ["one.jpg", "two.jpg", "three.jpg"]
     metadata = {"path": paths, "split": ["test"] * 3, "label": [[0, 0], [2, 1], [1, 0]]}
     monkeypatch.setattr(module, "get_metadata", lambda *args, **kwargs: metadata)
-    monkeypatch.setattr(module, "dump_resolved_config", lambda **kwargs: None)
+    # Keep the real config dump: it writes into the output folder before the collector saves.
     main(
         input=str(tmp_path),
         weights="unused",

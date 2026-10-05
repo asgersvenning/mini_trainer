@@ -187,8 +187,9 @@ class ParquetResultCollector(RawResultCollector):
 
         self._flush()
         os.makedirs(dst, exist_ok=True)
-        if os.listdir(dst):
-            raise FileExistsError(f"Prediction output directory is not empty: {dst}")
+        # Prediction writes its resolved config here first; refuse only to overwrite our outputs.
+        if any(os.path.exists(os.path.join(dst, name)) for name in ("index.parquet", "classes.json", "rank-0", "embeddings")):
+            raise FileExistsError(f"Prediction outputs already exist in {dst}")
         pq.write_table(pa.table(dict(self._index)), os.path.join(dst, "index.parquet"))
         with open(os.path.join(dst, "classes.json"), "w") as handle:
             json.dump(self.cls2idx, handle)
