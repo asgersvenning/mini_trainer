@@ -172,9 +172,7 @@ def prepare(config_path, root):
             raise ValueError(f"Invalid {key}")
     if config["workers"] < 0 or config["batch_size"] not in [32, 64, 128, 256, 512, 768]:
         raise ValueError("Nonnegative workers and batch size 32, 64, 128, 256, 512 or 768 required")
-    if config["train_support_cap"] is not None and (
-        not isinstance(config["train_support_cap"], int) or config["train_support_cap"] < 1
-    ):
+    if config["train_support_cap"] is not None and (not isinstance(config["train_support_cap"], int) or config["train_support_cap"] < 1):
         raise ValueError("train_support_cap must be a positive integer or null")
     if not isinstance(config["train_support_seed"], int):
         raise ValueError("train_support_seed must be an integer")
@@ -433,9 +431,7 @@ def factorial_contrasts(rows, metrics=("macro_recall", "tail_recall", "nll"), fa
             raise ValueError("Cannot mix targeted and original protocols")
         geometry = [r for r in rows if r.get("rank_weights") is None and r["loss"] == "emla"]
         hierarchy_rows = [
-            {**r, "rank_weights": r.get("rank_weights") or [1.0, 0.0, 0.0]}
-            for r in rows
-            if r["normalized"] and r["loss"] == "emla"
+            {**r, "rank_weights": r.get("rank_weights") or [1.0, 0.0, 0.0]} for r in rows if r["normalized"] and r["loss"] == "emla"
         ]
         return factorial_contrasts(geometry, metrics, ("normalization", "regularization")) + factorial_contrasts(
             hierarchy_rows, metrics, ("hierarchy", "regularization")
@@ -594,11 +590,7 @@ def summarize(root):
         fig.tight_layout()
         fig.savefig(root / "macro-recall.png")
         plt.close(fig)
-    planned = (
-        [run for run in json.loads((root / "plan.json").read_text()) if run.get("variant")]
-        if (root / "plan.json").exists()
-        else None
-    )
+    planned = [run for run in json.loads((root / "plan.json").read_text()) if run.get("variant")] if (root / "plan.json").exists() else None
     write_json(
         root / "summary.json",
         {

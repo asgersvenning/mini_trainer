@@ -282,9 +282,7 @@ def prepare_index(config, root):
     if missing:
         raise ValueError(f"Corrected dataset has {len(missing)} missing images; first: {missing[0]}")
     source_audit = audit_source_metadata(samples, config, root)
-    samples, support_reduction = lower_unique_support(
-        samples, table, config.get("train_support_cap"), config.get("train_support_seed", 0)
-    )
+    samples, support_reduction = lower_unique_support(samples, table, config.get("train_support_cap"), config.get("train_support_seed", 0))
     samples.to_parquet(root / "samples.parquet", index=False)
     write_json(
         root / "classes.json",

@@ -115,7 +115,10 @@ def effect_rows(full_endpoints, limited_endpoints):
         for metric in keys:
             if metric in {"run", "split"}:
                 continue
-            values = {variant: (full_endpoints[(variant, seed)].get(metric), limited_endpoints[(variant, seed)].get(metric)) for variant in VARIANTS}
+            values = {
+                variant: (full_endpoints[(variant, seed)].get(metric), limited_endpoints[(variant, seed)].get(metric))
+                for variant in VARIANTS
+            }
             if not all(value is not None and np.isfinite(value) for pair in values.values() for value in pair):
                 continue
             species_change = values["species_regularized"][1] - values["species_regularized"][0]
@@ -194,7 +197,8 @@ def compare(full, limited, output):
             "lower_unique_support_cap": json.loads((limited["study"] / "config.json").read_text()).get("train_support_cap"),
             "seeds": sorted(seeds),
             "treatments": list(VARIANTS),
-            "difference_convention": "lower unique support minus full support; hierarchy interaction is hierarchy effect minus species-only effect",
+            "difference_convention": "lower unique support minus full support; "
+            "hierarchy interaction is hierarchy effect minus species-only effect",
             "interpretation": "Seed-wise descriptive contrasts; two seeds do not establish population uncertainty.",
         },
     )
@@ -209,7 +213,9 @@ def main():
     parser.add_argument("lower_support_analysis", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    compare(load_cohort(args.full_study, args.full_analysis), load_cohort(args.lower_support_study, args.lower_support_analysis), args.output)
+    compare(
+        load_cohort(args.full_study, args.full_analysis), load_cohort(args.lower_support_study, args.lower_support_analysis), args.output
+    )
 
 
 if __name__ == "__main__":
