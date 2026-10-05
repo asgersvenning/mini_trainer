@@ -32,5 +32,8 @@ examples/test.ipynb
 !conda.yaml
 /local-evidence/
 /.worktrees/
+!/.claude/settings.json
+/.claude/settings.local.json
+/.claude/worktrees/
 /.venv
 /.venv-mambo-runtime/
