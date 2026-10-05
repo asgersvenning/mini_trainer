@@ -41,3 +41,39 @@ def test_evaluation_preserves_observations_and_per_rank_support(tmp_path, hierar
         suffix = f"_level{level}" if hierarchical else ""
         with Image.open(tmp_path / f"sample_confusion_matrix{suffix}.png") as image:
             image.verify()
+
+
+def test_parquet_collector_streams_log_probabilities_embeddings_and_labels(tmp_path):
+    pq = pytest.importorskip("pyarrow.parquet")
+    from mini_trainer.logging import ParquetResultCollector
+    from mini_trainer.modeling import EmbeddingContext
+
+    collector = ParquetResultCollector(shard_size=3)
+    torch.manual_seed(0)
+    batches = []
+    for start in (0, 4):
+        species, genus, embeddings = torch.randn(4, 5), torch.randn(4, 2), torch.nn.functional.normalize(torch.randn(4, 3), dim=1)
+        with EmbeddingContext():
+            EmbeddingContext.set(embeddings)
+            collector.collect(
+                paths=[f"{start + i}.jpg" for i in range(4)],
+                predictions=[species, genus],
+                labels=[[start + i, i % 2] for i in range(4)],
+            )
+        batches.append((species, genus, embeddings))
+    collector.save(str(tmp_path / "out"))
+
+    out = tmp_path / "out"
+    assert sorted(p.name for p in (out / "rank-0").iterdir()) == ["part-00000.parquet", "part-00001.parquet"]
+    index = pq.read_table(out / "index.parquet").to_pandas()
+    assert index.row.tolist() == list(range(8)) and index.path.tolist() == [f"{i}.jpg" for i in range(8)]
+    assert index.label_0.tolist() == list(range(8)) and index.label_1.tolist() == [0, 1] * 4
+    for name, position in (("rank-0", 0), ("rank-1", 1), ("embeddings", 2)):
+        table = pq.read_table(out / name).to_pandas().sort_values("row")
+        expected = torch.cat([batch[position] for batch in batches])
+        if name != "embeddings":
+            expected = torch.log_softmax(expected, -1)
+        values = torch.tensor(table.drop(columns="row").to_numpy(), dtype=torch.float32)
+        torch.testing.assert_close(values, expected, atol=2e-3, rtol=1e-3)  # float16 storage
+    with pytest.raises(FileExistsError):
+        ParquetResultCollector().save(str(out))

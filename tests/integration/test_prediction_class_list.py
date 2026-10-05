@@ -95,3 +95,46 @@ def test_inference_keeps_excluded_ground_truth(tmp_path, monkeypatch):
     report = json.loads((tmp_path / "run/class_filter.json").read_text())
     assert report["retained_count"] == 1
     assert len(report["sha256"]) == 64
+
+
+def test_inference_streams_native_rank_outputs_and_embeddings(tmp_path, monkeypatch):
+    pq = pytest.importorskip("pyarrow.parquet")
+    import mini_trainer.predict as module
+    from mini_trainer.logging import ParquetResultCollector
+
+    model, inputs = head(True), torch.randn(3, 4)
+
+    class Builder:
+        @staticmethod
+        def build_model(**kwargs):
+            return torch.nn.Sequential(model), lambda x: x
+
+        @staticmethod
+        def build_inference_dataloader(images, **kwargs):
+            return torch.utils.data.DataLoader(inputs, batch_size=2)
+
+    paths = ["one.jpg", "two.jpg", "three.jpg"]
+    metadata = {"path": paths, "split": ["test"] * 3, "label": [[0, 0], [2, 1], [1, 0]]}
+    monkeypatch.setattr(module, "get_metadata", lambda *args, **kwargs: metadata)
+    monkeypatch.setattr(module, "dump_resolved_config", lambda **kwargs: None)
+    main(
+        input=str(tmp_path),
+        weights="unused",
+        output=str(tmp_path),
+        name="run",
+        device="cpu",
+        dtype="float32",
+        builder=Builder,
+        collector_cls=ParquetResultCollector,
+        data_index="unused",
+    )
+    out = tmp_path / "run"
+    with torch.inference_mode():
+        expected = [torch.log_softmax(rank, -1) for rank in model(inputs)]
+        embeddings = model.preclassification(inputs)
+    for name, values in (("rank-0", expected[0]), ("rank-1", expected[1]), ("embeddings", embeddings)):
+        table = pq.read_table(out / name).to_pandas().sort_values("row").drop(columns="row")
+        torch.testing.assert_close(torch.tensor(table.to_numpy(), dtype=torch.float32), values, atol=2e-3, rtol=1e-3)
+    index = pq.read_table(out / "index.parquet").to_pandas()
+    assert index.path.tolist() == paths and index.label_1.tolist() == [0, 1, 0]
+    assert json.loads((out / "classes.json").read_text())["1"] == {"g": 0, "h": 1}
