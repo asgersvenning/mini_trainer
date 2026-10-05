@@ -174,6 +174,10 @@ def test_evidence_snapshot_keeps_planned_runs_and_aligned_predictions(tmp_path):
     write_json(study / "plan.json", [run, {"variant": "ce", "seed": 42, "id": "ce_seed42"}])
     write_json(study / "config.json", {})
     write_json(attempt / "train.json", {"wall_seconds": 1.0, "weights_sha256": "w"})
+    (attempt / "model/logs").mkdir(parents=True)
+    (attempt / "model/logs/learning.jsonl").write_text(
+        '{"epoch": 0, "phase": "train", "loss": 2.0}\n{"epoch": 0, "phase": "eval", "loss": 1.5}\n'
+    )
 
     def predict(paths, labels):
         output = tmp_path / "cohort/predictions/full_seed42"
@@ -199,6 +203,8 @@ def test_evidence_snapshot_keeps_planned_runs_and_aligned_predictions(tmp_path):
     classes = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "classes", "path"].item())
     assert classes.query("rank == 1").key.tolist() == ["g", "h"]
     assert pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "embeddings", "path"].item()).shape == (3, 5)
+    learning = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "learning", "path"].item())
+    assert learning[["run_id", "phase", "loss"]].values.tolist() == [["full_seed42", "train", 2.0], ["full_seed42", "eval", 1.5]]
     manifest = json.loads((tmp_path / "snapshot/manifest.json").read_text())["files"]
     assert set(manifest) == set(catalog.path) | {"catalog.csv", "schemas.json", "README.md", "uv.lock", "pyproject.toml"}
 

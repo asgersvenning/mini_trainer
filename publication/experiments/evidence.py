@@ -24,7 +24,6 @@ from .training_ablations.analysis import frequency_groups, verified
 from .training_ablations.data import digest, write_json
 
 SCHEMA_VERSION = 2
-CURVES = {"epochs", "learning"}
 RUN_SETTINGS = ("size", "dtype", "batch_size")
 TRAINING = ("wall_seconds", "images_per_second_including_validation_and_logging", "peak_allocated_bytes")
 
@@ -96,7 +95,7 @@ def export_cohort(cohort, output, source_metadata=None):
     settings |= {"backbone": prepared.get("pretrained_enum"), "num_classes": len(classes["counts"])}
     if qualified.exists():
         settings["batch_size"] = json.loads(qualified.read_text())["batch_size"]
-    runs, aggregates, confusions = [], {}, []
+    runs, aggregates, confusions, learning = [], {}, [], []
     rank_classes = {}
     report = cohort / "analysis" / "report.json"
     analysis_split = json.loads(report.read_text())["runs"][0]["split"] if report.exists() else None
@@ -157,10 +156,13 @@ def export_cohort(cohort, output, source_metadata=None):
             with np.load(path, allow_pickle=False) as data:
                 cells = {"true_class": data["rows"], "predicted_class": data["columns"], "count": data["counts"]}
             confusions.append(pd.DataFrame(cells).assign(study=name, run_id=run["id"], epoch=int(path.parents[1].name.split("-")[-1])))
+        log = attempt / "model/logs/learning.jsonl"
+        if log.exists():  # Raw per-epoch training/validation logs, one JSON record per line.
+            learning.append(pd.read_json(log, lines=True).assign(study=name, run_id=run["id"]))
         analysis = cohort / "analysis" / run["id"]
         for path in sorted(analysis.glob("*.csv")):
-            # Training curves are diagnostics; analyzer tables must describe the exported split.
-            if path.stem in CURVES or analysis_split == record["split"]:
+            # Analyzer tables must describe the exported split.
+            if analysis_split == record["split"]:
                 aggregates.setdefault(path.stem, []).append(pd.read_csv(path).assign(study=name, run_id=run["id"]))
         if (analysis / "summary.json").exists() and analysis_split == record["split"]:
             metrics = json.loads((analysis / "summary.json").read_text())["metrics"]
@@ -172,9 +174,11 @@ def export_cohort(cohort, output, source_metadata=None):
         )
     if confusions:
         write(pd.concat(confusions, ignore_index=True), "curves", "epoch_confusion")
+    if learning:
+        write(pd.concat(learning, ignore_index=True), "curves", "learning")
     # Analyzer-specific tables are auxiliary: derivable from scores or specific to these ablations.
     for kind, frames in aggregates.items():
-        write(pd.concat(frames, ignore_index=True), "curves" if kind in CURVES else "aux", kind)
+        write(pd.concat(frames, ignore_index=True), "aux", kind)
     return runs, catalog
 
 

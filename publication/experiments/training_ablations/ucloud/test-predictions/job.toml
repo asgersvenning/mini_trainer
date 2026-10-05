@@ -1,0 +1,44 @@
+# Test-split predictions, export and ERDA upload for all completed ablation studies.
+# Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
+name = "mini-trainer-test-predictions"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "gpu-nvidia-b200-1-gpu"
+category = "gpu-nvidia-b200"
+provider = "ucloud"
+
+[time_allocation]
+hours = 6
+
+[[resources]]
+type = "file"
+path = "/12383016/global_lepi"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/datasets/plantnet"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/training_ablations/ucloud/test-predictions"
+remote = "/12348329/mini-trainer-ablations/test-predictions/test-predictions-bootstrap"
+
+[setup]
+run = "bash /work/test-predictions-bootstrap/run.sh REVIEWED_COMMIT factorial-11=/work/results/factorial-11/study overnight-12=/work/results/overnight-12/study duration-12=/work/results/overnight-12/duration hierarchy-14=/work/results/hierarchy-14/study support-16=/work/results/support-16/study plantnet-16=/work/results/plantnet-16/study"
