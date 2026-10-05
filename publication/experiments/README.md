@@ -166,10 +166,13 @@ analysis will consume that record and be added here for reproducibility.
 
 [evidence.py](evidence.py) exports completed cohorts (`study/` plus optional `analysis/`)
 into that record's layout: `catalog.csv` selects files, `runs.parquet` holds per-run
-factors and training commits, and `taxonomy/`, `images/`, full per-image species logits
-(`scores/`), `curves/` and convenience `aggregates/` are long Parquet tables keyed by
-`study`, `run_id`, `image_id` and `class_id`. It refuses runs whose logits do not reproduce
-their recorded accuracy and macro recall:
+factors, settings and training commits, and `taxonomy/`, `images/`, full per-image species
+logits (`scores/`) and `curves/` (including sparse per-epoch confusions) are long Parquet
+tables keyed by `study`, `run_id`, `image_id` and `class_id`. Generic data that applies
+across datasets and experiments belongs in these core sets; analyzer- or ablation-specific
+tables (prototype geometry, flows, reliability) go in a joinable `aux/` set. It refuses runs
+whose logits do not reproduce their recorded accuracy and macro recall. `--source-metadata`
+adds PlantNet observation IDs from the source metadata:
 
 ```sh
 python -m publication.experiments.evidence NEW_SNAPSHOT COHORT [COHORT ...]

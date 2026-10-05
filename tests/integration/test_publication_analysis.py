@@ -168,6 +168,7 @@ def test_evidence_snapshot_keeps_planned_runs_and_reproduces_evaluation(tmp_path
     planned = [{**json.loads((attempt / "run.json").read_text()), "id": "full_seed42"}, {"variant": "ce", "seed": 42, "id": "ce_seed42"}]
     write_json(study / "plan.json", planned)
     write_json(study / "config.json", {"screening": True})
+    write_json(attempt / "train.json", {"wall_seconds": 1.0})
     write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 1.0, "macro_recall": 1.0})
     marker = json.loads((attempt / "complete.json").read_text())
     write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})
@@ -178,7 +179,7 @@ def test_evidence_snapshot_keeps_planned_runs_and_reproduces_evaluation(tmp_path
     scores = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "scores", "path"].item())
     np.testing.assert_array_equal(scores[["c0", "c1", "c2"]].to_numpy(), np.eye(3))
     manifest = json.loads((tmp_path / "snapshot/manifest.json").read_text())["files"]
-    assert set(manifest) == set(catalog.path) | {"catalog.csv", "schemas.json", "README.md"}
+    assert set(manifest) == set(catalog.path) | {"catalog.csv", "schemas.json", "README.md", "uv.lock", "pyproject.toml"}
 
     write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 0.5, "macro_recall": 1.0})
     write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})

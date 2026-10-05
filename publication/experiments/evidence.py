@@ -8,6 +8,7 @@ Every file carries its identifying columns; ``catalog.csv`` selects files and
 import argparse
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,13 +23,15 @@ from .training_ablations.data import digest, write_json
 
 SCHEMA_VERSION = 1
 CURVES = {"epochs", "learning"}
+RUN_SETTINGS = ("size", "dtype", "batch_size")
+TRAINING = ("wall_seconds", "images_per_second_including_validation_and_logging", "peak_allocated_bytes")
 
 
 def dataset_name(config):
     return "plantnet300k" if "data_index" in config else "global_lepidoptera"
 
 
-def export_cohort(cohort, output):
+def export_cohort(cohort, output, source_metadata=None):
     """Write one cohort's tables and return their catalog rows."""
     study, name = cohort / "study", cohort.name
     config = json.loads((study / "config.json").read_text())
@@ -38,9 +41,13 @@ def export_cohort(cohort, output):
     classes = json.loads((study / "classes.json").read_text())
     samples = pd.read_parquet(study / "samples.parquet")
     dataset = dataset_name(config)
+    if "gbifID" not in samples and source_metadata and config.get("source_metadata"):
+        # PlantNet images are named by their source hash; recover the observation from source metadata.
+        source = pd.read_csv(source_metadata, dtype=str, usecols=["PN_hash", "PN_observation_id"]).set_index("PN_hash")
+        samples["gbifID"] = samples.sample_id.map(lambda path: Path(path).stem).map(source.PN_observation_id)
     caveat = "validation-only screening" if config.get("screening") else ""
-    if "gbifID" not in samples:
-        caveat = "; ".join(filter(None, [caveat, "no observation ids"]))
+    if "gbifID" not in samples or samples.gbifID.isna().any():
+        caveat = "; ".join(filter(None, [caveat, "missing observation ids"]))
     catalog = []
 
     def write(table, set_, kind, run_id=None):
@@ -78,11 +85,16 @@ def export_cohort(cohort, output):
     image_columns = ["image_id", "split", "class_id", "speciesKey", "genusKey", "familyKey", "observation_id"]
     write(samples[image_columns].assign(study=name), "images", "images")
 
-    runs, aggregates = [], {}
+    qualified = study / "qualified.json"
+    settings = {key: config.get(key) for key in RUN_SETTINGS}
+    settings |= {"backbone": prepared.get("pretrained_enum"), "num_classes": len(classes["counts"])}
+    if qualified.exists():
+        settings["batch_size"] = json.loads(qualified.read_text())["batch_size"]
+    runs, aggregates, confusions = [], {}, []
     for run in json.loads((study / "plan.json").read_text()):
         row = {"study": name, "dataset": dataset, "run_id": run["id"], "git_commit": prepared.get("git_commit")}
         # Equal hashes mark studies that share classes and images, so R can pair them.
-        row |= {"classes_sha256": prepared["files"]["classes.json"], "samples_sha256": prepared["files"]["samples.parquet"]}
+        row |= settings | {"classes_sha256": prepared["files"]["classes.json"], "samples_sha256": prepared["files"]["samples.parquet"]}
         row |= {key: json.dumps(value) if isinstance(value, (list, dict)) else value for key, value in run.items() if key != "id"}
         attempts = sorted((study / "runs" / run["id"]).glob("attempt-*"))
         complete = attempts and (attempts[-1] / "complete.json").exists()
@@ -94,6 +106,8 @@ def export_cohort(cohort, output):
         manifest = json.loads((attempt / "complete.json").read_text())
         evaluation = json.loads(verified(attempt / "evaluation.json", manifest["evaluation.json"]).read_text())
         row |= {"attempt": attempt.name, "split": evaluation["split"]}
+        training = json.loads((attempt / "train.json").read_text())
+        row |= {key: training.get(key) for key in TRAINING}
         with np.load(verified(attempt / "predictions.npz", manifest["predictions.npz"]), allow_pickle=False) as data:
             logits, target, image_id = data["logits"], data["target"], data["sample_id"]
         selected = samples[samples.split == evaluation["split"]]
@@ -103,22 +117,36 @@ def export_cohort(cohort, output):
         recall = pd.Series(correct).groupby(target).mean()
         if not np.isclose(correct.mean(), evaluation["accuracy"]) or not np.isclose(recall.mean(), evaluation["macro_recall"]):
             raise ValueError(f"Exported logits do not reproduce the recorded evaluation: {run['id']}")
-        columns = [pa.array([run["id"]] * len(target)).dictionary_encode(), pa.array(image_id)]
+        columns = [pa.array([name] * len(target)).dictionary_encode(), pa.array([run["id"]] * len(target)).dictionary_encode()]
+        columns.append(pa.array(image_id))
         columns += [pa.array(logits[:, j]) for j in range(logits.shape[1])]
-        write(pa.table(columns, names=["run_id", "image_id", *(f"c{j}" for j in range(logits.shape[1]))]), "scores", "scores", run["id"])
-        for path in sorted((cohort / "analysis" / run["id"]).glob("*.csv")):
+        names = ["study", "run_id", "image_id", *(f"c{j}" for j in range(logits.shape[1]))]
+        write(pa.table(columns, names=names), "scores", "scores", run["id"])
+        # Sparse per-epoch validation confusions recorded during training (AMP), one row per non-zero cell.
+        for path in sorted((attempt / "model/logs/figures").glob("epoch-*/Confusion_matrix_lvl0/counts.npz")):
+            with np.load(path, allow_pickle=False) as data:
+                cells = {"true_class": data["rows"], "predicted_class": data["columns"], "count": data["counts"]}
+            confusions.append(pd.DataFrame(cells).assign(study=name, run_id=run["id"], epoch=int(path.parents[1].name.split("-")[-1])))
+        analysis = cohort / "analysis" / run["id"]
+        for path in sorted(analysis.glob("*.csv")):
             aggregates.setdefault(path.stem, []).append(pd.read_csv(path).assign(study=name, run_id=run["id"]))
+        if (analysis / "summary.json").exists():
+            metrics = json.loads((analysis / "summary.json").read_text())["metrics"]
+            aggregates.setdefault("summary", []).append(pd.json_normalize(metrics).assign(study=name, run_id=run["id"]))
+    if confusions:
+        write(pd.concat(confusions, ignore_index=True), "curves", "epoch_confusion")
+    # Analyzer-specific tables are auxiliary: derivable from scores or specific to these ablations.
     for kind, frames in aggregates.items():
-        write(pd.concat(frames, ignore_index=True), "curves" if kind in CURVES else "aggregates", kind)
+        write(pd.concat(frames, ignore_index=True), "curves" if kind in CURVES else "aux", kind)
     return runs, catalog
 
 
-def export(cohorts, output):
+def export(cohorts, output, source_metadata=None):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     runs, catalog = [], []
     for cohort in cohorts:
-        cohort_runs, cohort_catalog = export_cohort(Path(cohort), output)
+        cohort_runs, cohort_catalog = export_cohort(Path(cohort), output, source_metadata)
         runs += cohort_runs
         catalog += cohort_catalog
     pq.write_table(pa.Table.from_pandas(pd.DataFrame(runs), preserve_index=False), output / "runs.parquet")
@@ -136,10 +164,13 @@ def export(cohorts, output):
     dirty = subprocess.run(["git", "-C", root, "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout
     revision += "-dirty" if dirty else ""
     lock = digest(root / "uv.lock")
+    for name in ("uv.lock", "pyproject.toml"):
+        shutil.copyfile(root / name, output / name)
     (output / "README.md").write_text(
         f"# Evidence snapshot\n\nExported by `publication.experiments.evidence` at `{revision}` (uv.lock sha256 `{lock}`).\n"
         "Select files with `catalog.csv`; join on `study`, `run_id`, `image_id` and `class_id`; per-run factors and the\n"
         "training commit are in `runs.parquet`, column types in `schemas.json`, checksums in `manifest.json`.\n"
+        "`aux/` holds analyzer-specific tables (prototype geometry, flows, reliability); core sets are generic.\n"
         "Scores are raw species logits (`c<class_id>`); genus/family scores aggregate them through `taxonomy/`.\n"
     )
     names = sorted(path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file())
@@ -151,8 +182,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("output", type=Path, help="New snapshot directory")
     parser.add_argument("cohorts", type=Path, nargs="+", help="Cohort directories containing study/ and optionally analysis/")
+    parser.add_argument("--source-metadata", type=Path, help="PlantNet metadata CSV with PN_hash and PN_observation_id")
     args = parser.parse_args()
-    export(args.cohorts, args.output)
+    export(args.cohorts, args.output, args.source_metadata)
 
 
 if __name__ == "__main__":
