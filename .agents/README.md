@@ -17,9 +17,10 @@ The root [AGENTS.md](../AGENTS.md) is the instruction entry point and takes prec
 | `local/` (ignored) | Scratch plans, logs, session state and temporary experiments | Only in the current local workflow |
 
 Start with `AGENTS.md`, then follow relevant links. Do not load every note or skill
-into every session. Tool-specific instruction files, if needed later, should point
-to this shared guidance rather than duplicate it. Do not assume a tool discovers
-arbitrary `.agents/rules/` files automatically.
+into every session. Tool-specific instruction files should point to this shared
+guidance rather than duplicate it: `CLAUDE.md` imports `AGENTS.md`, and
+`.claude/skills/` symlinks expose the tracked skills to Claude Code. Do not
+assume a tool discovers arbitrary `.agents/rules/` files automatically.
 Architecture and environment constraints remain in `AGENTS.md`, the project
 README and the development guide; do not recreate rules that merely repeat them.
 
