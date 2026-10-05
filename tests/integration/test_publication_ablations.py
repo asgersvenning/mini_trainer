@@ -289,6 +289,19 @@ def test_tiny_train_reload_evaluate(tmp_path, monkeypatch, hidden, optimizer, no
     assert result["backbone_parameters_changed"]
     assert sum(result["support"]) > 0
     assert np.isfinite(result["nll"])
+    training.export_predictions(root, attempt, config, run, tmp_path / "predicted", provenance={"source": "test"})
+    test_ids = pd.read_parquet(root / "samples.parquet").query("split == 'test'").sample_id.tolist()
+    index = pd.read_parquet(tmp_path / "predicted/index.parquet")
+    assert index.path.tolist() == test_ids and json.loads((tmp_path / "predicted/prediction.json").read_text())["split"] == "test"
+    ranks = sorted(p.name for p in (tmp_path / "predicted").glob("rank-*"))
+    assert ranks == (["rank-0", "rank-1", "rank-2"] if rank_weights is not None else ["rank-0"])
+    for name in ranks:
+        log_probabilities = pd.read_parquet(tmp_path / "predicted" / name).drop(columns="row").to_numpy(np.float64)
+        assert np.allclose(np.exp(log_probabilities).sum(1), 1, atol=1e-2)
+    embeddings = pd.read_parquet(tmp_path / "predicted/embeddings").drop(columns="row").to_numpy(np.float64)
+    assert len(embeddings) == len(test_ids)
+    if normalized:
+        assert np.allclose(np.linalg.norm(embeddings, axis=1), 1, atol=1e-2)
     if hidden and optimizer == "adamw" and normalized and rank_weights is None:
         import shutil
 

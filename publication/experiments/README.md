@@ -162,15 +162,15 @@ authoritative over bundle READMEs. Snapshots are iterated toward one frozen fina
 results record; the separately developed R analysis will consume that record and be
 added here for reproducibility.
 
-[evidence.py](evidence.py) exports completed cohorts (`study/` plus optional `analysis/`)
-into that record's layout: `catalog.csv` selects files, `runs.parquet` holds per-run
-factors, settings and training commits, and `taxonomy/`, `images/`, full per-image species
-logits (`scores/`) and `curves/` (including sparse per-epoch confusions) are long Parquet
-tables keyed by `study`, `run_id`, `image_id` and `class_id`. Generic data that applies
-across datasets and experiments belongs in these core sets; analyzer- or ablation-specific
-tables (prototype geometry, flows, reliability) go in a joinable `aux/` set. It refuses runs
-whose logits do not reproduce their recorded accuracy and macro recall. `--source-metadata`
-adds PlantNet observation IDs from the source metadata:
+[evidence.py](evidence.py) exports completed cohorts (`study/`, per-run `predictions/` written
+by `python -m publication.experiments.training_ablations.study predict STUDY --output DIR`,
+and optional `analysis/`) into that record's layout: `catalog.csv` selects files, `runs.parquet`
+holds per-run factors, settings and commits, and `taxonomy/` (including per-rank class indices),
+`images/`, float16 log-probabilities of every native output rank (`scores/`), head-input
+embeddings and `curves/` are Parquet tables keyed by `study`, `run_id`, `image_id` and class.
+Analyzer- or ablation-specific tables go in a joinable `aux/` set, and only when computed on the
+exported split. Predictions must match the planned run, checkpoint hash and prepared split
+order. `--source-metadata` adds PlantNet observation IDs from the source metadata:
 
 ```sh
 python -m publication.experiments.evidence NEW_SNAPSHOT COHORT [COHORT ...]

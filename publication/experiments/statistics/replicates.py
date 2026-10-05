@@ -34,8 +34,19 @@ PER_CLASS_METRICS = "^(accuracy|precision|recall|f1|coverage)$"
 PARENT_RULES = ("leaf_sum", "winner_ancestor")
 
 
+def native_predictions(scores, classes):
+    """Per-rank argmax and confidence from each rank's native log-probabilities."""
+    predictions, confidences = [], []
+    for rank, frame in enumerate(scores):
+        keys = classes[classes["rank"] == rank].sort_values("class_index").key.to_numpy()
+        log_probabilities = frame.filter(regex=r"^c\d+$").to_numpy(np.float32)
+        predictions.append(keys[log_probabilities.argmax(1)])
+        confidences.append(np.exp(log_probabilities.max(1)))
+    return np.stack(predictions, 1), np.stack(confidences, 1)
+
+
 def top1_predictions(scores, taxonomy, rule):
-    """Per-rank predictions and confidences from species logits.
+    """Per-rank predictions and confidences for a flat head from its species scores.
 
     ``leaf_sum`` sums species probabilities within each parent; it is the native parent
     output of the ablations' bottom-up HierarchicalClassifier. ``winner_ancestor`` maps the
@@ -171,15 +182,20 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
     )
 
     (output / "predictions").mkdir()
+    classes = pd.read_parquet(snapshot / files.loc["classes", "path"])
     tasks, parent_rules = [], {}
-    for run_id, rank_weights in zip(runs.run_id, runs.get("rank_weights", pd.Series([None] * len(runs)))):
-        scores = pd.read_parquet(snapshot / catalog.query("study == @study and kind == 'scores' and run_id == @run_id").path.item())
-        if not np.array_equal(scores.image_id.to_numpy(), images.image_id.to_numpy()):
+    for run_id in runs.run_id:
+        paths = catalog.query("study == @study and kind == 'scores' and run_id == @run_id").sort_values("rank").path
+        scores = [pd.read_parquet(snapshot / path) for path in paths]
+        if any(not np.array_equal(frame.image_id.to_numpy(), images.image_id.to_numpy()) for frame in scores):
             raise ValueError(f"Scores are not aligned with the study's evaluation images: {run_id}")
-        # Hierarchical heads have native parent outputs (leaf_sum); flat heads need a chosen rule.
-        rule = "leaf_sum" if isinstance(rank_weights, str) else flat_parent_rule
-        parent_rules[run_id] = "native_leaf_sum" if isinstance(rank_weights, str) else flat_parent_rule
-        predictions, confidences = top1_predictions(scores, taxonomy, rule)
+        # Hierarchical heads output every rank natively; a flat head's parents need a chosen rule.
+        if len(scores) == len(RANKS):
+            parent_rules[run_id] = "native"
+            predictions, confidences = native_predictions(scores, classes)
+        else:
+            parent_rules[run_id] = flat_parent_rule
+            predictions, confidences = top1_predictions(scores[0], taxonomy, flat_parent_rule)
         # Long table in the mini_metrics column layout: one row per image and rank.
         rows, ranks = np.indices(labels.shape)
         table = {"study": [study] * rows.size, "run_id": [run_id] * rows.size, "row": rows.ravel()}
@@ -220,7 +236,7 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
                 "weights": "int8 images x replicates; +k reporting draws, -k calibration draws",
                 "parent_rules": parent_rules,
                 "parent_rule_definitions": {
-                    "native_leaf_sum": "hierarchical head; its parent output sums species probabilities",
+                    "native": "hierarchical head; each rank's own output (bottom-up heads sum species probabilities)",
                     "leaf_sum": "flat head; parent probability is the sum of its species probabilities",
                     "winner_ancestor": "flat head; ancestor of the winning species with its confidence",
                 },

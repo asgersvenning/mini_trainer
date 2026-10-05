@@ -1,11 +1,13 @@
 """Export completed ablation cohorts as a self-describing snapshot of tidy tables.
 
-Each cohort directory holds ``study/`` (prepared study) and optionally ``analysis/``.
+Each cohort directory holds ``study/`` (prepared study), ``predictions/<run_id>/``
+(``ParquetResultCollector`` output plus ``prediction.json``) and optionally ``analysis/``.
 Every file carries its identifying columns; ``catalog.csv`` selects files and
 ``runs.parquet`` holds the per-run factors, so readers never parse paths.
 """
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -21,7 +23,7 @@ from .artifacts import create
 from .training_ablations.analysis import frequency_groups, verified
 from .training_ablations.data import digest, write_json
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 CURVES = {"epochs", "learning"}
 RUN_SETTINGS = ("size", "dtype", "batch_size")
 TRAINING = ("wall_seconds", "images_per_second_including_validation_and_logging", "peak_allocated_bytes")
@@ -45,15 +47,18 @@ def export_cohort(cohort, output, source_metadata=None):
         # PlantNet images are named by their source hash; recover the observation from source metadata.
         source = pd.read_csv(source_metadata, dtype=str, usecols=["PN_hash", "PN_observation_id"]).set_index("PN_hash")
         samples["gbifID"] = samples.sample_id.map(lambda path: Path(path).stem).map(source.PN_observation_id)
-    caveat = "validation-only screening" if config.get("screening") else ""
-    if "gbifID" not in samples or samples.gbifID.isna().any():
-        caveat = "; ".join(filter(None, [caveat, "missing observation ids"]))
+    caveat = "missing observation ids" if "gbifID" not in samples or samples.gbifID.isna().any() else ""
     catalog = []
 
-    def write(table, set_, kind, run_id=None):
-        path = Path(set_) / name / f"{run_id or kind}.parquet"
+    def write(table, set_, kind, run_id=None, rank=None):
+        path = Path(set_) / name / (f"{run_id}/rank-{rank}.parquet" if rank is not None else f"{run_id or kind}.parquet")
         (output / path).parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(table if isinstance(table, pa.Table) else pa.Table.from_pandas(table, preserve_index=False), output / path)
+        if isinstance(table, list):  # Streamed shards
+            with pq.ParquetWriter(output / path, table[0].schema) as writer:
+                for shard in table:
+                    writer.write_table(shard)
+        else:
+            pq.write_table(table if isinstance(table, pa.Table) else pa.Table.from_pandas(table, preserve_index=False), output / path)
         catalog.append(
             {
                 "path": path.as_posix(),
@@ -63,6 +68,7 @@ def export_cohort(cohort, output, source_metadata=None):
                 "study": name,
                 "dataset": dataset,
                 "run_id": run_id,
+                "rank": rank,
                 "rows": pq.read_metadata(output / path).num_rows,
                 "caveat": caveat,
             }
@@ -91,6 +97,9 @@ def export_cohort(cohort, output, source_metadata=None):
     if qualified.exists():
         settings["batch_size"] = json.loads(qualified.read_text())["batch_size"]
     runs, aggregates, confusions = [], {}, []
+    rank_classes = {}
+    report = cohort / "analysis" / "report.json"
+    analysis_split = json.loads(report.read_text())["runs"][0]["split"] if report.exists() else None
     for run in json.loads((study / "plan.json").read_text()):
         row = {"study": name, "dataset": dataset, "run_id": run["id"], "git_commit": prepared.get("git_commit")}
         # Equal hashes mark studies that share classes and images, so R can pair them.
@@ -103,25 +112,46 @@ def export_cohort(cohort, output, source_metadata=None):
         if not complete:
             continue
         attempt = attempts[-1]
-        manifest = json.loads((attempt / "complete.json").read_text())
-        evaluation = json.loads(verified(attempt / "evaluation.json", manifest["evaluation.json"]).read_text())
-        row |= {"attempt": attempt.name, "split": evaluation["split"]}
         training = json.loads((attempt / "train.json").read_text())
-        row |= {key: training.get(key) for key in TRAINING}
-        with np.load(verified(attempt / "predictions.npz", manifest["predictions.npz"]), allow_pickle=False) as data:
-            logits, target, image_id = data["logits"], data["target"], data["sample_id"]
-        selected = samples[samples.split == evaluation["split"]]
-        if not (np.array_equal(image_id, selected.image_id) and np.array_equal(target, selected.class_id)):
+        row |= {"attempt": attempt.name} | {key: training.get(key) for key in TRAINING}
+        predicted = cohort / "predictions" / run["id"]
+        record = json.loads((predicted / "prediction.json").read_text())
+        if record["run"] != run or record["weights_sha256"] != training["weights_sha256"]:
+            raise ValueError(f"Predictions belong to a different run or checkpoint: {run['id']}")
+        source = json.dumps(record.get("source"), sort_keys=True).encode()
+        row |= {"split": record["split"], "prediction_source_sha256": hashlib.sha256(source).hexdigest()}
+        mapping = json.loads((predicted / "classes.json").read_text())
+        # Flat heads store {key: index}; hierarchical heads {rank: {key: index}}.
+        mapping = mapping if isinstance(next(iter(mapping.values())), dict) else {"0": mapping}
+        for rank, classes_at_rank in mapping.items():
+            if rank_classes.setdefault(rank, classes_at_rank) != classes_at_rank:
+                raise ValueError(f"Class indices differ between runs at rank {rank}: {run['id']}")
+        if mapping["0"] != classes["cls2idx"]:
+            raise ValueError(f"Species indices differ from the prepared class order: {run['id']}")
+        index = pq.read_table(predicted / "index.parquet").to_pandas()
+        selected = samples[samples.split == record["split"]]
+        aligned = np.array_equal(index.path, selected.image_id) and np.array_equal(index.label_0, selected.class_id)
+        if not aligned or index.row.tolist() != list(range(len(index))):
             raise ValueError(f"Predictions are not aligned with the prepared split: {run['id']}")
-        correct = logits.argmax(1) == target
-        recall = pd.Series(correct).groupby(target).mean()
-        if not np.isclose(correct.mean(), evaluation["accuracy"]) or not np.isclose(recall.mean(), evaluation["macro_recall"]):
-            raise ValueError(f"Exported logits do not reproduce the recorded evaluation: {run['id']}")
-        columns = [pa.array([name] * len(target)).dictionary_encode(), pa.array([run["id"]] * len(target)).dictionary_encode()]
-        columns.append(pa.array(image_id))
-        columns += [pa.array(logits[:, j]) for j in range(logits.shape[1])]
-        names = ["study", "run_id", "image_id", *(f"c{j}" for j in range(logits.shape[1]))]
-        write(pa.table(columns, names=names), "scores", "scores", run["id"])
+        # rank-<r> holds float16 log-probabilities of each native output rank; embeddings the head input.
+        for part in sorted(path for path in predicted.iterdir() if path.is_dir()):
+            shards, expected = [], 0
+            for shard in sorted(part.glob("part-*.parquet")):
+                table = pq.read_table(shard)
+                rows = table["row"].to_numpy()
+                if not np.array_equal(rows, np.arange(expected, expected + len(rows))):
+                    raise ValueError(f"Shard rows are not contiguous: {shard}")
+                identity = [pa.array([name] * len(rows)).dictionary_encode(), pa.array([run["id"]] * len(rows)).dictionary_encode()]
+                identity.append(pa.array(index.path.to_numpy()[rows]))
+                values = table.drop_columns(["row"])
+                shards.append(pa.table(identity + values.columns, names=["study", "run_id", "image_id", *values.column_names]))
+                expected += len(rows)
+            if expected != len(index):
+                raise ValueError(f"{part.name} covers {expected} of {len(index)} images: {run['id']}")
+            if part.name == "embeddings":
+                write(shards, "embeddings", "embeddings", run["id"])
+            else:
+                write(shards, "scores", "scores", run["id"], rank=int(part.name.split("-")[1]))
         # Sparse per-epoch validation confusions recorded during training (AMP), one row per non-zero cell.
         for path in sorted((attempt / "model/logs/figures").glob("epoch-*/Confusion_matrix_lvl0/counts.npz")):
             with np.load(path, allow_pickle=False) as data:
@@ -129,10 +159,17 @@ def export_cohort(cohort, output, source_metadata=None):
             confusions.append(pd.DataFrame(cells).assign(study=name, run_id=run["id"], epoch=int(path.parents[1].name.split("-")[-1])))
         analysis = cohort / "analysis" / run["id"]
         for path in sorted(analysis.glob("*.csv")):
-            aggregates.setdefault(path.stem, []).append(pd.read_csv(path).assign(study=name, run_id=run["id"]))
-        if (analysis / "summary.json").exists():
+            # Training curves are diagnostics; analyzer tables must describe the exported split.
+            if path.stem in CURVES or analysis_split == record["split"]:
+                aggregates.setdefault(path.stem, []).append(pd.read_csv(path).assign(study=name, run_id=run["id"]))
+        if (analysis / "summary.json").exists() and analysis_split == record["split"]:
             metrics = json.loads((analysis / "summary.json").read_text())["metrics"]
             aggregates.setdefault("summary", []).append(pd.json_normalize(metrics).assign(study=name, run_id=run["id"]))
+    if rank_classes:
+        rows = [(name, int(rank), index, key) for rank, mapping in rank_classes.items() for key, index in mapping.items()]
+        write(
+            pd.DataFrame(rows, columns=["study", "rank", "class_index", "key"]).sort_values(["rank", "class_index"]), "taxonomy", "classes"
+        )
     if confusions:
         write(pd.concat(confusions, ignore_index=True), "curves", "epoch_confusion")
     # Analyzer-specific tables are auxiliary: derivable from scores or specific to these ablations.
@@ -157,7 +194,10 @@ def export(cohorts, output, source_metadata=None):
     for row in catalog.itertuples():
         # Union across files: convenience aggregates gain columns for hierarchical or gate-logging runs.
         fields = schemas.setdefault(row.kind, {})
-        fields |= {re.sub(r"^c\d+$", "c<class_id>", field.name): str(field.type) for field in pq.read_schema(output / row.path)}
+        fields |= {
+            re.sub(r"^e\d+$", "e<dimension>", re.sub(r"^c\d+$", "c<class_id>", field.name)): str(field.type)
+            for field in pq.read_schema(output / row.path)
+        }
     write_json(output / "schemas.json", schemas)
     root = Path(__file__).resolve().parents[2]
     revision = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -171,7 +211,8 @@ def export(cohorts, output, source_metadata=None):
         "Select files with `catalog.csv`; join on `study`, `run_id`, `image_id` and `class_id`; per-run factors and the\n"
         "training commit are in `runs.parquet`, column types in `schemas.json`, checksums in `manifest.json`.\n"
         "`aux/` holds analyzer-specific tables (prototype geometry, flows, reliability); core sets are generic.\n"
-        "Scores are raw species logits (`c<class_id>`); genus/family scores aggregate them through `taxonomy/`.\n"
+        "Scores are float16 log-probabilities of each native output rank (`rank` in `catalog.csv`, `c<class_index>`\n"
+        "in `classes.json` order); flat heads output only species. Embeddings (`e<dimension>`) are the head input.\n"
     )
     names = sorted(path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file())
     write_json(output / "manifest.json", create(output, names, revision))

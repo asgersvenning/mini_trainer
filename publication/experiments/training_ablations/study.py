@@ -8,6 +8,7 @@ import json
 import math
 import os
 import random
+import shutil
 import signal
 import subprocess
 import sys
@@ -639,7 +640,7 @@ def finalize_tuning(root, config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["prepare", "qualify", "tune", "run", "status", "summarize", "_worker"])
+    parser.add_argument("command", choices=["prepare", "qualify", "tune", "run", "status", "summarize", "predict", "_worker"])
     parser.add_argument("root", type=Path)
     parser.add_argument("--config")
     parser.add_argument("--devices", default="0", help="Comma-separated equivalent GPU IDs; one process per GPU")
@@ -649,6 +650,7 @@ def main():
     parser.add_argument("--shared-queue", action="store_true", help="Claim the next free run on a shared filesystem")
     parser.add_argument("--attempt", type=Path)
     parser.add_argument("--stage", choices=["train", "evaluate"])
+    parser.add_argument("--output", type=Path, help="predict: new or partially filled per-run output directory")
     args = parser.parse_args()
     if args.shard is not None and args.command not in ["tune", "run"]:
         parser.error("--shard is supported only for tune and run")
@@ -676,6 +678,23 @@ def main():
             raise ValueError("GPU differs from qualified hardware")
         write_json(args.attempt / "hardware.json", hardware)
         (train if args.stage == "train" else evaluate)(root, args.attempt, config, run)
+        return
+    if args.command == "predict":
+        from .training import export_predictions
+
+        # Prediction needs the prepared data and verified weights, not the preparation-time source.
+        prepared = json.loads((root / "prepared.json").read_text())
+        for name, expected in prepared["files"].items():
+            if digest(root / name) != expected:
+                raise ValueError(f"Prepared artifact changed: {name}")
+        for run in json.loads((root / "plan.json").read_text()):
+            if (args.output / run["id"] / "prediction.json").exists():
+                continue
+            shutil.rmtree(args.output / run["id"], ignore_errors=True)
+            attempt = latest_complete(root, run)
+            config = json.loads((attempt / "resolved.json").read_text())
+            provenance = {"source": source_identity(), "environment": environment()}
+            export_predictions(root, attempt, config, run, args.output / run["id"], provenance=provenance)
         return
     if args.command == "status":
         for path in sorted((root / "runs").glob("*/attempt-*")):

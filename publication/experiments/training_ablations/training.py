@@ -379,10 +379,10 @@ def metrics(logits, targets, counts):
     return result
 
 
-def evaluate(root, attempt, config, run):
+def load_trained(root, attempt, config, run, split):
+    """Return the split's frame and loader with the verified final model and its preprocessing."""
     StudyBuilder.root, StudyBuilder.attempt = root, attempt
     StudyBuilder.config, StudyBuilder.run = config, run
-    split = "validation" if run.get("screening") or run.get("tuning") or run.get("qualification") else "test"
     frame, loader = StudyBuilder.loader(split, config["device"])
     weights = attempt / "model/weights/last.pt"
     record = json.loads((attempt / "train.json").read_text())
@@ -392,7 +392,33 @@ def evaluate(root, attempt, config, run):
     model, preprocess = head_cls.build(
         weights=str(weights), device=config["device"], model_args={"pretrained": False}, skip_spherical_init=True
     )
-    model.eval()
+    return frame, loader, model.eval(), preprocess, record
+
+
+def export_predictions(root, attempt, config, run, output, split="test", provenance=None):
+    """Write every rank's log-probabilities and the head's embeddings for one split."""
+    from mini_trainer.logging import ParquetResultCollector
+    from mini_trainer.modeling import EmbeddingContext
+
+    frame, loader, model, preprocess, record = load_trained(root, attempt, config, run, split)
+    collector, position = ParquetResultCollector(model=model), 0
+    with torch.inference_mode():
+        for images, _ in loader:
+            rows = frame.iloc[position : position + len(images)]
+            with EmbeddingContext():
+                output_ = model(preprocess(images.to(config["device"])))
+                collector.collect(paths=rows.sample_id.tolist(), predictions=output_, labels=rows.label.tolist())
+            position += len(images)
+    if position != len(frame):
+        raise ValueError(f"Loader yielded {position} of {len(frame)} {split} images")
+    collector.save(str(output))
+    identity = {"run": run, "split": split, "attempt": attempt.name, "weights_sha256": record["weights_sha256"]}
+    write_json(output / "prediction.json", identity | (provenance or {}))
+
+
+def evaluate(root, attempt, config, run):
+    split = "validation" if run.get("screening") or run.get("tuning") or run.get("qualification") else "test"
+    frame, loader, model, preprocess, record = load_trained(root, attempt, config, run, split)
     backbone_hash = tensor_hash((k, v) for k, v in model.named_parameters() if not k.startswith(model._backbone_output_name + "."))
     initial = json.loads((attempt / "initialization.json").read_text())
     backbone_changed = backbone_hash != initial["backbone_parameters"]

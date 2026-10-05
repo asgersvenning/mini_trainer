@@ -89,3 +89,11 @@ def test_parent_rules_differ_only_when_leaf_mass_is_split():
     winner, winner_conf = replicates.top1_predictions(scores, taxonomy, "winner_ancestor")
     assert summed[0].tolist() == ["s2", "g0", "f"] and summed_conf[0] == pytest.approx([0.4, 0.6, 1.0])
     assert winner[0].tolist() == ["s2", "g1", "f"] and winner_conf[0] == pytest.approx([0.4, 0.4, 0.4])
+
+
+def test_native_predictions_use_each_ranks_own_output():
+    classes = pd.DataFrame({"rank": [0, 0, 1, 1], "class_index": [0, 1, 1, 0], "key": ["s0", "s1", "gB", "gA"]})
+    species = pd.DataFrame(np.log([[0.7, 0.3]]), columns=["c0", "c1"])
+    genus = pd.DataFrame(np.log([[0.2, 0.8]]), columns=["c0", "c1"])  # Disagrees with the species winner's ancestor.
+    predictions, confidences = replicates.native_predictions([species, genus], classes)
+    assert predictions[0].tolist() == ["s0", "gB"] and confidences[0] == pytest.approx([0.7, 0.8])

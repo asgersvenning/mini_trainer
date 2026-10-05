@@ -1,10 +1,12 @@
 """Offline scientific contracts: priors, class alignment and spherical diagnostics."""
 
 import json
+import shutil
 
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from publication.experiments.training_ablations.analysis import analyze, prediction_analysis, prototype_analysis
 from publication.experiments.training_ablations.data import digest, write_json
@@ -159,29 +161,47 @@ def test_epoch_dynamics_preserves_missing_support_and_artifact_provenance(tmp_pa
     assert provenance["inputs"][run["id"]]["logs"][str(path.relative_to(attempt))] == digest(path)
 
 
-def test_evidence_snapshot_keeps_planned_runs_and_reproduces_evaluation(tmp_path):
+def test_evidence_snapshot_keeps_planned_runs_and_aligned_predictions(tmp_path):
+    pytest.importorskip("pyarrow")
+    from mini_trainer.logging import ParquetResultCollector
+    from mini_trainer.modeling import EmbeddingContext
     from publication.experiments.evidence import export
 
     (tmp_path / "cohort").mkdir()
     study = tmp_path / "cohort/study"
     attempt = artifact_fixture(study)
-    planned = [{**json.loads((attempt / "run.json").read_text()), "id": "full_seed42"}, {"variant": "ce", "seed": 42, "id": "ce_seed42"}]
-    write_json(study / "plan.json", planned)
-    write_json(study / "config.json", {"screening": True})
-    write_json(attempt / "train.json", {"wall_seconds": 1.0})
-    write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 1.0, "macro_recall": 1.0})
-    marker = json.loads((attempt / "complete.json").read_text())
-    write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})
+    run = {**json.loads((attempt / "run.json").read_text()), "id": "full_seed42"}
+    write_json(study / "plan.json", [run, {"variant": "ce", "seed": 42, "id": "ce_seed42"}])
+    write_json(study / "config.json", {})
+    write_json(attempt / "train.json", {"wall_seconds": 1.0, "weights_sha256": "w"})
 
+    def predict(paths, labels):
+        output = tmp_path / "cohort/predictions/full_seed42"
+        shutil.rmtree(output, ignore_errors=True)
+        collector = ParquetResultCollector(shard_size=2)
+        collector.cls2idx = {"0": {"a": 0, "b": 1, "c": 2}, "1": {"g": 0, "h": 1}}
+        with EmbeddingContext():
+            EmbeddingContext.set(torch.eye(3)[:, :2])
+            collector.collect(paths=paths, predictions=[torch.eye(3) * 4, torch.zeros(3, 2)], labels=labels)
+        collector.save(str(output))
+        write_json(output / "prediction.json", {"run": run, "split": "validation", "attempt": attempt.name, "weights_sha256": "w"})
+
+    predict(["a/x", "b/y", "c/z"], [0, 1, 2])
     catalog = export([tmp_path / "cohort"], tmp_path / "snapshot")
     runs = pd.read_parquet(tmp_path / "snapshot/runs.parquet").set_index("run_id")
     assert runs.status.to_dict() == {"full_seed42": "complete", "ce_seed42": "not_started"}
-    scores = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "scores", "path"].item())
-    np.testing.assert_array_equal(scores[["c0", "c1", "c2"]].to_numpy(), np.eye(3))
+    assert runs.split["full_seed42"] == "validation"
+    scores = catalog[catalog.kind == "scores"].set_index("rank")
+    species = pd.read_parquet(tmp_path / "snapshot" / scores.path[0])
+    assert species.image_id.tolist() == ["a/x", "b/y", "c/z"]
+    np.testing.assert_allclose(np.exp(species[["c0", "c1", "c2"]].to_numpy(np.float64)).argmax(1), [0, 1, 2])
+    assert pd.read_parquet(tmp_path / "snapshot" / scores.path[1]).shape == (3, 5)
+    classes = pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "classes", "path"].item())
+    assert classes.query("rank == 1").key.tolist() == ["g", "h"]
+    assert pd.read_parquet(tmp_path / "snapshot" / catalog.loc[catalog.kind == "embeddings", "path"].item()).shape == (3, 5)
     manifest = json.loads((tmp_path / "snapshot/manifest.json").read_text())["files"]
     assert set(manifest) == set(catalog.path) | {"catalog.csv", "schemas.json", "README.md", "uv.lock", "pyproject.toml"}
 
-    write_json(attempt / "evaluation.json", {"split": "validation", "accuracy": 0.5, "macro_recall": 1.0})
-    write_json(attempt / "complete.json", {**marker, "evaluation.json": digest(attempt / "evaluation.json")})
-    with pytest.raises(ValueError, match="do not reproduce"):
-        export([tmp_path / "cohort"], tmp_path / "corrupt")
+    predict(["b/y", "a/x", "c/z"], [1, 0, 2])  # Out of the prepared split's order.
+    with pytest.raises(ValueError, match="not aligned"):
+        export([tmp_path / "cohort"], tmp_path / "misaligned")
