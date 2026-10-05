@@ -128,15 +128,15 @@ or full-data optimization sweep was needed.
 
 | Finding | Evidence | Required action |
 | --- | --- | --- |
-| Rejected predictions receive rank-recall credit | `hierarchical.py:84–90,125–126`; two correct leaf predictions at confidence .1, threshold .5 yield coverage0, ordinary macro recall/F1=0, but macro rank recall/F1=1 | Zero rejected contributions while preserving true support; test mixed/all rejection and partial hierarchical credit |
-| RankError crashes on complete rejection | `hierarchical.py:56–57`; empty accepted frame reaches `.max()` | Return an explicit undefined empty result and zero support |
-| U ignores threshold | `metrics.py:253–271`; `prediction_made` unused | Name/document raw U; only change implementation for a separately specified new estimand |
-| Macro supports differ | `helpers.py:338`, `metrics.py:61,113,193` | Document supported sets and empty cases; change code only if adopting a different explicit policy |
-| Known-only calibration is not enforced | `metrics.py:728–735,762` | Prefilter calibration or fix API ordering with regression coverage |
+| Rejected predictions receive rank-recall credit | `hierarchical.py:84–90,125–126`; two correct leaf predictions at confidence .1, threshold .5 yield coverage0, ordinary macro recall/F1=0, but macro rank recall/F1=1 | None: rank metrics are experimental, disabled in the CLI and excluded from evaluation |
+| RankError crashes on complete rejection | `hierarchical.py:56–57`; empty accepted frame reaches `.max()` | None: excluded with the other rank metrics |
+| U ignores threshold | `metrics.py:253–271`; `prediction_made` unused | Documented as raw U in mini_metrics `94c820a` |
+| Macro supports differ | `helpers.py:338`, `metrics.py:61,113,193` | Supported sets documented in mini_metrics `94c820a` |
+| Known-only calibration is not enforced | `metrics.py:728–735,762` | Fixed with a regression in mini_metrics `b09f01d` |
 
-Do not put thresholded rank-distance recall/F1 or rank-error in confirmatory tables
-until the first two bugs are fixed in a dedicated `mini_metrics` change. This does
-not block ordinary species/genus/family metrics under consistent prediction rules.
+Hierarchy is evaluated with ordinary per-level species/genus/family metrics under
+consistent prediction rules; the experimental rank-distance metrics are not used.
+The mini_metrics fixes are on its `fix/known-only-calibration` branch, pending review.
 Keep metric computation in `mini_metrics`; do not duplicate it in R or create a
 parallel implementation inside `mini_trainer`. Pin the validated revision after
 fixes; the research runner must not rely on the sibling checkout being installed.
