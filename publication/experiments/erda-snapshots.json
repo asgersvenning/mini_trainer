@@ -39,6 +39,56 @@
       "splits": [
         "validation"
       ]
+    },
+    {
+      "name": "evidence-20261005-31c54fa",
+      "kind": "tidy evidence snapshot",
+      "export_commit": "31c54fa0daa60aa0325a4e6054c1832d6a4351de",
+      "manifest_sha256": "2cd64c7c2074740a0b28b83389836bff74ba159d71809d83d36269aa6c96728a",
+      "files": 173,
+      "bytes": 10718061763,
+      "studies": [
+        "factorial-11",
+        "overnight-12",
+        "duration-12",
+        "hierarchy-14",
+        "support-16",
+        "plantnet-16"
+      ],
+      "runs": 52,
+      "splits": [
+        "test"
+      ],
+      "contents": "per-rank float16 log-probabilities, embeddings, curves"
+    },
+    {
+      "name": "replicates-20261005-31c54fa",
+      "kind": "mini_metrics bootstrap replicates",
+      "export_commit": "31c54fa0daa60aa0325a4e6054c1832d6a4351de",
+      "manifest_sha256": "33555706301683c06d818abed272e9ef8bc58fdd53e18c518a6281c11772c9d6",
+      "files": 5329,
+      "bytes": 1323683312,
+      "evidence": "evidence-20261005-31c54fa",
+      "replicates": 1000,
+      "mini_metrics": "0.4.1 (61db373)"
+    },
+    {
+      "name": "gefion-evidence-20261005-eae9293",
+      "kind": "tidy evidence snapshot",
+      "export_commit": "eae9293b531024f479531f46cb3161290d3d9db4",
+      "manifest_sha256": "2fc27d2bebd24e361e41923ee72200a39fe34119a06f3bbda301351154770874",
+      "files": 163,
+      "bytes": 254578391793,
+      "studies": [
+        "gefion-global-lepi",
+        "gefion-plantnet",
+        "gefion-flemming"
+      ],
+      "runs": 36,
+      "splits": [
+        "test"
+      ],
+      "contents": "Gefion backbone x head checkpoints re-run; per-rank float16 log-probabilities, embeddings, curves"
     }
   ]
 }
