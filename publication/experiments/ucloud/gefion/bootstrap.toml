@@ -1,0 +1,34 @@
+# mini_metrics bootstrap of the Gefion studies (CPU; about 1.5 h). Submit after the Flemming re-export.
+# Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
+name = "mini-trainer-gefion-bootstrap"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "cpu-amd-zen5-128-vcpu"
+category = "cpu-amd-zen5"
+provider = "ucloud"
+
+[time_allocation]
+hours = 4
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/ucloud/gefion"
+remote = "/12348329/mini-trainer-ablations/gefion-predictions/gefion-bootstrap"
+
+[setup]
+run = "MT_JOB_SCRIPT=bootstrap.sh bash /work/gefion-bootstrap/run.sh REVIEWED_COMMIT"
