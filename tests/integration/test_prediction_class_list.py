@@ -45,6 +45,22 @@ def test_cli_class_list_overrides_yaml(tmp_path, monkeypatch):
     assert cli()["class_list"] == "new.txt"
 
 
+@pytest.mark.parametrize(
+    ("config_lines", "flags", "expected"),
+    [
+        ("", [], (".", "predict")),
+        ("output: results\nname: run\n", [], ("results", "run")),
+        ("output: results\nname: run\n", ["--output", "elsewhere", "--name", "other"], ("elsewhere", "other")),
+    ],
+)
+def test_cli_output_and_name_follow_config_unless_given(tmp_path, monkeypatch, config_lines, flags, expected):
+    config = tmp_path / "config.yaml"
+    config.write_text("input: images\nweights: model.pt\n" + config_lines)
+    monkeypatch.setattr("sys.argv", ["mt_predict", "--config", str(config), *flags])
+    args = cli()
+    assert (args["output"], args["name"]) == expected
+
+
 def test_inference_keeps_excluded_ground_truth(tmp_path, monkeypatch):
     import mini_trainer.predict as module
 
