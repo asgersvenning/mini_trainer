@@ -176,7 +176,7 @@ def predict(cohort, batch_size=256, workers=32, device="cuda"):
         path = cohort / "predict-configs" / f"{run['id']}.yaml"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(config))
-        # Explicit flags: mt_predict's CLI defaults for --output and --name override config values.
+        # Explicit flags keep these runs correct with mt_predict versions before the config-precedence fix.
         command = ["mt_hpredict", "--config", str(path), "--head", run["head"], "--output", config["output"], "--name", run["id"]]
         subprocess.run(command, check=True)
         source = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=Path(__file__).parent).stdout.strip()
