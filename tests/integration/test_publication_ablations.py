@@ -472,8 +472,8 @@ def test_corrected_source_audit_retains_overlap_and_merge_evidence(tmp_path):
 @pytest.mark.parametrize(
     ("config", "dataset"),
     [
-        ({"data_index": "/work/plantnet/data_index.json", "parquet": None}, "plantnet300k"),
-        ({"data_index": None, "parquet": "/work/global_lepi/metadata.parquet"}, "global_lepidoptera"),
+        ({"data_index": "/work/plantnet/data_index.json", "parquet": None}, "plantnet"),
+        ({"data_index": None, "parquet": "/work/global_lepi/metadata.parquet"}, "global_lepi"),
     ],
 )
 def test_evidence_dataset_follows_the_prepared_data_source(config, dataset):
