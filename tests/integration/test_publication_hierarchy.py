@@ -2,11 +2,11 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 
 from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier
-from mini_trainer.training import EMLACrossEntropy
 from publication.experiments.training_ablations.data import hierarchy_spec, select_families, table_digest, write_json
 from publication.experiments.training_ablations.training import StudyBuilder
 
@@ -26,13 +26,17 @@ def test_family_selection_and_rank_counts_ignore_row_order():
         np.testing.assert_array_equal(np.bincount(mask, weights=source), target)
 
 
-def test_species_control_matches_flat_emla_gradient(tmp_path, monkeypatch):
+@pytest.mark.parametrize("loss_name", ["ce", "fixed", "emla"])
+def test_species_control_matches_flat_gradient(tmp_path, monkeypatch, loss_name):
     write_json(
-        tmp_path / "classes.json", {"num_classes": 4, "hierarchy": {"num_classes": [4, 3, 2], "counts": [[1, 4, 5, 8], [5, 5, 8], [10, 8]]}}
+        tmp_path / "classes.json",
+        {"num_classes": 4, "counts": [1, 4, 5, 8], "hierarchy": {"num_classes": [4, 3, 2], "counts": [[1, 4, 5, 8], [5, 5, 8], [10, 8]]}},
     )
     monkeypatch.setattr(StudyBuilder, "root", tmp_path)
     monkeypatch.setattr(StudyBuilder, "config", {"hierarchy": True})
-    monkeypatch.setattr(StudyBuilder, "run", {"rank_weights": [1, 0, 0]})
+    monkeypatch.setattr(StudyBuilder, "run", {"loss": loss_name})
+    flat_criterion = StudyBuilder.build_criterion(device="cpu")
+    monkeypatch.setattr(StudyBuilder, "run", {"loss": loss_name, "rank_weights": [1, 0, 0]})
     criterion = StudyBuilder.build_criterion(device="cpu")
     torch.manual_seed(42)
     flat = Classifier(8, 4, hidden=False, skip_spherical_init=True)
@@ -49,7 +53,7 @@ def test_species_control_matches_flat_emla_gradient(tmp_path, monkeypatch):
     leaf = flat(x)
     ranks = hierarchical(x)
     torch.testing.assert_close(leaf, ranks[0], rtol=0, atol=0)
-    loss = EMLACrossEntropy([1, 4, 5, 8], label_smoothing=0.25)(leaf, target[:, 0])
+    loss = flat_criterion(leaf, target[:, 0])
     control = sum(criterion(ranks, target))
     loss.backward()
     control.backward()

@@ -39,6 +39,10 @@ class FixedAdjustment(EMLACrossEntropy):
         )
 
 
+# Per-rank criterion of each loss recipe; hierarchical objectives combine one per rank.
+LOSSES = {"ce": nn.CrossEntropyLoss, "fixed": FixedAdjustment, "emla": EMLACrossEntropy}
+
+
 class GateRecorder:
     """Observe detached uncertainty gates without modifying loss or RNG state."""
 
@@ -233,21 +237,21 @@ class StudyBuilder(BaseBuilder):
         cls.gate_recorder = GateRecorder() if cls.config.get("log_gates") and cls.run["loss"] == "emla" else None
         if cls.run.get("rank_weights") is not None:
             hierarchy = spec["hierarchy"]
+            adjusted = {} if cls.run["loss"] == "ce" else {"class_frequencies": hierarchy["counts"]}
             criterion = MultiLevelWeightedCrossEntropyLoss(
                 num_classes=hierarchy["num_classes"],
                 device=device,
                 dtype=torch.float32,
                 weights=cls.run["rank_weights"],
                 label_smoothing=smoothing,
-                loss_cls=EMLACrossEntropy,
-                class_frequencies=hierarchy["counts"],
+                loss_cls=LOSSES[cls.run["loss"]],
+                **adjusted,
             )
             losses, counts = list(criterion._loss_fns), hierarchy["counts"]
         elif cls.run["loss"] == "ce":
             return nn.CrossEntropyLoss(label_smoothing=smoothing)
         else:
-            loss = EMLACrossEntropy if cls.run["loss"] == "emla" else FixedAdjustment
-            criterion = loss(spec["counts"], label_smoothing=smoothing, device=device)
+            criterion = LOSSES[cls.run["loss"]](spec["counts"], label_smoothing=smoothing, device=device)
             losses, counts = [criterion], [spec["counts"]]
         if cls.gate_recorder is not None:
             for rank, loss, frequencies in zip(("species", "genus", "family"), losses, counts):
