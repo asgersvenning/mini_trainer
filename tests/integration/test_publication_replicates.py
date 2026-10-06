@@ -59,6 +59,7 @@ def test_replicate_zero_matches_mini_metrics_and_repeats_count(tmp_path):
                 "label": labels.ravel(),
                 "prediction": predictions.ravel(),
                 "confidence": confidences.ravel(),
+                "known": (labels != "s3").ravel(),  # Species s3 is outside the vocabulary.
             }
         ),
         path,
@@ -73,11 +74,13 @@ def test_replicate_zero_matches_mini_metrics_and_repeats_count(tmp_path):
     def recall(replicate):
         return values.query("replicate == @replicate and setting == 'zero' and metric == 'recall' and level == 0").value.item()
 
+    known = labels != "s3"
+    assert set(values.setting) == {"calibrated", "zero", "calibrated_known_only", "zero_known_only"}
     kwargs = dict(threshold=[0.0] * 3, simple=True, hierarchical=False, verbose=0)
-    direct = evaluate_file(replicates.metric_frame(labels, predictions, confidences, np.arange(8, n)), **kwargs)
+    direct = evaluate_file(replicates.metric_frame(labels, predictions, confidences, np.arange(8, n), known), **kwargs)
     assert recall(0) == direct["recall"][0]
     repeated = np.r_[np.arange(8, n), [8, 8]]
-    assert recall(1) == evaluate_file(replicates.metric_frame(labels, predictions, confidences, repeated), **kwargs)["recall"][0]
+    assert recall(1) == evaluate_file(replicates.metric_frame(labels, predictions, confidences, repeated, known), **kwargs)["recall"][0]
     assert len(thresholds) == 2 * 3 and per_class
 
 
@@ -85,8 +88,9 @@ def test_parent_rules_differ_only_when_leaf_mass_is_split():
     # Two genera: g0 = {s0, s1}, g1 = {s2}. s2 wins, but g0 holds more summed mass.
     taxonomy = pd.DataFrame({"class_id": [0, 1, 2], "speciesKey": ["s0", "s1", "s2"], "genusKey": ["g0", "g0", "g1"], "familyKey": "f"})
     scores = pd.DataFrame(np.log([[0.3, 0.3, 0.4]]), columns=["c0", "c1", "c2"])
-    summed, summed_conf = replicates.top1_predictions(scores, taxonomy, "leaf_sum")
-    winner, winner_conf = replicates.top1_predictions(scores, taxonomy, "winner_ancestor")
+    ranks = ["speciesKey", "genusKey", "familyKey"]
+    summed, summed_conf = replicates.top1_predictions(scores, taxonomy, "leaf_sum", ranks)
+    winner, winner_conf = replicates.top1_predictions(scores, taxonomy, "winner_ancestor", ranks)
     assert summed[0].tolist() == ["s2", "g0", "f"] and summed_conf[0] == pytest.approx([0.4, 0.6, 1.0])
     assert winner[0].tolist() == ["s2", "g1", "f"] and winner_conf[0] == pytest.approx([0.4, 0.4, 0.4])
 
@@ -97,3 +101,11 @@ def test_native_predictions_use_each_ranks_own_output():
     genus = pd.DataFrame(np.log([[0.2, 0.8]]), columns=["c0", "c1"])  # Disagrees with the species winner's ancestor.
     predictions, confidences = replicates.native_predictions([species, genus], classes)
     assert predictions[0].tolist() == ["s0", "gB"] and confidences[0] == pytest.approx([0.7, 0.8])
+
+
+def test_study_ranks_follow_mini_trainer_rule():
+    taxonomy = pd.DataFrame(
+        {"speciesKey": ["a", "b"], "genusKey": ["g", "h"], "familyKey": ["f", "f"], "orderKey": ["o1", "o2"], "classKey": ["c", "c"]}
+    )
+    # Ranks with a single taxon (family, class) are dropped, as at training time.
+    assert replicates.study_ranks(taxonomy) == ["speciesKey", "genusKey", "orderKey"]

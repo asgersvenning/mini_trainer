@@ -12,6 +12,7 @@ import importlib.metadata
 import json
 import os
 import shutil
+from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
@@ -22,7 +23,19 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from scipy.special import softmax
 
-RANKS = ("speciesKey", "genusKey", "familyKey")
+
+def study_ranks(taxonomy):
+    """Rank key columns chosen by mini_trainer's rule: ranks with more than one taxon in the vocabulary."""
+    from mini_trainer.integrations.gbif import TAXONOMY_KEYS, select_levels
+
+    columns = [f"{rank}Key" for rank in TAXONOMY_KEYS if f"{rank}Key" in taxonomy]
+    rows = [
+        OrderedDict((c.removesuffix("Key"), (str(v), "")) for c, v in zip(columns, row))
+        for row in taxonomy[columns].itertuples(index=False)
+    ]
+    return [f"{level}Key" for level in select_levels(None, rows)]
+
+
 COLUMNS = {
     "replicates": ["run_id", "replicate", "setting", "level", "metric", "value"],
     "per_class": ["run_id", "replicate", "level", "class", "metric", "value", "weight"],
@@ -34,39 +47,54 @@ PER_CLASS_METRICS = "^(accuracy|precision|recall|f1|coverage)$"
 PARENT_RULES = ("leaf_sum", "winner_ancestor")
 
 
+BLOCK = 20000  # Rows per block, so full-vocabulary score matrices never expand in memory at once.
+
+
+def blocks(frame):
+    """Yield score columns ``c<j>`` as float64 arrays of at most BLOCK rows."""
+    columns = [c for c in frame.columns if c.startswith("c") and c[1:].isdigit()]
+    for start in range(0, len(frame), BLOCK):
+        yield frame[columns].iloc[start : start + BLOCK].to_numpy(np.float64)
+
+
 def native_predictions(scores, classes):
     """Per-rank argmax and confidence from each rank's native log-probabilities."""
     predictions, confidences = [], []
     for rank, frame in enumerate(scores):
         keys = classes[classes["rank"] == rank].sort_values("class_index").key.to_numpy()
-        log_probabilities = frame.filter(regex=r"^c\d+$").to_numpy(np.float32)
-        predictions.append(keys[log_probabilities.argmax(1)])
-        confidences.append(np.exp(log_probabilities.max(1)))
+        winners, maxima = zip(*((block.argmax(1), block.max(1)) for block in blocks(frame)))
+        predictions.append(keys[np.concatenate(winners)])
+        confidences.append(np.exp(np.concatenate(maxima)))
     return np.stack(predictions, 1), np.stack(confidences, 1)
 
 
-def top1_predictions(scores, taxonomy, rule):
+def top1_predictions(scores, taxonomy, rule, ranks):
     """Per-rank predictions and confidences for a flat head from its species scores.
 
     ``leaf_sum`` sums species probabilities within each parent; it is the native parent
     output of the ablations' bottom-up HierarchicalClassifier. ``winner_ancestor`` maps the
     winning species to its ancestors and keeps its confidence (mini_metrics add_combinations).
     """
-    probabilities = softmax(scores.filter(regex=r"^c\d+$").to_numpy(np.float64), axis=1)
     taxa = taxonomy.sort_values("class_id")
-    winner = probabilities.argmax(1)
+    groups = {rank: np.unique(taxa[rank].to_numpy(), return_inverse=True) for rank in ranks}
     predictions, confidences = [], []
-    for rank in RANKS:
-        if rule == "winner_ancestor" or rank == RANKS[0]:
-            predictions.append(taxa[rank].to_numpy()[winner])
-            confidences.append(probabilities.max(1))
-            continue
-        names, members = np.unique(taxa[rank].to_numpy(), return_inverse=True)
-        mass = np.zeros((len(probabilities), len(names)))
-        np.add.at(mass.T, members, probabilities.T)
-        predictions.append(names[mass.argmax(1)])
-        confidences.append(mass.max(1))
-    return np.stack(predictions, 1), np.stack(confidences, 1)
+    for block in blocks(scores):
+        probabilities = softmax(block, axis=1)
+        winner = probabilities.argmax(1)
+        block_predictions, block_confidences = [], []
+        for rank in ranks:
+            if rule == "winner_ancestor" or rank == ranks[0]:
+                block_predictions.append(taxa[rank].to_numpy()[winner])
+                block_confidences.append(probabilities.max(1))
+                continue
+            names, members = groups[rank]
+            mass = np.zeros((len(probabilities), len(names)))
+            np.add.at(mass.T, members, probabilities.T)
+            block_predictions.append(names[mass.argmax(1)])
+            block_confidences.append(mass.max(1))
+        predictions.append(np.stack(block_predictions, 1))
+        confidences.append(np.stack(block_confidences, 1))
+    return np.concatenate(predictions), np.concatenate(confidences)
 
 
 def draw_replicates(images, replicates, seed, calibration_fraction):
@@ -104,13 +132,15 @@ def draw_replicates(images, replicates, seed, calibration_fraction):
     return weights
 
 
-def metric_frame(labels, predictions, confidences, rows):
+def metric_frame(labels, predictions, confidences, rows, known=None):
     """Expand drawn rows (with repeats) to a MetricDF; each drawn copy is a separate instance."""
     from mini_metrics.data import MetricDF
 
     n, ranks = len(rows), labels.shape[1]
+    extra = {} if known is None else {"known_label": known[rows].T.ravel()}
     return MetricDF(
-        {
+        extra
+        | {
             "instance_id": np.tile(np.arange(n), ranks),
             "filename": np.tile(np.arange(n), ranks).astype(str).astype(object),
             "level": np.repeat(np.arange(ranks), n),
@@ -128,18 +158,23 @@ def evaluate_run(task):
     run_id, predictions_path, weights_path, columns = task
     wide = pd.read_parquet(predictions_path).pivot(index="row", columns="level")
     labels, predictions = wide["label"].to_numpy(), wide["prediction"].to_numpy()
-    confidences = wide["confidence"].to_numpy()
+    confidences, known = wide["confidence"].to_numpy(), wide["known"].to_numpy().astype(bool)
     weights = np.load(weights_path, mmap_mode="r")
     aggregate, per_class, thresholds = [], [], []
     for replicate in columns:
         w = np.asarray(weights[:, replicate], dtype=np.int64)
         calibration, reporting = np.repeat(np.arange(len(w)), np.maximum(-w, 0)), np.repeat(np.arange(len(w)), np.maximum(w, 0))
-        tau = OptimalConfidenceThreshold(crit=MacroF1)(metric_frame(labels, predictions, confidences, calibration), verbose=0)
+        tau = OptimalConfidenceThreshold(crit=MacroF1)(metric_frame(labels, predictions, confidences, calibration, known), verbose=0)
         tau = [float(tau[level]) for level in range(labels.shape[1])]
-        report = metric_frame(labels, predictions, confidences, reporting)
+        report = metric_frame(labels, predictions, confidences, reporting, known)
         thresholds += [(run_id, replicate, level, t) for level, t in enumerate(tau)]
-        for setting, threshold in (("calibrated", tau), ("zero", [0.0] * len(tau))):
-            values = evaluate_file(report, threshold=threshold, simple=True, hierarchical=False, verbose=0, pattern="^(?!optimal)")
+        settings = [("calibrated", tau, False), ("zero", [0.0] * len(tau), False)]
+        if not known.all():  # Open-set data: also score only taxa inside the vocabulary.
+            settings += [("calibrated_known_only", tau, True), ("zero_known_only", [0.0] * len(tau), True)]
+        for setting, threshold, known_only in settings:
+            values = evaluate_file(
+                report, threshold=threshold, known_only=known_only, simple=True, hierarchical=False, verbose=0, pattern="^(?!optimal)"
+            )
             aggregate += [
                 (run_id, replicate, setting, level, name, float(v)) for name, by_level in values.items() for level, v in by_level.items()
             ]
@@ -173,7 +208,8 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
     if runs.split.nunique() != 1:
         raise ValueError("Runs of one study must share an evaluation split")
     images = images[images.split == runs.split.iloc[0]].reset_index(drop=True)
-    labels = images[list(RANKS)].to_numpy().astype(str)
+    ranks = study_ranks(taxonomy)
+    labels = images[ranks].to_numpy().astype(str)
 
     weights = draw_replicates(images, replicates, seed, calibration_fraction)
     np.save(output / "weights.npy", weights)
@@ -183,6 +219,8 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
 
     (output / "predictions").mkdir()
     classes = pd.read_parquet(snapshot / files.loc["classes", "path"])
+    # Known: the true taxon is in the models' vocabulary at that rank (all true for closed-set studies).
+    known = np.stack([np.isin(labels[:, r], classes.loc[classes["rank"] == r, "key"].to_numpy()) for r in range(len(ranks))], 1)
     tasks, parent_rules = [], {}
     for run_id in runs.run_id:
         paths = catalog.query("study == @study and kind == 'scores' and run_id == @run_id").sort_values("rank").path
@@ -190,17 +228,17 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
         if any(not np.array_equal(frame.image_id.to_numpy(), images.image_id.to_numpy()) for frame in scores):
             raise ValueError(f"Scores are not aligned with the study's evaluation images: {run_id}")
         # Hierarchical heads output every rank natively; a flat head's parents need a chosen rule.
-        if len(scores) == len(RANKS):
+        if len(scores) == len(ranks):
             parent_rules[run_id] = "native"
             predictions, confidences = native_predictions(scores, classes)
         else:
             parent_rules[run_id] = flat_parent_rule
-            predictions, confidences = top1_predictions(scores[0], taxonomy, flat_parent_rule)
+            predictions, confidences = top1_predictions(scores[0], taxonomy, flat_parent_rule, ranks)
         # Long table in the mini_metrics column layout: one row per image and rank.
-        rows, ranks = np.indices(labels.shape)
+        rows, levels = np.indices(labels.shape)
         table = {"study": [study] * rows.size, "run_id": [run_id] * rows.size, "row": rows.ravel()}
         table |= {"image_id": images.image_id.to_numpy()[rows.ravel()]}
-        table |= {"level": ranks.ravel(), "label": labels.ravel(), "prediction": predictions.astype(str).ravel()}
+        table |= {"level": levels.ravel(), "label": labels.ravel(), "prediction": predictions.astype(str).ravel(), "known": known.ravel()}
         path = output / "predictions" / f"{run_id}.parquet"
         pq.write_table(pa.table(table | {"confidence": confidences.ravel()}), path)
         columns = range(weights.shape[1])
@@ -233,6 +271,9 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
                 "partition": "mini_metrics MetricDF.split of observations, stratified by species label",
                 "resampling_unit": "observation_id (image_id when missing), with replacement within each part",
                 "replicate_0": "partition only, no resampling",
+                "ranks": ranks,
+                "rank_rule": "mini_trainer select_levels: ranks with more than one taxon in the vocabulary",
+                "known_only_settings": "added when some true taxa are outside the vocabulary; thresholds calibrated on all rows",
                 "weights": "int8 images x replicates; +k reporting draws, -k calibration draws",
                 "parent_rules": parent_rules,
                 "parent_rule_definitions": {
