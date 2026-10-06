@@ -21,7 +21,7 @@ import pyarrow.parquet as pq
 
 from .artifacts import create
 from .training_ablations.analysis import frequency_groups, verified
-from .training_ablations.data import digest, write_json
+from .training_ablations.data import data_source, digest, write_json
 
 SCHEMA_VERSION = 2
 RUN_SETTINGS = ("size", "dtype", "batch_size")
@@ -35,7 +35,7 @@ RANK_NAMES = ("species", "genus", "family", "order", "class")
 def dataset_name(config):
     if "dataset" in config:
         return config["dataset"]
-    return "plantnet300k" if config.get("data_index") else "global_lepidoptera"
+    return data_source(config)[0]
 
 
 def export_cohort(cohort, output, source_metadata=None):

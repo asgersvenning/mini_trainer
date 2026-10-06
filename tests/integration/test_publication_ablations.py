@@ -472,12 +472,12 @@ def test_corrected_source_audit_retains_overlap_and_merge_evidence(tmp_path):
 @pytest.mark.parametrize(
     ("config", "dataset"),
     [
-        ({"data_index": "/work/plantnet/data_index.json"}, "plantnet300k"),
-        ({"data_index": None}, "global_lepidoptera"),
-        ({}, "global_lepidoptera"),
+        ({"data_index": "/work/plantnet/data_index.json", "parquet": None}, "plantnet300k"),
+        ({"data_index": None, "parquet": "/work/global_lepi/metadata.parquet"}, "global_lepidoptera"),
     ],
 )
-def test_evidence_dataset_ignores_null_data_index(config, dataset):
+def test_evidence_dataset_follows_the_prepared_data_source(config, dataset):
     from publication.experiments.evidence import dataset_name
+    from publication.experiments.training_ablations.data import data_source
 
-    assert dataset_name(config) == dataset
+    assert dataset_name(config) == data_source(config)[0] == dataset

@@ -164,10 +164,17 @@ def lower_unique_support(samples, table, cap, seed):
     }
 
 
-def prepare_data(config, root):
+def data_source(config):
+    """The dataset a study config trains on and its source file; the one rule preparation and export share."""
     if config.get("data_index"):
+        return "plantnet300k", config["data_index"]
+    return "global_lepidoptera", config["parquet"]
+
+
+def prepare_data(config, root):
+    dataset, source = data_source(config)
+    if dataset == "plantnet300k":
         return prepare_index(config, root)
-    source = config["parquet"]
     columns = ["speciesKey", "familyKey", "genusKey", "set"]
     frame = pd.read_parquet(source, columns=columns).astype(str)
     table = species_table(frame)
