@@ -43,6 +43,14 @@ class FixedAdjustment(EMLACrossEntropy):
 LOSSES = {"ce": nn.CrossEntropyLoss, "fixed": FixedAdjustment, "emla": EMLACrossEntropy}
 
 
+def rank_labels(label, masks):
+    """A species label and its ancestors, leaf-first, through the child-to-parent maps."""
+    labels = [label]
+    for mask in masks:
+        labels.append(mask[labels[-1]])
+    return labels
+
+
 class GateRecorder:
     """Observe detached uncertainty gates without modifying loss or RNG state."""
 
@@ -201,7 +209,7 @@ class StudyBuilder(BaseBuilder):
         }
         if cls.run.get("rank_weights") is not None:
             spec = cls.build_class_spec()["hierarchy"]
-            metadata["class"] = [[label, spec["masks"][0][label], spec["masks"][1][spec["masks"][0][label]]] for label in frame.label]
+            metadata["class"] = [rank_labels(label, spec["masks"]) for label in frame.label]
         _, loaders = get_dataset_dataloader(
             metadata,
             resize_size=cls.config["size"],
@@ -254,7 +262,7 @@ class StudyBuilder(BaseBuilder):
             criterion = LOSSES[cls.run["loss"]](spec["counts"], label_smoothing=smoothing, device=device)
             losses, counts = [criterion], [spec["counts"]]
         if cls.gate_recorder is not None:
-            for rank, loss, frequencies in zip(("species", "genus", "family"), losses, counts):
+            for rank, loss, frequencies in zip(spec.get("hierarchy", {}).get("ranks", ["species"]), losses, counts):
                 loss.register_forward_pre_hook(cls.gate_recorder.observe(rank, frequencies))
         return criterion
 
@@ -436,12 +444,13 @@ def evaluate(root, attempt, config, run):
             predictions.append((output[0] if isinstance(output, list) else output).float().cpu())
     logits = torch.cat(predictions).numpy()
     result = metrics(logits, frame.label.to_numpy(), StudyBuilder.build_class_spec()["counts"])
-    if run.get("rank_weights") is not None:
+    # Parent ranks aggregate leaf probabilities for every head, so flat and hierarchical runs compare.
+    if "hierarchy" in StudyBuilder.build_class_spec():
         hierarchy = StudyBuilder.build_class_spec()["hierarchy"]
         rank_logits, rank_targets = torch.as_tensor(logits), torch.tensor(frame.label.to_numpy())
         from mini_trainer.hierarchical.utils import batched_scatter_logsumexp
 
-        for rank, mask, counts in zip(["genus", "family"], hierarchy["masks"], hierarchy["counts"][1:]):
+        for rank, mask, counts in zip(hierarchy["ranks"][1:], hierarchy["masks"], hierarchy["counts"][1:]):
             mapping = torch.tensor(mask)
             rank_logits = batched_scatter_logsumexp(rank_logits, mapping)
             rank_targets = mapping[rank_targets]

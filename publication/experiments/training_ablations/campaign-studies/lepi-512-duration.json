@@ -28,5 +28,10 @@
     "no_normalization_no_regularization",
     "ce",
     "fixed_adjustment"
+  ],
+  "ranks": [
+    "species",
+    "genus",
+    "family"
   ]
 }

@@ -345,7 +345,7 @@ def test_corrected_index_preserves_taxonomy_splits_and_paths(tmp_path):
     write_json(source, index)
     root = tmp_path / "prepared"
     root.mkdir()
-    config = {"data_index": str(source), "images": str(tmp_path), "size": 384}
+    config = {"data_index": str(source), "images": str(tmp_path), "size": 384, "ranks": ["species", "genus", "family"]}
     prepare_data(config, root)
     frame = pd.read_parquet(root / "samples.parquet")
     assert set(frame.sample_id) == set(index["path"])
@@ -385,6 +385,7 @@ def test_lower_unique_support_preserves_draws_and_held_out_examples(tmp_path):
     root = tmp_path / "prepared"
     root.mkdir()
     config = {"data_index": str(source), "images": str(tmp_path), "size": 16, "train_support_cap": 1, "train_support_seed": 42}
+    config["ranks"] = ["species", "genus", "family"]
     prepare_data(config, root)
 
     samples = pd.read_parquet(root / "samples.parquet")

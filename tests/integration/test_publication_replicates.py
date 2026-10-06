@@ -10,7 +10,8 @@ pytest.importorskip("mini_metrics")
 
 from mini_metrics.metrics import evaluate_file  # noqa: E402
 
-from publication.experiments.statistics import replicates  # noqa: E402
+from publication.experiments.statistics import replicates
+from publication.experiments.training_ablations.data import informative_ranks  # noqa: E402
 
 
 def images(n=60, per_observation=2):
@@ -108,4 +109,4 @@ def test_study_ranks_follow_mini_trainer_rule():
         {"speciesKey": ["a", "b"], "genusKey": ["g", "h"], "familyKey": ["f", "f"], "orderKey": ["o1", "o2"], "classKey": ["c", "c"]}
     )
     # Ranks with a single taxon (family, class) are dropped, as at training time.
-    assert replicates.study_ranks(taxonomy) == ["speciesKey", "genusKey", "orderKey"]
+    assert informative_ranks(taxonomy) == ["speciesKey", "genusKey", "orderKey"]

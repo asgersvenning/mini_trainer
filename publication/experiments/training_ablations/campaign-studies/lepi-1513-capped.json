@@ -60,5 +60,10 @@
     "full",
     "hierarchy_regularized"
   ],
-  "log_gates": true
+  "log_gates": true,
+  "ranks": [
+    "species",
+    "genus",
+    "family"
+  ]
 }

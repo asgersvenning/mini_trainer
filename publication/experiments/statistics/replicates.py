@@ -12,7 +12,6 @@ import importlib.metadata
 import json
 import os
 import shutil
-from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
@@ -24,18 +23,7 @@ import pyarrow.parquet as pq
 from scipy.sparse import csr_matrix
 from scipy.special import softmax
 
-
-def study_ranks(taxonomy):
-    """Rank key columns chosen by mini_trainer's rule: ranks with more than one taxon in the vocabulary."""
-    from mini_trainer.integrations.gbif import TAXONOMY_KEYS, select_levels
-
-    columns = [f"{rank}Key" for rank in TAXONOMY_KEYS if f"{rank}Key" in taxonomy]
-    rows = [
-        OrderedDict((c.removesuffix("Key"), (str(v), "")) for c, v in zip(columns, row))
-        for row in taxonomy[columns].itertuples(index=False)
-    ]
-    return [f"{level}Key" for level in select_levels(None, rows)]
-
+from publication.experiments.training_ablations.data import informative_ranks
 
 COLUMNS = {
     "replicates": ["run_id", "replicate", "setting", "level", "metric", "value"],
@@ -235,7 +223,7 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
     if runs.split.nunique() != 1:
         raise ValueError("Runs of one study must share an evaluation split")
     images = images[images.split == runs.split.iloc[0]].reset_index(drop=True)
-    ranks = study_ranks(taxonomy)
+    ranks = informative_ranks(taxonomy)
     labels = images[ranks].to_numpy().astype(str)
 
     weights = draw_replicates(images, replicates, seed, calibration_fraction)

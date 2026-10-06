@@ -35,5 +35,10 @@
     "no_normalization",
     "no_regularization",
     "full"
+  ],
+  "ranks": [
+    "species",
+    "genus",
+    "family"
   ]
 }

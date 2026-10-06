@@ -7,8 +7,8 @@ import torch
 
 from mini_trainer.hierarchical.model import HierarchicalClassifier
 from mini_trainer.modeling import Classifier
-from publication.experiments.training_ablations.data import hierarchy_spec, select_families, table_digest, write_json
-from publication.experiments.training_ablations.training import StudyBuilder
+from publication.experiments.training_ablations.data import check_ranks, hierarchy_spec, select_families, table_digest, write_json
+from publication.experiments.training_ablations.training import StudyBuilder, rank_labels
 
 
 def test_family_selection_and_rank_counts_ignore_row_order():
@@ -71,3 +71,18 @@ def test_cohort_content_digest_preserves_values_order_and_columns():
     changed = frame.copy()
     changed.loc[0, "path"] = "ab"
     assert table_digest(frame) != table_digest(changed)
+
+
+def test_hierarchy_spans_the_informative_ranks_of_a_cohort():
+    table = pd.DataFrame(
+        {"genusKey": ["g1", "g1", "g2", "g3"], "familyKey": ["f1", "f1", "f1", "f2"], "orderKey": ["o1", "o1", "o1", "o2"]}
+        | {"classKey": ["c"] * 4, "train": [1, 2, 3, 4]},
+        index=pd.Index(list("abcd"), name="speciesKey"),
+    )
+    ranks = ["species", "genus", "family", "order"]  # The class is shared, so it is not informative.
+    check_ranks(table, ranks)
+    with pytest.raises(ValueError, match="differ"):
+        check_ranks(table, ranks[:3])
+    spec = hierarchy_spec(table, list("abcd"), ranks)
+    assert spec["num_classes"] == [4, 3, 2, 2] and [sum(counts) for counts in spec["counts"]] == [10] * 4
+    assert [rank_labels(label, spec["masks"]) for label in range(4)] == [[0, 0, 0, 0], [1, 0, 0, 0], [2, 1, 0, 0], [3, 2, 1, 1]]

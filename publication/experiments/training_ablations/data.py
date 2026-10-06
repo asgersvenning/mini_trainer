@@ -2,10 +2,14 @@
 
 import hashlib
 import json
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
+
+RANKS = ("species", "genus", "family", "order", "class")  # Leaf-first, as GBIF <rank>Key columns
 
 
 def digest(path):
@@ -29,18 +33,37 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-def species_table(frame):
-    required = ["speciesKey", "familyKey", "genusKey", "set"]
+def informative_ranks(taxonomy):
+    """Rank key columns chosen by mini_trainer's rule: ranks with more than one taxon in the vocabulary."""
+    from mini_trainer.integrations.gbif import TAXONOMY_KEYS, select_levels
+
+    columns = [f"{rank}Key" for rank in TAXONOMY_KEYS if f"{rank}Key" in taxonomy]
+    rows = [
+        OrderedDict((c.removesuffix("Key"), (str(v), "")) for c, v in zip(columns, row))
+        for row in taxonomy[columns].itertuples(index=False)
+    ]
+    return [f"{level}Key" for level in select_levels(None, rows)]
+
+
+def check_ranks(table, ranks):
+    """A cohort's configured ranks must be exactly the informative ranks of its classes."""
+    found = [key.removesuffix("Key") for key in informative_ranks(table.reset_index())]
+    if found != list(ranks):
+        raise ValueError(f"Configured ranks {list(ranks)} differ from the cohort's informative ranks {found}")
+
+
+def species_table(frame, parents=("genusKey", "familyKey")):
+    """Training counts and parent rank keys per species."""
+    parents = list(parents)
+    required = ["speciesKey", *parents, "set"]
     if frame[required].isna().any().any():
         raise ValueError("Missing taxonomy or source split")
     if not frame["set"].astype(str).isin([str(i) for i in range(10)]).all():
         raise ValueError("Expected original numeric source splits 0 through 9")
     train = frame[~frame["set"].astype(str).isin(["0", "1"])]
-    if (train.groupby("speciesKey")[["familyKey", "genusKey"]].nunique() > 1).any().any():
+    if (train.groupby("speciesKey")[parents].nunique() > 1).any().any():
         raise ValueError("Conflicting training taxonomy")
-    table = train.groupby("speciesKey", sort=True).agg(
-        train=("set", "size"), familyKey=("familyKey", "first"), genusKey=("genusKey", "first")
-    )
+    table = train.groupby("speciesKey", sort=True).agg(train=("set", "size"), **{key: (key, "first") for key in parents})
     # Stable tie-breaking is species-key order, independent of Parquet row order.
     table["quartile"] = pd.qcut(table.train.rank(method="first"), 4, labels=False)
     return table
@@ -104,19 +127,18 @@ def hierarchy_description(table):
     }
 
 
-def hierarchy_spec(table, classes):
-    """Freeze leaf-first rank vocabularies and contiguous child-to-parent maps."""
-    rows = table.loc[classes]
-    keys = [classes, sorted(rows.genusKey.unique()), sorted(rows.familyKey.unique())]
+def hierarchy_spec(table, classes, ranks=RANKS[:3]):
+    """Freeze leaf-first rank vocabularies, contiguous child-to-parent maps and training counts."""
+    rows = table.loc[classes].reset_index(drop=True).assign(speciesKey=classes)
+    columns = [f"{rank}Key" for rank in ranks]
+    keys = [classes, *(sorted(rows[column].unique()) for column in columns[1:])]
     mappings = {str(i): {key: j for j, key in enumerate(values)} for i, values in enumerate(keys)}
     masks = [
-        [mappings["1"][key] for key in rows.genusKey],
-        [mappings["2"][key] for key in rows.groupby("genusKey").familyKey.first().reindex(keys[1])],
+        [mappings[str(i + 1)][key] for key in rows.groupby(child)[parent].first().reindex(keys[i])]
+        for i, (child, parent) in enumerate(zip(columns, columns[1:]))
     ]
-    counts = [rows.train.astype(int).tolist()]
-    for column, values in zip(["genusKey", "familyKey"], keys[1:]):
-        counts.append(rows.groupby(column).train.sum().reindex(values).astype(int).tolist())
-    return {"cls2idx": mappings, "num_classes": list(map(len, keys)), "masks": masks, "counts": counts}
+    counts = [rows.groupby(column).train.sum().reindex(values).astype(int).tolist() for column, values in zip(columns, keys)]
+    return {"ranks": list(ranks), "cls2idx": mappings, "num_classes": list(map(len, keys)), "masks": masks, "counts": counts}
 
 
 def lower_unique_support(samples, table, cap, seed):
@@ -175,9 +197,11 @@ def prepare_data(config, root):
     dataset, source = data_source(config)
     if dataset == "plantnet":
         return prepare_index(config, root)
-    columns = ["speciesKey", "familyKey", "genusKey", "set"]
+    # Read every rank the source supplies, so the configured ranks can be checked against the rule.
+    keys = [f"{rank}Key" for rank in RANKS if f"{rank}Key" in pq.read_schema(source).names]
+    columns = [*keys, "set"]
     frame = pd.read_parquet(source, columns=columns).astype(str)
-    table = species_table(frame)
+    table = species_table(frame, keys[1:])
     candidates = {}
     for n in [256, 512, 1024]:
         if n <= len(table):
@@ -205,7 +229,7 @@ def prepare_data(config, root):
     samples["split"] = samples["set"].map(lambda value: "test" if value == "0" else "validation" if value == "1" else "train")
     if (samples.groupby("gbifID")["split"].nunique() > 1).any():
         raise ValueError("Observation crosses source partitions; preserve evidence and resolve upstream")
-    if (samples.groupby("speciesKey")[["familyKey", "genusKey"]].nunique() > 1).any().any():
+    if (samples.groupby("speciesKey")[keys[1:]].nunique() > 1).any().any():
         raise ValueError("Conflicting selected taxonomy")
     for row in samples[["speciesKey", "filename"]].itertuples(index=False):
         if Path(row.filename).name != row.filename or Path(row.speciesKey).name != row.speciesKey:
@@ -219,8 +243,9 @@ def prepare_data(config, root):
     samples.to_parquet(root / "samples.parquet", index=False)
     counts = table.loc[classes, "train"].astype(int).tolist()
     spec = {"num_classes": len(classes), "cls2idx": mapping, "counts": counts, "resize_size": config["size"]}
+    check_ranks(table.loc[classes], config["ranks"])
     if config.get("hierarchy"):
-        spec["hierarchy"] = hierarchy_spec(table, classes)
+        spec["hierarchy"] = hierarchy_spec(table, classes, config["ranks"])
     write_json(root / "classes.json", spec)
     support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0).reindex(classes, fill_value=0)
     support = table.loc[classes].join(support.rename(columns={"train": "train_support"}))
@@ -266,18 +291,24 @@ def prepare_index(config, root):
         relative = Path(path)
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise ValueError("Index image paths must be relative without parent traversal")
-        if split not in ("train", "validation", "test") or len(labels) < 3 or any(v is None or str(v) == "" for v in labels[:3]):
-            raise ValueError("Expected supplied splits and species/genus/family labels")
-        rows.append((relative.as_posix(), split, *map(str, labels[:3])))
-    samples = pd.DataFrame(rows, columns=["sample_id", "split", "speciesKey", "genusKey", "familyKey"])
+        if (
+            split not in ("train", "validation", "test")
+            or not 3 <= len(labels) <= len(RANKS)
+            or any(v is None or str(v) == "" for v in labels)
+        ):
+            raise ValueError("Expected supplied splits and leaf-first labels from species to at least family")
+        rows.append((relative.as_posix(), split, *map(str, labels)))
+    if len({len(row) for row in rows}) != 1:
+        raise ValueError("Index labels must cover the same ranks for every image")
+    keys = [f"{rank}Key" for rank in RANKS[: len(rows[0]) - 2]]
+    samples = pd.DataFrame(rows, columns=["sample_id", "split", *keys])
     if samples.sample_id.duplicated().any() or samples.sample_id.map(lambda p: Path(p).name).duplicated().any():
         raise ValueError("Duplicate image identity in corrected index")
-    if (samples.groupby("speciesKey")[["genusKey", "familyKey"]].nunique() > 1).any().any():
+    if (samples.groupby("speciesKey")[keys[1:]].nunique() > 1).any().any():
         raise ValueError("Conflicting taxonomy in corrected index")
     train = samples[samples.split == "train"]
-    table = train.groupby("speciesKey", sort=True).agg(
-        train=("split", "size"), genusKey=("genusKey", "first"), familyKey=("familyKey", "first")
-    )
+    table = train.groupby("speciesKey", sort=True).agg(train=("split", "size"), **{key: (key, "first") for key in keys[1:]})
+    check_ranks(table, config["ranks"])
     if set(samples.speciesKey) != set(table.index):
         raise ValueError("Held-out class has no training examples")
     description = hierarchy_description(table)
@@ -298,7 +329,7 @@ def prepare_index(config, root):
             "cls2idx": mapping,
             "counts": table.train.tolist(),
             "resize_size": config["size"],
-            "hierarchy": hierarchy_spec(table, classes),
+            "hierarchy": hierarchy_spec(table, classes, config["ranks"]),
         },
     )
     support = samples.groupby(["speciesKey", "split"]).size().unstack(fill_value=0)

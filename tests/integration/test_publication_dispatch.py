@@ -409,4 +409,5 @@ def test_campaign_studies_plan_each_cell_once_per_seed_with_flat_species_objecti
     factors = ["hidden", "normalized", "regularization", "loss", "rank_weights"]
     cells = {json.dumps([run.get(factor) for factor in factors]) for run in runs}
     assert len(cells) * len(config["seeds"]) == len(runs) and config["seeds"] == [42, 43, 44]
-    assert all(run.get("rank_weights") in (None, [1 / 3] * 3) for run in runs)
+    ranks = len(config["ranks"])
+    assert all(run.get("rank_weights") in (None, [1.0] * ranks) for run in runs)

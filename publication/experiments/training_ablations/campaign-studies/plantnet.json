@@ -41,5 +41,12 @@
     "hierarchy_fixed_regularized",
     "hierarchy_unregularized",
     "hierarchy_regularized"
+  ],
+  "ranks": [
+    "species",
+    "genus",
+    "family",
+    "order",
+    "class"
   ]
 }

@@ -32,6 +32,7 @@ DEFAULTS = {
     "log_gates": False,
     "hierarchy": False,
     "cohort_families": [],
+    "ranks": ["species", "genus", "family"],
     "train_image_budget": None,
     "train_support_cap": None,
     "train_support_seed": 0,
@@ -63,21 +64,27 @@ VARIANTS = {
     "core_reference": {"normalized": False, "regularization": False, "loss": "ce"},
     "fixed_adjustment": {"loss": "fixed"},
 }
-# Cells beyond the original screens, selected through an explicit "variants" list. Species-only
-# objectives use the flat head: it is gradient-identical to the hierarchical head with [1, 0, 0].
-HIERARCHY = {"rank_weights": [1 / 3] * 3}
-EXTENSIONS = {
-    "standard": {"hidden": False, "normalized": False, "regularization": False, "loss": "ce"},
-    "no_normalization_fixed": {"normalized": False, "loss": "fixed"},
-    "no_regularization_fixed": {"regularization": False, "loss": "fixed"},
-    "no_normalization_no_regularization_fixed": {"normalized": False, "regularization": False, "loss": "fixed"},
-    "hierarchy_regularized": HIERARCHY,
-    "hierarchy_unregularized": {**HIERARCHY, "regularization": False},
-    "hierarchy_ce_regularized": {**HIERARCHY, "loss": "ce"},
-    "hierarchy_ce_unregularized": {**HIERARCHY, "regularization": False, "loss": "ce"},
-    "hierarchy_fixed_regularized": {**HIERARCHY, "loss": "fixed"},
-    "hierarchy_fixed_unregularized": {**HIERARCHY, "regularization": False, "loss": "fixed"},
-}
+
+
+def extensions(ranks):
+    """Cells beyond the original screens, selected through an explicit "variants" list.
+
+    Species-only objectives use the flat head, gradient-identical to a hierarchical head with weight
+    only on species. Hierarchical objectives use mini_trainer's default of weight one at every rank.
+    """
+    hierarchy = {"rank_weights": [1.0] * ranks}
+    return {
+        "standard": {"hidden": False, "normalized": False, "regularization": False, "loss": "ce"},
+        "no_normalization_fixed": {"normalized": False, "loss": "fixed"},
+        "no_regularization_fixed": {"regularization": False, "loss": "fixed"},
+        "no_normalization_no_regularization_fixed": {"normalized": False, "regularization": False, "loss": "fixed"},
+        "hierarchy_regularized": hierarchy,
+        "hierarchy_unregularized": {**hierarchy, "regularization": False},
+        "hierarchy_ce_regularized": {**hierarchy, "loss": "ce"},
+        "hierarchy_ce_unregularized": {**hierarchy, "regularization": False, "loss": "ce"},
+        "hierarchy_fixed_regularized": {**hierarchy, "loss": "fixed"},
+        "hierarchy_fixed_unregularized": {**hierarchy, "regularization": False, "loss": "fixed"},
+    }
 
 
 class CUDAOutOfMemory(RuntimeError):
@@ -126,7 +133,7 @@ def study_variants(config):
     requested = config.get("variants")
     if requested is None:
         return campaign_variants(config)
-    available = {**campaign_variants(config), **VARIANTS, **EXTENSIONS}
+    available = {**campaign_variants(config), **VARIANTS, **extensions(len(config["ranks"]))}
     if not requested or len(set(requested)) != len(requested) or set(requested) - set(available):
         raise ValueError("variants must be a nonempty unique subset of the available treatments")
     variants = {name: available[name] for name in requested}
