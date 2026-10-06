@@ -122,6 +122,24 @@
         "overnight-12"
       ],
       "contents": "last.pt per run with catalog.csv (study, run_id, sha256); Gefion Flemming reuses the gefion-global-lepi models"
+    },
+    {
+      "name": "gefion-replicates-20261006-db24b6a",
+      "kind": "mini_metrics bootstrap replicates",
+      "export_commit": "db24b6abf9bfc75cc453d8df4ee10f750f45180e",
+      "manifest_sha256": "41863c6a3697397492343e5ad66dc113d6e78b98f727d213ce4f086bdd6e7fc6",
+      "files": 2724,
+      "bytes": 2548787601,
+      "evidence": [
+        "gefion-evidence-20261005-eae9293",
+        "gefion-flemming-evidence-20261006-2726692"
+      ],
+      "replicates": {
+        "gefion-plantnet": 1000,
+        "gefion-flemming": 1000,
+        "gefion-global-lepi": 200
+      },
+      "mini_metrics": "0.4.1 (61db373)"
     }
   ]
 }
