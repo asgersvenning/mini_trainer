@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from scipy.sparse import csr_matrix
 from scipy.special import softmax
 
 
@@ -47,14 +48,15 @@ PER_CLASS_METRICS = "^(accuracy|precision|recall|f1|coverage)$"
 PARENT_RULES = ("leaf_sum", "winner_ancestor")
 
 
-BLOCK = 20000  # Rows per block, so full-vocabulary score matrices never expand in memory at once.
+PREPARE_WORKERS = 4  # Concurrent run preparations; each holds one run's score matrix in memory.
+BLOCK = 5000  # Rows per block, so full-vocabulary score matrices never expand in memory at once.
 
 
 def blocks(frame):
     """Yield score columns ``c<j>`` as float64 arrays of at most BLOCK rows."""
-    columns = [c for c in frame.columns if c.startswith("c") and c[1:].isdigit()]
+    columns = [i for i, c in enumerate(frame.columns) if c.startswith("c") and c[1:].isdigit()]
     for start in range(0, len(frame), BLOCK):
-        yield frame[columns].iloc[start : start + BLOCK].to_numpy(np.float64)
+        yield frame.iloc[start : start + BLOCK, columns].to_numpy(np.float64)
 
 
 def native_predictions(scores, classes):
@@ -76,7 +78,10 @@ def top1_predictions(scores, taxonomy, rule, ranks):
     winning species to its ancestors and keeps its confidence (mini_metrics add_combinations).
     """
     taxa = taxonomy.sort_values("class_id")
-    groups = {rank: np.unique(taxa[rank].to_numpy(), return_inverse=True) for rank in ranks}
+    groups = {}
+    for rank in ranks:  # Species-to-parent indicator matrices: probabilities @ matrix sums mass per parent.
+        names, members = np.unique(taxa[rank].to_numpy(), return_inverse=True)
+        groups[rank] = names, csr_matrix((np.ones(len(members)), (np.arange(len(members)), members)))
     predictions, confidences = [], []
     for block in blocks(scores):
         probabilities = softmax(block, axis=1)
@@ -88,8 +93,7 @@ def top1_predictions(scores, taxonomy, rule, ranks):
                 block_confidences.append(probabilities.max(1))
                 continue
             names, members = groups[rank]
-            mass = np.zeros((len(probabilities), len(names)))
-            np.add.at(mass.T, members, probabilities.T)
+            mass = np.asarray(probabilities @ members)
             block_predictions.append(names[mass.argmax(1)])
             block_confidences.append(mass.max(1))
         predictions.append(np.stack(block_predictions, 1))
@@ -197,6 +201,29 @@ def write_task(task, output, study):
         pq.write_table(pa.Table.from_pandas(pd.DataFrame(rows, columns=COLUMNS[kind]).assign(study=study), preserve_index=False), path)
 
 
+def prepare_run(run_id, snapshot, study, catalog, images, taxonomy, classes, ranks, labels, known, flat_parent_rule, output):
+    """Write one run's top-1 predictions in the mini_metrics long layout; return its parent rule."""
+    paths = catalog.query("study == @study and kind == 'scores' and run_id == @run_id").sort_values("rank").path
+    scores = [pd.read_parquet(snapshot / path) for path in paths]
+    if any(not np.array_equal(frame.image_id.to_numpy(), images.image_id.to_numpy()) for frame in scores):
+        raise ValueError(f"Scores are not aligned with the study's evaluation images: {run_id}")
+    # Hierarchical heads output every rank natively; a flat head's parents need a chosen rule.
+    if len(scores) == len(ranks):
+        rule = "native"
+        predictions, confidences = native_predictions(scores, classes)
+    else:
+        rule = flat_parent_rule
+        predictions, confidences = top1_predictions(scores[0], taxonomy, rule, ranks)
+    # Long table in the mini_metrics column layout: one row per image and rank.
+    rows, levels = np.indices(labels.shape)
+    table = {"study": [study] * rows.size, "run_id": [run_id] * rows.size, "row": rows.ravel()}
+    table |= {"image_id": images.image_id.to_numpy()[rows.ravel()]}
+    table |= {"level": levels.ravel(), "label": labels.ravel(), "prediction": predictions.astype(str).ravel(), "known": known.ravel()}
+    path = output / "predictions" / f"{run_id}.parquet"
+    pq.write_table(pa.table(table | {"confidence": confidences.ravel()}), path)
+    return rule
+
+
 def run_study(snapshot, study, output, replicates, seed, calibration_fraction, workers, chunk, flat_parent_rule):
     snapshot, output = Path(snapshot), Path(output)
     output.mkdir(parents=True, exist_ok=False)
@@ -220,30 +247,31 @@ def run_study(snapshot, study, output, replicates, seed, calibration_fraction, w
     (output / "predictions").mkdir()
     classes = pd.read_parquet(snapshot / files.loc["classes", "path"])
     # Known: the true taxon is in the models' vocabulary at that rank (all true for closed-set studies).
-    known = np.stack([np.isin(labels[:, r], classes.loc[classes["rank"] == r, "key"].to_numpy()) for r in range(len(ranks))], 1)
-    tasks, parent_rules = [], {}
-    for run_id in runs.run_id:
-        paths = catalog.query("study == @study and kind == 'scores' and run_id == @run_id").sort_values("rank").path
-        scores = [pd.read_parquet(snapshot / path) for path in paths]
-        if any(not np.array_equal(frame.image_id.to_numpy(), images.image_id.to_numpy()) for frame in scores):
-            raise ValueError(f"Scores are not aligned with the study's evaluation images: {run_id}")
-        # Hierarchical heads output every rank natively; a flat head's parents need a chosen rule.
-        if len(scores) == len(ranks):
-            parent_rules[run_id] = "native"
-            predictions, confidences = native_predictions(scores, classes)
-        else:
-            parent_rules[run_id] = flat_parent_rule
-            predictions, confidences = top1_predictions(scores[0], taxonomy, flat_parent_rule, ranks)
-        # Long table in the mini_metrics column layout: one row per image and rank.
-        rows, levels = np.indices(labels.shape)
-        table = {"study": [study] * rows.size, "run_id": [run_id] * rows.size, "row": rows.ravel()}
-        table |= {"image_id": images.image_id.to_numpy()[rows.ravel()]}
-        table |= {"level": levels.ravel(), "label": labels.ravel(), "prediction": predictions.astype(str).ravel(), "known": known.ravel()}
-        path = output / "predictions" / f"{run_id}.parquet"
-        pq.write_table(pa.table(table | {"confidence": confidences.ravel()}), path)
-        columns = range(weights.shape[1])
-        tasks += [(run_id, path, output / "weights.npy", columns[i : i + chunk]) for i in range(0, len(columns), chunk)]
-
+    vocabulary = [set(classes.loc[classes["rank"] == r, "key"].astype(str)) for r in range(len(ranks))]
+    known = np.stack([pd.Series(labels[:, r]).isin(vocabulary[r]).to_numpy() for r in range(len(ranks))], 1)
+    # Full-vocabulary score matrices are large (Global Lepidoptera: 633k x 12k); prepare a few runs at once.
+    with ProcessPoolExecutor(min(workers, PREPARE_WORKERS)) as pool:
+        prepare = partial(
+            prepare_run,
+            snapshot=snapshot,
+            study=study,
+            catalog=catalog,
+            images=images,
+            taxonomy=taxonomy,
+            classes=classes,
+            ranks=ranks,
+            labels=labels,
+            known=known,
+            flat_parent_rule=flat_parent_rule,
+            output=output,
+        )
+        parent_rules = dict(zip(runs.run_id, pool.map(prepare, runs.run_id)))
+    columns = range(weights.shape[1])
+    tasks = [
+        (run_id, output / "predictions" / f"{run_id}.parquet", output / "weights.npy", columns[i : i + chunk])
+        for run_id in runs.run_id
+        for i in range(0, len(columns), chunk)
+    ]
     with ProcessPoolExecutor(workers) as pool:
         list(pool.map(partial(write_task, output=output, study=study), tasks))
     # Small tables become single files; per-class rows stay one Parquet dataset per run.
