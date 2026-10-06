@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CPU finalizer: once every run is complete and predicted, export the evidence snapshot, bootstrap
-# it with mini_metrics, archive the study directories (configs, logs, metrics, weights) and upload
-# all three to ERDA. Reruns resume; uploads are skipped with MT_UPLOAD=0.
+# it with mini_metrics, archive the complete study directories and upload all three to ERDA.
+# Reruns resume; uploads are skipped with MT_UPLOAD=0.
 set -euo pipefail
 revision="$1"
 base="/work/results/campaign-${revision:0:7}"
@@ -36,13 +36,13 @@ for name in "${studies[@]}"; do
         --replicates 1000 --workers "$(($(nproc) - 4))" --chunk 10
 done
 
-# Study directories hold what the tidy evidence summarizes: configs, plans, logs, metrics and
-# weights. Hard links avoid copying; locks are runtime state, and test predictions are in the evidence.
+# The raw record behind the evidence: configs, plans, logs, metrics, weights and test predictions
+# with their provenance. Hard links avoid copying; locks are runtime state.
 if [[ ! -e "$archive/manifest.json" ]]; then
     rm -rf "$archive"
+    mkdir -p "$archive"
     for name in "${studies[@]}"; do
-        mkdir -p "$archive/$name"
-        cp -al "$base/$name/study" "$archive/$name/study"
+        cp -al "$base/$name" "$archive/$name"
     done
     find "$archive" -name '*.lock' -delete
 fi
