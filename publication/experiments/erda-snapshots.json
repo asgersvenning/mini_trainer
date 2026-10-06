@@ -89,6 +89,39 @@
         "test"
       ],
       "contents": "Gefion backbone x head checkpoints re-run; per-rank float16 log-probabilities, embeddings, curves"
+    },
+    {
+      "name": "gefion-flemming-evidence-20261006-2726692",
+      "kind": "tidy evidence snapshot",
+      "export_commit": "2726692ba5778e8dd178e818a3cd818c318ef7a9",
+      "manifest_sha256": "d5205394b5488325e8cc5222e863356e4207ee4cb644902363ce46054bb57b80",
+      "files": 52,
+      "bytes": 21715295187,
+      "studies": [
+        "gefion-flemming"
+      ],
+      "runs": 12,
+      "splits": [
+        "test"
+      ],
+      "supersedes": "gefion-flemming in gefion-evidence-20261005-eae9293",
+      "contents": "Flemming labels corrected per flemming-corrections.csv (original_* columns keep the recorded keys); per-rank float16 log-probabilities, embeddings"
+    },
+    {
+      "name": "checkpoints-20261006-ce8571e",
+      "kind": "final checkpoint archive",
+      "export_commit": "ce8571e081d17e7ac7915af726c620992444735d",
+      "manifest_sha256": "0f6337155bc5129db3902bb0cb0fad29fc0abbe07f835075eb2cfb603908fdb6",
+      "files": 34,
+      "bytes": 2697716535,
+      "studies": [
+        "duration-12",
+        "factorial-11",
+        "gefion-global-lepi",
+        "gefion-plantnet",
+        "overnight-12"
+      ],
+      "contents": "last.pt per run with catalog.csv (study, run_id, sha256); Gefion Flemming reuses the gefion-global-lepi models"
     }
   ]
 }
