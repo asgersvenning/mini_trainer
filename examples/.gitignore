@@ -17,6 +17,9 @@
 !inat2021/construct.py
 !inat2021.ipynb
 
+!plantnet/
+!plantnet/format.py
+
 !resize_image_dir.py
 !create_combinations.py
 !utils.py

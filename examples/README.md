@@ -14,6 +14,7 @@ from the repository root in the existing environment:
 | [Blair notebook](blair.ipynb) | Hierarchical specimen classification and visualization; constructor preserves training/testing folders. |
 | [Bird dataset constructor](birds/construct.py) | Downloads the published train/valid/test archives through Hugging Face. |
 | [iNaturalist constructor](inat2021/construct.py) | Downloads mini/full training and validation data, resolves GBIF taxonomy and writes a data index. |
+| [Pl@ntNet-300K-v2 formatter](plantnet/format.py) | Standalone `uv run` script, run inside the downloaded dataset folder: drops genus-level classes, resolves species names to GBIF keys, collapses classes sharing an accepted species key, resizes images into `images_gbif/` and writes a five-rank data index. It produced the corrected PlantNet dataset used by the publication experiments. |
 
 Constructors accept `--output_dir` and use a `.complete` marker; without it they
 remove partial split directories before rebuilding. Use a dedicated destination.
