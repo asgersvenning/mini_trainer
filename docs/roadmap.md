@@ -154,6 +154,20 @@ Carry forward these concrete findings; verify their current callers before fixes
 
 These are recorded follow-ups, not fixes delivered by documentation cleanup.
 
+## Deferred taxonomy migration to Catalogue of Life
+
+GBIF will make Catalogue of Life its authoritative taxonomy, exposed through new API
+endpoints and/or an opt-in argument. Migrate `mini_trainer.integrations.gbif` to it as a
+separate, versioned change; results produced with the GBIF Backbone (including the current
+publication) stay on that backbone. Record the taxonomy source and version with every
+resolution so class definitions remain reproducible.
+
+Decide synonymization as part of that design. The current rule merges names resolving
+to the same accepted `speciesKey`; it keeps homotypic duplicates (separately accepted
+recombinations sharing a `basionymKey`) apart, and merging them would require choosing
+a genus placement that affects hierarchical labels. Decide from key-based evidence on
+real vocabularies and flag unresolved inconsistencies rather than merging silently.
+
 ## Deferred portable prototype viewer completion
 
 Resume the existing `feature/prototype-browser-inference` implementation rather
