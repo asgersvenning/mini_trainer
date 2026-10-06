@@ -234,12 +234,12 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         "-o",
         "--output",
         type=str,
-        default=".",
+        default=None,
         required=False,
         help='Parent directory for prediction results (default=".").',
     )
     out_args.add_argument(
-        "-n", "--name", type=str, default="predict", required=False, help='Name of the output predictions.\nDefault is "predict".'
+        "-n", "--name", type=str, default=None, required=False, help='Name of the output predictions.\nDefault is "predict".'
     )
     inf_args = parser.add_argument_group("Inference [optional]")
     inf_args.add_argument(
@@ -337,7 +337,10 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
     config_full = {k: v for k, v in load_yaml_config(cli_args.pop("config")).items() if k in defaults_full}
     cli_full = restructure_cli_args(cli_args)
 
+    # Unset flags are None so config values apply; keep the CLI's documented default name.
     args = merge_dicts(defaults_full, config_full, cli_full)
+    if args.get("name") is None:
+        args["name"] = "predict"
 
     if args.get("input") is None:
         raise SystemExit("error: the following arguments are required: --input (via CLI or config)")
