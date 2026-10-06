@@ -6,4 +6,4 @@ revision="${1:?Supply the full Git commit to run}"
 export PATH="$HOME/.local/bin:$PATH" PYTHONUNBUFFERED=1 MPLBACKEND=Agg
 git clone https://github.com/asgersvenning/mini_trainer.git /work/mini_trainer
 git -C /work/mini_trainer checkout --detach "$revision"
-exec bash /work/mini_trainer/publication/experiments/ucloud/gefion/job.sh "$revision"
+exec bash "/work/mini_trainer/publication/experiments/ucloud/gefion/${MT_JOB_SCRIPT:-job.sh}" "$revision"

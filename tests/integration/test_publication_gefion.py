@@ -3,6 +3,7 @@
 import json
 
 import pandas as pd
+import pytest
 import yaml
 
 from publication.experiments import gefion
@@ -47,3 +48,18 @@ def test_prepare_builds_study_from_recorded_run(tmp_path):
     attempt = study / "runs/efficientnet_b0_hierarchical/attempt-000"
     assert json.loads((attempt / "train.json").read_text())["weights_sha256"] == digest(weights)
     assert json.loads((attempt / "model/logs/learning.jsonl").read_text())["phase"] == "train"
+
+
+def test_species_corrections_keep_annotations_and_adopt_resolved_ancestors(monkeypatch):
+    from collections import OrderedDict
+
+    resolved = OrderedDict([("species", ("new", "")), ("genus", ("gNew", "")), ("family", ("f", ""))])
+    monkeypatch.setattr("mini_trainer.integrations.gbif.resolve_id", lambda key: resolved)
+    samples = pd.DataFrame({"speciesKey": ["old", "kept"], "genusKey": ["gOld", "gKept"], "familyKey": ["f", "f"]})
+    corrections = pd.DataFrame({"flemming_key": ["old", "kept"], "corrected_key": ["new", "kept"]})
+    taxonomy = {"new": ["new", "gNew", "f"]}
+    corrected = gefion.correct_species(samples, corrections, taxonomy)
+    assert corrected.speciesKey.tolist() == ["new", "kept"] and corrected.genusKey.tolist() == ["gNew", "gKept"]
+    assert corrected.original_speciesKey.tolist() == ["old", "kept"] and corrected.original_genusKey.tolist() == ["gOld", "gKept"]
+    with pytest.raises(ValueError, match="differ from the vocabulary"):
+        gefion.correct_species(samples.assign(speciesKey=["old", "kept"]), corrections, {"new": ["new", "gOther", "f"]})

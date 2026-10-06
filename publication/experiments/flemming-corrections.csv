@@ -1,0 +1,16 @@
+flemming_key,flemming_name,corrected_key,corrected_name,evidence,images,notes,lookup_date,backbone_dataset
+1811896,"Spilosoma lubricipeda Linnaeus, 1758",8237987,"Spilosoma lubricipeda (Linnaeus, 1758)",shared basionym 4532559,2074,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5116609,"Eilema complana Linnaeus, 1758",12253343,"Manulea complana (Linnaeus, 1758)",shared basionym 4532643,1901,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5117049,"Eilema lutarella Linnaeus, 1758",11418741,"Indalia lutarella (Linnaeus, 1758)",shared basionym 4532645,1232,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5116941,"Eilema griseola Hübner, 1827",11962292,"Collita griseola (Hübner, 1803)",shared basionym 4532644,878,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+7730078,"Eilema lurideola Zincken, 1817",12135372,"Nyea lurideola (Zincken, 1817)",shared basionym 9169917,694,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+1811789,"Spilosoma lutea Hufnagel, 1766",8000103,"Spilarctia lutea (Hufnagel, 1766)",shared basionym 4532561,325,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5142971,"Tethea or (Denis & Schiffermüller), 1776",5142971,"Tethea or (Denis & Schiffermüller), 1776",none: kept as annotated (outside vocabulary),243,Actually has few images.,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5116850,"Eilema depressa Esper, 1786",12089608,"Katha depressa (Esper, 1786)",shared basionym 4532636,213,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+7825213,Acronicta cuspis (Hübner),7825213,Acronicta cuspis (Hübner),none: kept as annotated (outside vocabulary),44,"It seems that there are many images of this species on GBIF, so it is strange that it isn't part of the vocabulary. Likely below the training set's 50-image minimum: of 85 eligible image records under download 0032836-250426092105405 by its date, 38 are larvae/caterpillars/nymphs and at most 47 could be adults (22 recorded, 25 unrecorded).",2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+1807206,"Thumatha senex Hübner, 1804",7874258,"Thumatha senex (Hübner, 1804)",shared basionym 4532616,36,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5112362,"Xestia rhomboidea Esper, 1790",5112362,"Xestia rhomboidea Esper, 1790",none: kept as annotated (outside vocabulary),4,Actually has few images.,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+1983694,Eupithecia denotata (Hübner),1983694,Eupithecia denotata (Hübner),none: kept as annotated (outside vocabulary),2,Actually has few images.,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+1796668,"Hydraecia nordstroemi Horke, 1952",1796668,"Hydraecia nordstroemi Horke, 1952",none: kept as annotated (outside vocabulary),1,Actually has few images.,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+1775152,"Dichonia aprilina Linnaeus, 1758",1775152,"Dichonia aprilina Linnaeus, 1758",none: kept as annotated (outside vocabulary),1,Actually has few images.,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c
+5116669,"Eilema pygmaeola Doubleday, 1847",11571523,"Indalia pygmaeola (Doubleday, 1847)",shared basionym 9188113,1,,2026-10-06,d7dddbf4-2cf0-4f39-9b2a-bb099caae36c

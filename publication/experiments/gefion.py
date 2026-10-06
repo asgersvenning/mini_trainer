@@ -81,7 +81,28 @@ def test_samples(evaluation, index, taxonomy, flemming_labels=None, parquet=None
     return frame.assign(split="test")
 
 
-def prepare(cohort, evaluation, runs, weights_root, index, flemming_labels=None, parquet=None):
+def correct_species(samples, corrections, taxonomy):
+    """Apply reviewed species-key corrections, keeping the annotated keys as ``original_*`` columns."""
+    ranks = [key for key in RANK_KEYS if key in samples]
+    for column in ranks:
+        samples[f"original_{column}"] = samples[column]
+    mapping = dict(zip(corrections.flemming_key.astype(str), corrections.corrected_key.astype(str)))
+    corrected = samples.speciesKey.map(mapping).fillna(samples.speciesKey)
+    changed = corrected != samples.speciesKey
+    samples["speciesKey"] = corrected
+    # Ancestors from mini_trainer's GBIF resolution, checked against the models' vocabulary taxonomy.
+    from mini_trainer.integrations.gbif import resolve_id
+
+    for key in sorted(set(corrected[changed])):
+        resolved = [resolved_key for resolved_key, _ in resolve_id(key).values()][: len(ranks)]
+        if key in taxonomy and resolved != taxonomy[key][: len(ranks)]:
+            raise ValueError(f"Resolved ancestors of {key} {resolved} differ from the vocabulary {taxonomy[key]}")
+        for rank, column in enumerate(ranks[1:], start=1):
+            samples.loc[changed & (corrected == key), column] = resolved[rank]
+    return samples
+
+
+def prepare(cohort, evaluation, runs, weights_root, index, flemming_labels=None, parquet=None, corrections=None):
     cohort, study = Path(cohort), Path(cohort) / "study"
     study.mkdir(parents=True, exist_ok=False)
     run_dirs = [Path(run) for run in runs]
@@ -98,6 +119,8 @@ def prepare(cohort, evaluation, runs, weights_root, index, flemming_labels=None,
     )
     counts = train.value_counts().reindex(sorted(species, key=species.get), fill_value=0)
     samples = test_samples(evaluation, index, taxonomy, flemming_labels, parquet)
+    if corrections is not None:
+        samples = correct_species(samples, corrections, taxonomy)
     samples["label"] = samples.speciesKey.map(species).fillna(-1).astype(int)
     ranks = [key for key in RANK_KEYS if key in samples]
     write_json(
@@ -115,7 +138,7 @@ def prepare(cohort, evaluation, runs, weights_root, index, flemming_labels=None,
         {
             "path": samples.path.tolist(),
             "split": samples.split.tolist(),
-            "label": samples.speciesKey.tolist(),
+            "label": samples.get("original_speciesKey", samples.speciesKey).tolist(),  # As annotated
             "class": samples.label.tolist(),
         },
     )
@@ -195,6 +218,7 @@ def main():
     make.add_argument("--index", type=Path, required=True, help="Gefion data_index.json of the training dataset")
     make.add_argument("--flemming-labels", type=Path, help="Flemming mini_metric.csv of a three-rank run")
     make.add_argument("--parquet", type=Path, help="Global Lepidoptera parquet with gbifID")
+    make.add_argument("--corrections", type=Path, help="Reviewed species-key corrections (flemming_key, corrected_key)")
     run = commands.add_parser("predict")
     run.add_argument("cohort", type=Path)
     run.add_argument("--device", default="cuda")
@@ -203,7 +227,8 @@ def main():
     args = parser.parse_args()
     if args.command == "prepare":
         labels = pd.read_csv(args.flemming_labels, dtype={"label": str}) if args.flemming_labels else None
-        prepare(args.cohort, args.evaluation, args.runs, args.weights_root, args.index, labels, args.parquet)
+        corrections = pd.read_csv(args.corrections, dtype=str) if args.corrections else None
+        prepare(args.cohort, args.evaluation, args.runs, args.weights_root, args.index, labels, args.parquet, corrections)
     else:
         predict(args.cohort, args.batch_size, args.workers, args.device)
 

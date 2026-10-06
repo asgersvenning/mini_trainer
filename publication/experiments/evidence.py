@@ -98,7 +98,8 @@ def export_cohort(cohort, output, source_metadata=None):
     )
     write(taxonomy, "taxonomy", "taxonomy")
     # Training rows of capped-support cohorts are draws, so image_id repeats there.
-    image_columns = ["image_id", "split", "class_id", *ranks, "observation_id"]
+    originals = [column for column in samples if column.startswith("original_")]  # Annotations before correction
+    image_columns = ["image_id", "split", "class_id", *ranks, "observation_id", *originals]
     write(samples[image_columns].assign(study=name), "images", "images")
 
     qualified = study / "qualified.json"
@@ -141,7 +142,8 @@ def export_cohort(cohort, output, source_metadata=None):
         index = pq.read_table(predicted / "index.parquet").to_pandas()
         selected = samples[samples.split == record["split"]]
         # Labels are class indices (ablations) or species keys (Gefion data indexes).
-        truth = selected.class_id if pd.api.types.is_integer_dtype(index.label_0) else selected.speciesKey
+        annotated = selected.get("original_speciesKey", selected.speciesKey)
+        truth = selected.class_id if pd.api.types.is_integer_dtype(index.label_0) else annotated
         # Stored paths are image IDs (ablations) or full paths ending in them (mt_predict).
         ids = selected.image_id.to_numpy().astype(str)
         paths = index.path.to_numpy().astype(str)
