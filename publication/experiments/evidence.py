@@ -35,7 +35,7 @@ RANK_NAMES = ("species", "genus", "family", "order", "class")
 def dataset_name(config):
     if "dataset" in config:
         return config["dataset"]
-    return "plantnet300k" if "data_index" in config else "global_lepidoptera"
+    return "plantnet300k" if config.get("data_index") else "global_lepidoptera"
 
 
 def export_cohort(cohort, output, source_metadata=None):

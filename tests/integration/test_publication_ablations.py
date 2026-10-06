@@ -467,3 +467,17 @@ def test_corrected_source_audit_retains_overlap_and_merge_evidence(tmp_path):
     samples.loc[1, "split"] = "train"
     with pytest.raises(ValueError, match="preserve"):
         audit_source_metadata(samples, {"source_metadata": str(path)}, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("config", "dataset"),
+    [
+        ({"data_index": "/work/plantnet/data_index.json"}, "plantnet300k"),
+        ({"data_index": None}, "global_lepidoptera"),
+        ({}, "global_lepidoptera"),
+    ],
+)
+def test_evidence_dataset_ignores_null_data_index(config, dataset):
+    from publication.experiments.evidence import dataset_name
+
+    assert dataset_name(config) == dataset
