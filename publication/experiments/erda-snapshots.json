@@ -59,7 +59,12 @@
       "splits": [
         "test"
       ],
-      "contents": "per-rank float16 log-probabilities, embeddings, curves"
+      "contents": "per-rank float16 log-probabilities, embeddings, curves",
+      "ranks": [
+        "speciesKey",
+        "genusKey",
+        "familyKey"
+      ]
     },
     {
       "name": "replicates-20261005-31c54fa",
@@ -70,7 +75,12 @@
       "bytes": 1323683312,
       "evidence": "evidence-20261005-31c54fa",
       "replicates": 1000,
-      "mini_metrics": "0.4.1 (61db373)"
+      "mini_metrics": "0.4.1 (61db373)",
+      "ranks": [
+        "speciesKey",
+        "genusKey",
+        "familyKey"
+      ]
     },
     {
       "name": "gefion-evidence-20261005-eae9293",
