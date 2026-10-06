@@ -1,0 +1,39 @@
+# Archive final checkpoints (last.pt) not yet on ERDA to an immutable ERDA folder (CPU, copy + hash).
+# Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
+name = "mini-trainer-checkpoint-archive"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "cpu-amd-zen5-8-vcpu"
+category = "cpu-amd-zen5"
+provider = "ucloud"
+
+[time_allocation]
+hours = 3
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/gefion-transfer"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/ucloud/checkpoints"
+remote = "/12348329/mini-trainer-ablations/checkpoint-archive/checkpoints-bootstrap"
+
+[setup]
+run = "bash /work/checkpoints-bootstrap/run.sh REVIEWED_COMMIT"
