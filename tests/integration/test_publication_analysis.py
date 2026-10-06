@@ -172,7 +172,7 @@ def test_evidence_snapshot_keeps_planned_runs_and_aligned_predictions(tmp_path):
     attempt = artifact_fixture(study)
     run = {**json.loads((attempt / "run.json").read_text()), "id": "full_seed42"}
     write_json(study / "plan.json", [run, {"variant": "ce", "seed": 42, "id": "ce_seed42"}])
-    write_json(study / "config.json", {})
+    write_json(study / "config.json", {"parquet": "/work/global_lepi/metadata.parquet"})
     write_json(attempt / "train.json", {"wall_seconds": 1.0, "weights_sha256": "w"})
     (attempt / "model/logs").mkdir(parents=True)
     (attempt / "model/logs/learning.jsonl").write_text(
@@ -195,6 +195,7 @@ def test_evidence_snapshot_keeps_planned_runs_and_aligned_predictions(tmp_path):
     runs = pd.read_parquet(tmp_path / "snapshot/runs.parquet").set_index("run_id")
     assert runs.status.to_dict() == {"full_seed42": "complete", "ce_seed42": "not_started"}
     assert runs.split["full_seed42"] == "validation"
+    assert set(runs.dataset) == {"global_lepi"} and len(runs.evaluation_set_sha256["full_seed42"]) == 64
     scores = catalog[catalog.kind == "scores"].set_index("rank")
     species = pd.read_parquet(tmp_path / "snapshot" / scores.path[0])
     assert species.image_id.tolist() == ["a/x", "b/y", "c/z"]

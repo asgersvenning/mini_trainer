@@ -21,7 +21,7 @@ import pyarrow.parquet as pq
 
 from .artifacts import create
 from .training_ablations.analysis import frequency_groups, verified
-from .training_ablations.data import data_source, digest, write_json
+from .training_ablations.data import data_source, digest, table_digest, write_json
 
 SCHEMA_VERSION = 2
 RUN_SETTINGS = ("size", "dtype", "batch_size")
@@ -141,6 +141,8 @@ def export_cohort(cohort, output, source_metadata=None):
             raise ValueError(f"Species indices differ from the prepared class order: {run['id']}")
         index = pq.read_table(predicted / "index.parquet").to_pandas()
         selected = samples[samples.split == record["split"]]
+        # Runs with equal hashes were evaluated on the same images and labels; their bootstrap draws pair.
+        row["evaluation_set_sha256"] = table_digest(selected[["image_id", "class_id"]].reset_index(drop=True))
         # Labels are class indices (ablations) or species keys (Gefion data indexes).
         annotated = selected.get("original_speciesKey", selected.speciesKey)
         truth = selected.class_id if pd.api.types.is_integer_dtype(index.label_0) else annotated
