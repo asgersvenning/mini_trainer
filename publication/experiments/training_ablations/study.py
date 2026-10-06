@@ -10,12 +10,14 @@ import os
 import random
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 from .data import digest, prepare_data, write_json
@@ -61,6 +63,21 @@ VARIANTS = {
     "core_reference": {"normalized": False, "regularization": False, "loss": "ce"},
     "fixed_adjustment": {"loss": "fixed"},
 }
+# Cells beyond the original screens, selected through an explicit "variants" list. Species-only
+# objectives use the flat head: it is gradient-identical to the hierarchical head with [1, 0, 0].
+HIERARCHY = {"rank_weights": [1 / 3] * 3}
+EXTENSIONS = {
+    "standard": {"hidden": False, "normalized": False, "regularization": False, "loss": "ce"},
+    "no_normalization_fixed": {"normalized": False, "loss": "fixed"},
+    "no_regularization_fixed": {"regularization": False, "loss": "fixed"},
+    "no_normalization_no_regularization_fixed": {"normalized": False, "regularization": False, "loss": "fixed"},
+    "hierarchy_regularized": HIERARCHY,
+    "hierarchy_unregularized": {**HIERARCHY, "regularization": False},
+    "hierarchy_ce_regularized": {**HIERARCHY, "loss": "ce"},
+    "hierarchy_ce_unregularized": {**HIERARCHY, "regularization": False, "loss": "ce"},
+    "hierarchy_fixed_regularized": {**HIERARCHY, "loss": "fixed"},
+    "hierarchy_fixed_unregularized": {**HIERARCHY, "regularization": False, "loss": "fixed"},
+}
 
 
 class CUDAOutOfMemory(RuntimeError):
@@ -104,16 +121,23 @@ def tuning_runs(config):
     ]
 
 
+def study_variants(config):
+    """The study's cells: an explicit "variants" list, else the campaign's original treatments."""
+    requested = config.get("variants")
+    if requested is None:
+        return campaign_variants(config)
+    available = {**campaign_variants(config), **VARIANTS, **EXTENSIONS}
+    if not requested or len(set(requested)) != len(requested) or set(requested) - set(available):
+        raise ValueError("variants must be a nonempty unique subset of the available treatments")
+    variants = {name: available[name] for name in requested}
+    if any(v.get("rank_weights") for v in variants.values()) and not (config["hierarchy"] or config["data_index"]):
+        raise ValueError("Hierarchical treatments need a cohort with a prepared hierarchy")
+    return variants
+
+
 def main_runs(config, selected):
     runs = []
-    available = campaign_variants(config)
-    requested = config.get("variants")
-    if requested is not None:
-        if not requested or len(set(requested)) != len(requested) or set(requested) - set(available):
-            raise ValueError("variants must be a nonempty unique subset of this campaign's treatments")
-        variants = {name: available[name] for name in requested}
-    else:
-        variants = available
+    variants = study_variants(config)
     for seed in config["seeds"]:
         block = []
         for name, changes in variants.items():
@@ -177,10 +201,7 @@ def prepare(config_path, root):
         raise ValueError("train_support_cap must be a positive integer or null")
     if not isinstance(config["train_support_seed"], int):
         raise ValueError("train_support_seed must be an integer")
-    if config["variants"] is not None:
-        available = campaign_variants(config)
-        if not config["variants"] or len(set(config["variants"])) != len(config["variants"]) or set(config["variants"]) - set(available):
-            raise ValueError("variants must be a nonempty unique subset of this campaign's treatments")
+    study_variants(config)
     if len(set(config["seeds"])) != len(config["seeds"]) or 41 in config["seeds"]:
         raise ValueError("Main seeds must be unique and distinct from tuning seed 41")
     if config.get("source_metadata"):
@@ -300,11 +321,40 @@ def child(root, attempt, stage, device, config, deadline):
         raise error(f"{stage} exited {code}; see {logfile}")
 
 
-def execute(root, run, config, device, deadline, retry=False):
+def predict_run(root, run, output):
+    from .training import export_predictions
+
+    shutil.rmtree(output, ignore_errors=True)
+    attempt = latest_complete(root, run)
+    config = json.loads((attempt / "resolved.json").read_text())
+    provenance = {"source": source_identity(), "environment": environment()}
+    export_predictions(root, attempt, config, run, output, provenance=provenance)
+
+
+def interrupted(attempt):
+    """No recorded failure (the process died with its node) or stopped by a deadline or signal."""
+    failure = attempt / "failure.json"
+    return not failure.exists() or json.loads(failure.read_text())["type"] in ("InterruptedError", "TimeoutError")
+
+
+def expected_seconds(root):
+    """Median training time of this study's completed main runs; zero before the first one."""
+    records = [p for p in root.glob("runs/*/attempt-*/train.json") if not p.parents[1].name.startswith("qualify_")]
+    return statistics.median(json.loads(p.read_text())["wall_seconds"] for p in records) if records else 0
+
+
+@contextmanager
+def run_lock(root, run):
+    """Own a run's directory across controllers; BlockingIOError while another holds it."""
     directory = root / "runs" / run["id"]
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / ".run.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield directory
+
+
+def execute(root, run, config, device, deadline, retry=False):
+    with run_lock(root, run) as directory:
         return execute_locked(root, run, config, device, deadline, retry, directory)
 
 
@@ -315,7 +365,8 @@ def execute_locked(root, run, config, device, deadline, retry, directory):
         if json.loads((attempt / "resolved.json").read_text()) != config:
             raise ValueError("Completed run configuration differs")
         return attempt
-    if attempt and not retry:
+    # The run lock is held, so an unfinished attempt is not running elsewhere; resume interruptions.
+    if attempt and not (retry or interrupted(attempt)):
         raise RuntimeError(f"Incomplete attempt: {attempt}; inspect logs and use --retry")
     if attempt and (attempt / "train.json").exists():
         # Reuse successful training; evaluation is independently restartable.
@@ -350,14 +401,26 @@ def execute_locked(root, run, config, device, deadline, retry, directory):
 def queue(root, runs, config, devices, deadline, retry, shared=False):
     # Deterministic static lanes; paired seed blocks rotate across devices.
     def lane(index):
-        results = []
+        results, failures = [], []
         for run in runs if shared else runs[index :: len(devices)]:
+            # A shared queue leaves runs that cannot finish in time to controllers with more allocation.
+            if shared and deadline - time.monotonic() < 1.25 * expected_seconds(root):
+                continue
             try:
                 results.append(execute(root, run, config, devices[index], deadline, retry))
             except BlockingIOError:
                 if not shared:
                     raise
                 # Another controller owns this run. Continue to unclaimed work.
+            except (InterruptedError, TimeoutError):
+                raise
+            except Exception as error:
+                if not shared:
+                    raise
+                # Keep the failed run's evidence for inspection and drain the remaining runs.
+                failures.append(error)
+        if failures:
+            raise failures[0]
         return results
 
     with ThreadPoolExecutor(max_workers=len(devices)) as pool:
@@ -395,6 +458,9 @@ def qualify(root, config, devices, deadline, retry):
         treatments["hierarchy_regularized"] = hierarchy_variants()["hierarchy_regularized"]
     if config.get("hierarchy"):
         treatments = {k: v for k, v in hierarchy_variants().items() if v["regularization"]}
+    if config.get("variants") is not None:
+        # Exercise every planned code path once, on tiny samples, before the main runs.
+        treatments = study_variants(config)
     for batch in [v for v in [768, 512, 256, 128, 64, 32] if v <= config["batch_size"]]:
         candidate = {**config, "batch_size": batch}
         runs = [
@@ -519,7 +585,7 @@ def summarize(root):
     pd.DataFrame(rows).to_csv(root / "results.csv", index=False)
     main = [row for row in rows if row.get("variant") and row["status"] == "complete"]
     write_json(root / "factorial.json", factorial_contrasts(main))
-    variants = campaign_variants(json.loads((root / "config.json").read_text()))
+    variants = study_variants(json.loads((root / "config.json").read_text()))
     contrasts = []
     for seed in sorted({row["seed"] for row in main}):
         block = {row["variant"]: row for row in main if row["seed"] == seed}
@@ -654,8 +720,8 @@ def main():
     args = parser.parse_args()
     if args.shard is not None and args.command not in ["tune", "run"]:
         parser.error("--shard is supported only for tune and run")
-    if args.shared_queue and (args.command != "run" or args.shard is not None):
-        parser.error("--shared-queue requires run and cannot be combined with --shard")
+    if args.shared_queue and (args.command not in ["run", "predict"] or args.shard is not None):
+        parser.error("--shared-queue requires run or predict and cannot be combined with --shard")
     root = args.root.resolve()
     if args.command == "prepare":
         if not args.config:
@@ -680,21 +746,26 @@ def main():
         (train if args.stage == "train" else evaluate)(root, args.attempt, config, run)
         return
     if args.command == "predict":
-        from .training import export_predictions
-
         # Prediction needs the prepared data and verified weights, not the preparation-time source.
         prepared = json.loads((root / "prepared.json").read_text())
         for name, expected in prepared["files"].items():
             if digest(root / name) != expected:
                 raise ValueError(f"Prepared artifact changed: {name}")
         for run in json.loads((root / "plan.json").read_text()):
-            if (args.output / run["id"] / "prediction.json").exists():
+            output = args.output / run["id"]
+            if (output / "prediction.json").exists():
                 continue
-            shutil.rmtree(args.output / run["id"], ignore_errors=True)
-            attempt = latest_complete(root, run)
-            config = json.loads((attempt / "resolved.json").read_text())
-            provenance = {"source": source_identity(), "environment": environment()}
-            export_predictions(root, attempt, config, run, args.output / run["id"], provenance=provenance)
+            if not args.shared_queue:
+                predict_run(root, run, output)
+                continue
+            # Shared: predict completed runs no other controller holds; others are left for later.
+            try:
+                with run_lock(root, run) as directory:
+                    attempts = sorted(directory.glob("attempt-*"))
+                    if attempts and completed(attempts[-1], run) and not (output / "prediction.json").exists():
+                        predict_run(root, run, output)
+            except BlockingIOError:
+                pass
         return
     if args.command == "status":
         for path in sorted((root / "runs").glob("*/attempt-*")):

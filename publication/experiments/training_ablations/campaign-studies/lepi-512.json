@@ -1,0 +1,39 @@
+{
+  "parquet": "/work/global_lepi/0032836-250426092105405_processing_metadata_postprocessed_quality_filtered.parquet",
+  "images": "/work/global_lepi/images",
+  "species": 512,
+  "selection_seed": 20261003,
+  "size": 384,
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "epochs": 10,
+  "tuning_epochs": 10,
+  "batch_size": 512,
+  "workers": 32,
+  "threads": 1,
+  "dtype": "float16",
+  "device": "cuda",
+  "wandb": true,
+  "project": "mini-trainer-ablation-campaign",
+  "entity": "asvenning",
+  "screening": true,
+  "log_gates": true,
+  "variants": [
+    "standard",
+    "core_reference",
+    "no_normalization_ce",
+    "no_regularization_ce",
+    "ce",
+    "no_normalization_no_regularization_fixed",
+    "no_normalization_fixed",
+    "no_regularization_fixed",
+    "fixed_adjustment",
+    "no_normalization_no_regularization",
+    "no_normalization",
+    "no_regularization",
+    "full"
+  ]
+}

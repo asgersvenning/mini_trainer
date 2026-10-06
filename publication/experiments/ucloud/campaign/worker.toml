@@ -1,0 +1,44 @@
+# Ablation campaign GPU worker: drains all studies, then exits.
+# Queued by `campaign submit`, which substitutes REVIEWED_COMMIT; the run.sh hours must match time_allocation.
+name = "mini-trainer-campaign-worker"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "gpu-nvidia-b200-1-gpu"
+category = "gpu-nvidia-b200"
+provider = "ucloud"
+
+[time_allocation]
+hours = 12
+
+[[resources]]
+type = "file"
+path = "/12383016/global_lepi"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/datasets/plantnet"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/ucloud/campaign"
+remote = "/12348329/mini-trainer-ablations/campaign/campaign-bootstrap"
+
+[setup]
+run = "bash /work/campaign-bootstrap/run.sh worker REVIEWED_COMMIT 12"

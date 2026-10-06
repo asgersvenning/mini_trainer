@@ -1,14 +1,28 @@
 """Shared-root dispatch must neither duplicate training nor select partial tuning."""
 
 import argparse
+import fcntl
 import json
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from publication.experiments.training_ablations import study, support_sensitivity
+from publication.experiments.training_ablations import campaign, study, support_sensitivity
 from publication.experiments.training_ablations.data import write_json
+
+
+def finish(attempt, stage, wall_seconds=1):
+    """Write the artifacts a successful training or evaluation stage leaves behind."""
+    if stage == "train":
+        (attempt / "model/weights").mkdir(parents=True)
+        for name in ["model/weights/last.pt", "initialization.json", "parameter_groups.json"]:
+            (attempt / name).write_text("{}")
+        write_json(attempt / "train.json", {"wall_seconds": wall_seconds})
+    else:
+        for name in ["evaluation.json", "predictions.npz"]:
+            (attempt / name).write_text("{}")
 
 
 @pytest.mark.parametrize("count", [1, 2, 4, 8, 11])
@@ -176,20 +190,15 @@ def test_shared_queue_skips_busy_work_and_does_not_duplicate(tmp_path, monkeypat
             if run["id"] == "long":
                 entered.set()
                 assert release.wait(10)
-            (attempt / "model/weights").mkdir(parents=True)
-            for name in ["model/weights/last.pt", "train.json", "initialization.json", "parameter_groups.json"]:
-                (attempt / name).write_text("{}")
-        else:
-            for name in ["evaluation.json", "predictions.npz"]:
-                (attempt / name).write_text("{}")
+        finish(attempt, stage)
 
     monkeypatch.setattr(study, "child", child)
     runs = [{"id": name} for name in ["long", "short", "next"]]
     with ThreadPoolExecutor(max_workers=1) as pool:
-        first = pool.submit(study.queue, tmp_path, runs, {}, ["0"], 100, False, True)
+        first = pool.submit(study.queue, tmp_path, runs, {}, ["0"], time.monotonic() + 100, False, True)
         try:
             assert entered.wait(5)
-            study.queue(tmp_path, runs, {}, ["0"], 100, False, shared=True)
+            study.queue(tmp_path, runs, {}, ["0"], time.monotonic() + 100, False, shared=True)
             assert trained == ["long", "short", "next"]
         finally:
             release.set()
@@ -337,3 +346,67 @@ def test_support_comparison_accepts_only_publication_script_differences(path, va
     # Empty held-out rows make an otherwise accepted comparison stop at the sample check.
     with pytest.raises(ValueError, match=message):
         support_sensitivity.compare(cohort(), limited, None)
+
+
+def test_interrupted_attempts_resume_but_failures_need_retry(tmp_path, monkeypatch):
+    errors = iter([TimeoutError("deadline"), RuntimeError("broken")])
+
+    def child(*args):
+        raise next(errors)
+
+    monkeypatch.setattr(study, "child", child)
+    run = {"id": "run"}
+    with pytest.raises(TimeoutError):
+        study.execute(tmp_path, run, {}, "0", 100)
+    with pytest.raises(RuntimeError, match="broken"):  # Resumed without --retry
+        study.execute(tmp_path, run, {}, "0", 100)
+    with pytest.raises(RuntimeError, match="--retry"):
+        study.execute(tmp_path, run, {}, "0", 100)
+
+
+def test_shared_queue_drains_past_failures_and_leaves_runs_that_cannot_finish(tmp_path, monkeypatch):
+    trained = []
+
+    def child(root, attempt, stage, *args):
+        run = json.loads((attempt / "run.json").read_text())["id"]
+        if stage == "train":
+            trained.append(run)
+            if run == "broken":
+                raise RuntimeError("broken run")
+        finish(attempt, stage, wall_seconds=50)
+
+    monkeypatch.setattr(study, "child", child)
+    runs = [{"id": name} for name in ["broken", "first", "second"]]
+    # After the first 50 s run, the second would need more than the remaining minute.
+    with pytest.raises(RuntimeError, match="broken run"):
+        study.queue(tmp_path, runs, {}, ["0"], time.monotonic() + 60, False, shared=True)
+    assert trained == ["broken", "first"]
+
+
+def test_only_one_worker_prepares_and_qualifies_a_study(tmp_path, monkeypatch):
+    calls = []
+
+    def run_study(command, root, *args):
+        calls.append(command)
+        root.mkdir(parents=True, exist_ok=True)
+        (root / {"prepare": "prepared.json", "qualify": "qualified.json"}[command]).write_text("{}")
+        return 0
+
+    monkeypatch.setattr(campaign, "run_study", run_study)
+    cohort = tmp_path / "study-name"
+    cohort.mkdir()
+    with (cohort / ".prepare.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        assert not campaign.ready(cohort, 1)  # Another worker is preparing
+    assert campaign.ready(cohort, 1) and campaign.ready(cohort, 1)
+    assert calls == ["prepare", "qualify"]
+
+
+@pytest.mark.parametrize("name", campaign.STUDIES)
+def test_campaign_studies_plan_each_cell_once_per_seed_with_flat_species_objectives(name):
+    config = {**study.DEFAULTS, **json.loads((campaign.CONFIGS / f"{name}.json").read_text())}
+    runs = study.main_runs(config, {"muon": {}})
+    factors = ["hidden", "normalized", "regularization", "loss", "rank_weights"]
+    cells = {json.dumps([run.get(factor) for factor in factors]) for run in runs}
+    assert len(cells) * len(config["seeds"]) == len(runs) and config["seeds"] == [42, 43, 44]
+    assert all(run.get("rank_weights") in (None, [1 / 3] * 3) for run in runs)
