@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Archive the final checkpoints (last.pt) not yet on ERDA: the factorial, overnight and duration
 # ablation studies and the Gefion backbone x head runs, in the study-relative layout of the
-# earlier archive, with a catalog (study, run_id, sha256) and manifest. Reruns resume.
+# earlier archive, with a catalog (study, run_id, sha256) and manifest. Every copy must match the
+# hash its training record states. Reruns resume.
 set -euo pipefail
 revision="$1"
 root="/work/results/checkpoints-${revision:0:7}"
@@ -31,13 +32,13 @@ ablations = {
 rows = []
 
 
-def archive(source, relative, study, run_id, expected=None):
+def archive(source, relative, study, run_id, expected):
     target = snapshot / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         shutil.copyfile(source, target)
     sha = digest(target)
-    if expected is not None and sha != expected:
+    if sha != expected:
         raise ValueError(f"Checkpoint hash differs from its training record: {source}")
     rows.append({"path": relative, "study": study, "run_id": run_id, "sha256": sha, "bytes": target.stat().st_size, "source": str(source)})
 
@@ -49,12 +50,15 @@ for study, root in ablations.items():
         relative = f"{study}/study/runs/{run['id']}/{attempt.name}/model/weights/last.pt"
         archive(attempt / "model/weights/last.pt", relative, study, run["id"], record["weights_sha256"])
 
-# Gefion runs keep the run IDs of the Gefion evidence snapshot; Flemming reuses the Global Lepidoptera models.
-for weights in sorted(Path("/work/gefion-transfer").glob("*/results/runs/*/weights/last.pt")):
-    campaign, run_dir = weights.parents[3].name, weights.parents[1].name
-    head, dataset = run_dir.split("_", 1)
-    study, run_id = f"gefion-{dataset.replace('_', '-')}", f"{campaign}_{head}"
-    archive(weights, f"{study}/study/runs/{run_id}/attempt-000/model/weights/last.pt", study, run_id)
+# Gefion runs come from the Gefion evidence studies, which record each run's checkpoint and hash.
+# Flemming reuses the Global Lepidoptera models.
+gefion = Path("/work/results/gefion-eae9293/cohorts")
+for study in ["gefion-global-lepi", "gefion-plantnet"]:
+    root = gefion / study / "study"
+    for run in json.loads((root / "plan.json").read_text()):
+        record = json.loads((root / "runs" / run["id"] / "attempt-000" / "train.json").read_text())
+        relative = f"{study}/study/runs/{run['id']}/attempt-000/model/weights/last.pt"
+        archive(Path(record["weights"]), relative, study, run["id"], record["weights_sha256"])
 
 catalog = pd.DataFrame(rows).sort_values(["study", "run_id"])
 catalog.to_csv(snapshot / "catalog.csv", index=False)
