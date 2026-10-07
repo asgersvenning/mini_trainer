@@ -59,17 +59,7 @@
       "splits": [
         "test"
       ],
-      "contents": "per-rank float16 log-probabilities, embeddings, curves",
-      "ranks": [
-        "speciesKey",
-        "genusKey",
-        "familyKey"
-      ],
-      "corrections": {
-        "support-16": {
-          "dataset": "global_lepidoptera"
-        }
-      }
+      "contents": "per-rank float16 log-probabilities, embeddings, curves"
     },
     {
       "name": "replicates-20261005-31c54fa",
@@ -80,12 +70,7 @@
       "bytes": 1323683312,
       "evidence": "evidence-20261005-31c54fa",
       "replicates": 1000,
-      "mini_metrics": "0.4.1 (61db373)",
-      "ranks": [
-        "speciesKey",
-        "genusKey",
-        "familyKey"
-      ]
+      "mini_metrics": "0.4.1 (61db373)"
     },
     {
       "name": "gefion-evidence-20261005-eae9293",
@@ -172,6 +157,50 @@
       ],
       "supersedes": "checkpoints-20261006-ce8571e (its Gefion runs were all efficientnet_b0)",
       "contents": "last.pt per run with catalog.csv (study, run_id, sha256 matching each run's training record); Gefion Flemming reuses the gefion-global-lepi models"
+    },
+    {
+      "name": "ablation-evidence-20261007-808f65e",
+      "kind": "tidy evidence snapshot",
+      "export_commit": "808f65ecae2e214268d8a105123e9daca8db00e5",
+      "manifest_sha256": "75c4b1a7e297d2e7ea2375cc070665ddc3f71f9adbfe4920aec300e260053b64",
+      "files": 499,
+      "bytes": 40867284539,
+      "studies": [
+        "lepi-512",
+        "lepi-512-duration",
+        "lepi-1513",
+        "lepi-1513-capped",
+        "plantnet"
+      ],
+      "runs": 177,
+      "splits": [
+        "test"
+      ],
+      "supersedes": "evidence-20261005-31c54fa",
+      "design": "Fresh campaign at one commit, seeds 42-44; completes the ablation designs (decided after earlier test-split results were seen, to complete factorials rather than in response to them). Config: training_ablations/campaign-studies.",
+      "contents": "per-rank float16 log-probabilities, embeddings, curves; runs.parquet with evaluation_set_sha256"
+    },
+    {
+      "name": "ablation-replicates-20261007-808f65e",
+      "kind": "mini_metrics bootstrap replicates",
+      "export_commit": "808f65ecae2e214268d8a105123e9daca8db00e5",
+      "manifest_sha256": "ec6a00039ef9cd10c2b53eff71db178dec4457a731c4b8b1fb49f3c985475ff4",
+      "files": 18074,
+      "bytes": 4862699341,
+      "evidence": "ablation-evidence-20261007-808f65e",
+      "replicates": 1000,
+      "mini_metrics": "0.4.1 (61db373)",
+      "supersedes": "replicates-20261005-31c54fa"
+    },
+    {
+      "name": "ablation-runs-20261007-808f65e",
+      "kind": "campaign run archive",
+      "export_commit": "808f65ecae2e214268d8a105123e9daca8db00e5",
+      "manifest_sha256": "5d389930014d902e420b840155406d38c7c6f0321401042cc09f5f1472a9c3f1",
+      "files": 64441,
+      "bytes": 336208633248,
+      "evidence": "ablation-evidence-20261007-808f65e",
+      "contents": "complete study directories: configs, plans, preparation, logs, run records, all checkpoints, test predictions, figures, local W&B runs"
     }
   ]
 }
