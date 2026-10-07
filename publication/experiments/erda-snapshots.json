@@ -155,6 +155,23 @@
         "gefion-global-lepi": 200
       },
       "mini_metrics": "0.4.1 (61db373)"
+    },
+    {
+      "name": "checkpoints-20261007-99c6560",
+      "kind": "final checkpoint archive",
+      "export_commit": "99c65604fb0cb1143b19436637f7759c466ebde6",
+      "manifest_sha256": "562a120b7c2148955663c79ab2d735516571d9c4cbbc9101a4a07995e7007d89",
+      "files": 50,
+      "bytes": 13745870139,
+      "studies": [
+        "duration-12",
+        "factorial-11",
+        "gefion-global-lepi",
+        "gefion-plantnet",
+        "overnight-12"
+      ],
+      "supersedes": "checkpoints-20261006-ce8571e (its Gefion runs were all efficientnet_b0)",
+      "contents": "last.pt per run with catalog.csv (study, run_id, sha256 matching each run's training record); Gefion Flemming reuses the gefion-global-lepi models"
     }
   ]
 }
