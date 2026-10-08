@@ -1,0 +1,39 @@
+# Export head weights of every current run (campaign and Gefion) as an evidence-format ERDA folder (CPU).
+# Substitute REVIEWED_COMMIT (full hash); prefix the command with MT_UPLOAD=0 for a dry run.
+name = "mini-trainer-head-weights"
+replicas = 1
+ssh_enabled = false
+
+[application]
+name = "pytorch-te"
+version = "26.05"
+
+[product]
+id = "cpu-amd-zen5-16-vcpu"
+category = "cpu-amd-zen5"
+provider = "ucloud"
+
+[time_allocation]
+hours = 6
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/gefion-transfer"
+read_only = true
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-ablations/results"
+read_only = false
+
+[[resources]]
+type = "file"
+path = "/12348329/mini-trainer-secrets"
+read_only = true
+
+[sync]
+local = "publication/experiments/ucloud/heads"
+remote = "/12348329/mini-trainer-ablations/head-weights/heads-bootstrap"
+
+[setup]
+run = "bash /work/heads-bootstrap/run.sh REVIEWED_COMMIT"
