@@ -201,6 +201,31 @@
       "bytes": 336208633248,
       "evidence": "ablation-evidence-20261007-808f65e",
       "contents": "complete study directories: configs, plans, preparation, logs, run records, all checkpoints, test predictions, figures, local W&B runs"
+    },
+    {
+      "name": "heads-20261008-e91012b",
+      "kind": "head weights",
+      "export_commit": "e91012ba054e63f38dff0c7afb85c035c8cfbf61",
+      "manifest_sha256": "304c037b59fabea503235b546fc3343131df930158273e989826bc4e25e582c5",
+      "files": 216,
+      "bytes": 3959000454,
+      "studies": [
+        "lepi-512",
+        "lepi-512-duration",
+        "lepi-1513",
+        "lepi-1513-capped",
+        "plantnet",
+        "gefion-global-lepi",
+        "gefion-plantnet",
+        "gefion-flemming"
+      ],
+      "runs": 213,
+      "evidence": [
+        "ablation-evidence-20261007-808f65e",
+        "gefion-evidence-20261005-eae9293",
+        "gefion-flemming-evidence-20261006-2726692"
+      ],
+      "contents": "heads/<study>/<run_id>.parquet (float32): rank, class_index, key, bias, w<dimension>; logits: normalized heads cosine_to_zscore(normalize(e) @ w) + bias, unnormalized e @ w + bias"
     }
   ]
 }

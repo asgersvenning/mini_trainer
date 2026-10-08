@@ -1,8 +1,9 @@
 """Export classification-head weights as tables, in the layout planned for evidence snapshots.
 
 One row per output class and rank: ``study, run_id, rank, class_index, key, bias, w0..w{D-1}``.
-Weights are the effective ones the forward pass uses (weight normalization applied). For normalized
-heads, logits are ``cosine_to_zscore(normalize(e) @ w) + bias``, with ``e`` the evidence embeddings.
+Weights are the effective ones the forward pass uses (weight normalization applied). With ``e`` the evidence
+embedding, normalized heads give logits ``cosine_to_zscore(normalize(e) @ w) + bias``; unnormalized heads
+(``normalized`` false in runs.parquet) give ``e @ w + bias``, where ``e`` is already the BatchNorm output.
 
     python -m publication.experiments.heads fetch OUTPUT STUDY/RUN_ID [...] [--archive NAME]
     python -m publication.experiments.heads export OUTPUT COHORT [...] --revision COMMIT
