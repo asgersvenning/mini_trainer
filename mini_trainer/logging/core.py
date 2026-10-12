@@ -36,7 +36,7 @@ from mini_trainer.visualization import (
     save_dendrogram_svg,
 )
 
-from .confusion import confusion_report, hard_counts, reduce_matrix
+from .confusion import MAX_DENSE_CELLS, confusion_report, hard_counts, reduce_matrix, reduce_pairs
 
 
 def format_duration(sec: int | float, suffix="dhms"):
@@ -959,6 +959,8 @@ class MultiLogger:
         return val
 
     def render_soft_confusion_matrix(self, labels: torch.Tensor, predictions: torch.Tensor, level: int = 0):
+        if predictions.shape[1] ** 2 > MAX_DENSE_CELLS:
+            return  # A dense N×N accumulator per rank is infeasible; reported in `confusion_matrix`.
         predictions = predictions.softmax(dim=1)
         cf = self._soft_confusion_matrix.get(level, None)
         new_cf = False
@@ -1011,7 +1013,7 @@ class MultiLogger:
                     if epoch == self._epoch and phase.lower().startswith(("eval", "val")):
                         values.extend(indices)
                 counts.append(values)
-            matrix = reduce_matrix(hard_counts(*counts, size), copy=False)
+            matrix = reduce_pairs(hard_counts(*counts, size))
             if get_rank() == 0:
                 get_logger().info(f"Rendering whole-matrix confusion diagnostics: level {level}, {size:,} classes")
                 name = f"Confusion matrix/lvl{level}"
@@ -1019,6 +1021,8 @@ class MultiLogger:
                 figures[name + "/overview_mean"] = confusion_report(matrix, soft=False, directory=directory)
             del matrix
             if not has_soft:
+                if size**2 > MAX_DENSE_CELLS and get_rank() == 0:
+                    get_logger().info(f"Soft confusion matrix skipped for level {level}: {size:,} classes exceed the dense budget")
                 continue
             local_soft = self._soft_confusion_matrix.get(level)
             if local_soft is None:

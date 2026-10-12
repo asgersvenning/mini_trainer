@@ -10,6 +10,7 @@ import torch.multiprocessing as mp
 from PIL import Image
 
 from mini_trainer.logging import confusion as report
+from mini_trainer.logging import core
 from mini_trainer.logging.core import MultiLogger
 
 
@@ -63,6 +64,35 @@ def test_invalid_soft_cells_are_distinct_from_zero(tmp_path):
     assert json.loads((tmp_path / "metadata.json").read_text())["invalid_normalized_cells"] == 2
 
 
+def test_sparse_report_matches_dense_preview_without_full_image(tmp_path, monkeypatch):
+    monkeypatch.setattr(report, "PREVIEW_SIZE", 8)
+    rng = np.random.default_rng(0)
+    n = 40
+    labels = rng.integers(0, n, 500)
+    predictions = np.where(rng.random(500) < 0.6, labels, rng.integers(0, n, 500))
+    dense = report.confusion_report(report.hard_counts(labels, predictions, n), soft=False, directory=tmp_path / "dense")
+    monkeypatch.setattr(report, "MAX_DENSE_CELLS", 0)
+    sparse = report.confusion_report(report.hard_counts(labels, predictions, n), soft=False, directory=tmp_path / "sparse")
+    np.testing.assert_array_equal(sparse, dense)
+    np.testing.assert_array_equal(np.load(tmp_path / "sparse/row_support.npy"), np.load(tmp_path / "dense/row_support.npy"))
+    with np.load(tmp_path / "sparse/counts.npz") as a, np.load(tmp_path / "dense/counts.npz") as b:
+        for key in ("rows", "columns", "counts", "shape"):
+            np.testing.assert_array_equal(a[key], b[key])
+    assert (tmp_path / "dense/matrix.png").exists() and not (tmp_path / "sparse/matrix.png").exists()
+    assert "full_resolution" in json.loads((tmp_path / "sparse/metadata.json").read_text())
+
+
+def test_oversized_soft_matrix_is_skipped_but_hard_counts_are_reported(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "MAX_DENSE_CELLS", 4)
+    monkeypatch.setattr(report, "MAX_DENSE_CELLS", 4)
+    logger = MultiLogger([0], [0], 1, str(tmp_path), "run")
+    logger.update(epoch=0, type="eval")
+    logger.log_accuracy(torch.tensor([0, 1, 2]), torch.randn(3, 5))
+    assert logger._soft_confusion_matrix == {}
+    assert list(logger.confusion_matrix()) == ["Confusion matrix/lvl0/overview_mean"]
+    assert not list((tmp_path / "run/logs/figures").glob("*/Soft_confusion_matrix*"))
+
+
 def _ddp_confusion_worker(rank, rendezvous, root):
     dist.init_process_group("gloo", init_method=f"file://{rendezvous}", rank=rank, world_size=2)
     try:
@@ -80,6 +110,8 @@ def _ddp_confusion_worker(rank, rendezvous, root):
             assert bool(figures) == (rank == 0)
         for key in original:
             torch.testing.assert_close(logger._soft_confusion_matrix[key], original[key])
+        report.MAX_DENSE_CELLS = 0  # Also exercise the sparse reduction used by large heads.
+        assert bool(logger.confusion_matrix()) == (rank == 0)
     finally:
         dist.destroy_process_group()
 
