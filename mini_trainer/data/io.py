@@ -20,7 +20,14 @@ from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
 from mini_trainer import get_logger
-from mini_trainer.utils import TQDM, make_convert_dtype, memory_proportion, multithread_vectorize
+from mini_trainer.utils import (
+    TQDM,
+    is_dist_avail_and_initialized,
+    make_convert_dtype,
+    memory_proportion,
+    multithread_vectorize,
+    read_square_crop,
+)
 
 from ._workers import _default_worker_count
 
@@ -172,6 +179,27 @@ class ReadAndResize:
         if img.dtype != self.dtype:
             img = self.converter(img)
         return img.to(self.device)
+
+
+class SquareCropReader:
+    """Read the largest square of an image and resize it to ``size`` with PIL bilinear filtering.
+
+    Training readers place the square at a uniform random offset on every call; others centre it.
+    This is fastai's ``Resize(size, method="crop")``; see ``mini_trainer.utils.read_square_crop``.
+    """
+
+    def __init__(self, size: int, train: bool = False):  # noqa: D107
+        self.size = size
+        self.train = train
+
+    def __call__(self, path: str | tuple[str, ...]) -> torch.Tensor:
+        if not isinstance(path, str):
+            path = path[0]
+        try:
+            return read_square_crop(path, self.size, None if self.train else (0.5, 0.5))
+        except Exception as e:
+            e.add_note(f"Image path: {path}")
+            raise
 
 
 def make_read_and_resize_fn(
@@ -352,6 +380,61 @@ class ReindexedSampler(Reindexed[T], Sampler[int]):  # noqa: D101
 
     def __len__(self) -> int:
         return len(self._indices)
+
+
+def class_sampling_weights(classes: Sequence, power: float) -> np.ndarray:
+    """Per-row weights ``count(class) ** -power`` over the given rows (leaf class for hierarchical labels).
+
+    A class with ``n`` rows then carries total weight ``n ** (1 - power)``: 0 keeps the natural
+    distribution, 0.5 is square-root sampling and 1 balances classes.
+    """
+    leaf = np.asarray([c[0] if isinstance(c, (list, tuple, np.ndarray)) else c for c in classes], dtype=np.int64)
+    _, inverse, counts = np.unique(leaf, return_inverse=True, return_counts=True)
+    return counts[inverse].astype(np.float64) ** (-float(power))
+
+
+class WeightedEpochSampler(Sampler[int]):
+    """Sample indices with replacement in proportion to ``weights``, redrawn every epoch.
+
+    Each epoch draws ``num_samples`` indices (one per row by default) from a generator seeded with
+    ``(seed, epoch)``, so a resumed run repeats the draws of an uninterrupted one. Without a ``seed`` one
+    is taken from PyTorch's global generator. Under distributed training every rank makes the same
+    global draw and keeps every ``world_size``-th index, so the shares are disjoint and the epoch length
+    is preserved (padded up to a multiple of ``world_size``).
+    """
+
+    def __init__(
+        self,
+        weights: Sequence[float] | np.ndarray,
+        num_samples: int | None = None,
+        seed: int | None = None,
+        rank: int | None = None,
+        world_size: int | None = None,
+    ):  # noqa: D107
+        weights = np.asarray(weights, dtype=np.float64)
+        if weights.ndim != 1 or len(weights) == 0 or not np.isfinite(weights).all() or (weights < 0).any() or weights.sum() <= 0:
+            raise ValueError("Sampling weights must be a non-empty vector of finite, non-negative values with a positive sum.")
+        self.probabilities = weights / weights.sum()
+        self.num_samples = len(weights) if num_samples is None else int(num_samples)
+        if self.num_samples < 1:
+            raise ValueError("num_samples must be positive.")
+        self.seed = int(torch.empty((), dtype=torch.int64).random_().item()) if seed is None else int(seed)
+        distributed = is_dist_avail_and_initialized()
+        self.world_size = world_size if world_size is not None else torch.distributed.get_world_size() if distributed else 1
+        self.rank = rank if rank is not None else torch.distributed.get_rank() if distributed else 0
+        self.total = math.ceil(self.num_samples / self.world_size) * self.world_size
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def __len__(self) -> int:
+        return self.total // self.world_size
+
+    def __iter__(self) -> Iterator[int]:
+        rng = np.random.default_rng((self.seed, self.epoch))
+        draw = rng.choice(len(self.probabilities), size=self.total, replace=True, p=self.probabilities)
+        return (int(index) for index in draw[self.rank :: self.world_size])
 
 
 def _infer_numeric_dtype(seq) -> Any:

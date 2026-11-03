@@ -1,5 +1,6 @@
 from .device import detect_available_devices, resolve_device, select_best_device, setup_device, validate_device
 from .fs import MISSING_VALUE, increment_name_dir, write_csv_from_dict
+from .image import affine_resample, read_square_crop, square_crop_box
 from .imports import class_path, import_class
 from .logging import setup_logging
 from .math import cosine_schedule_with_warmup, cosine_to_zscore, decimals, float_signif_decimal, kl_distill
@@ -10,6 +11,9 @@ __all__ = [
     "MISSING_VALUE",
     "increment_name_dir",
     "write_csv_from_dict",
+    "affine_resample",
+    "read_square_crop",
+    "square_crop_box",
     "class_path",
     "import_class",
     "cosine_schedule_with_warmup",

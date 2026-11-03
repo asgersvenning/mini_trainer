@@ -528,3 +528,69 @@ def test_default_collator_can_reuse_repository_batch_sampler(metadata, cache, wo
 def isolated_cpu_limits(monkeypatch):
     monkeypatch.setattr(_workers, "_cgroup_cpu_count", lambda: None)
     monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
+
+
+def test_weighted_epoch_sampler_frequencies_epochs_and_rank_shares():
+    from mini_trainer.data.io import WeightedEpochSampler, class_sampling_weights
+
+    # 900 rows of class 0 and 100 of class 1; square-root sampling gives shares 30:10.
+    weights = class_sampling_weights([0] * 900 + [[1, 5]] * 100, 0.5)
+    sampler = WeightedEpochSampler(weights, num_samples=20000, seed=3)
+    draws = np.array(list(sampler))
+    assert len(draws) == len(sampler) == 20000
+    assert abs((draws >= 900).mean() - 0.25) < 5 * (0.25 * 0.75 / 20000) ** 0.5
+    assert np.array_equal(list(sampler), draws)  # same epoch, same draw (resume-safe)
+    sampler.set_epoch(1)
+    assert not np.array_equal(list(sampler), draws)
+    # Ranks take disjoint interleaved shares of one global draw, padded to a multiple of the world size.
+    shares = [list(WeightedEpochSampler(weights, num_samples=1000, seed=3, rank=r, world_size=3)) for r in range(3)]
+    assert [len(s) for s in shares] == [334, 334, 334]
+    np.testing.assert_array_equal(np.array(shares).T.ravel(), list(WeightedEpochSampler(weights, num_samples=1002, seed=3)))
+    with pytest.raises(ValueError):
+        WeightedEpochSampler([0.0, 0.0])
+
+
+def test_weighted_training_loader_uses_weight_column_and_keeps_validation_sequential(metadata):
+    from mini_trainer.data.io import WeightedEpochSampler
+
+    weighted = {**metadata, "weight": [0, 0, 1, 0, 0]}
+    _, (train, val) = get_dataset_dataloader(
+        weighted, metadata, resize_size=4, batch_size=2, num_workers=0, sampling_weights="weight", sampling_seed=0
+    )
+    assert isinstance(train.batch_sampler.sampler, WeightedEpochSampler)
+    assert isinstance(val.batch_sampler.sampler, SequentialSampler)
+    assert len(train) == 2 and {label for _, labels in train for label in labels.tolist()} == {2}
+    _, (power, _) = get_dataset_dataloader(metadata, metadata, resize_size=4, batch_size=2, num_workers=0, class_sampling_power=0.5)
+    assert isinstance(power.batch_sampler.sampler, WeightedEpochSampler)
+
+
+def test_square_crop_reader_matches_fastai_crop_geometry(tmp_path):
+    from mini_trainer.data.io import SquareCropReader
+
+    width, height = 60, 40
+    coords = np.zeros((height, width, 3), dtype=np.uint8)
+    coords[..., 0], coords[..., 1] = np.arange(width)[None, :], np.arange(height)[:, None]
+    path = str(tmp_path / "coords.png")
+    Image.fromarray(coords).save(path)
+    centre = SquareCropReader(40)(path)
+    assert centre.shape == (3, 40, 40) and centre.dtype == torch.uint8 and centre.is_contiguous()
+    assert centre[0, 0].tolist() == list(range(10, 50)) and centre[1, :, 0].tolist() == list(range(40))
+    lefts = {int(SquareCropReader(40, train=True)(path)[0, 0, 0]) for _ in range(40)}
+    assert len(lefts) > 5 and min(lefts) >= 0 and max(lefts) <= 20
+    expected = np.array(Image.fromarray(coords).crop((10, 0, 50, 40)).resize((16, 16), Image.Resampling.BILINEAR))
+    torch.testing.assert_close(SquareCropReader(16)((path,)), torch.from_numpy(expected).permute(2, 0, 1), rtol=0, atol=0)
+
+
+def test_crop_loaders_read_squares_by_split_and_reject_caching(metadata):
+    _, (train, val) = get_dataset_dataloader(
+        metadata, metadata, resize_size=4, read_size=6, resize_method="crop", batch_size=5, num_workers=0
+    )
+    images, _ = next(iter(val))
+    assert images.shape == (5, 3, 6, 6) and images.dtype == torch.uint8
+    assert train.dataset.func.reader.train and not val.dataset.func.reader.train
+    _, inference = get_inference_dataloader(metadata["path"], resize_size=4, read_size=6, resize_method="crop", batch_size=5, num_workers=0)
+    torch.testing.assert_close(next(iter(inference)), images)
+    with pytest.raises(ValueError, match="cannot be combined with dataset caching"):
+        get_dataset_dataloader(metadata, resize_size=4, modes=("train",), resize_method="crop", cache="cpu", num_workers=0)
+    with pytest.raises(ValueError, match="square size"):
+        get_dataset_dataloader(metadata, resize_size=(4, 6), modes=("train",), resize_method="crop", num_workers=0)

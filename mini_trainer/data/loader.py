@@ -13,8 +13,11 @@ from ._workers import _default_worker_count
 from .io import (
     CACHE_MODE,
     LazyDataset,
+    SquareCropReader,
+    WeightedEpochSampler,
     _DirectBatchIndices,
     _FetchedBatch,
+    class_sampling_weights,
     guess_cache_mode,
     make_read_and_resize_fn,
 )
@@ -96,7 +99,9 @@ def get_dataloader(  # noqa: D103
     cuda_prefetch: bool = False,
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
+    sampler: torch.utils.data.Sampler | None = None,
 ):
+    """Build a loader over ``dataset``; ``sampler`` replaces the default (distributed) sampler when given."""
     assert isinstance(mode, str)
     if mode.strip().lower() == "train":
         shuffle = drop_last = True
@@ -104,11 +109,11 @@ def get_dataloader(  # noqa: D103
         shuffle = drop_last = False
 
     if is_dist_avail_and_initialized():
-        base_sampler = DistributedSampler(dataset, shuffle=shuffle)
+        base_sampler = DistributedSampler(dataset, shuffle=shuffle) if sampler is None else sampler
         # Use spawn in DDP to avoid CUDA context inheritance crashes
         mp_context = "spawn" if num_workers > 0 else None
     else:
-        base_sampler = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)  # type: ignore
+        base_sampler = sampler if sampler is not None else RandomSampler(dataset) if shuffle else SequentialSampler(dataset)  # type: ignore
         mp_context = None
 
     if num_workers > 0 and multiprocessing_context is not None:
@@ -149,7 +154,24 @@ def get_dataset_dataloader(  # noqa: D103
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
     hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    resize_method: str = "squash",
+    read_size: int | None = None,
+    class_sampling_power: float = 0.0,
+    sampling_weights: str | None = None,
+    sampling_seed: int | None = None,
 ):
+    """Build one dataset and loader per metadata split.
+
+    ``resize_method="squash"`` (default) resizes whole images to ``resize_size`` with nearest
+    sampling. ``"crop"`` reads the largest square at ``read_size`` (default: ``resize_size``) with PIL
+    bilinear filtering, at a random offset for training and centred otherwise; the model preprocessing
+    is then expected to resample to the model size. Random crops cannot be cached.
+
+    ``class_sampling_power`` (> 0) and/or ``sampling_weights`` (the name of a per-row weight column
+    in the training metadata) replace uniform shuffling of the training split with
+    ``WeightedEpochSampler``: one draw per training row per epoch, with replacement, with probability
+    proportional to ``weight * count(leaf class) ** -class_sampling_power``.
+    """
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     if isinstance(device, str):
         device = torch.device(device)
@@ -169,9 +191,16 @@ def get_dataset_dataloader(  # noqa: D103
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)
 
-    reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
-
-    proc_path_label = PathLabelProcessor(reader, hook, multilabel)
+    if resize_method == "squash":
+        reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+        readers = {mode: reader for mode in modes}
+    elif resize_method == "crop":
+        if cache is not CACHE_MODE.NONE:
+            raise ValueError("Square-crop reading draws a new crop every epoch; it cannot be combined with dataset caching.")
+        side = _square_read_size(resize_size, read_size)
+        readers = {mode: SquareCropReader(side, train=mode.strip().lower() == "train") for mode in modes}
+    else:
+        raise ValueError(f'Unknown resize_method {resize_method!r}; expected "squash" or "crop".')
 
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
@@ -179,18 +208,21 @@ def get_dataset_dataloader(  # noqa: D103
     elif num_workers is None:
         num_workers = _default_worker_count(16)
 
-    datasets = []
+    datasets, samplers = [], []
     for mode, data in zip(modes, metadata):
-        if mode.strip().lower() == "train" and resample:
+        train = mode.strip().lower() == "train"
+        if train and resample:
             raise NotImplementedError("Resampling is currently not supported.")
         dset = LazyDataset(
-            func=proc_path_label,
+            func=PathLabelProcessor(readers[mode], hook, multilabel),
             items=(data["path"], data["class"]),
             cache=cache,
             cache_workers=cache_workers,
             pin_batches=device.type == "cuda" and cache is CACHE_MODE.CPU and num_workers == 0,
         )
         datasets.append(dset)
+        weighted = train and (class_sampling_power or sampling_weights is not None)
+        samplers.append(_weighted_sampler(data, class_sampling_power, sampling_weights, sampling_seed) if weighted else None)
 
     # Main-process CPU cache gathers are already pinned. Decoded and worker
     # batches are pinned by DataLoader before asynchronous H2D.
@@ -206,11 +238,31 @@ def get_dataset_dataloader(  # noqa: D103
             cuda_prefetch=cuda_prefetch and cache is not CACHE_MODE.CUDA,
             prefetch_factor=prefetch_factor,
             multiprocessing_context=multiprocessing_context,
+            sampler=sampler,
         )
-        for mode, dataset in zip(modes, datasets)
+        for mode, dataset, sampler in zip(modes, datasets, samplers)
     ]
 
     return datasets, loaders
+
+
+def _square_read_size(resize_size: tuple[int, int], read_size: int | None) -> int:
+    if read_size is not None:
+        return int(read_size)
+    if resize_size[0] != resize_size[1]:
+        raise ValueError(f"Square-crop reading needs a square size, not {resize_size}; set read_size.")
+    return resize_size[0]
+
+
+def _weighted_sampler(data: dict, power: float, column: str | None, seed: int | None) -> WeightedEpochSampler:
+    weights = np.ones(len(data["path"]), dtype=np.float64)
+    if column is not None:
+        if column not in data:
+            raise KeyError(f"Sampling weight column {column!r} is missing from the training metadata.")
+        weights *= np.asarray(data[column], dtype=np.float64)
+    if power:
+        weights *= class_sampling_weights(data["class"], power)
+    return WeightedEpochSampler(weights, seed=seed)
 
 
 def get_inference_dataloader(  # noqa: D103
@@ -225,8 +277,11 @@ def get_inference_dataloader(  # noqa: D103
     prefetch_factor: int | None = None,
     multiprocessing_context: str | None = None,
     cuda_prefetch: bool = False,
+    resize_method: str = "squash",
+    read_size: int | None = None,
     **kwargs,
 ):
+    """Build an unlabelled loader; ``resize_method="crop"`` reads centred squares at ``read_size``."""
     resize_size = _normalize_resize_size(resize_size)
     if isinstance(device, str):
         device = torch.device(device)
@@ -236,7 +291,12 @@ def get_inference_dataloader(  # noqa: D103
     if subsample is not None and subsample > 1:
         images = images[::subsample]
 
-    reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+    if resize_method == "squash":
+        reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+    elif resize_method == "crop":
+        reader = SquareCropReader(_square_read_size(resize_size, read_size), train=False)
+    else:
+        raise ValueError(f'Unknown resize_method {resize_method!r}; expected "squash" or "crop".')
     if hook is not None:
         reader = HookedReader(reader, hook)
 
