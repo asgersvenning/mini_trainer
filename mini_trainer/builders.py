@@ -95,13 +95,16 @@ class BaseBuilder:
         labels: Any | None = None,
         num_classes: int | None = None,
         hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        drop_unknown_classes: bool = False,
         **kwargs,
     ):
         """Return training labels followed by one loader per requested split.
 
         Load ``data_index`` or derive metadata from ``input_dir`` on the primary
         rank, then broadcast it. Split names select matching prefixes in metadata.
-        Remaining keywords pass to ``get_dataset_dataloader``.
+        ``drop_unknown_classes`` removes rows whose class (at any level) is not in
+        ``cls2idx``, e.g. species excluded by a class-count floor; otherwise such rows
+        are kept. Remaining keywords pass to ``get_dataset_dataloader``.
         """
 
         def _resolve_metadata():
@@ -120,6 +123,11 @@ class BaseBuilder:
             return metadata
 
         metadata = broadcast_from_master(_resolve_metadata)
+        if drop_unknown_classes:
+            known = [c is not None and not (isinstance(c, (list, tuple)) and any(v is None for v in c)) for c in metadata["class"]]
+            if not all(known):
+                get_logger().info(f"Dropping {known.count(False)} of {len(known)} rows whose class is outside the class specification.")
+                metadata = {k: [v for v, keep in zip(values, known) if keep] for k, values in metadata.items()}
         metasplits = metadata["split"].copy()
         metadata = [
             {k: [vi for vi, s in zip(v, metasplits) if s.startswith(split.strip().lower())] for k, v in metadata.items()}
@@ -200,13 +208,14 @@ class BaseBuilder:
         backbone_lr: float,
         head_weight_decay: float,
         backbone_weight_decay: float,
+        decay_all: bool = False,
     ) -> list[dict[str, Any]]:
         """Group trainable parameters by head/backbone, decay and Muon eligibility.
 
         ``model._backbone_output_name`` identifies the head. Head parameter names
         containing ``linear`` or ``layer`` select the no-Muon group; normalization
-        parameters, weight parametrizations and biases receive no weight decay.
-        Frozen parameters are excluded.
+        parameters, weight parametrizations and biases receive no weight decay
+        unless ``decay_all`` is set. Frozen parameters are excluded.
         """
         if not hasattr(model, "_backbone_output_name"):
             raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
@@ -253,7 +262,7 @@ class BaseBuilder:
                         "weight_decay": param_groups[grp_name]["weight_decay"],
                     }
                 grp_name = new_grp_name
-            if "parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias"):
+            if not decay_all and ("parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias")):
                 new_grp_name = f"{grp_name}_nodecay"
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {"params": [], "lr": param_groups[grp_name]["lr"], "weight_decay": 0}
@@ -276,12 +285,14 @@ class BaseBuilder:
         weight_decay: float,
         backbone_lr: float | None = None,
         backbone_weight_decay: float | None = None,
+        decay_all: bool = False,
         **optimizer_kwargs,  # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
         """Construct the optimizer from named head/backbone parameter groups.
 
         Only trainable parameters participate; ``model._backbone_output_name``
-        identifies the head. Forward remaining keywords to ``optimizer_cls``.
+        identifies the head. ``decay_all`` also decays normalization parameters,
+        biases and weight parametrizations. Forward remaining keywords to ``optimizer_cls``.
         """
         head_lr = lr
         backbone_lr = backbone_lr or head_lr / 3
@@ -294,6 +305,7 @@ class BaseBuilder:
             backbone_lr=backbone_lr,
             head_weight_decay=head_weight_decay,
             backbone_weight_decay=backbone_weight_decay,
+            **({"decay_all": True} if decay_all else {}),
         )
 
         if not param_groups and not list(model.parameters()):  # Model has no parameters

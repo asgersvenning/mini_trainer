@@ -1,3 +1,6 @@
+import pytest
+import torch
+
 from mini_trainer.integrations.parquet import KCOLUMNS, combine_dicts, get_keys, set2split
 
 
@@ -19,3 +22,49 @@ def test_combine_dicts():
 def test_get_keys_normalizes_ids_in_taxonomic_order():
     row = {k: f" 00{i} " for i, k in reversed(list(enumerate(KCOLUMNS)))}
     assert get_keys(row) == [str(i) for i in range(len(KCOLUMNS))]
+
+
+def _write_gbifxdl(path, species):
+    """Write a minimal gbifxdl Parquet: ``species`` maps (species, genus) to row counts per ``set``."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    rows = []
+    for (key, genus), per_set in species.items():
+        for split, count in per_set.items():
+            rows += [{"filename": f"{key}_{split}_{i}.jpg", "set": split, "speciesKey": key, "genusKey": genus} for i in range(count)]
+    columns = {name: [str(row.get(name, 7)) for row in rows] for name in ("filename", "set", *KCOLUMNS)}
+    pq.write_table(pa.table(columns), path)
+
+
+def test_class_count_floor_counts_non_test_rows_and_drops_their_samples(tmp_path):
+    from mini_trainer.hierarchical.integration import HierarchicalBuilder
+    from mini_trainer.integrations.parquet import parquet_to_class_spec_hierarchical
+
+    path = tmp_path / "data.parquet"
+    # Species 2 has many test rows but only four elsewhere; the floor ignores test rows.
+    _write_gbifxdl(path, {(1, 100): {"2": 3, "1": 2}, (2, 100): {"3": 4, "0": 50}, (3, 200): {"9": 6}})
+    full = parquet_to_class_spec_hierarchical(str(path))
+    floored = parquet_to_class_spec_hierarchical(str(path), min_count=5)
+    assert list(full["cls2idx"]["0"]) == ["1", "2", "3"] and full["num_classes"] == [3, 2, 1]
+    assert floored["cls2idx"]["0"] == {"1": 0, "3": 1} and floored["num_classes"] == [2, 2, 1]
+    assert list(floored["labels"]) == ["1", "3"]
+
+    def loaders(drop):
+        return HierarchicalBuilder.build_dataloader(
+            input_dir=str(path),
+            output_dir=str(tmp_path),
+            cls2idx=floored["cls2idx"],
+            batch_size=2,
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+            resize_size=8,
+            num_workers=0,
+            drop_unknown_classes=drop,
+        )
+
+    labels, train, val = loaders(True)
+    assert len(train.dataset) == 9 and len(val.dataset) == 2
+    assert sorted({tuple(c) for c in labels}) == [(0, 0, 0), (1, 1, 0)]
+    # Without the option, rows of excluded species stay in, with unknown classes.
+    labels, train, _ = loaders(False)
+    assert len(train.dataset) == 13 and (None, 0, 0) in {tuple(c) for c in labels}

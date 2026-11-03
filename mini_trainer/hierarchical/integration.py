@@ -61,6 +61,7 @@ def parse_class_spec(
     dir: str | None = None,
     levels: int | None = None,
     label_fn: Callable[Concatenate[str, ...], OrderedDict[str, tuple[str, ...]]] = default_labels_from_directory_structure,
+    min_count: int = 0,
     **kwargs,
 ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]]:
     """Load a JSON class specification or build one from directories/Parquet.
@@ -72,7 +73,8 @@ def parse_class_spec(
 
     For directories, ``label_fn(dir, levels=levels, **kwargs)`` supplies ordered
     labels. Explicit ``levels`` truncates their sequences; Parquet defaults to
-    three ranks. When loading JSON, truncation restricts labels/index maps but
+    three ranks. ``min_count`` (Parquet only) keeps leaf classes with at least that
+    many non-test rows. When loading JSON, truncation restricts labels/index maps but
     retains the stored ``num_classes`` list.
     """
     if isinstance(levels, int):
@@ -84,10 +86,12 @@ def parse_class_spec(
             if isinstance(dir, str) and dir.endswith(".parquet"):
                 if levels is None:
                     levels = 3
-                retval = parquet_to_class_spec_hierarchical(dir, levels=levels)
+                retval = parquet_to_class_spec_hierarchical(dir, levels=levels, min_count=min_count)
             else:
                 raise TypeError(f'If `path` is not the path to a valid file, `dir` must be a valid directory, not "{dir}".')
         else:
+            if min_count:
+                raise NotImplementedError("`min_count` is only supported for Parquet inputs.")
             labels = label_fn(dir, levels=levels, **kwargs)
             if levels is not None:
                 for lab in labels.keys():

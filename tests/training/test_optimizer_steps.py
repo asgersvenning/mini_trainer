@@ -433,3 +433,26 @@ def test_cuda_model_and_optimizer_graphs_share_training_iterations(quantized, ki
     assert logger.consume.call_count == 6
     if kind == "muon":
         assert optimizer._step_count == 6
+
+
+def test_decay_all_decays_norms_biases_and_parametrizations():
+    from mini_trainer.builders import BaseBuilder
+    from mini_trainer.modeling import Classifier
+    from tests.integration.test_integration_train import TinyMockModel
+
+    model, _ = Classifier.build(
+        model_type=TinyMockModel(), num_classes=3, model_args={"pretrained": False}, trainable_scale=True, trainable_bias=True
+    )
+    rates = dict(head_lr=1e-3, backbone_lr=1e-3, head_weight_decay=0.01, backbone_weight_decay=0.01)
+    default = BaseBuilder.parameter_groups(model, **rates)
+    decayed = BaseBuilder.parameter_groups(model, decay_all=True, **rates)
+    trainable = {id(p) for p in model.parameters() if p.requires_grad}
+    for groups in (default, decayed):
+        assert {id(p) for g in groups for p in g["params"]} == trainable
+    exempt = {id(p) for n, p in model.named_parameters() if n.endswith(".bias") or "parametrizations" in n or "batch_norm" in n}
+    assert {id(p) for g in default if g["weight_decay"] == 0 for p in g["params"]} == exempt & trainable
+    assert all(g["weight_decay"] == 0.01 for g in decayed)
+    optimizer = BaseBuilder.build_optimizer(
+        model, optimizer_cls=torch.optim.AdamW, lr=1e-3, weight_decay=0.01, backbone_lr=1e-3, decay_all=True
+    )
+    assert {(g["lr"], g["weight_decay"]) for g in optimizer.param_groups} == {(1e-3, 0.01)}

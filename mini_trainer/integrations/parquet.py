@@ -1,5 +1,5 @@
 import os
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Sequence
 from typing import Any, cast
 
@@ -207,12 +207,22 @@ def parquet_to_class_spec(path: str):
 
 
 def parquet_to_class_spec_hierarchical(
-    path: str, levels: int = 3
+    path: str, levels: int = 3, min_count: int = 0
 ) -> dict[str, dict[str, dict[str, int]] | OrderedDict[str, tuple[str, ...]] | list[int]]:
-    """Create hierarchical class specification from ``gbifxdl`` parquet."""
-    combs = OrderedDict(
-        (v[0], v) for v in sorted(set([tuple(get_keys(row)[:levels]) for row in iter_parquet(path, KCOLUMNS)]), key=lambda x: x[::-1])
-    )
+    """Create hierarchical class specification from ``gbifxdl`` parquet.
+
+    ``min_count`` keeps only leaf classes with at least that many rows outside the test split
+    (``set`` 0), i.e. counted over training and validation rows; test rows never shape the vocabulary.
+    """
+    combos, counts = set(), Counter()
+    for row in iter_parquet(path, (*KCOLUMNS, "set") if min_count else KCOLUMNS):
+        keys = tuple(get_keys(row)[:levels])
+        combos.add(keys)
+        if min_count and int(row["set"]) != 0:
+            counts[keys[0]] += 1
+    if min_count:
+        combos = {keys for keys in combos if counts[keys[0]] >= min_count}
+    combs = OrderedDict((v[0], v) for v in sorted(combos, key=lambda x: x[::-1]))
     cls2idx: dict[str, dict[str, int]] = dict()
     for level in range(levels):
         this_cls2idx: dict[str, int] = dict()
