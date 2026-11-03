@@ -63,3 +63,25 @@ def test_salt_and_pepper_module():
     aug_img = mod(img)
     assert not torch.allclose(img, aug_img)
     assert "SaltAndPepper" in repr(mod)
+
+
+def test_random_affine_resize_draws_per_image_within_fastai_ranges():
+    from mini_trainer.data import RandomAffineResize
+    from mini_trainer.utils import affine_resample
+
+    torch.manual_seed(0)
+    image = torch.randint(1, 256, (1, 3, 20, 20), dtype=torch.uint8)
+    batch = image.expand(16, 3, 20, 20).contiguous()
+    out = RandomAffineResize(size=12, max_rotate=15.0)(batch)
+    assert out.shape == (16, 3, 12, 12) and out.dtype == torch.float32
+    assert len({o.numpy().tobytes() for o in out}) > 4  # identical inputs, independent transforms
+    assert (out > 0).all() and out.max() <= 1  # reflection padding never samples zeros
+    assert RandomAffineResize(size=12)(image[0]).shape == (3, 12, 12)
+    # With nothing drawn the augmentation is the plain resize used for evaluation.
+    plain = RandomAffineResize(size=12, flip_p=0, max_rotate=0, max_zoom=1.0)(batch)
+    torch.testing.assert_close(plain, affine_resample(batch.float() / 255, None, 12), rtol=0, atol=0)
+    matrices = RandomAffineResize(size=12, max_rotate=15.0).matrices(20000, torch.device("cpu"))
+    singular = torch.linalg.svdvals(matrices[:, :2, :2])  # flips and rotations keep 1; zoom scales by 1/z, z in [1, 1.1]
+    assert singular.min() >= 1 / 1.1 - 1e-6 and singular.max() <= 1 + 1e-6
+    identity = ((matrices - torch.eye(3)).abs().amax((1, 2)) < 1e-6).float().mean().item()
+    assert abs(identity - 0.5625 * 0.25 * 0.25) < 0.006  # dihedral identity (0.5 + 0.5 / 8), no rotation, no zoom
