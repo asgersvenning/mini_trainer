@@ -1,0 +1,59 @@
+# lepinet recipe with a single species head ("F"; genus and family by marginalisation at inference), in lepinet's parity setting:
+# species with at least 50 images outside the test split (12,041 on the global parquet).
+#   mt_train --config dev/lepinet/lepinet-F.yaml --input <gbifxdl.parquet> --output <runs> --name <run>
+# Every setting is explicit; change one factor per run. See dev/lepinet/README.md.
+builder: mini_trainer.hierarchical.recipes.LepinetBuilder
+epochs: 5
+size: 256
+dtype: float16
+seed: 0
+spec_model_dataloader_kwargs:
+  min_count: 50
+model_builder_kwargs:
+  model_type: efficientnet_v2_s
+  cls: mini_trainer.hierarchical.model.HierarchicalClassifier
+  hidden: true
+  droprate: 0.1
+  normalized: true
+  resize_method: crop
+  read_size: 460
+  trainable_scale: true
+  trainable_bias: true
+  float32_head: true
+  legacy_spherical_init: true
+dataloader_builder_kwargs:
+  batch_size: 64
+  num_workers: 16
+  resize_method: crop
+  read_size: 460
+  class_sampling_power: 0.5
+  drop_unknown_classes: true
+augmentation_builder_kwargs:
+  size: 256
+  dihedral: true
+  flip_p: 0.5
+  max_rotate: 15.0
+  min_zoom: 1.0
+  max_zoom: 1.1
+  affine_p: 0.75
+optimizer_builder_kwargs:
+  optimizer_cls: torch.optim.AdamW
+  lr: 0.001
+  weight_decay: 0.01
+  backbone_lr: 0.001
+  decay_all: true
+criterion_builder_kwargs:
+  weighted: false
+  weights: [1, 0, 0]  # species loss only
+regularizer_builder_kwargs:
+  strength: 0.0
+lr_schedule_builder_kwargs:
+  warmup_epochs: 0.5
+  start_factor: 0.01
+  min_factor: 0.0
+  pretrained_backbone: false
+scaler_builder_kwargs:
+  init_scale: 65536
+  growth_interval: 2000
+logger_builder_kwargs:
+  macro_f1: true

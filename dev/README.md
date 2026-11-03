@@ -10,6 +10,7 @@ dependencies. Start with the [roadmap](../docs/roadmap.md) for priorities.
 | Work on independent branches | [Worktrees](worktrees.md) |
 | Run training/inference experiments | [Benchmark commands](benchmarks/README.md) |
 | Compare branches on UCloud | [UCloud setup and execution](ucloud/README.md) |
+| Train lepinet's recipe (parity presets) | [lepinet presets](lepinet/README.md) |
 | Qualify native INT8 or PTQ/QAT | [Quantization roadmap](../docs/quantization-roadmap.md) |
 | Maintain the MAMBO release | [Release inputs and workflows](releases/mambo_v3/README.md) |
 | Change loading or optimizer behavior | [Runtime contracts](#training-and-loading-contracts) |
