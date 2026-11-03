@@ -544,6 +544,8 @@ class MultiLogger:
     accumulation is disabled to bound memory; save() remains a compatibility no-op.
     """
 
+    macro_f1: bool = False  # Class default for instances (or subclasses) that skip __init__
+
     @staticmethod
     def _reset_cuda_memory_stats():
         """Best-effort peak reset on the current CUDA device, without synchronization."""
@@ -568,8 +570,10 @@ class MultiLogger:
         logger_cls_stat_factory: list[Callable[[], _Statistic]] = [lambda: SmoothedValue(window_size=10, fmt_vars=["avg"])],
         clear_store_on_update: bool = True,
         verbose: bool = False,
+        macro_f1: bool = False,
     ):
-        """Create multi-logger orchestrator."""
+        """Create multi-logger orchestrator; ``macro_f1`` adds per-level validation macro-F1 statistics."""
+        self.macro_f1 = macro_f1
         self.total_epochs = epochs
         self.private_statistics = private_statistics
         self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x: statistics.index(x))
@@ -792,7 +796,19 @@ class MultiLogger:
     def log_batch(self, batch):
         pass
 
+    def _register_statistics(self, *names: str):
+        """Add statistics without values, so every phase's summary row has their columns."""
+        for stat in names:
+            if stat not in self.private_statistics and stat not in self.statistics:
+                self.statistics.append(stat)
+                for logger, stat_factory in zip(self.loggers, chain(self.logger_cls_stat_factory, repeat(BaseStatistic))):
+                    logger.add_stat(stat, stat_factory())
+
     def log_accuracy(self, target: torch.Tensor, prediction: list[torch.Tensor] | torch.Tensor):
+        if self.macro_f1:
+            # Macro-F1 is only computed after evaluation; register its columns from the first batch on.
+            levels = len(prediction) if isinstance(prediction, list) else 1
+            self._register_statistics(*("f1" if lvl == 0 else f"f1/lvl{lvl}" for lvl in range(levels)))
         if isinstance(prediction, list) and len(prediction) == 1:
             prediction = prediction[0]
             target = target[:, 0]
@@ -1072,7 +1088,58 @@ class MultiLogger:
             if hasattr(logger, "synchronize_between_processes"):
                 logger.synchronize_between_processes()
 
+    def _eval_values(self, key: str) -> list[int]:
+        values = []
+        for indices, epoch, phase in self.heterogeneous_storage.get(key, []):
+            if epoch == self._epoch and phase.lower().startswith(("eval", "val")):
+                values.extend(indices)
+        return values
+
+    def log_macro_f1(self):
+        """Log per-level macro-F1 of the current evaluation as ``f1`` and ``f1/lvl<i>``.
+
+        Per class F1 = 2 TP / (predicted + true), averaged over classes present in the truth; a class
+        never predicted correctly scores 0 (mini_metrics' convention before 2026-07-27, equal to its
+        current one when every vocabulary class is in the truth). Counts are summed across ranks.
+        """
+        keys = sorted(k for k in self.heterogeneous_storage if k == "labels" or k.startswith("labels/lvl"))
+        distributed = dist.is_available() and dist.is_initialized()
+        if distributed:
+            gathered = [None] * dist.get_world_size()
+            dist.all_gather_object(gathered, keys)
+            keys = sorted(set().union(*gathered))
+        for key in keys:
+            level = 0 if key == "labels" else int(key.split("lvl")[-1])
+            labels = np.asarray(self._eval_values(key), dtype=np.int64)
+            predictions = np.asarray(self._eval_values(key.replace("labels", "predictions")), dtype=np.int64)
+            size = int(max(labels.max(initial=-1), predictions.max(initial=-1))) + 1
+            if distributed:
+                device = torch.device("cuda", torch.cuda.current_device()) if dist.get_backend() == "nccl" else torch.device("cpu")
+                total = torch.tensor(size, device=device)
+                dist.all_reduce(total, op=dist.ReduceOp.MAX)
+                size = int(total.item())
+            counts = np.stack(
+                [
+                    np.bincount(labels[labels == predictions], minlength=size),
+                    np.bincount(labels, minlength=size),
+                    np.bincount(predictions, minlength=size),
+                ]
+            )
+            if distributed:
+                total = torch.from_numpy(counts).to(device)
+                dist.all_reduce(total)
+                counts = total.cpu().numpy()
+            correct, true, predicted = counts
+            present = true > 0
+            if not present.any():
+                continue
+            f1 = 2 * correct[present] / (true[present] + predicted[present])
+            self.log_statistic(**{"f1" if level == 0 else f"f1/lvl{level}": float(f1.mean())})
+
     def figures(self, model: nn.Module | None):
+        """Emit end-of-evaluation statistics (opt-in macro-F1) and diagnostic figures."""
+        if self.macro_f1:
+            self.log_macro_f1()
         cm_figs = self.confusion_matrix()
         for lab, fig in cm_figs.items():
             self.add_figure(lab, fig)

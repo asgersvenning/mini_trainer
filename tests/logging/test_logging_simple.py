@@ -136,3 +136,18 @@ def test_SmoothedValue():
     assert sv.avg == 2.5
     # Global avg is over all history
     assert sv.global_avg == 6.0 / 3.0  # 2.0
+
+
+def test_macro_f1_averages_truth_classes_per_level():
+    import mini_trainer.logging.core as core
+
+    logger = core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=None, name="run", macro_f1=True)
+    logger.update(epoch=0, type="eval")
+    # Level 0: class 0 F1 2/3, class 1 F1 0.8, classes 2 and 3 never predicted correctly (0); class 4 is predicted only.
+    logger.log_labels_predictions([0, 0, 1, 1, 2, 3], [0, 1, 1, 1, 4, 2], level=0)
+    logger.log_labels_predictions([0, 0, 1, 1, 1, 1], [0, 0, 1, 1, 1, 0], level=1)
+    logger.log_macro_f1()
+    summary = logger.summary(["f1", "f1/lvl1"])
+    assert summary["f1"] == pytest.approx((2 / 3 + 0.8 + 0 + 0) / 4)
+    assert summary["f1/lvl1"] == pytest.approx((0.8 + 6 / 7) / 2)
+    assert not core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=None, name="run").macro_f1
