@@ -1,6 +1,7 @@
 # Lepinet recipe in mini_trainer: parity audit, plan and protocol
 
-**Status:** Phase 0 (read-only audit) done 2026-11-03; no source changes yet.
+**Status:** 2026-11-03: Phase 1 implemented (`a3826c3`..`491b7a5`, presets and usage in
+[dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) running.
 **Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
 no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
@@ -22,6 +23,11 @@ Supervised by the lepinet session (`lepinet-e1`).
   Micro-accuracy is not a gate.
 - **Setting:** parity runs use lepinet's 50-image floor (12,041 species). Everything after the gate
   moves to MT's test set (no floor, 12,632 species).
+- **Tolerances (agreed 2026-11-03):** per-epoch validation macro-F1 within 0.001 of lepinet's
+  clean-package logs (investigate above 0.002) at every rank with a curve; test at threshold 0
+  within ±0.003 at species, genus and family, calibrated column reported. Throughput gate: same or
+  better img/s at identical settings (bs 64, 256 px, one B200, same staged data, same job); compile,
+  channels_last and batch size are later single factors with an accuracy check.
 - **All three heads exist in MT.** I = `mt_htrain --head independent`. BU = `--head hierarchical`
   (the default): species logits are log-sum-exp'd to parents (`mini_trainer/hierarchical/model.py:118-126`),
   which equals lepinet's `MarginalHead` because cross entropy ignores the per-row log-softmax shift.
@@ -97,6 +103,29 @@ revisions above.
 - **EMA:** unsupported (`README.md`, `docs/roadmap.md` §2); keep it off. Lepinet has none.
 - **Label smoothing:** 1/C in both (finding 2).
 
+### GPU-free equivalence (a0), 2026-11-03
+
+Scripts and outputs: ignored `.agents/local/lepinet-a0/` (lepinet's venv for references).
+
+- Backbone initial weights: all 780 tensors of fastai's `create_vision_model(pretrained=True)` equal MT's.
+- Head: the clean I checkpoint loaded into MT's `IndependentClassifier` gives identical fp32 logits
+  (max Δ 0) at all ranks; MT's `HierarchicalClassifier` marginals match lepinet's (max Δp 1.4e-5,
+  from lepinet's +1e-12 in the log; argmax 100 %).
+- Data: PIL and `decode_image` agree on 3,064 images; MT's crop reader is 0 LSB from fastai's crops;
+  `ResampleNormalize` and path-based `Preprocess` equal fastai's validation batch exactly. Given fastai's
+  drawn matrices, MT's training resample equals fastai's batch exactly; MT's draw distribution matches
+  fastai's (6 matrix entries, KS ≤ 0.010 against a 0.0195 critical value).
+- Optimiser: all 461 tensors of lepinet's real learner match MT's in trainability, shape, lr, decay,
+  betas and eps (MT adds only the head's unused BatchNorm).
+- Scorer: lepinet's `dev/093` `score()` reproduces I at threshold 0 (0.9110 / 0.9587 / 0.9708).
+- Images: median short side 384 px, maximum long side 512; 86 % are below 460, so `Resize(460)` mostly
+  upsamples before the aliased 460→256 resample. The learned g acts as a per-class temperature
+  (z ≈ √(D−2)·g·cos); no logits sit at the arccos clamp.
+- lepinet's clean package keeps each batch alive through a reference cycle without its dormant
+  `GCCallback`: +0.23 GiB allocated per batch on the 5090 (OOM within ~100 batches next to another
+  6 GiB process); with it, a flat 6.8 GiB peak, as MT. Local lepinet runs add `GCCallback` through
+  `train_from_config(..., extra_cbs=...)`; it does not change numerics.
+
 ### Verified and not verified
 
 - Verified by reading the code at the stated revisions. Measured on CPU only: MT optimiser routing on
@@ -107,98 +136,62 @@ revisions above.
 
 ## Remaining work
 
-### Implementation plan (phase 1, this branch)
+### Implementation (phase 1, done)
 
-Every change is an opt-in parameter whose default reproduces today's behaviour, with no default change
-to `BaseBuilder`, `HierarchicalBuilder`, `train.main`, the CLI or checkpoints. Each component gets one
-focused, normally prefixed commit with its tests.
-
-| Step | Component (location) | Opt-in | Test failure contract |
-|---|---|---|---|
-| 1 | Class floor and vocabulary filter (`mini_trainer/integrations/parquet.py`, class-spec builders) | `min_class_count`, counted over non-test sets | A species with 49 images in sets 1-9 is excluded however many it has in set 0, and one with 50 is kept; excluded species never reach train/val rows; test rows are restricted only by vocabulary; without the option the class spec is identical. |
-| 2 | Weighted sampler (`mini_trainer/data/loader.py`) | per-row `sample_weights` or `class_sampling_power` | Without it the loader is unchanged. With power 0.5 the epoch length equals the training set and per-class draw shares match n_c^0.5 within binomial tolerance. Same seed, same indices. DDP ranks draw disjoint streams with the global length kept. |
-| 3 | Head options (`mini_trainer/modeling/classifier.py`) | trainable scale and bias, fp32 head, legacy spherical step | By default g and bias stay frozen and outside every optimiser group; with the option they get gradients and move after one step; state-dict keys and reload round-trip are unchanged. The fp32 head returns float32 logits under CUDA fp16 autocast (CUDA-marked test). The legacy step reproduces the pre-d1a9cc9 init for a fixed seed. |
-| 4 | Decay-all grouping (`mini_trainer/builders.py`, `parameter_groups`) | `decay_all` | Every trainable tensor lands in a decayed group; the default grouping is unchanged. |
-| 5 | Crop reader (`mini_trainer/data/io.py`) | `resize_method="crop"` | On a coordinate-coded image, training crops are squares of side min(w, h) inside the image at varying offsets; validation crops are centred; the result matches PIL `crop` + `resize(BILINEAR)` within 1 LSB. |
-| 6 | Per-image affine and resample-normalise preprocess (`mini_trainer/data/augmentation.py`, `mini_trainer/modeling/architectures`) | new augmentation and preprocess, recorded in classifier metadata for `mt_predict` and export | Images in one batch get independent transforms; p = 0 equals the validation path; rotation ≤ 15°, zoom ≥ 1, reflection (no zero borders); output 256, float, in [0, 1]. |
-| 7 | Validation macro-F1 statistic (`mini_trainer/logging/core.py`) | statistic name | On a fixed confusion example it equals lepinet's `LevelMacroF1`: a never-predicted class scores 0, absent classes are excluded. |
-| 8 | Recipe builder and presets I, BU, F (builder in the package; YAML in `dev/lepinet/`) | `builder:` import path | CPU end-to-end on a tiny synthetic parquet for each head; checkpoint reload; F predicts genus and family as marginals. |
-
-Presets also set existing knobs: `--batch_size 64 --epochs 5 --size 256 --dtype float16`;
-`optimizer_cls: torch.optim.AdamW`, `lr: 0.001`, `weight_decay: 0.01`, `backbone_lr: 0.001`; the
-schedule knobs of row 11; the scaler knobs of row 12; regulariser 0; `weighted: false`; F adds
-`weights: [1, 0, 0]`. Validation: `bash dev/check.sh static` and `bash dev/check.sh all` (the change spans
-training, loading and checkpointing). No new dependency: fastai stays out of MT.
-
-Order: the GPU-free equivalence checks (protocol a0) first; then steps 1-4 (small); then 5-6 (the
-data path, largest); then 7-8 and the full checks; then protocol (a) and (b).
+Opt-in components with their test contracts, in commit order: square-crop reader and weighted epoch
+sampler (`a3826c3`), per-image affine augmentation (`d967200`), head options and square-crop
+preprocessing (`b806134`), class floor, unknown-row filter and `decay_all` (`ebfdbb9`), validation
+macro-F1 (`b38766e`), `LepinetBuilder` with the I/BU/F presets and `dev/lepinet/score.py`
+(`491b7a5`). The full suite passed on that tree (909 passed, 247 skipped, 1 strict EMA xfail).
+The recipe and its commands are maintained in [dev/lepinet/README.md](../../dev/lepinet/README.md).
 
 ### Parity protocol
 
-Paired-comparison rules follow [docs/training-feature-validation.md](../../docs/training-feature-validation.md).
+**(a) Subset side-by-side, local RTX 5090**, running since 2026-11-03 (accuracy only; another user's
+process shares the GPU, so timings are biased).
+- Subset: the 50-image floor, then MT's frozen family x abundance selector
+  (`publication/experiments/training_ablations/data.py:40-54`), 512 species, seed 20261003: 448
+  genera, 40 families, 218,756 training images, about 27.3 k each in sets 1 and 0.
+- I head, 5 epochs, alternating lepinet (with `GCCallback`) and MT runs, two per code; 8 workers;
+  set 0 of the subset scored by the shared `score()` (zero, 5 calibration seeds).
+- Pass: per-epoch code means within max(2 x seed spread, 0.005); on failure change one component at
+  a time towards lepinet, in order of expected impact.
+- Working files: ignored `.agents/local/lepinet-a/` (`run_a.sh`, `compare_a.py`).
 
-**(a0) GPU-free equivalence, CPU, minutes.**
-- Head: load the clean-package I checkpoint
-  (`L:data/local_models/5ep_baseline/lepinet-heads-global-independent-muon-5ep-oversample-effnetv2s-ucloud.pt`)
-  into MT's `IndependentClassifier` by key remap (`0.0.*` → `features.*`; `1.head.*` → `classifier.*`;
-  layer 0 is `linear`). Require identical fp32 logits on one batch, then the same check through
-  `HierarchicalClassifier` for the marginals.
-- Data: pass the same 64 validation images through lepinet's `dls.valid` and MT's reader and
-  preprocess; require ≤ 1 LSB before normalisation. For training transforms compare the drawn
-  parameters (flip, angle, zoom, centre), not pixels.
-- Optimiser: identical per-tensor group membership, lr, wd and betas for 1,000 steps.
-- Scorer: re-score lepinet's I `predictions.csv` and reproduce 0.9110 / 0.9587 / 0.9708 before scoring MT.
-
-**(a) Subset side-by-side on the local RTX 5090** (accuracy only; timings are biased by the other user).
-- Subset: apply the 50-image floor, then MT's frozen family × abundance selector
-  (`publication/experiments/training_ablations/data.py:40-54`), 512 species, seed 20261003. Both codes read
-  the same parquet rows; about 214 k training images, to be measured.
-- Recipe as in the full run, 5 epochs, two seeds per code (three if the spread is wide). Compare per-epoch
-  validation accuracy and macro-F1 per level, and the subset's test fold. A shared seed value does not
-  make trajectories comparable across codes; compare against the within-code spread.
-- Pass: per-epoch code means within max(2 × seed spread, 0.005). On failure, change one component at a
-  time towards lepinet, in order of expected impact: head scale and bias, sampler, reader and augmentation,
-  grouping, precision.
-- Host memory: at most 8 workers per code, never `--cache`, one job at a time, peak RSS logged.
-- A match shows no implementation difference visible at 512 species; it does not prove the full-scale match.
-
-**(b) Full scale, the acceptance gate (UCloud).**
-- One B200 per run, single GPU, bs 64, fp16, 5 epochs, lepinet's floor; MT presets I, BU and F, in parallel.
-- Test: species at threshold 0 within ±0.003 of the references (retraining noise on the test fold is
-  about 0.000, so 0.003 is a real gap); genus, family and the calibrated column reported against the same
-  tolerance.
-- Curve: per-epoch validation macro-F1 against the clean-package logs in
-  `L:data/ucloud_models_logs/` (target ≤ 0.001, investigate > 0.002):
-  - I (`20260724-181230-…`): species 0.7848, 0.8350, 0.8697, 0.8985, 0.9099.
-  - BU (`20260730-074913-…`): species 0.7856, 0.8384, 0.8691, 0.8968, 0.9133; genus 0.8758 → 0.9614;
-    family 0.9237 → 0.9794.
-  - F (`20260729-182718-…`): species 0.7978, 0.8375, 0.8717, 0.9002, 0.9128; `valid_loss` 0.6995 →
-    0.2834 (smoothed CE, as MT logs it).
-- Throughput: one dedicated B200 job running both codes back to back on the same data, with matched worker
-  counts and each code's best count, cold and warm reads. Report train img/s, epoch time including
-  validation, and GPU utilisation.
-- Process: run `L:ucloud/budget_check.py <spec>` before every submission; check `ucloud q tick; echo $?`;
-  read job logs, not job status; send `lepinet-e1` every spec path and job name. Code reaches UCloud by
-  ucloud-api `[sync]` or a worktree tarball (`L:ucloud/README.md`). Do not touch lepinet's running V0F
-  (12444405) and V0BU (12444406); they also show whether parallel `/work` readers starve each other
-  (`L:ucloud/stage.py` if they do).
+**(b) Full scale, the acceptance gate (UCloud B200).**
+- `/work` is a shared ceiling of about 1,000 img/s (measured by lepinet-e1 on two parallel V0 jobs):
+  stage each job's images to node-local NVMe first (port the idea of lepinet's `ucloud/stage.py`), and
+  do not run the three gate runs in parallel from `/work`; if V0F/V0BU are still running, agree the order
+  with lepinet-e1.
+- One B200 per run, single GPU, bs 64, fp16, 5 epochs, lepinet's floor; presets I, BU and F.
+- Curves against the clean-package logs in `L:data/ucloud_models_logs/` (validation, argmax macro-F1):
+  I `20260724-181230` species 0.7848, 0.8350, 0.8697, 0.8985, 0.9099; BU `20260730-074913` species
+  0.7856, 0.8384, 0.8691, 0.8968, 0.9133, genus 0.8758 → 0.9614, family 0.9237 → 0.9794; F
+  `20260729-182718` species 0.7978, 0.8375, 0.8717, 0.9002, 0.9128 (only its `F1(macro)` and
+  `F1(micro)` columns are broken). The dev/030 I run agrees with the clean one within 0.0007 per epoch.
+- Throughput: one dedicated B200 job running both codes on the same staged data, matched worker
+  counts and each code's best count; report train img/s, epoch time including validation, GPU memory.
+  lepinet runs exactly as on UCloud (no `GCCallback`, its configured workers) and both report peak GPU
+  memory; lepinet's default stays, so its published throughput remains the reference. MT without compile.
+- Process: `L:ucloud/budget_check.py <spec>` before every submission; `ucloud q tick; echo $?`; read job
+  logs, not status; send lepinet-e1 each spec path and job name; code reaches UCloud by ucloud-api
+  `[sync]` or a worktree tarball (the branch is local only).
 
 ### Later phases
 
-- **Phase 2:** self-training on trap crops (per-row weights; mount `flemming`); classifier re-training on a
-  frozen backbone (MT's `fine_tune` casts the backbone to bf16 and leaves BN statistics updating,
-  `mini_trainer/builders.py:68-76`); trap augmentation (`L:src/lepinet/augment.py:33-111`); open-set and
-  back-off evaluation; trap calibration grouped by (trap, night). F needs no new code (see above).
-- **Phase 3 onwards:** single-factor runs on MT's test set (EMLA vs CE, oversampling vs none, schedule,
-  augmentation, image size, epochs, learned vs frozen head scale and bias); paper reruns; Nemo vs this
-  recipe on the Flemming trap crops; the production model.
+- **Phase 2:** self-training on trap crops (per-row weights through `sampling_weights`; mount
+  `flemming`); classifier re-training on a frozen backbone (MT's `fine_tune` casts the backbone to bf16
+  and leaves BN statistics updating, `mini_trainer/builders.py:68-76`); trap augmentation
+  (`L:src/lepinet/augment.py:33-111`); open-set and back-off evaluation; trap calibration grouped by
+  (trap, night). F needs no new code.
+- **Phase 3 onwards** (single factors on MT's test set): EMLA vs CE, oversampling vs none, schedule,
+  augmentation, image size, epochs; frozen vs learned head scale and bias, scored on the test fold and
+  the trap sets (it changes MSP, energy and calibration); the deployment preprocessing contract (lepinet's
+  app used a plain resize; one eval-only comparison settles it); paper reruns; Nemo vs this recipe on the
+  Flemming trap crops; the production model. MT's per-batch augmentation draws and its 87.5 % centre
+  crop also apply to Nemo's recipe; lepinet-e1 raised them with Asger as phase-3 factors. MT defaults
+  stay unchanged.
 
 ### Open questions
 
-1. Learned g and bias are part of lepinet's recipe as run, so parity reproduces them. Should the recipe
-   choice also test frozen vs learned as a single factor?
-2. Lepinet's preprocessing (460 crop, then aliased 460→256) becomes part of the model interface. Keep it
-   for production, or decide after the gate? MT must record it for `mt_predict` and ONNX export either way.
-3. Where should the recipe builder and presets live (package module vs `dev/lepinet/`)? This is Asger's call.
-4. Throughput target: equal img/s, or better img/s at equal accuracy?
-5. Gate tolerances above (curve ≤ 0.001 target / 0.002 alarm; test ±0.003): agreed?
+1. Where the recipe builder and presets finally live is Asger's call; they are easy to move at review.
