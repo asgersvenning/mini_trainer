@@ -1,6 +1,7 @@
 # Agent handoffs
 
-No active tracked handoffs. Completed migration, policy-research and quantization
+Active handoff: [lepinet recipe integration](2026-11-03-lepinet-integration.md)
+(branch `feature/lepinet-integration`). Completed migration, policy-research and quantization
 cleanup notes were retired after their useful content was consolidated into
 [workspace policy](../README.md), [CI guidance](../../dev/README.md#agent-only-changes-and-ci)
 and [artifact retention](../../docs/quantization-artifacts.md). Git retains history.
