@@ -201,9 +201,15 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   2,000 together, and `stage.py` moved 5,669,317 files (450 GB) in 12.6 min with 512 readers
   (`L:journal/engineering/2026-07-18-ucloud-throughput.md:37`). Staging is still right for three gate
   jobs next to V0's evals and costs about 15-25 min per job from submission to verified staging.
-- Order (lepinet-e1): mt-gate-I first, BU once I's staging is verified, F once BU's is; no need to wait
-  for V0. Each job's sync uploads the worktree as it is at launch (`.gitignore` respected, deletions not
-  propagated), so tracked code must not change until mt-gate-F has launched.
+- Order (lepinet-e1, revised 2026-11-03): once the owner approves, submit mt-gate-I, mt-gate-BU, mt-gate-F
+  and mt-v2t together; each stages with `--readers 256` (not 512) so four stagers share `/work` with V0's
+  evaluations (30-50 min each). Each job's sync uploads the worktree as it is at launch (`.gitignore`
+  respected, deletions not propagated), so tracked code must not change until all four have launched.
+- Run guard (`setup-mt.sh` writes `/tmp/gate-run.sh`; each gate's run line is `bash /tmp/gate-run.sh I|BU|F`):
+  training gets 14 h; once `last.pt` exists and "Final weights saved at:" is logged (per-epoch saves are
+  `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed; predict then runs
+  whenever training finished, under a 2 h timeout. Tested locally with a stub interpreter: normal exit,
+  teardown hang ignoring SIGTERM, training error, hang during training, `last.pt` without the log line.
 - Checks requested by lepinet-e1: the gap between saving `last.pt` and the predict step (see the exit
   delay above); MT's set-0 predictions cover exactly the images of lepinet's I-port prediction file
   (629,742) before scoring; per-epoch validation accuracy, macro-F1 and loss against the clean logs,
