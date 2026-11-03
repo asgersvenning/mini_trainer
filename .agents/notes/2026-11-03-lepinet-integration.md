@@ -1,7 +1,8 @@
 # Lepinet recipe in mini_trainer: parity audit, plan and protocol
 
 **Status:** 2026-11-03: Phase 1 implemented (`a3826c3`..`491b7a5`, presets and usage in
-[dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) running.
+[dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) passed
+except one family-F1 cell at noise level; gate (b) specs ready in `.agents/local/lepinet-b/`, not submitted.
 **Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
 no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
@@ -147,16 +148,38 @@ The recipe and its commands are maintained in [dev/lepinet/README.md](../../dev/
 
 ### Parity protocol
 
-**(a) Subset side-by-side, local RTX 5090**, running since 2026-11-03 (accuracy only; another user's
-process shares the GPU, so timings are biased).
+**(a) Subset side-by-side, local RTX 5090**, done 2026-11-03: 34 of 35 validation cells and every
+set-0 rank within the rule (accuracy only; another user's process shares the GPU, so timings are biased).
 - Subset: the 50-image floor, then MT's frozen family x abundance selector
   (`publication/experiments/training_ablations/data.py:40-54`), 512 species, seed 20261003: 448
-  genera, 40 families, 218,756 training images, about 27.3 k each in sets 1 and 0.
+  genera, 40 families, 218,756 training images, 27,354 in set 1 and 27,349 in set 0.
 - I head, 5 epochs, alternating lepinet (with `GCCallback`) and MT runs, two per code; 8 workers;
   set 0 of the subset scored by the shared `score()` (zero, 5 calibration seeds).
-- Pass: per-epoch code means within max(2 x seed spread, 0.005); on failure change one component at
-  a time towards lepinet, in order of expected impact.
-- Working files: ignored `.agents/local/lepinet-a/` (`run_a.sh`, `compare_a.py`).
+- Pass: per-epoch code means within max(2 x seed spread, 0.005), the spread being the larger of the two
+  codes' seed ranges at that epoch; on failure change one component at a time towards lepinet, in order
+  of expected impact.
+- Validation, final epoch, MT minus lepinet (code means): macro-F1 species -0.0008, genus -0.0020,
+  family +0.0068 (seed ranges 0.0013, 0.0019, 0.0050); accuracy -0.0007, -0.0001, +0.0001; loss -0.0017.
+  The one cell outside the rule is family macro-F1 at epoch 1: +0.0111 against 0.0089, MT higher, over
+  40 families whose lepinet seeds differ by up to 0.0079 at epoch 2. At epoch 1 MT leads on every F1
+  and its loss is 0.035 lower (t 4.5, df 2, p about 0.05, one of 35 comparisons); at epochs 2-3 it
+  trails on species and genus F1 by 0.0014-0.0041, within the rule. Two seeds cannot separate this
+  from noise; (b) has 23x the validation images.
+- Ruled out as causes of the epoch-1 lead, by reading lepinet's code: head initialisation (lepinet
+  passes `init=None` to `vision_learner`, `L:src/lepinet/model.py:155`, so the hidden layer keeps
+  PyTorch's default in both; species spherical step 0.5, genus and family default, as in MT) and the
+  update rule (lepinet's AdamW path is `torch.optim.AdamW`, `L:src/lepinet/optim.py:29,190`).
+- Set 0, identical 27,349 images in all four prediction files, macro-F1 at threshold 0: lepinet
+  0.9648 / 0.9604 species, MT 0.9631 / 0.9619. MT minus lepinet: species -0.0001, genus +0.0007,
+  family +0.0004; calibrated +0.0016, -0.0012, +0.0004. Within the gate's ±0.003 at every rank.
+- Throughput (biased, see above): training phase lepinet 5:20-5:22 per epoch (681 img/s), MT
+  4:54-4:56 (about 743 img/s, from its progress clock; first epoch 5:10); epoch with validation 5:37 against
+  4:56-4:58. MT's logged `item/s` (about 900) starts its timer after the batch arrives, so it excludes
+  data wait: report wall-clock img/s in (b). Peak allocated GPU memory MT 6.56-6.64 GiB, lepinet with
+  `GCCallback` 6.8 GiB (probe). MT exits about 80 s after saving `last.pt` in both runs, outside the
+  epoch times; unexplained, possibly persistent-worker shutdown.
+- Working files: ignored `.agents/local/lepinet-a/` (`run_a.sh`, `compare_a.py`, logs and predictions
+  under `runs/`).
 
 **(b) Full scale, the acceptance gate (UCloud B200).**
 - `/work` is a shared ceiling of about 1,000 img/s (measured by lepinet-e1 on two parallel V0 jobs):
