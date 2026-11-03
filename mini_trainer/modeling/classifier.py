@@ -16,7 +16,7 @@ from torch.nn.utils.parametrizations import weight_norm
 from mini_trainer import get_logger
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
-from .architectures import get_model
+from .architectures import get_model, square_crop_preprocess
 from .context import EmbeddingContext
 from .quantized_training import load_training_weights, restore_quantized_training
 
@@ -28,11 +28,13 @@ class Classifier(nn.Module):
 
     @classmethod
     @torch.no_grad()
-    def init_spherical_repulsion(cls, layer: nn.Module, iterations: int = 100, lr: float = 0.5):
+    def init_spherical_repulsion(cls, layer: nn.Module, iterations: int = 100, lr: float = 0.5, per_class_step: bool = True):
+        """Spread unit rows apart; ``per_class_step=False`` uses the step ``lr`` used before 2026-08-17 (d1a9cc9)."""
         w = layer.weight
         assert isinstance(w, torch.Tensor)
         nn.init.normal_(w)
         num_classes = w.size(0)
+        step = lr / num_classes if per_class_step else lr
 
         for _ in range(iterations):
             w.div_(w.norm(dim=1, keepdim=True).clamp(min=1e-9))
@@ -42,7 +44,7 @@ class Classifier(nn.Module):
             proj = (grad * w).sum(dim=1, keepdim=True) * w
             # Reuse the gradient buffer without changing arithmetic order.
             # Release both full-size temporaries before the next iteration.
-            grad.sub_(proj).mul_(lr / num_classes)
+            grad.sub_(proj).mul_(step)
             w.sub_(grad)
             del grad, proj
 
@@ -51,15 +53,23 @@ class Classifier(nn.Module):
 
     @classmethod
     @torch.no_grad()
-    def _normalize_layer(cls, layer: nn.Linear, orthogonal_init: bool = False):
+    def _normalize_layer(
+        cls,
+        layer: nn.Linear,
+        orthogonal_init: bool = False,
+        trainable_scale: bool = False,
+        trainable_bias: bool = False,
+        legacy_spherical_init: bool = False,
+    ):
+        """Make ``layer`` a cosine layer: zero bias, unit row norm (``weight_norm``), both frozen by default."""
         if layer.bias is not None:
             layer.bias.fill_(0)
-            layer.bias.requires_grad_(False)
+            layer.bias.requires_grad_(trainable_bias)
         if orthogonal_init:
-            layer = cls.init_spherical_repulsion(layer)  # type: ignore
+            layer = cls.init_spherical_repulsion(layer, per_class_step=not legacy_spherical_init)  # type: ignore
         weight_norm(layer, name="weight", dim=0)
         layer.parametrizations.weight.original0.fill_(1)  # type: ignore
-        layer.parametrizations.weight.original0.requires_grad_(False)  # type: ignore # Freeze weight row norm
+        layer.parametrizations.weight.original0.requires_grad_(trainable_scale)  # type: ignore # Row norm frozen by default
         return layer
 
     @staticmethod
@@ -85,8 +95,19 @@ class Classifier(nn.Module):
         active_indices: torch.Tensor | None = None,
         prior: torch.Tensor | list[float] | None = None,
         skip_spherical_init: bool = False,
+        trainable_scale: bool = False,
+        trainable_bias: bool = False,
+        float32_head: bool = False,
+        legacy_spherical_init: bool = False,
         **metadata,
     ):
+        """Build the head; the options below only affect normalized (cosine) heads unless noted.
+
+        ``trainable_scale`` / ``trainable_bias`` keep each class's row norm and bias trainable
+        (initialised at 1 and 0) instead of frozen. ``float32_head`` runs the head in float32 with
+        autocast disabled (any head). ``legacy_spherical_init`` uses the spherical-repulsion step
+        from before 2026-08-17. All are stored in the checkpoint metadata.
+        """
         super().__init__()
         if not isinstance(in_features, int) or not isinstance(out_features, int):
             raise TypeError(
@@ -121,7 +142,17 @@ class Classifier(nn.Module):
                 "prior": prior.tolist() if isinstance(prior, torch.Tensor) else prior,
             }
         )
+        # Opt-in options are recorded only when enabled, so default metadata is unchanged.
+        options = {
+            "trainable_scale": trainable_scale,
+            "trainable_bias": trainable_bias,
+            "float32_head": float32_head,
+            "legacy_spherical_init": legacy_spherical_init,
+        }
+        metadata.update({k: True for k, v in options.items() if v})
         self._metadata = metadata
+        self.trainable_scale, self.trainable_bias = bool(trainable_scale), bool(trainable_bias)
+        self.float32_head, self.legacy_spherical_init = bool(float32_head), bool(legacy_spherical_init)
 
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
@@ -131,7 +162,9 @@ class Classifier(nn.Module):
 
         layer = nn.Linear(self.preclassification_size, out_features, bias=True)
         self.normalized = normalized
-        self.linear = self._normalize_layer(layer, not skip_spherical_init) if self.normalized else layer
+        if self.normalized:
+            layer = self._normalize_layer(layer, not skip_spherical_init, **self._cosine_options(spherical=True))
+        self.linear = layer
         if self._metadata.get("prior", None) is not None:
             self.linear.bias.data[:] = torch.tensor(
                 data=self._metadata["prior"], device=self.linear.weight.device, dtype=self.linear.weight.dtype
@@ -144,6 +177,20 @@ class Classifier(nn.Module):
         self._dirty_cache = defaultdict(lambda: True)
         self.register_buffer("_linear_weight", torch.empty(0), persistent=False)
         self.register_buffer("_linear_bias", torch.empty(0), persistent=False)
+
+    def _cosine_options(self, spherical: bool = False) -> dict[str, bool]:
+        """Options for ``_normalize_layer`` so every cosine layer of this head trains alike."""
+        options = {"trainable_scale": self.trainable_scale, "trainable_bias": self.trainable_bias}
+        if spherical:
+            options["legacy_spherical_init"] = self.legacy_spherical_init
+        return options
+
+    def __call__(self, *args, **kwargs):
+        x = args[0] if args else None
+        if getattr(self, "float32_head", False) and isinstance(x, torch.Tensor) and x.is_floating_point():
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                return super().__call__(x.float(), *args[1:], **kwargs)
+        return super().__call__(*args, **kwargs)
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs) -> None:
         retval = super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
@@ -458,6 +505,8 @@ class Classifier(nn.Module):
             if v != kwargs[k]:
                 get_logger().debug(f"Model configuration option '{k}' overridden by value stored in config: {kwargs[k]} ==> {v}")
                 kwargs[k] = v
+        if kwargs.get("resize_method", "squash") == "crop":
+            model_preprocess = square_crop_preprocess(model_preprocess, size=kwargs["resize_size"], read_size=kwargs.get("read_size"))
         model_type_str = model_type if isinstance(model_type, str) else class_path(model_type)
         model = cls.load(model_type_str, head_name, architecture, state, device, dtype, **kwargs)
         return model, model_preprocess

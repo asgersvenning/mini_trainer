@@ -1,12 +1,14 @@
 import json
 import os
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import torch
 from torch import nn
 
 from mini_trainer import get_logger
+from mini_trainer.utils import affine_resample, read_square_crop
 
 
 def _read_blacklist():
@@ -87,10 +89,11 @@ def _infer_via_dummy_pass(model: nn.Module, preprocess: Callable[[torch.Tensor],
 
 
 class Preprocess:
-    def __init__(self, transform=None, func=None):
-        """Decode image paths and apply the optional transform and postprocessor."""
+    def __init__(self, transform=None, func=None, reader=None):
+        """Decode image paths (with ``reader`` when given) and apply the optional transform and postprocessor."""
         self.transform = transform
         self.func = func
+        self.reader = reader
 
     def __call__(self, item):
         if isinstance(item, str):
@@ -99,7 +102,7 @@ class Preprocess:
                 raise FileNotFoundError("Unable to find image: " + path)
             from torchvision.io import ImageReadMode, decode_image
 
-            image = decode_image(path, ImageReadMode.RGB)
+            image = self.reader(path) if self.reader is not None else decode_image(path, ImageReadMode.RGB)
         elif isinstance(item, torch.Tensor):
             image = item
         else:
@@ -112,6 +115,65 @@ class Preprocess:
 
     def __repr__(self):
         return f"{self.__class__.__name__} ({self.transform} + {self.func})"
+
+
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
+class ResampleNormalize(nn.Module):
+    """Model input for square-crop reading: resample to ``size`` when needed, then normalise.
+
+    Loaders read squares at ``read_size``. Evaluation batches are resampled to ``size`` on an identity
+    grid (bilinear, reflection padding, ``align_corners=True``), which is fastai's validation path;
+    training batches already arrive at ``size`` from ``RandomAffineResize``, which samples the affine and
+    the resize in one step. Any other input size is rejected rather than silently resampled twice.
+    uint8 input is scaled by 1/255; float input is taken to be in ``[0, 1]``. Returns float32.
+    """
+
+    def __init__(self, size: int, read_size: int, mean=IMAGENET_MEAN, std=IMAGENET_STD):  # noqa: D107
+        super().__init__()
+        self.size, self.read_size = int(size), int(read_size)
+        self.mean, self.std = tuple(float(m) for m in mean), tuple(float(s) for s in std)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        single = images.ndim == 3
+        x = images.unsqueeze(0) if single else images
+        x = x.float().div(255) if x.dtype == torch.uint8 else x.float()
+        if tuple(x.shape[-2:]) != (self.size, self.size):
+            if tuple(x.shape[-2:]) != (self.read_size, self.read_size):
+                raise ValueError(
+                    f"Expected images of {self.read_size}x{self.read_size} (read) or {self.size}x{self.size} (augmented), "
+                    f"got {tuple(x.shape[-2:])}."
+                )
+            x = affine_resample(x, None, self.size)
+        mean = torch.tensor(self.mean, device=x.device).view(1, -1, 1, 1)
+        std = torch.tensor(self.std, device=x.device).view(1, -1, 1, 1)
+        x = (x - mean) / std
+        return x[0] if single else x
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(size={self.size}, read_size={self.read_size}, mean={self.mean}, std={self.std})"
+
+
+def square_crop_preprocess(preprocess: "Preprocess", size: int | tuple[int, int] | list[int], read_size: int | None = None) -> "Preprocess":
+    """Model preprocessing for square-crop reading at ``read_size`` (default ``size``) and a ``size`` model input.
+
+    Normalisation statistics and the dtype postprocessor are taken from ``preprocess`` when available.
+    Image paths are read as centred squares, as the evaluation loader reads them.
+    """
+    if not isinstance(size, int):
+        if len(size) != 2 or size[0] != size[1]:
+            raise ValueError(f"Square-crop preprocessing needs a square model size, not {size}.")
+        size = int(size[0])
+    read_size = int(read_size or size)
+    transform = getattr(preprocess, "transform", None)
+    mean, std = getattr(transform, "mean", IMAGENET_MEAN), getattr(transform, "std", IMAGENET_STD)
+    return Preprocess(
+        transform=ResampleNormalize(size, read_size, mean, std),
+        func=getattr(preprocess, "func", None),
+        reader=partial(read_square_crop, size=read_size, position=(0.5, 0.5)),
+    )
 
 
 def module_output_dim(module: nn.Module):

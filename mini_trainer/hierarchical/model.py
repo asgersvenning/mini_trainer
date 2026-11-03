@@ -164,7 +164,7 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
         for i, m in enumerate(self.masks):
             out = int(m.max().item() + 1)
             layer = nn.Linear(self.preclassification_size, out, bias=True)
-            layer = self._normalize_layer(layer) if normalized else layer
+            layer = self._normalize_layer(layer, **self._cosine_options()) if normalized else layer
             if self._metadata.get("prior", None) is not None:
                 layer.bias.data[:] = torch.tensor(data=self._metadata["prior"][i + 1], device=layer.weight.device, dtype=layer.weight.dtype)
             layers.append(layer)
