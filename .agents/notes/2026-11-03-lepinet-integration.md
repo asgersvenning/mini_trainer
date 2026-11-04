@@ -229,6 +229,12 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     sample per row, so a gate epoch is 78,737 training and 9,846 validation steps. V2T's sample,
     reproduced locally to the job's printed counts, keeps 3,448 species after the floor: 377,968
     training and 47,487 validation rows, 5,905 + 742 steps.
+  - Gate epoch times are not a speed comparison: lepinet's three reference runs read every image from
+    `/work` with 256 workers (`img_dir` and `num_workers` in each run's `config.yaml` under
+    `L:data/ucloud_models_logs/`), while the gates read the staged copy with 32 workers on a shared node.
+    Only V2T compares throughput. The images are small (300 sampled: median 512×384, 78 kB; short side
+    p10-p90 324-499), so the 460 crop upscales most of them, decoding is cheap, and both parity readers
+    do the same PIL work (MT's `SquareCropReader`); PIL draft decoding would not help.
   - Analysis tools (ignored, in `.agents/local/lepinet-b/`): `compare_b.py --gate H <run folder>` prints
     each gate's validation curve against the clean log (flags beyond 0.001 and 0.002) and epoch times
     and training img/s from the sibling `<run folder>-train.log`; `v2t_b.py <v2t folder>` gives
