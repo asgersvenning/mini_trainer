@@ -2,9 +2,9 @@
 
 **Status:** 2026-11-03: Phase 1 implemented (`a3826c3`..`491b7a5`, presets and usage in
 [dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) accepted
-by lepinet-e1 (lepinet RESULTS V1). Gate (b) approved by lepinet-e1 (I now, BU after I's staging, F after
-BU's), but the first submission was blocked by this session's permission mode and awaits the owner; specs
-and the throughput job V2T are ready in `.agents/local/lepinet-b/`. Nothing is submitted yet.
+by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: lepinet-e1 approved gate (b) and the throughput job V2T
+for joint submission. This session's permission mode blocked the first submission, so they still await
+the owner's approval. Specs are ready in `.agents/local/lepinet-b/`. Nothing is submitted yet.
 **Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
 no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
@@ -210,6 +210,19 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed; predict then runs
   whenever training finished, under a 2 h timeout. Tested locally with a stub interpreter: normal exit,
   teardown hang ignoring SIGTERM, training error, hang during training, `last.pt` without the log line.
+- Predict reads set 0 from local disk (2026-11-04). On a parquet input, predict reads every set-0 row
+  (632,913 images) from the `images/` folder next to its `--input` parquet
+  (`mini_trainer/integrations/parquet.py:57-70`). Predict uses at most 32 workers by default. /work serves
+  80-94 img/s to 32 readers (lepinet-e1, V0 evals), so reading set 0 from /work takes 1.9-2.2 h and
+  overruns the 2 h limit. `setup-mt.sh` therefore also stages set 0 to NVMe with 256 threads, after
+  `stage.py`, and predict reads the `/tmp` parquet copy. The file list comes from MT's own parquet
+  adapter, and any missing image aborts setup before training. Tested locally on a 1,500-row sample:
+  staged files = set-0 rows = predict's list (161, byte-identical); a missing image and a misplaced
+  parquet both abort. Prediction paths start with `/tmp/global_lepi/images/`, so check (b) matches on
+  `<speciesKey>/<filename>`.
+- Downloads: give each eval folder its own LOCAL. `ucloud files download REMOTE LOCAL` copies REMOTE's
+  contents into LOCAL, so same-named model folders merge and their `predictions.csv` files overwrite
+  each other (lepinet-e1).
 - Checks requested by lepinet-e1: the gap between saving `last.pt` and the predict step (see the exit
   delay above); MT's set-0 predictions cover exactly the images of lepinet's I-port prediction file
   (629,742) before scoring; per-epoch validation accuracy, macro-F1 and loss against the clean logs,
@@ -247,6 +260,15 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   Flemming trap crops; the production model. MT's per-batch augmentation draws and its 87.5 % centre
   crop also apply to Nemo's recipe; lepinet-e1 raised them with Asger as phase-3 factors. MT defaults
   stay unchanged.
+- **Phase 3 anchors**, lepinet V0 (`L:` commit `743fc26`, journal section "V0"), no floor. These are
+  scored on the whole test fold (632,913 images, 12,632 species), so they are not comparable with the
+  gate references, which use the 12,041-species restriction.
+  - Macro-F1 at threshold 0, species/genus/family: V0F 0.9110/0.9600/0.9760, V0BU 0.9107/0.9625/0.9782.
+  - The 591 species that the floor excludes score about 0.875. Their presence costs the other 12,041
+    species 0.0009.
+  - Trap crops, species macro-F1 calibrated by (trap, night), trap/probe/probe-HO: V0F
+    0.279/0.300/0.235, V0BU 0.330/0.351/0.288, Nemo 0.305/0.338/0.293. The floor costs nothing on trap
+    crops, and BU is 5 points above F on every trap set.
 
 ### Open questions
 
