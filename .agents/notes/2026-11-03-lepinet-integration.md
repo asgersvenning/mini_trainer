@@ -205,11 +205,41 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   and mt-v2t together; each stages with `--readers 256` (not 512) so four stagers share `/work` with V0's
   evaluations (30-50 min each). Each job's sync uploads the worktree as it is at launch (`.gitignore`
   respected, deletions not propagated), so tracked code must not change until all four have launched.
-- Run guard (`setup-mt.sh` writes `/tmp/gate-run.sh`; each gate's run line is `bash /tmp/gate-run.sh I|BU|F`):
-  training gets 14 h; once `last.pt` exists and "Final weights saved at:" is logged (per-epoch saves are
-  `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed; predict then runs
-  whenever training finished, under a 2 h timeout. Tested locally with a stub interpreter: normal exit,
-  teardown hang ignoring SIGTERM, training error, hang during training, `last.pt` without the log line.
+- Run guard (`setup-mt.sh` writes `/tmp/gate-run.sh`; each gate's run line is `bash /tmp/gate-run.sh I|BU|F`).
+  - Training gets 14 h. Once "Final weights saved at: <path>" is logged and that file exists (per-epoch
+    saves are `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed.
+    Predict then runs whenever training finished, under a 2 h timeout.
+  - The path is read from the log line. MT replaces characters outside `[A-Za-z0-9_]` in run names
+    and appends `_1`, `_2`, ... when the folder already exists (`mini_trainer/utils/_core/fs.py:43-55`).
+    The first guard built `gate-I/weights/last.pt`, but MT writes `gate_I/...`, so all three gates
+    would have skipped predict. lepinet-e1's request for a real local predict run found this on
+    2026-11-04; the stub interpreter used earlier had written to the guard's own path.
+  - Runs are now named `gate_I|BU|F` (training under `tmp-runs/`, predictions under `tmp-runs/eval/`).
+    A log left by an earlier attempt is moved aside, so a stale marker cannot start the teardown clock.
+  - Tests:
+    - A stub that renames like MT: normal exit, teardown hang ignoring SIGTERM, training error, hang
+      during training, `last.pt` without the log line, a name collision (`gate_I_1`), and a stale log
+      with a hanging run. All seven behave as intended.
+    - The real trainer and predict through the extracted guard for I, BU and F, plus a second I run
+      that collided. Each run had 5 epochs on 592 rows of 8 species and predicted 200 set-0 images.
+      All exited 0.
+- Out-of-vocabulary set-0 rows: the gate models have 12,041 species, but set 0 has 632,913 images, so
+  predict sees 3,171 rows of 591 other species. The parquet adapter maps their class to None, while
+  predict carries labels as strings. Checked on 2026-11-04 with CUDA and fp16, using a 200-row set-0
+  sample of the full parquet:
+  - Protocol-(a) checkpoint M0 (I, 512 species; 170 of the 200 sample rows outside it): 600 rows with
+    no nulls, labels equal to the parquet keys at every rank, `known_label` equal to vocabulary
+    membership. `score.py` drops the 170 and scores 30.
+  - The end-to-end I, BU and F checkpoints (8 species, all 200 rows unknown at species level): the same
+    checks pass.
+  - `tests/integration/test_recipe_lepinet.py` covers the I head on CPU.
+- Gate scoring (lepinet-e1, 2026-11-04): score on exactly lepinet's 629,742 rows, matched by
+  `<speciesKey>/<filename>` to the floor runs' predictions. Before scoring, assert 629,742 rows and
+  12,041 species. The extra 3,171 rows are outside the reference fold. In mini_metrics' convention
+  (`known_only=False`) they would add 591 classes the model can never predict, about -0.04 on species
+  macro-F1. Report the 632,913-row number only as a labelled side figure. The matching script goes in
+  ignored `.agents/local/` after launch. Still to get from lepinet-e1: the paths of those prediction
+  files.
 - Predict reads set 0 from local disk (2026-11-04). On a parquet input, predict reads every set-0 row
   (632,913 images) from the `images/` folder next to its `--input` parquet
   (`mini_trainer/integrations/parquet.py:57-70`). Predict uses at most 32 workers by default. /work serves
