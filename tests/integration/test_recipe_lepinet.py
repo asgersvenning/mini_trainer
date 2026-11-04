@@ -51,6 +51,19 @@ def test_presets_resolve_to_the_recipe(monkeypatch, preset, head, weights):
     # Reader, model preprocessing and augmentation must agree on the two image sizes.
     assert args["dataloader_builder_kwargs"]["read_size"] == args["model_builder_kwargs"]["read_size"] == LepinetBuilder.READ_SIZE
     assert args["augmentation_builder_kwargs"]["size"] == args["size"]
+    assert args["channels_last"] is False
+
+
+@pytest.mark.parametrize("config_value,flag,expected", [(True, False, True), (False, True, True), (None, False, False)])
+def test_channels_last_resolves_from_config_or_flag(monkeypatch, tmp_path, config_value, flag, expected):
+    from mini_trainer.train import cli
+
+    preset = Path(__file__).resolve().parents[2] / "dev" / "lepinet" / "lepinet-BU.yaml"
+    config = tmp_path / "config.yaml"
+    config.write_text(preset.read_text() + ("" if config_value is None else f"channels_last: {str(config_value).lower()}\n"))
+    argv = ["mt_train", "--config", str(config), "--input", "data.parquet", *(["--channels-last"] if flag else [])]
+    monkeypatch.setattr("sys.argv", argv)
+    assert cli()["channels_last"] is expected
 
 
 def test_lepinet_recipe_trains_reloads_and_predicts_on_cpu(tmp_path):
@@ -119,3 +132,46 @@ def test_lepinet_recipe_trains_reloads_and_predicts_on_cpu(tmp_path):
     assert len(predictions) == 5 * 3  # five set-0 images, three levels
     unknown = {row["instance_id"] for row in predictions if row["level"] == "0" and row["known_label"] == "0"}
     assert len(unknown) == 3  # species 3 is out of vocabulary; the scorer restricts to the vocabulary
+
+
+def test_channels_last_trains_with_converted_weights_and_inputs(tmp_path, monkeypatch):
+    import mini_trainer.train as train_module
+
+    seen = {}
+    original = train_module.train
+
+    def record_input(module, args):
+        seen.setdefault("input", args[0].is_contiguous(memory_format=torch.channels_last))
+
+    def spy(model, **kwargs):
+        conv = next(m for m in model.modules() if isinstance(m, torch.nn.Conv2d))
+        seen["weights"] = conv.weight.is_contiguous(memory_format=torch.channels_last)
+        conv.register_forward_pre_hook(record_input)
+        return original(model=model, **kwargs)
+
+    monkeypatch.setattr(train_module, "train", spy)
+    precision = torch.get_float32_matmul_precision()
+    try:
+        train_module.main(
+            input=str(_dataset(tmp_path / "data")),
+            output=str(tmp_path / "out"),
+            name="run",
+            epochs=1,
+            size=8,
+            device="cpu",
+            dtype="float32",
+            seed=0,
+            channels_last=True,
+            builder=LepinetBuilder,
+            spec_model_dataloader_kwargs={"min_count": 3},
+            model_builder_kwargs={"model_type": TinyMockModel(), "pretrained": False, "cls": IndependentClassifier, "read_size": 12},
+            dataloader_builder_kwargs={"batch_size": 2, "num_workers": 0, "read_size": 12},
+            augmentation_builder_kwargs={"size": 8},
+            criterion_builder_kwargs={"weights": [1, 1, 1]},
+            regularizer_builder_kwargs={"strength": 0.0},
+            logger_builder_kwargs={"verbose": False, "logger_cls": configure_loggers()},
+        )
+    finally:
+        torch.set_float32_matmul_precision(precision)
+    assert seen == {"weights": True, "input": True}
+    assert (tmp_path / "out" / "run" / "weights" / "last.pt").is_file()

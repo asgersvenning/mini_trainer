@@ -52,6 +52,7 @@ def main(  # noqa: D417
     dtype: str | torch.dtype = "float16",
     ema: bool = False,
     compile: bool = False,
+    channels_last: bool = False,
     quantized_training: bool = False,
     seed: int | None = None,
     builder: type[BaseBuilder] = BaseBuilder,
@@ -214,6 +215,9 @@ def main(  # noqa: D417
     validate_type(augmentation, (torchvision.transforms.Compose, torchvision.transforms.v2.Compose))
     debug_augmentation(augmentation=augmentation, dataset=train_loader.dataset, output_dir=output_dir, strict=True)
 
+    if channels_last:
+        nn_model = nn_model.to(memory_format=torch.channels_last)
+        nn_model.register_forward_pre_hook(_channels_last_input)
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     validate_type(optimizer, torch.optim.Optimizer)
     criterion = builder.build_criterion(
@@ -317,6 +321,13 @@ def main(  # noqa: D417
         else:
             save_on_master(nn_model.state_dict(), last_weight_dst)
         log.info(f"Final weights saved at: {last_weight_dst}")
+
+
+def _channels_last_input(module, args):
+    """Forward pre-hook: pass 4-D image batches in channels_last memory format."""
+    if args and isinstance(args[0], torch.Tensor) and args[0].dim() == 4:
+        return (args[0].contiguous(memory_format=torch.channels_last), *args[1:])
+    return None
 
 
 def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
@@ -571,6 +582,14 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         dest="compile",
         required=False,
         help="Compile the model using torch.compile for faster execution (default=False).",
+    )
+    cfg_args.add_argument(
+        "--channels-last",
+        action="store_true",
+        default=None,  # omitted flag: keep a config file's value (None is skipped when merging)
+        dest="channels_last",
+        required=False,
+        help="Train with weights and image batches in channels_last memory format (default=False).",
     )
     cfg_args.add_argument(
         "--compile-mode",
