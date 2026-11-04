@@ -258,6 +258,33 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     (`multiprocessing.set_forkserver_preload`) cut a launch to 0.11 s and `fork` (lepinet's choice) to
     0.02 s; the logged accuracies were identical in all three. The 5 s-per-worker exit delay is a
     separate, workstation-only effect (81 s in all three). Scripts: session scratchpad `prof/`.
+  - Gate epoch 1 (validation set 1, MT minus clean log): I species / genus / family macro-F1 +0.0013 /
+    +0.0013 / +0.0009, loss equal (1.3354 vs 1.3355); BU +0.0027 / +0.0043 / -0.0035, loss -0.0325;
+    F species -0.0047, loss +0.0041. lepinet's own full-scale repeats (lepinet-e1; lepinet seeds
+    nothing, so a repeat is an independent draw; logs under
+    `/data/au761367/lepinet/ucloud_mirror/data/ucloud_models/`): F repeat A5 `20260731-080034` minus
+    reference, species F1 by epoch -0.0060, +0.0024, -0.0007, -0.0006, -0.0007, loss +0.0184 at epoch
+    1; BU repeat M2 `20260801-134647`, species +0.0018, -0.0028, -0.0006, -0.0013, -0.0007, genus
+    +0.0031, -0.0018, +0.0008, 0.0000, +0.0005, family +0.0024, +0.0005, +0.0050, +0.0020, +0.0014,
+    loss -0.0260 at epoch 1. So MT's epoch 1 lies inside lepinet's run-to-run spread, which is 2-3×
+    the 0.002 threshold at epoch 1 and about 0.0007 on species by epoch 5: judge later epochs against
+    these spreads (`compare_b.py` prints them as Δrep); the test fold carries the gate.
+  - Per-epoch figures at 12,041 species: confusion matrices 10-16 s, the species dendrogram 135-157 s
+    (85-100 s resolving names, apparently GBIF lookups from the job). After the gates, cache the names
+    or switch the per-epoch figures off in the lepinet presets (lepinet-e1): about 12 min per 5-epoch
+    run and a network call that can fail mid-training. Gate I's epoch 1 took 70.6 min with validation.
+  - GPU-option job `mt-gpuopt` (job 12446034, submitted 15:36 at the owner's request; spec
+    `.agents/local/lepinet-b/mt-gpuopt.toml`, setup `setup-gpuopt.sh` built by `gpuopt/build-setup.sh`
+    from `gpuopt/{setup-head.sh,driver.py,orchestrate.py}`). Synced from `108e43f` (MT code identical
+    to the gates' `5099cc0`) to its own folder `/12347837/repos/mini_trainer-gpuopt`. F preset, one
+    epoch per run on V2T's sample capped at 40 + 5 rows per species (137,920 + 16,975 rows, 2,155 + 266
+    steps), 44 workers, forkserver preload from the driver. Phases: base; A cudnn.benchmark ×
+    channels_last × {foreach, fused AdamW}; base; B four compile modes × channels_last on A's winner;
+    base; C compiled optimizer (± CUDA graphs) on the winner; winner, base, winner. Workstation smoke
+    (shared 5090, 8 workers): baseline 783 img/s; benchmark + channels_last + fused 1,005; + compile
+    default 1,072 (peak 4.5 GiB); reduce-overhead 1,061 (4.3 GiB); compiled optimizer 759. The smoke
+    caught two bugs, both fixed: the driver split its arguments at the first "--" inside "--benchmark",
+    and run tags must use MT's renaming (`base-1` becomes `base_1`).
   - Gate training rate from the step counter at 35-39 min (total 5 × (78,737 + 9,846) steps):
     BU about 1,420 img/s, F about 1,400, I about 1,290 (three heads), 32 workers, so as fast as V2T's
     MT with 44: the loaders are not the limit.
