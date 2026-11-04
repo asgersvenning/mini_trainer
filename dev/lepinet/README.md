@@ -56,7 +56,7 @@ V0BU predictions it reproduces lepinet's scores (species 0.3304, 0.3508, 0.2878)
 | Schedule | Per step: linear from lr/100 over 0.5 epoch, then cosine to 0, same curve for all groups | `lr_schedule_builder_kwargs` |
 | Loss | Per-level cross entropy, smoothing 1/C at species (shrunk per level), no prototype regulariser | defaults, `strength: 0` |
 | Precision | float16 autocast, GradScaler 2^16 with growth every 2,000 steps; clipping at 5 | `dtype`, `scaler_builder_kwargs` |
-| Validation | Per-level macro-F1 over classes present in the truth, each epoch | `macro_f1` |
+| Validation | Per-level macro-F1 over classes present in the truth, each epoch; no diagnostic figures | `macro_f1`, `diagnostics: false` |
 
 Image paths are decoded with PIL, which matches fastai's decoding and resizing byte for byte.
 Random crops cannot be cached. The other knobs follow the comparison rules in

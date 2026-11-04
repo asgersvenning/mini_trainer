@@ -57,3 +57,4 @@ scaler_builder_kwargs:
   growth_interval: 2000
 logger_builder_kwargs:
   macro_f1: true
+  diagnostics: false  # no per-epoch figures
