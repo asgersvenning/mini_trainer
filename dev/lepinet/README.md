@@ -28,6 +28,20 @@ species, 629,742 images) and scores them with lepinet's rescoring function: mini
 macro convention at threshold 0, with a calibrated threshold over `--seeds` calibration splits.
 Never filter the test fold by class counts.
 
+## Trap crops
+
+```bash
+python dev/lepinet/flemming.py index --parquet <lepinet>/data/flemming/flemming_names_labels.parquet --images <flemming>/images --out trap.json
+mt_hpredict --weights <run>/weights/last.pt --input <flemming>/images --data_index trap.json --output <predictions> --name trap
+PYTHONPATH=<lepinet>/data/tools/mini_metrics-61db373 <lepinet>/.venv/bin/python dev/lepinet/flemming.py score \
+    --lepinet <lepinet> --predictions <predictions>/trap/mini_metric.csv
+```
+
+One prediction run covers the Flemming trap set (47,905 crops) and its probe and probe-HO splits.
+`score` writes each set in lepinet's `predictions.csv` layout and scores it with lepinet's
+`dev/093_rescore_mini_metrics.py`, including calibration on whole (trap, night) groups. On lepinet's
+V0BU predictions it reproduces lepinet's scores (species 0.3304, 0.3508, 0.2878).
+
 ## What the recipe sets
 
 | Component | Setting | Implementation |
