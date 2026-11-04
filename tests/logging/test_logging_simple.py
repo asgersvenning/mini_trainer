@@ -151,3 +151,20 @@ def test_macro_f1_averages_truth_classes_per_level():
     assert summary["f1"] == pytest.approx((2 / 3 + 0.8 + 0 + 0) / 4)
     assert summary["f1/lvl1"] == pytest.approx((0.8 + 6 / 7) / 2)
     assert not core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=None, name="run").macro_f1
+
+
+def test_diagnostics_off_keeps_macro_f1_and_skips_figures(monkeypatch):
+    import mini_trainer.logging.core as core
+
+    def fail(*args, **kwargs):
+        raise AssertionError("diagnostic figure built")
+
+    monkeypatch.setattr(core, "plot_class_distance_matrix", fail)
+    monkeypatch.setattr(core, "plot_probabilistic_dendrogram", fail)
+    logger = core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=None, name="run", macro_f1=True, diagnostics=False)
+    logger.update(epoch=0, type="eval")
+    logger.log_accuracy(torch.tensor([0, 1, 1]), torch.tensor([[2.0, 0.0], [0.0, 2.0], [2.0, 0.0]]))
+    logger.figures(object())
+    assert logger._soft_confusion_matrix == {}
+    assert logger.summary(["f1"])["f1"] == pytest.approx(2 / 3)
+    assert core.MultiLogger(train_loader=[0], val_loader=[0], epochs=1, output=None, name="run").diagnostics

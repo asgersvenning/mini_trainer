@@ -544,7 +544,8 @@ class MultiLogger:
     accumulation is disabled to bound memory; save() remains a compatibility no-op.
     """
 
-    macro_f1: bool = False  # Class default for instances (or subclasses) that skip __init__
+    macro_f1: bool = False  # Class defaults for instances (or subclasses) that skip __init__
+    diagnostics: bool = True
 
     @staticmethod
     def _reset_cuda_memory_stats():
@@ -571,9 +572,16 @@ class MultiLogger:
         clear_store_on_update: bool = True,
         verbose: bool = False,
         macro_f1: bool = False,
+        diagnostics: bool = True,
     ):
-        """Create multi-logger orchestrator; ``macro_f1`` adds per-level validation macro-F1 statistics."""
+        """Create multi-logger orchestrator.
+
+        ``macro_f1`` adds per-level validation macro-F1 statistics. ``diagnostics=False`` skips the
+        per-evaluation figures (confusion matrices, class distances, dendrogram) and the soft confusion
+        matrix they need.
+        """
         self.macro_f1 = macro_f1
+        self.diagnostics = diagnostics
         self.total_epochs = epochs
         self.private_statistics = private_statistics
         self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x: statistics.index(x))
@@ -816,7 +824,8 @@ class MultiLogger:
             if self._n_classes is None:
                 self._n_classes = prediction.shape[1]
             if not self.is_train():
-                self.render_soft_confusion_matrix(target, prediction)
+                if self.diagnostics:
+                    self.render_soft_confusion_matrix(target, prediction)
                 self.log_labels_predictions(target.tolist(), prediction.argmax(1).tolist())
             if prediction.shape[1] >= 5:
                 acc1, acc5 = accuracy(prediction, target, topk=(1, 5))
@@ -829,7 +838,8 @@ class MultiLogger:
                 tl = target[:, lvl]
                 self._n_classes = tp.shape[1]
                 if not self.is_train():
-                    self.render_soft_confusion_matrix(tl, tp, level=lvl)
+                    if self.diagnostics:
+                        self.render_soft_confusion_matrix(tl, tp, level=lvl)
                     self.log_labels_predictions(tl.tolist(), tp.argmax(1).tolist(), level=lvl)
                 if tp.shape[1] >= 5:
                     acc1, acc5 = accuracy(tp, tl, topk=(1, 5))
@@ -1140,6 +1150,8 @@ class MultiLogger:
         """Emit end-of-evaluation statistics (opt-in macro-F1) and diagnostic figures."""
         if self.macro_f1:
             self.log_macro_f1()
+        if not self.diagnostics:
+            return
         cm_figs = self.confusion_matrix()
         for lab, fig in cm_figs.items():
             self.add_figure(lab, fig)
