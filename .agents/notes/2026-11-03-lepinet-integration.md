@@ -235,6 +235,24 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     Only V2T compares throughput. The images are small (300 sampled: median 512×384, 78 kB; short side
     p10-p90 324-499), so the 460 crop upscales most of them, decoding is cheap, and both parity readers
     do the same PIL work (MT's `SquareCropReader`); PIL draft decoding would not help.
+  - V2T result (job 12445759, done 14:42, all four runs rc 0; `v2t_b.py` on the downloaded folder):
+    steady training img/s from batch 500 to the end of training, lepinet L1 1,201 and L2 1,205, MT M1
+    1,422 and M2 1,428: MT/lepinet 1.185, each code's runs within 0.4 %, no drift from L1 to L2.
+    Peak allocated GPU memory lepinet 10.4-10.6 GiB (nvidia-smi 12.5-12.9 GB), MT 6.6 GiB (8.0 GB);
+    GPU busy lepinet 72 %, MT 85 %, so neither saturates the B200 at bs 64. Node: 376 CPUs, 2.27 TB,
+    cgroup 48 CPUs and 288 GB, the three gates training alongside. Validation of 47,487 images: MT
+    18 s, lepinet 29 s. First training batch: MT 15 s (44 workers), lepinet 25 s (256 workers).
+  - V2T wall time: lepinet's process 386-390 s (fastai epoch 6:12); MT's 508-552 s. MT spends about
+    190 s per epoch outside its loops: about 93 s between the last training update and the first
+    validation batch (not worker start-up, which takes 15 s) and about 96 s between the last
+    validation update and "Rendering whole-matrix confusion diagnostics" (macro-F1 and confusion
+    matrices run there, `mini_trainer/logging/core.py:1139-1145`), plus the dendrogram (46 s in M1,
+    3 s cached in M2). Cause not yet found; it may grow with 12,041 classes (check gate epoch 1).
+    MT exited 1.5 s after saving `last.pt`: the 5 s-per-worker exit delay seen on the workstation
+    did not occur on UCloud.
+  - Gate training rate from the step counter at 35-39 min (total 5 × (78,737 + 9,846) steps):
+    BU about 1,420 img/s, F about 1,400, I about 1,290 (three heads), 32 workers, so as fast as V2T's
+    MT with 44: the loaders are not the limit.
   - Analysis tools (ignored, in `.agents/local/lepinet-b/`): `compare_b.py --gate H <run folder>` prints
     each gate's validation curve against the clean log (flags beyond 0.001 and 0.002) and epoch times
     and training img/s from the sibling `<run folder>-train.log`; `v2t_b.py <v2t folder>` gives
