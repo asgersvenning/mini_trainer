@@ -42,6 +42,36 @@ One prediction run covers the Flemming trap set (47,905 crops) and its probe and
 `dev/093_rescore_mini_metrics.py`, including calibration on whole (trap, night) groups. On lepinet's
 V0BU predictions it reproduces lepinet's scores (species 0.3304, 0.3508, 0.2878).
 
+## Self-training data
+
+`pseudo.py` builds the shift runs' training data from a teacher's trap predictions with lepinet's
+rules: `select` is `dev/065_pseudolabel.py`'s strict gate (adapt crops at or above the 70th
+percentile of species confidence, ties kept), `merge` is `dev/066_combine_pseudo.py`, and `--fold`
+applies `dev/089_trap_holdout.py`'s folds.
+
+```bash
+python dev/lepinet/pseudo.py select --predictions <predictions>/trap/mini_metric.csv \
+    --adapt <lepinet>/data/flemming/splits/flemming_adapt.parquet --out pseudo.parquet [--true-labels]
+python dev/lepinet/pseudo.py merge --global-parquet <gbifxdl.parquet> --labels pseudo.parquet --target-frac 0.02 [--fold LV1] \
+    --out <data>/train.parquet
+while IFS=$'\t' read -r src dst; do mkdir -p "<data>/images/${dst%/*}" && cp "<flemming>/images/$src" "<data>/images/$dst"
+done < <data>/train.parquet.staging.tsv
+```
+
+`<data>/images` also needs the global images. `--target-frac` counts all global rows, as dev/066 does;
+`train_share` in `<out>.summary.json` is the share of training rows.
+
+| Run | `merge` | lepinet (12,230 pseudo-labels) |
+| --- | --- | --- |
+| Self-training doses (lepinet: 0.24 / 2.6 / 12.3 % of training rows) | `--target-frac 0` / `0.02` / `0.1` | 1x / 11x / 58x |
+| T1rep, true labels at 2.6 % | labels from `select --true-labels`, `--target-frac 0.02` | other crops: dev/067's `labels_12230.parquet`, spread over (trap, night) groups; 11x |
+| X1 / X2 | `--fold LV1` … `SS4` / `--fold site-LV`, `site-OH`, `site-SS` | 11-13x / 13-23x |
+
+For X1 and X2, `pool --pattern '<predictions>/holdout-{fold}/trap/mini_metric.csv' --folds trap|site`
+keeps each crop's prediction from the fold that never saw its trap or site; score its output with
+`flemming.py score`. On lepinet's `pseudo_strict.parquet` and `labels_12230.parquet`, `merge` reproduces
+lepinet's summaries for all of these runs, and B3rep5x and B3rep26x row for row.
+
 ## What the recipe sets
 
 | Component | Setting | Implementation |
