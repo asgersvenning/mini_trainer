@@ -237,9 +237,39 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   `<speciesKey>/<filename>` to the floor runs' predictions. Before scoring, assert 629,742 rows and
   12,041 species. The extra 3,171 rows are outside the reference fold. In mini_metrics' convention
   (`known_only=False`) they would add 591 classes the model can never predict, about -0.04 on species
-  macro-F1. Report the 632,913-row number only as a labelled side figure. The matching script goes in
-  ignored `.agents/local/` after launch. Still to get from lepinet-e1: the paths of those prediction
-  files.
+  macro-F1. Report the 632,913-row number only as a labelled side figure.
+  - References (read only; from lepinet-e1), under `/data/au761367/lepinet/ucloud_preds/`, each
+    `<dir>/eval/predictions.csv`:
+    - I: `base-coarse-eval/lepinet-heads-global-independent-muon-5ep-oversample-effnetv2s-ucloud`,
+      sha256 `330d81aa6f9d617f…`.
+    - F: `singlehead/lepinet-singlehead-species-effnetv2s-ucloud`, sha256 `72b8b81b9bdf3496…`.
+    - BU: `marginal/lepinet-marginal-effnetv2s-ucloud`, sha256 `a21d050468cdb1f9…`.
+    - Not the reference: `baseline-cleanfold/` holds the same I model name on a 217,856-image subset
+      (0.8954).
+  - Checked 2026-11-04 on copies:
+    - The hashes match.
+    - Each file has 629,742 images per level and 12,041 species, all `known_label` True.
+    - Filenames are `<speciesKey>/<file>.jpg`, and all three files cover the same image set.
+    - `dev/lepinet/score.py` reproduces all nine gate numbers from them to four digits: I 0.910975 /
+      0.958745 / 0.970785, F 0.913471 / 0.960627 / 0.973940, BU 0.913532 / 0.963272 / 0.977842.
+    - `score.py` writes `predictions.csv` and `scores.csv` next to its input, so never run it on a
+      reference file in place.
+  - `.agents/local/lepinet-b/match_ref.py` (ignored):
+    - It matches by `<speciesKey>/<file>` and asserts the reference counts (629,742 images, 12,041
+      species, all known).
+    - It asserts that MT's vocabulary is those 12,041 species, that every reference image has an MT
+      prediction, and that the labels agree at every rank.
+    - It reports MT-only images, writes `restricted/mini_metric.csv`, and with `--lepinet` scores the
+      whole-set-0 side figure.
+    - Dry run on protocol (a), L1 as reference and M0 as MT: the restricted score equals M0's set-0
+      scores exactly. With 170 out-of-vocabulary images appended, they are reported and excluded,
+      and the restricted file is unchanged.
+  - Per gate, after downloading `tmp-runs/eval/gate_H/` and `tmp-runs/gate_H/class_spec.json`, each
+    to its own LOCAL (`MM=L:data/tools/mini_metrics-61db373`, lepinet's venv):
+    `PYTHONPATH=$MM python -I .agents/local/lepinet-b/match_ref.py --mt <eval>/mini_metric.csv
+    --reference <ref> --class-spec <class_spec.json> --out <dir> --lepinet L:`, then
+    `PYTHONPATH=$MM python dev/lepinet/score.py --lepinet L: --predictions <dir>/restricted/mini_metric.csv
+    --seeds 5 --expect-instances 629742`.
 - Predict reads set 0 from local disk (2026-11-04). On a parquet input, predict reads every set-0 row
   (632,913 images) from the `images/` folder next to its `--input` parquet
   (`mini_trainer/integrations/parquet.py:57-70`). Predict uses at most 32 workers by default. /work serves
