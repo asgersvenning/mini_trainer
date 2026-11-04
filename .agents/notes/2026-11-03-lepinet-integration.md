@@ -217,6 +217,23 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     the three predicts finish.
   - First log check (13:52): all three gates passed preflight (torch 2.12.0+cu130 on a B200) and
     `stage.py` listed 5,669,317 images, as for lepinet; V2T was copying lepinet's source.
+  - Staging (14:14): every job staged 5,669,317/5,669,317 files (450.3 GB, 0 errors) in 12.7-15.1 min;
+    each gate then staged set 0 (632,913/632,913) in 1.5-1.7 min. Training started 14:06:39 (BU),
+    14:08:31 (F) and 14:09:24 (I); the first-minutes ETA was 5.7-6.3 h for 5 epochs with validation.
+    V2T: cgroup 48 CPUs, so MT_WORKERS=44; L1 started 14:12:08. "Free on /tmp" fell from job to job
+    (953, 802, 701, 455 GB), so the four jobs probably share one node's disk: V2T then measures under
+    the gates' load. lepinet-e1 was told staging is done.
+  - Counts from the parquet (2026-11-04): 12,041 floor species, 5,039,220 training rows (sets 2-9) and
+    630,097 validation rows (set 1); set 0 has 632,913 rows of 12,632 species, 629,742 of them in the
+    floor vocabulary (the reference count). MT drops the last partial training batch and draws one
+    sample per row, so a gate epoch is 78,737 training and 9,846 validation steps. V2T's sample,
+    reproduced locally to the job's printed counts, keeps 3,448 species after the floor: 377,968
+    training and 47,487 validation rows, 5,905 + 742 steps.
+  - Analysis tools (ignored, in `.agents/local/lepinet-b/`): `compare_b.py --gate H <run folder>` prints
+    each gate's validation curve against the clean log (flags beyond 0.001 and 0.002) and epoch times
+    and training img/s from the sibling `<run folder>-train.log`; `v2t_b.py <v2t folder>` gives
+    steady-state img/s from batch 500, peak memory and GPU use per V2T run. Dry runs on the local
+    end-to-end and protocol (a) logs parse correctly (protocol (a): L1/L2 684-687 img/s, M0 748).
 - Run guard (`setup-mt.sh` writes `/tmp/gate-run.sh`; each gate's run line is `bash /tmp/gate-run.sh I|BU|F`).
   - Training gets 14 h. Once "Final weights saved at: <path>" is logged and that file exists (per-epoch
     saves are `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed.
