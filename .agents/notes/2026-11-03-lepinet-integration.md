@@ -2,9 +2,9 @@
 
 **Status:** 2026-11-03: Phase 1 implemented (`a3826c3`..`491b7a5`, presets and usage in
 [dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) accepted
-by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: lepinet-e1 approved gate (b) and the throughput job V2T
-for joint submission. This session's permission mode blocked the first submission, so they still await
-the owner's approval. Specs are ready in `.agents/local/lepinet-b/`. Nothing is submitted yet.
+by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: the owner approved gate (b) and the throughput job V2T,
+submitted together at 13:50 from `5099cc0` (jobs 12445754 I, 12445755 BU, 12445756 F, 12445759 V2T;
+specs in `.agents/local/lepinet-b/`). Results pending; see "Submission" under (b).
 **Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
 no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
@@ -204,7 +204,19 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
 - Order (lepinet-e1, revised 2026-11-03): once the owner approves, submit mt-gate-I, mt-gate-BU, mt-gate-F
   and mt-v2t together; each stages with `--readers 256` (not 512) so four stagers share `/work` with V0's
   evaluations (30-50 min each). Each job's sync uploads the worktree as it is at launch (`.gitignore`
-  respected, deletions not propagated), so tracked code must not change until all four have launched.
+  respected, deletions not propagated), so tracked code must not change until all four have launched;
+  the jobs also import it from the drive until predict ends (see "Submission").
+- Submission (2026-11-04, after the owner's approval in this session): `budget_check.py` ok for all four
+  (GPU product, not CPU-gated); the first submit synced 495 files from a clean `5099cc0` to
+  `/12347837/repos/mini_trainer-lepinet`; all four RUNNING by 13:51 and `ucloud q tick` exits 0. Jobs:
+  mt-gate-I 12445754, mt-gate-BU 12445755, mt-gate-F 12445756, mt-v2t 12445759; lepinet-e1 has the list.
+  - The user crontab runs `ucloud q tick` every 5 min (`~/.ucloud-tick.log`, which only logs events),
+    so auto-extend works without a daemon. Queue records: `~/.local/share/ucloud-api/queue/<name>.json`.
+  - `uv sync` installs mini_trainer editable (a `.pth` to the project root), so each gate's predict,
+    about 8 h after launch, imports the code then on the drive. Nothing may sync to that remote until
+    the three predicts finish.
+  - First log check (13:52): all three gates passed preflight (torch 2.12.0+cu130 on a B200) and
+    `stage.py` listed 5,669,317 images, as for lepinet; V2T was copying lepinet's source.
 - Run guard (`setup-mt.sh` writes `/tmp/gate-run.sh`; each gate's run line is `bash /tmp/gate-run.sh I|BU|F`).
   - Training gets 14 h. Once "Final weights saved at: <path>" is logged and that file exists (per-epoch
     saves are `checkpoint_*.pth` and `best.pt`), teardown gets 15 min before the process is killed.
