@@ -242,14 +242,22 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     GPU busy lepinet 72 %, MT 85 %, so neither saturates the B200 at bs 64. Node: 376 CPUs, 2.27 TB,
     cgroup 48 CPUs and 288 GB, the three gates training alongside. Validation of 47,487 images: MT
     18 s, lepinet 29 s. First training batch: MT 15 s (44 workers), lepinet 25 s (256 workers).
-  - V2T wall time: lepinet's process 386-390 s (fastai epoch 6:12); MT's 508-552 s. MT spends about
-    190 s per epoch outside its loops: about 93 s between the last training update and the first
-    validation batch (not worker start-up, which takes 15 s) and about 96 s between the last
-    validation update and "Rendering whole-matrix confusion diagnostics" (macro-F1 and confusion
-    matrices run there, `mini_trainer/logging/core.py:1139-1145`), plus the dendrogram (46 s in M1,
-    3 s cached in M2). Cause not yet found; it may grow with 12,041 classes (check gate epoch 1).
-    MT exited 1.5 s after saving `last.pt`: the 5 s-per-worker exit delay seen on the workstation
-    did not occur on UCloud.
+  - V2T wall time: lepinet's process 386-390 s (fastai epoch 6:12); MT's 508-552 s, about 190 s of it
+    DataLoader worker start-up (below), plus the dendrogram (46 s in M1, 3 s cached in M2). MT exited
+    1.5 s after saving `last.pt`: the workstation's exit delay did not occur on UCloud.
+  - Cause of that overhead (2026-11-04; workstation profile of one F epoch on V2T's 3,448 species capped
+    at 16 + 4 rows, with faulthandler stack dumps every 0.5 s, then timed launches): Python 3.14 starts
+    DataLoader workers with forkserver. Each launch pickles the worker's arguments, dataset included
+    (11.1 MB for 55,168 training rows, 2.75 MB for 13,682 validation rows), and blocks in
+    `popen_forkserver.py:58` writing them into the pipe until the child has re-imported
+    `mini_trainer.train`: about 1.6 s per worker on the workstation and 2.1 s on UCloud, one worker at
+    a time. With persistent workers that happens once per loader per run, at the first training and
+    the first validation batch, not every epoch. Earlier readings of "93 s before and 96 s after
+    validation" were wrong about the second gap: the progress clock starts after the training loader's
+    workers are up, so its launch hid in the offset. Preloading `mini_trainer.train` into the forkserver
+    (`multiprocessing.set_forkserver_preload`) cut a launch to 0.11 s and `fork` (lepinet's choice) to
+    0.02 s; the logged accuracies were identical in all three. The 5 s-per-worker exit delay is a
+    separate, workstation-only effect (81 s in all three). Scripts: session scratchpad `prof/`.
   - Gate training rate from the step counter at 35-39 min (total 5 × (78,737 + 9,846) steps):
     BU about 1,420 img/s, F about 1,400, I about 1,290 (three heads), 32 workers, so as fast as V2T's
     MT with 44: the loaders are not the limit.
