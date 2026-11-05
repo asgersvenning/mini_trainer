@@ -72,6 +72,12 @@ keeps each crop's prediction from the fold that never saw its trap or site; scor
 `flemming.py score`. On lepinet's `pseudo_strict.parquet` and `labels_12230.parquet`, `merge` reproduces
 lepinet's summaries for all of these runs, and B3rep5x and B3rep26x row for row.
 
+## Open-set scores
+
+`python dev/lepinet/openset.py <mt_hpredict arguments>` writes `summary.parquet`: per image and rank, the
+top two raw outputs, their logsumexp, the softmax entropy and the argmax, enough for the max-logit, energy,
+MSP, entropy and margin rules without the full log-probabilities.
+
 ## What the recipe sets
 
 | Component | Setting | Implementation |
