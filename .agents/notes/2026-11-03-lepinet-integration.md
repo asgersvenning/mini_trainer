@@ -425,7 +425,8 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   a subagent ruled out the recipe's head options and found two AR defects, a teacher-forcing leak
   (`mini_trainer/hierarchical/model.py:251`, `:254-256` read each level at its own teacher-forced token
   under a mask that includes the diagonal) and N(0,1) start/positional embeddings that drown the class
-  tokens; fixing both did not help (candidate patch and tests: session scratchpad `ar-fix/`). ViT-L/16
+  tokens; fixing both did not help (candidate patch, tests, probes and logs: `.agents/local/ar-fix/`,
+  ignored; branch `fix/ar-lepinet-recipe` holds no extra commits). ViT-L/16
   needs its native 224 px and does not learn at the recipe's lr 1e-3 (acc1 1.2 %, loss near chance).
 - Tools on the branch: `dev/lepinet/flemming.py` (trap predict and scoring, `4e30941`), `pseudo.py`
   (dev/065 gate, dev/066 doses, dev/089 folds, `0b4f671`, by a subagent; reproduces lepinet's summaries; use
