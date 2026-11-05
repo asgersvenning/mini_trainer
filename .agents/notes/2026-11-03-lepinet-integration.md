@@ -522,14 +522,41 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   - Flattening by decay is ruled out. `decay_all: true` decays the head's per-class scales g and biases, but
     every scale in the B0 checkpoints grew from 1. Medians: F 1.72; BU 1.54; I species/genus/family
     1.92/1.87/1.69; TD 1.51/1.99/2.12. TD's species scales spread from 0.99 to 2.25 (p10-p90).
-  - Untested candidate: the embedding is unit-norm and `cosine_to_zscore` clamps g·cos at ±1. Any class
-    with cos > 1/g (about 0.5) sits at the same maximum logit, about 56 at D = 1280, with no gradient.
-    TD's family layer has the largest scales over only 104 classes, so ties at that ceiling should be most
-    likely there, and TD multiplies them. Test: the fraction of saturated logits per level on validation
-    images.
-  - MT can't run TD without cosine logits: HierarchicalClassifier rejects `normalized: false`. If v2s_td_s42
-    shows the gap, run TD and F each with the recipe head and with MT's default (frozen unit scale, zero
-    bias), one epoch on the smoke sample: 4 runs, about 15 min on one B200. Needs the owner's approval.
+  - Ceiling ties are ruled out too. The embedding is unit-norm and `cosine_to_zscore` clamps g·cos at
+    ±1, so every class with g·cos >= 1 gets the same maximum z (about 56 at D = 1280) and no gradient.
+    Counted on 10,000 random set-0 images (`.agents/local/td-saturation/saturation.py`, fp32 head math):
+    - F, BU, I and lepinet's V2-S F: no class at the ceiling on any image.
+    - TD: one class at the ceiling on 9.9 % (species layer) and 9.3 % (genus) of images. Ties of two or
+      more on 0.07 % (species only), always including the true class; a wrong tied pick on 0.04 %.
+  - Next step: if v2s_td_s42 shows the gap, run TD and F each with the recipe head and with MT's default
+    (frozen unit scale, zero bias), one epoch on the smoke sample: 4 runs, about 15 min on one B200.
+    Needs the owner's approval. MT can't run TD without cosine logits: HierarchicalClassifier rejects
+    `normalized: false`.
+  - Context on the same sample: top-1 at species F 0.916, BU 0.912, I 0.907, TD 0.875, lepinet V2-S F
+    0.932. TD's family layer is as accurate as I's (0.983). TD's layers work at positive g·cos; F and BU
+    at the negative end (median per-image maximum -0.86 and -0.88).
+  - lepinet's V2-S F median scale g is 1.74. Cite that, not lepinet PLAN's 1.88, which is a mean
+    (2026-08-06).
+- Limitation of the recipe's head, the same function in lepinet and MT: the clamp's floor. With learned
+  scales above 1, F and BU push most classes to g·cos <= -1: on average 94 % (F) and 97 % (BU) of
+  species logits per image, 57 % for lepinet's V2-S F, 15 % for I's species layer, about 0 for TD.
+  - The true class sits at the floor on 0.33 % of B0 F's images, 0.31 % of BU's and 0.09 % of lepinet
+    V2-S F's. Such an image is always misclassified, and in training it sends no gradient through its
+    own class. That's about 4 % of B0 F's top-1 errors.
+  - A fix (scale on z, or after the clamp) changes every head, so it waits until after the paper unless
+    the owner asks for it to be measured.
+- Owner, 2026-11-05 (via lepinet-e1; submissions approved here):
+  - DINOv3 ConvNeXt-L replaces ViT-L/16 in both head grids. `c-vitl` finishes as the appendix row for the
+    original ViT choice.
+  - Queued after `c-v2s`, created after the reproduction jobs so they launch behind them in the same tick:
+    - `c-dinov3-grid`: Lepidoptera F, I and TD on 3 B200, about 15 h each.
+    - `pp-dinov3`: Pl@ntNet F, BU, I and TD on 4 B200, 10 epochs, five ranks.
+    - Both are uncompiled, with exactly dinov3_bu_s42's settings.
+  - I and TD were checked locally on the same architecture (random weights, 1 epoch, MuonAuxAdamW,
+    `head_muon: false`): both train and predict. Every other timm ConvNeXt size is on MT's blacklist.
+  - EfficientNetV2-B0 is shelved: no GPU hours.
+  - MT's timm wrapper exposes no mean or std, so the crop reader uses ImageNet statistics for every timm
+    backbone. That's documented in `dev/lepinet/README.md` (`f4c8114`).
 - Predict with the nested-head change (`0b08370`), which the running jobs import from the synced folder: on
   200 images, checkpoints of V2-S, B0 and ViT-L/16 give identical prediction files before and after it
   (confidences within 2e-7).
