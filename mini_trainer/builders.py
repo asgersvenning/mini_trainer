@@ -209,13 +209,15 @@ class BaseBuilder:
         head_weight_decay: float,
         backbone_weight_decay: float,
         decay_all: bool = False,
+        head_muon: bool = True,
     ) -> list[dict[str, Any]]:
         """Group trainable parameters by head/backbone, decay and Muon eligibility.
 
         ``model._backbone_output_name`` identifies the head. Head parameter names
-        containing ``linear`` or ``layer`` select the no-Muon group; normalization
-        parameters, weight parametrizations and biases receive no weight decay
-        unless ``decay_all`` is set. Frozen parameters are excluded.
+        containing ``linear`` or ``layer`` select the no-Muon group, or every head
+        parameter does when ``head_muon`` is False; normalization parameters, weight
+        parametrizations and biases receive no weight decay unless ``decay_all`` is
+        set. Frozen parameters are excluded.
         """
         if not hasattr(model, "_backbone_output_name"):
             raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
@@ -252,8 +254,8 @@ class BaseBuilder:
             if not p.requires_grad:
                 continue
             grp_name = "head" if id(p) in head_module_param_ids else "backbone"
-            # Keep final classifier layers on the auxiliary optimizer, not Muon.
-            if grp_name == "head" and ("linear" in name or "layer" in name):
+            # Keep final classifier layers (or, without head_muon, the whole head) on the auxiliary optimizer, not Muon.
+            if grp_name == "head" and (not head_muon or "linear" in name or "layer" in name):
                 new_grp_name = f"{grp_name}_nomuon"
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {
@@ -286,13 +288,15 @@ class BaseBuilder:
         backbone_lr: float | None = None,
         backbone_weight_decay: float | None = None,
         decay_all: bool = False,
+        head_muon: bool = True,
         **optimizer_kwargs,  # Other optimizer_cls arguments (e.g., betas, eps for AdamW)
     ) -> torch.optim.Optimizer:
         """Construct the optimizer from named head/backbone parameter groups.
 
         Only trainable parameters participate; ``model._backbone_output_name``
         identifies the head. ``decay_all`` also decays normalization parameters,
-        biases and weight parametrizations. Forward remaining keywords to ``optimizer_cls``.
+        biases and weight parametrizations; ``head_muon=False`` keeps the whole head
+        off Muon. Forward remaining keywords to ``optimizer_cls``.
         """
         head_lr = lr
         backbone_lr = backbone_lr or head_lr / 3
@@ -306,6 +310,7 @@ class BaseBuilder:
             head_weight_decay=head_weight_decay,
             backbone_weight_decay=backbone_weight_decay,
             **({"decay_all": True} if decay_all else {}),
+            **({"head_muon": False} if not head_muon else {}),
         )
 
         if not param_groups and not list(model.parameters()):  # Model has no parameters

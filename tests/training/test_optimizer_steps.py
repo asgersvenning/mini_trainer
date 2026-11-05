@@ -456,3 +456,22 @@ def test_decay_all_decays_norms_biases_and_parametrizations():
         model, optimizer_cls=torch.optim.AdamW, lr=1e-3, weight_decay=0.01, backbone_lr=1e-3, decay_all=True
     )
     assert {(g["lr"], g["weight_decay"]) for g in optimizer.param_groups} == {(1e-3, 0.01)}
+
+
+def test_head_muon_false_keeps_the_whole_head_off_muon():
+    from mini_trainer.builders import BaseBuilder
+    from mini_trainer.modeling import Classifier
+    from mini_trainer.training import MuonAuxAdamW
+    from tests.integration.test_integration_train import TinyMockModel
+
+    model, _ = Classifier.build(model_type=TinyMockModel(), num_classes=3, model_args={"pretrained": False}, hidden=True)
+    head = {id(p) for p in getattr(model, model._backbone_output_name).parameters() if p.requires_grad}
+    rates = dict(head_lr=1e-3, backbone_lr=1e-3, head_weight_decay=0.01, backbone_weight_decay=0.01)
+
+    def muon_eligible(groups):
+        return {id(p) for g in groups if "nomuon" not in g["name"] for p in g["params"] if p.ndim == 2}
+
+    assert muon_eligible(BaseBuilder.parameter_groups(model, **rates)) & head  # by default the hidden layer is eligible
+    assert not muon_eligible(BaseBuilder.parameter_groups(model, head_muon=False, **rates)) & head
+    optimizer = BaseBuilder.build_optimizer(model, optimizer_cls=MuonAuxAdamW, lr=1e-3, weight_decay=0.01, head_muon=False)
+    assert not {id(p) for g in optimizer.muon.param_groups for p in g["params"]} & head if optimizer.muon else True
