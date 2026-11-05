@@ -134,6 +134,75 @@ def test_lepinet_recipe_trains_reloads_and_predicts_on_cpu(tmp_path):
     assert len(unknown) == 3  # species 3 is out of vocabulary; the scorer restricts to the vocabulary
 
 
+class BatchNormMockModel(torch.nn.Module):
+    """TinyMockModel with batch normalisation and dropout in its backbone."""
+
+    default_transform = TinyMockModel.default_transform
+
+    def __init__(self):
+        super().__init__()
+        self.features = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 4, kernel_size=3, padding=1),
+            torch.nn.BatchNorm2d(4),
+            torch.nn.Dropout(0.5),
+            torch.nn.AdaptiveAvgPool2d((1, 1)),
+            torch.nn.Flatten(),
+        )
+        self.fc = torch.nn.Linear(4, 2)
+
+    def forward(self, x):
+        return self.fc(self.features(x))
+
+
+def test_freeze_backbone_trains_only_the_head(tmp_path, monkeypatch):
+    import copy
+
+    import mini_trainer.train as train_module
+
+    seen = {"modes": set()}
+    original = train_module.train
+
+    def record_mode(module, args):
+        seen["modes"].add(module.training)
+
+    def spy(model, **kwargs):
+        seen["before"] = copy.deepcopy(model.state_dict())
+        next(m for m in model.modules() if isinstance(m, torch.nn.BatchNorm2d)).register_forward_pre_hook(record_mode)
+        seen["model"] = model
+        return original(model=model, **kwargs)
+
+    monkeypatch.setattr(train_module, "train", spy)
+    precision = torch.get_float32_matmul_precision()
+    try:
+        train_module.main(
+            input=str(_dataset(tmp_path / "data")),
+            output=str(tmp_path / "out"),
+            name="run",
+            epochs=1,
+            size=8,
+            device="cpu",
+            dtype="float32",
+            seed=0,
+            freeze_backbone=True,
+            builder=LepinetBuilder,
+            spec_model_dataloader_kwargs={"min_count": 3},
+            model_builder_kwargs={"model_type": BatchNormMockModel(), "pretrained": False, "cls": IndependentClassifier, "read_size": 12},
+            dataloader_builder_kwargs={"batch_size": 2, "num_workers": 0, "read_size": 12},
+            augmentation_builder_kwargs={"size": 8},
+            criterion_builder_kwargs={"weights": [1, 1, 1]},
+            regularizer_builder_kwargs={"strength": 0.0},
+            logger_builder_kwargs={"verbose": False, "logger_cls": configure_loggers()},
+        )
+    finally:
+        torch.set_float32_matmul_precision(precision)
+    after = seen["model"].state_dict()
+    tensors = {k: v for k, v in seen["before"].items() if torch.is_tensor(v) and v.is_floating_point()}
+    backbone, head = [k for k in tensors if k.startswith("features.")], [k for k in tensors if k.startswith("fc.")]
+    assert backbone and all(torch.equal(seen["before"][k], after[k]) for k in backbone)  # weights and running statistics
+    assert any(not torch.equal(seen["before"][k], after[k]) for k in head)
+    assert seen["modes"] == {False}  # batch normalisation never ran in training mode
+
+
 def test_channels_last_trains_with_converted_weights_and_inputs(tmp_path, monkeypatch):
     import mini_trainer.train as train_module
 

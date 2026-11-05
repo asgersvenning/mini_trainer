@@ -1,5 +1,6 @@
 import os
 import random
+import types
 from argparse import ArgumentParser
 from typing import Any
 
@@ -53,6 +54,7 @@ def main(  # noqa: D417
     ema: bool = False,
     compile: bool = False,
     channels_last: bool = False,
+    freeze_backbone: bool = False,
     quantized_training: bool = False,
     seed: int | None = None,
     builder: type[BaseBuilder] = BaseBuilder,
@@ -218,6 +220,8 @@ def main(  # noqa: D417
     if channels_last:
         nn_model = nn_model.to(memory_format=torch.channels_last)
         nn_model.register_forward_pre_hook(_channels_last_input)
+    if freeze_backbone:
+        _freeze_backbone(nn_model)
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     validate_type(optimizer, torch.optim.Optimizer)
     criterion = builder.build_criterion(
@@ -321,6 +325,31 @@ def main(  # noqa: D417
         else:
             save_on_master(nn_model.state_dict(), last_weight_dst)
         log.info(f"Final weights saved at: {last_weight_dst}")
+
+
+def _always_eval(module, mode: bool = True):
+    """Replacement ``train`` for frozen subtrees: they stay in eval mode."""
+    return torch.nn.Module.train(module, False)
+
+
+def _freeze_backbone(model: torch.nn.Module) -> None:
+    """Train only the classification head: freeze every other parameter and keep the rest in eval mode.
+
+    Eval mode fixes the backbone's normalisation statistics and disables its dropout and stochastic depth,
+    so its features do not change during training. Precision is unchanged.
+    """
+    head = classification_module(model)
+    trainable = {id(p) for p in head.parameters()}
+    for parameter in model.parameters():
+        if id(parameter) not in trainable:
+            parameter.requires_grad_(False)
+    node = model
+    for part in model._backbone_output_name.split("."):  # every sibling subtree on the path to the head is backbone
+        for name, child in node.named_children():
+            if name != part:
+                child.eval()
+                child.train = types.MethodType(_always_eval, child)
+        node = getattr(node, part)
 
 
 def _channels_last_input(module, args):
@@ -590,6 +619,14 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         dest="channels_last",
         required=False,
         help="Train with weights and image batches in channels_last memory format (default=False).",
+    )
+    cfg_args.add_argument(
+        "--freeze-backbone",
+        action="store_true",
+        default=None,  # omitted flag: keep a config file's value
+        dest="freeze_backbone",
+        required=False,
+        help="Train only the classification head; the backbone stays frozen and in eval mode (default=False).",
     )
     cfg_args.add_argument(
         "--compile-mode",
