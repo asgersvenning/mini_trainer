@@ -5,8 +5,9 @@
 by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: gate (b) and V2T ran from `5099cc0` (jobs 12445754-6,
 12445759). 2026-11-05: **the gate passed** for I, BU and F (below, "Gate result"); the paper campaign has
 started (section "Campaign").
-**Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
-no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
+**Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Pushed to
+`origin` (asgersvenning/mini_trainer) on 2026-11-05 at the owner's request, without a PR; ask before
+later pushes and before opening the merge PR (trim words first). Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
 **Scope:** reproduce lepinet's 20 M EfficientNetV2-S baseline (heads F, BU, I) in MT as opt-in
 components. MT defaults and the Nemo recipe (`dev/ucloud/production.py:50-84`) stay unchanged.
