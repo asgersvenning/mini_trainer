@@ -512,6 +512,23 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   - `c-crt-t2` and `c-dinov3-st` stay uncompiled, because their configs aren't smoke-tested.
   - Runner: `"compile": true` per run or per plan. The flags go on the command line, because store_true
     flags override YAML, and are kept in `tmp-runs/configs/<run>.args`.
+  - Caveat (lepinet-e1): c-t1rep's real-label arms (T1rep, gatedtrue) are uncompiled, but the self-training
+    arm they're compared with is compiled. That comparison stands only if v2s_bu_compiled_s42 against
+    v2s_bu_s42 is inside the noise (test fold about 0.000 at species, probe about 0.004). Otherwise, say so.
+- TD gap (lepinet-e1): b0_td's validation species F1 is 0.787, against 0.874 for b0_f. Asger's B0
+  conditional trailed his flat head by 4.3, so the recipe gains F, BU and I 3-4 points but TD nothing. The
+  gap grows towards species: TD's family is 0.939 against F's 0.964, genus 0.885 against 0.938.
+  - Flattening by decay is ruled out. `decay_all: true` decays the head's per-class scales g and biases, but
+    every scale in the B0 checkpoints grew from 1. Medians: F 1.72; BU 1.54; I species/genus/family
+    1.92/1.87/1.69; TD 1.51/1.99/2.12. TD's species scales spread from 0.99 to 2.25 (p10-p90).
+  - Untested candidate: the embedding is unit-norm and `cosine_to_zscore` clamps g·cos at ±1. Any class
+    with cos > 1/g (about 0.5) sits at the same maximum logit, about 56 at D = 1280, with no gradient.
+    TD's family layer has the largest scales over only 104 classes, so ties at that ceiling should be most
+    likely there, and TD multiplies them. Test: the fraction of saturated logits per level on validation
+    images.
+  - MT can't run TD without cosine logits: HierarchicalClassifier rejects `normalized: false`. If v2s_td_s42
+    shows the gap, run TD and F each with the recipe head and with MT's default (frozen unit scale, zero
+    bias), one epoch on the smoke sample: 4 runs, about 15 min on one B200. Needs the owner's approval.
 - Predict with the nested-head change (`0b08370`), which the running jobs import from the synced folder: on
   200 images, checkpoints of V2-S, B0 and ViT-L/16 give identical prediction files before and after it
   (confidences within 2e-7).
