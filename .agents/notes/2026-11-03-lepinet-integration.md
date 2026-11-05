@@ -592,6 +592,22 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     with the recipe head and with MT's default head (`trainable_scale`, `trainable_bias`, `float32_head`
     and `legacy_spherical_init` false). One plain V2-S epoch each on the compile smoke's capped sample,
     seed 0, one B200.
+  - Result (12448351, 2026-11-05 18:15): MT's default head doesn't close the gap, so the recipe's head
+    options aren't the cause.
+    - acc1 and species / genus / family F1: TD recipe 60.25, 0.5847 / 0.6699 / 0.7547; TD default 59.58,
+      0.5780 / 0.6651 / 0.7578; F recipe 65.38, 0.6360 / 0.7288 / 0.7911; F default 65.32, 0.6363 /
+      0.7256 / 0.8024.
+    - TD - F at species F1: -0.0514 with the recipe head, -0.0583 with the default head.
+    - Noise: F reproduces the compile smoke's plain run bit for bit. TD drifts about 0.1 acc1 between
+      identical runs (scatter-based normalization isn't deterministic on GPU).
+  - Remaining candidates, in `ConditionalClassifier.forward` (`mini_trainer/hierarchical/model.py:204-218`):
+    - The sibling normalizer is detached, so each layer gets the TD-marginal gradient (p_TD - y). A
+      sibling's push-down is scaled by its parent's probability.
+    - With loss weights [1,1,1], the species and genus losses send coarser layers exactly their own loss's
+      gradient again: family three times, genus twice.
+    - Checks: TD with weights [1,0,0] (config only), and an opt-in non-detached normalizer (core change,
+      feature branch). Asked lepinet-e1 how Svenning et al.'s TD (-1.4 at V2-S) differs. Neither runs
+      without the owner.
   - Cross-entropy against EMLA: EMLA is +0.59 at species in-distribution but -0.41 genus, -0.76 family,
     and -3.9 / -5.5 / -4.9 on trap / probe / probe-HO. Cross-entropy stays.
   - The `channels_last` control passes on lepinet's 629,742 rows: 0.9135 / 0.9631 / 0.9790 against V2BU's
