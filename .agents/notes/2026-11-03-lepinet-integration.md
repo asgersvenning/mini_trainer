@@ -438,9 +438,10 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   labels) plus a matched arm (lepinet's 12,230 gated crops with true labels), both at 11x.
 - Submitted 2026-11-05: `mt-compile-smoke` 12447240, `c-openset` 12447244 (C3b, openset.py summaries),
   `c-dinov3` 12447249 (failed: MT could not attach its head to timm's nested `head.fc`; fixed in `0b08370`,
-  resubmission pending), `c-vitl` 12447251, `c-t1rep` 12447346. Ready: `pp-v2s/b0/vitl` (five ranks,
-  `levels: 5`, B0 at 224 px), `c-shift-a/b/c` (18 runs: doses 0.24/2.6/12.3 %, X1, X2; submit with
-  `--after c-v2s`, as they select pseudo-labels from v2s_bu_s42's trap predictions), `c-dinov3-st`.
+  resubmitted as `c-dinov3-r2`), `c-vitl` 12447251, `c-t1rep` 12447346. Queued after `c-v2s`, whose
+  v2s_bu_s42 trap predictions or weights they use: `c-shift-a/b/c` (18 runs: doses 0.24/2.6/12.3 %, X1, X2),
+  `c-dinov3-st`, `c-crt-t2`. `c-b0` finished 14:40: all four runs trained and predicted set 0 and the traps
+  in about 4 h.
 - Runner pitfall, fixed for later jobs: `python -m` imports from the working directory first, so the jobs
   started from the synced folder (c-v2s, c-b0, c-openset, c-vitl, c-t1rep) import mini_trainer from
   `/work/mini_trainer-campaign`, not from their non-editable install; `run-one.sh` now starts from
@@ -465,12 +466,52 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   325 / 111 / 46 / 5 classes), loss weights equal across ranks as in the three-level recipe ([1,1,1,1,1]
   for BU, I, TD; [1,0,0,0,0] for F), 10 epochs; V2-S 384 px (read 512), B0 224 (read 403, as Asger's B0 ran
   at its weights' size), ViT-L 224 (read 403, lr 1e-4). A local one-epoch BU run on a capped copy trained and
-  predicted all five ranks. Submitted 11:32: `pp-v2s` 12447481, `pp-vitl` 12447493; `pp-b0` hit repeated
-  502s from UCloud's upload API (retried in the background).
-- cRT, to do: lepinet's L4 (`L:configs/20260805_L4_crt_effnetv2s.yaml`): stage 2 only, backbone frozen,
-  2 epochs, lr 1e-3, one-cycle, warm-up 0.5, batch 64, 460 -> 256, grad clip 5, sqrt oversampling (power
-  0.5), from the trunk of a run trained without oversampling. The rerun starts from v2s_bu_s42's `last.pt`
-  with the BU head, the campaign's choice (L4 used an independent head).
+  predicted all five ranks. Submitted 11:32-11:48: `pp-v2s` 12447481, `pp-vitl` 12447493, `pp-b0-r2`
+  12447540 (the first `pp-b0` upload hit repeated 502s; run names stay `pp_b0_*`). All 12 runs trained and
+  predicted, 24-54 min each.
+- Lepinet's `--freeze-body` did not freeze conv backbones: `_fit` calls `learn.unfreeze()`, and
+  `vision_learner`'s optimiser holds every parameter. All 450 of L4's backbone tensors differ from its
+  starting weights, and its epochs took as long as full training. lepinet-e1 found the same for T2, F2, F3,
+  R4, R5b, L6, G1, G2, G3 and G3b, but not the BioCLIP P-runs. Draft claim C2 rests on L4 (cRT) and T2
+  (adaptation).
+- `c-crt-t2` (4 B200, queued after `c-v2s`) re-tests both. Every run starts from v2s_bu_s42's `last.pt`
+  (`model_builder_kwargs.weights`, with a fresh optimiser and schedule) and trains 2 epochs: lr 1e-3,
+  one-cycle, warm-up 0.5, BU head. Each predicts set 0 and the traps.
+  - `crt_full`: sqrt oversampling, whole network. This is what L4 did: deferred re-sampling, not cRT.
+  - `crt_frozen`: the same with `freeze_backbone`.
+  - `t2_full` and `t2_frozen`: the dose-0.02 merge selected from v2s_bu_s42's trap predictions, no
+    oversampling.
+  - The full variants re-warm lr 1e-3 on the whole network, as lepinet's runs did. The frozen runs test
+    the draft's claims.
+- `freeze_backbone` (`e55b65f`, opt-in) trains only the head. Every module off the head path stays in eval
+  mode, which keeps BN statistics fixed and turns off dropout and stochastic depth. Precision is unchanged.
+  MT's `fine_tune` fails under the recipe ("Expected weight to have type Float but got BFloat16") and would
+  cast the trunk to bf16. Checked on V2-S BU from a checkpoint: 0 of 670 backbone tensors changed, at 2,786
+  img/s against about 950 for full training.
+- Compile smoke (`mt-compile-smoke` 12447240: one epoch per entry, campaign recipe, one B200). The flags
+  `--compile --compile-mode reduce-overhead --compile-optimizer --optimizer-cudagraphs` make steady-state
+  training 1.21-1.70x faster:
+
+  | Backbone | F | BU | I | TD |
+  |---|---|---|---|---|
+  | V2-S | 1.33 | 1.55 | 1.34 | 1.50 |
+  | B0 | 1.70 | 1.32 | 1.21 | 1.22 |
+  | ViT-L | 1.50 | 1.63 | 1.62 | 1.67 |
+
+  - V2-S BU at 384 px gains 1.21x.
+  - Compiling costs 5-108 s. Peak memory drops (V2-S 6.7 -> 4.3 GiB).
+  - Accuracy is unchanged: with the same seed, compiled minus plain acc1 ranges from -0.42 to +0.31, mean
+    +0.04 over 13 pairs.
+  - DINOv3 ran on code from before `0b08370` and failed; it needs a re-test.
+  - MT compiles the training step, not the module, so `last.pt` keys don't change.
+  - A local 3-epoch run (5090, synthetic data) checked train -> eval -> train under compile, and predict from
+    its weights.
+- Owner, 2026-11-05 15:20: compile the shift block and add a compiled control.
+  - `c-shift-a/b` were rebuilt in place, since queued jobs read their setup scripts at launch.
+  - `c-shift-c` was resubmitted on 3 B200 with `v2s_bu_compiled_s42`: v2s_bu_s42 plus compile.
+  - `c-crt-t2` and `c-dinov3-st` stay uncompiled, because their configs aren't smoke-tested.
+  - Runner: `"compile": true` per run or per plan. The flags go on the command line, because store_true
+    flags override YAML, and are kept in `tmp-runs/configs/<run>.args`.
 - Predict with the nested-head change (`0b08370`), which the running jobs import from the synced folder: on
   200 images, checkpoints of V2-S, B0 and ViT-L/16 give identical prediction files before and after it
   (confidences within 2e-7).
@@ -481,8 +522,8 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
 ### Later phases
 
 - **Phase 2:** self-training on trap crops (per-row weights through `sampling_weights`; mount
-  `flemming`); classifier re-training on a frozen backbone (MT's `fine_tune` casts the backbone to bf16
-  and leaves BN statistics updating, `mini_trainer/builders.py:68-76`); trap augmentation
+  `flemming`); classifier re-training on a frozen backbone (`freeze_backbone`, `e55b65f`; MT's
+  `fine_tune` casts the backbone to bf16 and leaves BN statistics updating, `mini_trainer/builders.py:68-76`); trap augmentation
   (`L:src/lepinet/augment.py:33-111`); open-set and back-off evaluation; trap calibration grouped by
   (trap, night). F needs no new code.
 - **Phase 3 onwards** (single factors on MT's test set): EMLA vs CE, oversampling vs none, schedule,
