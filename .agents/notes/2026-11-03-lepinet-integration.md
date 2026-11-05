@@ -2,9 +2,9 @@
 
 **Status:** 2026-11-03: Phase 1 implemented (`a3826c3`..`491b7a5`, presets and usage in
 [dev/lepinet/README.md](../../dev/lepinet/README.md)); GPU-free checks (a0) passed; protocol (a) accepted
-by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: the owner approved gate (b) and the throughput job V2T,
-submitted together at 13:50 from `5099cc0` (jobs 12445754 I, 12445755 BU, 12445756 F, 12445759 V2T;
-specs in `.agents/local/lepinet-b/`). Results pending; see "Submission" under (b).
+by lepinet-e1 (lepinet RESULTS V1). 2026-11-04: gate (b) and V2T ran from `5099cc0` (jobs 12445754-6,
+12445759). 2026-11-05: **the gate passed** for I, BU and F (below, "Gate result"); the paper campaign has
+started (section "Campaign").
 **Branch:** `feature/lepinet-integration` in `.worktrees/lepinet-integration`, base `4477e1a`. Local only:
 no push until the owner says so. Own venv: Python 3.14.3, torch 2.12.0+cu130 (MT lock); lepinet runs
 torch 2.12.1+cu130, torchvision 0.27.1, fastai 2.8.7.
@@ -393,6 +393,46 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
 - Process: `L:ucloud/budget_check.py <spec>` before every submission; `ucloud q tick; echo $?`; read job
   logs, not status; send lepinet-e1 each spec path and job name; code reaches UCloud by ucloud-api
   `[sync]` or a worktree tarball (the branch is local only).
+- Gate result (scored by lepinet-e1 with `match_ref.py` and `score.py`; lepinet journal V2, `L:` 513a6a7;
+  copies in `L:data/ucloud_preds/V2{I,BU,F}-*`): on the 629,742 reference images, macro-F1 at threshold 0,
+  species / genus / family, MT minus lepinet: I 0.9107 / 0.9588 / 0.9726 (-0.0002 / +0.0001 / +0.0018),
+  BU 0.9131 / 0.9629 / 0.9803 (-0.0004 / -0.0004 / +0.0025), F 0.9144 / 0.9608 / 0.9759 (+0.0009 /
+  +0.0002 / +0.0020); calibrated species within 0.0009. lepinet's F repeat moves family by 0.0023, so
+  family noise is about 0.002. Validation gaps peak at 0.005 (BU species, epoch 2) and close by epoch 5.
+
+### Campaign (paper, 2026-11-05 on)
+
+- Owner's decisions (via lepinet-e1, submissions approved in this session): pinned recipe = cross-entropy,
+  no oversampling, one-cycle, crop + per-image affine, regulariser 0, learned scale and bias, fp32 head,
+  5 epochs at 256 px, no floor (12,632 species), no per-epoch figures, `channels_last`; one seed (42) for
+  now. Multi-GPU jobs, one run per GPU, only `last.pt` kept, test and trap predictions per run.
+- Runner: `.agents/local/campaign/` (ignored): `build.py PLAN.json` writes `<job>.toml` and `setup-<job>.sh`
+  from `setup-template.sh`; plans in `plans/`. The job stages once (no-floor rows, set 0, 47,905 trap crops),
+  installs MT non-editable (later syncs of the shared folder cannot change a running job) and syncs to
+  `/12347837/repos/mini_trainer-campaign`. Tested locally end to end on one run.
+- Submitted 2026-11-05 10:13 from `dbedd68`: `c-v2s` (job 12447133, 6 B200: v2s_bu_s42 = cross-entropy arm,
+  teacher and grid cell; v2s_bu_emla_s42; v2s_f/i/td_s42; `ctl_gate_bu_cl` = the gate BU preset as run at
+  `5099cc0` plus `channels_last`, seed 0, 32 workers, to compare with V2BU within 0.003 at every rank) and
+  `c-b0` (job 12447137, 4 B200: b0_f/bu/i/td_s42). `c-vitl` is held (below).
+- GPU options (job 12446034, F preset, one epoch on V2T's sample capped at 40 + 5 rows per species):
+  baseline 1,335 img/s (4 runs); `channels_last` 1,570-1,723; compile reduce-overhead about 2,080 (with or
+  without `channels_last`); max-autotune no better and slow to compile; winner `channels_last` + compile
+  reduce-overhead + compiled optimizer with CUDA graphs 2,242 (3 runs, 1.68x), same one-epoch accuracy,
+  peak 4.3 vs 6.6 GiB. Owner: smoke-test compile on every planned head and backbone and adopt it for later
+  jobs only if training gets significantly faster.
+- Readiness (one epoch, local 5090): TD and EfficientNet-B0 train normally. AR does not learn (acc1 1.9 %):
+  a subagent ruled out the recipe's head options and found two AR defects, a teacher-forcing leak
+  (`mini_trainer/hierarchical/model.py:251`, `:254-256` read each level at its own teacher-forced token
+  under a mask that includes the diagonal) and N(0,1) start/positional embeddings that drown the class
+  tokens; fixing both did not help (candidate patch and tests: session scratchpad `ar-fix/`). ViT-L/16
+  needs its native 224 px and does not learn at the recipe's lr 1e-3 (acc1 1.2 %, loss near chance).
+- Tools on the branch: `dev/lepinet/flemming.py` (trap predict and scoring, `4e30941`), `pseudo.py`
+  (dev/065 gate, dev/066 doses, dev/089 folds, `0b4f671`, by a subagent; reproduces lepinet's summaries; use
+  `--min-count 1` for no-floor runs). Options: `logger_builder_kwargs.diagnostics` (`a47be22`),
+  `channels_last` (`dbedd68`).
+- For Asger: YAML values of `store_true` flags are silently overridden by the CLI default `False`
+  (`compile: true` in a config has no effect; `mini_trainer/config.py` `merge_dicts` after
+  `restructure_cli_args`); `--channels-last` uses `default=None` to avoid it. The AR defects above.
 
 ### Later phases
 
