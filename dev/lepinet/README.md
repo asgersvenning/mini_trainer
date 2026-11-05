@@ -95,6 +95,11 @@ MSP, entropy and margin rules without the full log-probabilities.
 | Validation | Per-level macro-F1 over classes present in the truth, each epoch; no diagnostic figures | `macro_f1`, `diagnostics: false` |
 
 Image paths are decoded with PIL, which matches fastai's decoding and resizing byte for byte.
+The crop reader normalises with the backbone transform's `mean` and `std` when it exposes them, as
+torchvision's transforms do. mini_trainer's timm wrapper exposes neither, so timm backbones are read
+with ImageNet statistics. That is right for `convnext_large.dinov3_lvd1689m` and
+`tf_efficientnetv2_b0.in1k`, but wrong for a timm checkpoint trained with other statistics (check
+its `pretrained_cfg`).
 Random crops cannot be cached. The other knobs follow the comparison rules in
 [the training feature protocol](../../docs/training-feature-validation.md): one factor per run,
 paired seeds, and the test split scored once with a fixed scorer.
