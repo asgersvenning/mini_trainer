@@ -164,6 +164,19 @@ def pool(a):
     print(f"{len(ids):,} crops from {len(folds)} folds -> {a.out}")
 
 
+def truth(a):
+    """Relabel a label parquet's crops with their trap labels (the same crops, true species)."""
+    trap = pq.read_table(a.trap, columns=["image_path", "speciesKey"]).to_pydict()
+    true = {crop(p): str(s) for p, s in zip(trap["image_path"], trap["speciesKey"], strict=True)}
+    paths = [crop(p) for p in pq.read_table(a.labels, columns=["image_path"]).column("image_path").to_pylist()]
+    if missing := [p for p in paths if p not in true]:
+        raise SystemExit(f"{len(missing)} crops are not in the trap parquet, e.g. {missing[0]}")
+    keys = [true[p] for p in paths]
+    out = {"image_path": paths, "speciesKey": keys, "filename": [p.rsplit("/", 1)[-1] for p in paths], "set": ["2"] * len(paths)}
+    pq.write_table(pa.table(out), a.out)
+    print(f"{len(paths):,} crops relabelled, {len(set(keys))} true species -> {a.out}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(required=True)
@@ -182,6 +195,11 @@ def main():
     p.add_argument("--fold", choices=list(FOLDS), help="Drop this trap's (or site's) label rows first.")
     p.add_argument("--min-count", type=int, default=50)
     p.set_defaults(run=merge)
+    p = sub.add_parser("truth", help="The same crops with their trap labels (e.g. lepinet's gated crops, true labels).")
+    p.add_argument("--labels", type=Path, required=True, help="A label parquet with image_path (e.g. pseudo_strict.parquet).")
+    p.add_argument("--trap", type=Path, required=True, help="lepinet's flemming_names_labels.parquet.")
+    p.add_argument("--out", type=Path, required=True)
+    p.set_defaults(run=truth)
     p = sub.add_parser("pool", help="dev/089 pool: one held-out prediction per crop.")
     p.add_argument("--pattern", required=True, help="Path to each fold's predictions with a {fold} placeholder.")
     p.add_argument("--folds", choices=["trap", "site"], required=True)
