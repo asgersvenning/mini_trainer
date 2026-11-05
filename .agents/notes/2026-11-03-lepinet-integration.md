@@ -445,6 +445,35 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   started from the synced folder (c-v2s, c-b0, c-openset, c-vitl, c-t1rep) import mini_trainer from
   `/work/mini_trainer-campaign`, not from their non-editable install; `run-one.sh` now starts from
   `/tmp/campaign`. Until those jobs finish, sync only behaviour-preserving code to that folder.
+- DINOv3 pair (`c-dinov3-r2` 12447408, then `c-dinov3-st`): B8's backbone settings (convnext_large.dinov3_lvd1689m,
+  320 px from 384, batch 96, lr 8e-4, warm-up 0.5, Muon on backbone matrices, `head_muon: false` as lepinet
+  routes it) with the pinned recipe otherwise. Differences from B8: no ArcFace (the recipe's cosine head), no
+  trap augmentation, no floor, fp16 (B8 bf16), 5 epochs (B8 6), the global parquet for the baseline (B8 trained
+  on the 2 % merge), and timm's pretrained head LayerNorm before mini_trainer's head (lepinet cut at
+  `forward_features` and pooled in its own head); the same in both arms. A compressed local probe (warm-up
+  done after 431 steps, batch 16) did not learn at 8e-4 (eval loss 18.4, chance about 19.8) and did at 8e-5
+  (11.8): read the full run's training loss near the end of warm-up (about 2.5 M images). Any fallback lr is
+  a deviation from B8.
+- T1rep arms (`c-t1rep` 12447346): `merge` drops label rows whose species has no non-test row in the
+  quality-filtered global parquet, so the label set stays the baseline's. That is 25 of dev/067's 12,230 rows
+  (Acronicta cuspis 12, Parastichtis ypsillon 8, Eupithecia denotata 2, Xestia rhomboidea 2, Dichonia aprilina
+  1; keys 1775152, 1983694, 5112362, 7825213, 9710182) and 6 of the gated crops (A. cuspis 5, D. aprilina 1).
+  Four of the five species are in the unfiltered parquet (removed by the quality filter), 5112362 in neither;
+  lepinet's arms kept all 12,230 rows (134,530 at 11x). The gated crops' true labels cover 306 species against
+  346 pseudo-label species: the 1.85 % wrong pseudo-labels spread over about 40 extra species.
+- Pl@ntNet (`pp-*`): `spec_model_dataloader_kwargs.levels: 5` (species, genus, family, order, class: 987 /
+  325 / 111 / 46 / 5 classes), loss weights equal across ranks as in the three-level recipe ([1,1,1,1,1]
+  for BU, I, TD; [1,0,0,0,0] for F), 10 epochs; V2-S 384 px (read 512), B0 224 (read 403, as Asger's B0 ran
+  at its weights' size), ViT-L 224 (read 403, lr 1e-4). A local one-epoch BU run on a capped copy trained and
+  predicted all five ranks. Submitted 11:32: `pp-v2s` 12447481, `pp-vitl` 12447493; `pp-b0` hit repeated
+  502s from UCloud's upload API (retried in the background).
+- cRT, to do: lepinet's L4 (`L:configs/20260805_L4_crt_effnetv2s.yaml`): stage 2 only, backbone frozen,
+  2 epochs, lr 1e-3, one-cycle, warm-up 0.5, batch 64, 460 -> 256, grad clip 5, sqrt oversampling (power
+  0.5), from the trunk of a run trained without oversampling. The rerun starts from v2s_bu_s42's `last.pt`
+  with the BU head, the campaign's choice (L4 used an independent head).
+- Predict with the nested-head change (`0b08370`), which the running jobs import from the synced folder: on
+  200 images, checkpoints of V2-S, B0 and ViT-L/16 give identical prediction files before and after it
+  (confidences within 2e-7).
 - For Asger: YAML values of `store_true` flags are silently overridden by the CLI default `False`
   (`compile: true` in a config has no effect; `mini_trainer/config.py` `merge_dicts` after
   `restructure_cli_args`); `--channels-last` uses `default=None` to avoid it. The AR defects above.
