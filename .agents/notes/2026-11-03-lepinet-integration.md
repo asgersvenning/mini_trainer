@@ -571,7 +571,17 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     SUCCESS.
   - `c-shift-a1` 12448224 and `c-shift-a2` 12448233 hold the same 16 run entries, checked
     programmatically. Both wait IN_QUEUE: the cluster is full.
-  - `c-shift-b1` and `c-shift-b2` failed four times each on the 502 (16:36-16:53). A loop retries them.
+  - `c-shift-b1` and `c-shift-b2` failed on the 502 for over an hour (16:36-17:53). They went through at
+    18:01 as 12448347 and 12448348. `mt-td-head-check` went through as 12448351.
+  - The 502 wasn't transient. A submission's sync requests an upload session for every worktree file (501),
+    64 per POST to `/api/files/upload`. ucloud-api notes a fixed ~5 s gateway timeout on that call that
+    grows with batch size.
+    - At 17:58, 16 files took 1.4 s and passed, while 64 overran the limit and returned 502 on every retry.
+      The backend had slowed, plausibly from our own jobs each copying 5.7 M images out of /work.
+    - Workaround: submit through a wrapper that sets `ucloud_api.transfer._CONTROL_BATCH = 16` for that
+      process, then runs `q submit`. The tool's source is unchanged.
+    - Cron ticks still use 64, so a QUEUED record can keep failing until the backend recovers.
+  - `pp-dinov3` finished 17:56: all four runs trained and predicted in 85-87 min.
   - Queue safety: a tick re-reads each record under an exclusive file lock and submits only if it's still
     QUEUED, so overlapping ticks can't submit a record twice. `q rm` takes no lock, so remove a QUEUED
     record under `Queue.lock`.
