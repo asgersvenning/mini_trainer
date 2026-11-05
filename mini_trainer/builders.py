@@ -224,9 +224,10 @@ class BaseBuilder:
         head_attr_name = getattr(model, "_backbone_output_name")
         if not isinstance(head_attr_name, str):
             raise TypeError(f"`model._backbone_output_name` must be a string, got {type(head_attr_name)}.")
-        if not hasattr(model, head_attr_name):
-            raise AttributeError(f'Model does not have an attribute named "{head_attr_name}" as specified by `_backbone_output_name`.')
-        head_module = getattr(model, head_attr_name)
+        try:
+            head_module = model.get_submodule(head_attr_name)  # dotted paths: e.g. timm's head.fc
+        except AttributeError as error:
+            raise AttributeError(f'Model does not have a submodule "{head_attr_name}" as specified by `_backbone_output_name`.') from error
         if not isinstance(head_module, nn.Module):
             raise TypeError(f'The attribute "{head_attr_name}" (value of `_backbone_output_name`) must be an nn.Module.')
 

@@ -43,7 +43,7 @@ def resolve_embedding_dim(
     if hasattr(model, "hidden_dim") and isinstance(model.hidden_dim, int):
         return model.hidden_dim
 
-    head_module = getattr(model, head_name)
+    head_module = model.get_submodule(head_name)  # dotted paths: e.g. timm's head.fc
 
     for m in head_module.modules():
         if isinstance(m, nn.Linear):

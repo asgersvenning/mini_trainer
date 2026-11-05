@@ -355,7 +355,7 @@ class Classifier(nn.Module):
         ):
             kwargs["skip_spherical_init"] = True
         with device:
-            architecture.add_module(architecture_output_name, cls(**kwargs))
+            architecture.set_submodule(architecture_output_name, cls(**kwargs))  # dotted paths: e.g. timm's head.fc
         for k, v in cfg.items():
             setattr(architecture, f"_{k}", v)
         if state is not None:
@@ -675,6 +675,8 @@ def backbone(model: nn.Module):
         except Exception:
             pass
 
+    if head_name and "." in head_name:
+        raise NotImplementedError(f"backbone() needs a top-level classification head, not {head_name!r} (e.g. for fine_tune).")
     children = []
     for name, child in model.named_children():
         if head_name and name == head_name:
@@ -702,7 +704,10 @@ def classification_module(model: nn.Module):
                 return module
         raise RuntimeError("Unable to find classification module.")
     else:
-        module = getattr(model, backbone_name, None)
+        try:
+            module = model.get_submodule(backbone_name)
+        except AttributeError:
+            module = None
         if not isinstance(module, Classifier):
             raise RuntimeError(f"Unexpected classification head type {type(module)} found.")
         return module
