@@ -557,6 +557,40 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   - EfficientNetV2-B0 is shelved: no GPU hours.
   - MT's timm wrapper exposes no mean or std, so the crop reader uses ImageNet statistics for every timm
     backbone. That's documented in `dev/lepinet/README.md` (`f4c8114`).
+- Launch after `c-v2s` (2026-11-05 16:21-16:36), with job IDs:
+  - Running: `c-dinov3-st` 12448200, `c-crt-t2` 12448202, `c-shift-c` 12448203, `c-dinov3-grid` 12448204,
+    `pp-dinov3` 12448205. All passed preflight.
+  - UCloud starts 3- and 4-GPU jobs at once, but an 8-GPU job waits for a whole free node: `c-shift-b`
+    (12448199) sat IN_QUEUE while later, smaller jobs started. Prefer jobs of 4 GPUs or fewer.
+  - `c-shift-a` failed twice on UCloud's transient 502 from `/api/files/upload`. The queue doesn't retry,
+    so a failed record needs a new submission.
+  - A cron tick submitted the DINOv3 jobs before they could be held back, so they run ahead of the shift
+    block.
+  - Owner's decision: repackage the two 8-GPU shift jobs as four 4-GPU jobs. `c-shift-b` (12448199) and
+    `c-shift-a-r2` (12448212) were cancelled under their record locks while IN_QUEUE; UCloud lists them as
+    SUCCESS.
+  - `c-shift-a1` 12448224 and `c-shift-a2` 12448233 hold the same 16 run entries, checked
+    programmatically. Both wait IN_QUEUE: the cluster is full.
+  - `c-shift-b1` and `c-shift-b2` failed four times each on the 502 (16:36-16:53). A loop retries them.
+  - Queue safety: a tick re-reads each record under an exclusive file lock and submits only if it's still
+    QUEUED, so overlapping ticks can't submit a record twice. `q rm` takes no lock, so remove a QUEUED
+    record under `Queue.lock`.
+- Scores by lepinet-e1 (lepinet RESULTS VS, VC, VT; `L:` 04e4fe1):
+  - TD's gap persists at V2-S. Test species F 0.8890, BU 0.8877, I 0.8812, TD 0.8413: TD -4.8 against F,
+    where Svenning et al.'s V2-S had -1.4.
+  - Owner approved the head check: `mt-td-head-check` (`.agents/local/td-head-check/`). TD and F each run
+    with the recipe head and with MT's default head (`trainable_scale`, `trainable_bias`, `float32_head`
+    and `legacy_spherical_init` false). One plain V2-S epoch each on the compile smoke's capped sample,
+    seed 0, one B200.
+  - Cross-entropy against EMLA: EMLA is +0.59 at species in-distribution but -0.41 genus, -0.76 family,
+    and -3.9 / -5.5 / -4.9 on trap / probe / probe-HO. Cross-entropy stays.
+  - The `channels_last` control passes on lepinet's 629,742 rows: 0.9135 / 0.9631 / 0.9790 against V2BU's
+    0.9131 / 0.9629 / 0.9803, within 0.0013 at every rank.
+  - T1rep reproduces: probe 0.722 and probe-HO 0.305, against lepinet's 0.723 / 0.312 in the same grouped
+    convention. gatedtrue: probe 0.682, probe-HO 0.343. That's +3.7 on held-out species over no adaptation
+    (0.306), which the round-robin draw doesn't give.
+  - Traps, species calibrated by (trap, night), trap / probe / probe-HO: I 0.381 / 0.405 / 0.307, F
+    0.348 / 0.366 / 0.298, BU 0.339 / 0.371 / 0.306, TD 0.315 / 0.347 / 0.271.
 - Predict with the nested-head change (`0b08370`), which the running jobs import from the synced folder: on
   200 images, checkpoints of V2-S, B0 and ViT-L/16 give identical prediction files before and after it
   (confidences within 2e-7).
