@@ -430,6 +430,20 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
   (dev/065 gate, dev/066 doses, dev/089 folds, `0b4f671`, by a subagent; reproduces lepinet's summaries; use
   `--min-count 1` for no-floor runs). Options: `logger_builder_kwargs.diagnostics` (`a47be22`),
   `channels_last` (`dbedd68`).
+- 2026-11-05 owner decisions: AR dropped (four heads: F, BU, I, TD); seeds 43/44 wait for seed 42; ViT-L at
+  224 px, read 403, lr 1e-4 for head and backbone (lr 1e-3 does not learn in a one-epoch probe: acc1 1.2 %
+  vs 15.5 %); compile only after a smoke test shows a real gain; reproducing lepinet first (shift block,
+  DINOv3 pair, open-set on C3b, ViT-L grid), Pl@ntNet when GPUs are free; T1rep (dev/067 round-robin
+  labels) plus a matched arm (lepinet's 12,230 gated crops with true labels), both at 11x.
+- Submitted 2026-11-05: `mt-compile-smoke` 12447240, `c-openset` 12447244 (C3b, openset.py summaries),
+  `c-dinov3` 12447249 (failed: MT could not attach its head to timm's nested `head.fc`; fixed in `0b08370`,
+  resubmission pending), `c-vitl` 12447251, `c-t1rep` 12447346. Ready: `pp-v2s/b0/vitl` (five ranks,
+  `levels: 5`, B0 at 224 px), `c-shift-a/b/c` (18 runs: doses 0.24/2.6/12.3 %, X1, X2; submit with
+  `--after c-v2s`, as they select pseudo-labels from v2s_bu_s42's trap predictions), `c-dinov3-st`.
+- Runner pitfall, fixed for later jobs: `python -m` imports from the working directory first, so the jobs
+  started from the synced folder (c-v2s, c-b0, c-openset, c-vitl, c-t1rep) import mini_trainer from
+  `/work/mini_trainer-campaign`, not from their non-editable install; `run-one.sh` now starts from
+  `/tmp/campaign`. Until those jobs finish, sync only behaviour-preserving code to that folder.
 - For Asger: YAML values of `store_true` flags are silently overridden by the CLI default `False`
   (`compile: true` in a config has no effect; `mini_trainer/config.py` `merge_dicts` after
   `restructure_cli_args`); `--channels-last` uses `default=None` to avoid it. The AR defects above.
