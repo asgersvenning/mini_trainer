@@ -623,6 +623,25 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
 - For Asger: YAML values of `store_true` flags are silently overridden by the CLI default `False`
   (`compile: true` in a config has no effect; `mini_trainer/config.py` `merge_dicts` after
   `restructure_cli_args`); `--channels-last` uses `default=None` to avoid it. The AR defects above.
+- Weekend queue (owner, 2026-11-06 ~09:35, approved in this session; requested by lepinet-ac):
+  - 56 single-GPU jobs, one run each, about 304 GPU-h. On UCloud, 2-8-GPU jobs start much later than 1-GPU
+    ones, and staging per job is accepted.
+  - Plans are in `.agents/local/campaign/plans/weekend1/`, with order and estimates. They were submitted with
+    `.agents/local/campaign/submit-all.sh` (16-file wrapper and retries); log `weekend1/submit.log`.
+  - Queue names are `w-` plus the run name with dashes. Everything is uncompiled, with seed 42's settings
+    except the named factor:
+    1. Tests: `mt-td-emla-check` (12448887; TD and F with `criterion weighted: true`, one epoch on the smoke
+       sample, against the CE gap of -0.051) and pp_dinov3_f_lr2e4_s42 (lr and backbone_lr 2e-4).
+    2. Seeds 43/44, Lepidoptera V2-S and B0, F/BU/I/TD.
+    3. The same on Pl@ntNet.
+    4. Pl@ntNet V2-S, four heads, with power 0.5 (`_sqrt_`) and with EMLA (`_emla_`).
+    5. Pl@ntNet DINOv3 BU/I/TD at lr 2e-4.
+    6. DINOv3 Lepidoptera seeds 43/44.
+    7. V2-S F and TD at 10 epochs, 384 px read 512 (`_384x10_`).
+    8. V2-S BU at 30 epochs, 384/512 (`_384x30_`). Its `train_hours` is 40; `build.py` gained a per-plan
+       `train_hours` (default 24) for it.
+  - Evidence from lepinet-ac: TD's validation gap to F shrinks every epoch (V2-S -0.104 → -0.047 over 5
+    epochs; B0 -0.113 → -0.087).
 
 ### Later phases
 
