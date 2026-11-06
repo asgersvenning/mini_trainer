@@ -657,7 +657,27 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       846-882), so the head grids are balanced.
     - c-v2s-384 (12449153) mixed two ~13.5 h runs with a ~39 h one; it was cancelled before training. It's
       replaced by c-v2s-384x10 12449177 (F, BU, I, TD at 10 epochs, 384 px; BU and I added) and
-      w-v2s-bu-384x30-s42 12449179 (1 GPU, 40 h cap).
+      w-v2s-bu-384x30-s42 (1 GPU, 40 h cap; terminated by mistake at 11:13 and resubmitted as 12449232).
+  - GPU sharing (owner: don't waste GPU resources, ranked above time over GPU-hours).
+    - Benchmark mt-gpu-share-bench, 12449255 (`.agents/local/gpu-share-bench/`), on 1 B200: the compile
+      smoke's capped sample, V2-S F at 256 px, bs 64, 2 epochs per run, plain.
+    - One run alone: 1,532 img/s (44 workers; 1,509 with 22) at 54 % GPU utilisation.
+    - Two processes sharing the GPU: 1,005 + 1,000 = 2,005 img/s, 1.31x.
+    - Two processes with MPS: 1,214 + 1,310 = 2,523 img/s, 1.65x.
+    - CPU stayed at about 25 %. Each process peaks at 6.7 GB. Every shared run's final metrics equal the
+      run alone exactly.
+    - The first submission (12449212) sat at "starting soon" on node bit-g26a-09 for 10 min. Read a job's
+      update history before acting: if it's assigned but not RUNNING after a few minutes, resubmit it.
+  - Runner options: `runs_per_gpu` (k runs per GPU, run i on GPU i // k, workers split over all runs) and
+    `mps` (starts and stops the MPS daemon in run.sh).
+  - Owner, 11:45, "repack everything that can be repacked": the three unstarted jobs were cancelled while
+    IN_QUEUE and resubmitted at 2 runs per GPU with MPS, with the same runs and output paths:
+    - c-v2s-384x10-mps 12449316.
+    - c-dinov3-seeds-s43-mps 12449320 and c-dinov3-seeds-s44-mps 12449321, each with a 40 h training cap.
+      DINOv3 sharing isn't benchmarked: it may be compute-limited, and memory at bs 96 / 320 px is
+      unmeasured.
+  - Rule for new V2-S/B0 Lepidoptera jobs: 2 runs per GPU with MPS. 3-4 runs per GPU (no MPS) is being
+    measured in mt-gpu-share-bench34 12449313.
   - EMLA check (12448887): EMLA widens TD's gap, so it isn't why Svenning et al.'s gap is smaller.
     - TD - F at species F1: -0.0704 with EMLA, -0.0514 with CE.
     - acc1 and species / genus / family F1: TD EMLA 58.87, 0.5671 / 0.6703 / 0.7704; F EMLA 65.55,
