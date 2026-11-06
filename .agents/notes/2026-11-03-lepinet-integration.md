@@ -699,8 +699,8 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       0.5). acc1 is only 1.5 below cRT, but macro-F1 is 9 below, so the tail is what's lost.
     - Missing control: the same re-warm on global data only (power 0, no merge), full and frozen.
       lepinet-1c agreed. Built as `c-rewarm` (`plans/c-rewarm.json`; v2s_bu_rewarm_full_s42 and
-      v2s_bu_rewarm_frozen_s42 on 1 B200 with MPS), but not submitted: it's a new run, and it needs the
-      owner's approval in this session, not a peer's.
+      v2s_bu_rewarm_frozen_s42 on 1 B200 with MPS). The owner approved it on 2026-11-06; submitted at
+      16:20 as job 12449970 (in queue on first check).
     - Reading once it's in: T2's effects are T2 minus this control at every rank, on test and traps; cRT's
       are cRT against the same re-warm without oversampling.
     - This teacher's gate kept 8,169 crops, replicated 16x. Lepinet's kept 12,230 at 11x. That's the same
