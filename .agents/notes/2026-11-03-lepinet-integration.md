@@ -697,8 +697,14 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       F1 matches test). Class specs equal the teacher's.
     - Likely cause: the 2-epoch one-cycle re-warm to lr 1e-3 without oversampling (T2 power 0, cRT power
       0.5). acc1 is only 1.5 below cRT, but macro-F1 is 9 below, so the tail is what's lost.
-    - Missing control: the same re-warm on global data only (power 0, no merge), full and frozen. Proposed
-      to lepinet-1c; not submitted.
+    - Missing control: the same re-warm on global data only (power 0, no merge), full and frozen.
+      lepinet-1c agreed. Built as `c-rewarm` (`plans/c-rewarm.json`; v2s_bu_rewarm_full_s42 and
+      v2s_bu_rewarm_frozen_s42 on 1 B200 with MPS), but not submitted: it's a new run, and it needs the
+      owner's approval in this session, not a peer's.
+    - Reading once it's in: T2's effects are T2 minus this control at every rank, on test and traps; cRT's
+      are cRT against the same re-warm without oversampling.
+    - This teacher's gate kept 8,169 crops, replicated 16x. Lepinet's kept 12,230 at 11x. That's the same
+      share, but fewer, more replicated images.
   - Weekend arrangement: the owner is away until Monday, and lepinet-ac answers what would have gone to
     the owner. Resubmitting failed runs unchanged and fixing packing or idle GPUs need no asking; report
     them to lepinet-ac.
