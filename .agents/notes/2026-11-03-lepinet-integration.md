@@ -676,8 +676,22 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - c-dinov3-seeds-s43-mps 12449320 and c-dinov3-seeds-s44-mps 12449321, each with a 40 h training cap.
       DINOv3 sharing isn't benchmarked: it may be compute-limited, and memory at bs 96 / 320 px is
       unmeasured.
-  - Rule for new V2-S/B0 Lepidoptera jobs: 2 runs per GPU with MPS. 3-4 runs per GPU (no MPS) is being
-    measured in mt-gpu-share-bench34 12449313.
+  - 3-4 runs per GPU without MPS (12449313) saturates: 3 runs 1.33x (702-718 img/s each), 4 runs 1.35x
+    (about 537 each). 2 per GPU with MPS (1.65x) stays the best measured setting.
+  - Measured in production with the same parser (progress % vs elapsed, 5.06 M training images per
+    epoch; it gives 1,333 img/s for solo v2s_bu_s42 against the smoke's 1,379):
+    - DINOv3, 2 per GPU with MPS: 256 img/s per run, 512 per GPU, against 450-464 solo: 1.10-1.14x. Kept
+      under the standing rule (1.1-1.2x: keep). Each run needs about 28 h of training plus predict, inside
+      the 40 h cap with 20 % margin.
+    - V2-S at 384 px, 2 per GPU with MPS: 611 img/s per run, 1,222 per GPU, against about 1,181 solo
+      (smoke): about 1.03x. Each run would need about 24 h, past its 24 h cap. c-v2s-384x10-mps
+      (12449316) was terminated after about 40 min of training and resubmitted as c-v2s-384x10 12449472,
+      one run per GPU on 4 B200.
+  - Rule: pack 2 runs per GPU with MPS for V2-S and B0 at 256 px only. At 384 px or with DINOv3 there's
+    little or nothing to gain, and runs take twice as long.
+  - Weekend arrangement: the owner is away until Monday, and lepinet-ac answers what would have gone to
+    the owner. Resubmitting failed runs unchanged and fixing packing or idle GPUs need no asking; report
+    them to lepinet-ac.
   - EMLA check (12448887): EMLA widens TD's gap, so it isn't why Svenning et al.'s gap is smaller.
     - TD - F at species F1: -0.0704 with EMLA, -0.0514 with CE.
     - acc1 and species / genus / family F1: TD EMLA 58.87, 0.5671 / 0.6703 / 0.7704; F EMLA 65.55,
