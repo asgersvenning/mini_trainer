@@ -652,6 +652,12 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       12449138, c-b0-seeds-b 12449143, c-dinov3-seeds-s43 12449146, c-dinov3-seeds-s44 12449148, c-v2s-384
       12449153.
     - Checked against the queue: each of the 55 weekend runs is in exactly one live job.
+    - Owner: a multi-GPU job holds all its GPUs until its last run ends, so pack only runs of matching
+      length. Seed 42's heads end within ~35 min of each other (V2-S 315-347 min, B0 240-246, DINOv3
+      846-882), so the head grids are balanced.
+    - c-v2s-384 (12449153) mixed two ~13.5 h runs with a ~39 h one; it was cancelled before training. It's
+      replaced by c-v2s-384x10 12449177 (F, BU, I, TD at 10 epochs, 384 px; BU and I added) and
+      w-v2s-bu-384x30-s42 12449179 (1 GPU, 40 h cap).
   - EMLA check (12448887): EMLA widens TD's gap, so it isn't why Svenning et al.'s gap is smaller.
     - TD - F at species F1: -0.0704 with EMLA, -0.0514 with CE.
     - acc1 and species / genus / family F1: TD EMLA 58.87, 0.5671 / 0.6703 / 0.7704; F EMLA 65.55,
