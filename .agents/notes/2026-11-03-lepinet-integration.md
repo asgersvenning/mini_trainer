@@ -642,6 +642,21 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
        `train_hours` (default 24) for it.
   - Evidence from lepinet-ac: TD's validation gap to F shrinks every epoch (V2-S -0.104 → -0.047 over 5
     epochs; B0 -0.113 → -0.087).
+  - Single-GPU Lepidoptera jobs failed: several land on one node, and each copies the 452 GB set into
+    node-local /tmp until the disk is full. Containers share the disk's free space but not its files
+    ("0 already present"), so a per-node cache through /tmp can't work.
+    - Owner's decision: Lepidoptera packs up to 4 runs per job, staging once; Pl@ntNet stays single-GPU.
+    - Cancelled or terminated under lock: the five queued DINOv3 seed jobs and the 7 Lepidoptera seed jobs
+      that never trained. Left alone, training: w-v2s-bu-s43 (12448895) and w-b0-td-s44 (12448952).
+    - Resubmitted (`plans/weekend2/`): c-v2s-seeds-a 12449130, c-v2s-seeds-b 12449133, c-b0-seeds-a
+      12449138, c-b0-seeds-b 12449143, c-dinov3-seeds-s43 12449146, c-dinov3-seeds-s44 12449148, c-v2s-384
+      12449153.
+    - Checked against the queue: each of the 55 weekend runs is in exactly one live job.
+  - EMLA check (12448887): EMLA widens TD's gap, so it isn't why Svenning et al.'s gap is smaller.
+    - TD - F at species F1: -0.0704 with EMLA, -0.0514 with CE.
+    - acc1 and species / genus / family F1: TD EMLA 58.87, 0.5671 / 0.6703 / 0.7704; F EMLA 65.55,
+      0.6375 / 0.7278 / 0.8122.
+    - Remaining differences: epochs and resolution (c-v2s-384), backbone lr and schedule.
 
 ### Later phases
 
