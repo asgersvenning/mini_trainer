@@ -689,6 +689,16 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       one run per GPU on 4 B200.
   - Rule: pack 2 runs per GPU with MPS for V2-S and B0 at 256 px only. At 384 px or with DINOv3 there's
     little or nothing to gain, and runs take twice as long.
+  - c-crt-t2 scores (lepinet-1c), species test / trap / probe / probe-HO: teacher 0.888 / 0.339 / 0.371 /
+    0.306; crt_frozen 0.899 / 0.360 / 0.397 / 0.329; crt_full 0.897 / 0.425 / 0.447 / 0.373; t2_frozen
+    0.847 / 0.465 / 0.509 / 0.326; t2_full 0.803 / 0.577 / 0.619 / 0.425.
+    - T2's test drops are real, not a measurement error. The merge is correct (6,460,698 rows, 12,632
+      species, pseudo 2.5 % of training). Set 0 isn't trained on. The final weights were used (validation
+      F1 matches test). Class specs equal the teacher's.
+    - Likely cause: the 2-epoch one-cycle re-warm to lr 1e-3 without oversampling (T2 power 0, cRT power
+      0.5). acc1 is only 1.5 below cRT, but macro-F1 is 9 below, so the tail is what's lost.
+    - Missing control: the same re-warm on global data only (power 0, no merge), full and frozen. Proposed
+      to lepinet-1c; not submitted.
   - Weekend arrangement: the owner is away until Monday, and lepinet-ac answers what would have gone to
     the owner. Resubmitting failed runs unchanged and fixing packing or idle GPUs need no asking; report
     them to lepinet-ac.
