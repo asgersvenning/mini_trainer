@@ -728,7 +728,13 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - `c-v2s-trapaug` 12450338: v2s_bu_trapaug_s42, the pinned recipe plus `domain_aug: trap`, one factor
       against v2s_bu_s42. lepinet's B1 measured +4.0 under shift with oversampling on; T2b found it mostly
       redundant once the classifier is adapted (+4.75 → +0.57).
-  - c-rewarm (12449970) finished at 19:34 on 2026-11-06, both runs without failure; scores pending.
+  - c-rewarm (12449970) finished at 19:34 on 2026-11-06. Scores (lepinet-1c), species test / trap / probe /
+    probe-HO: rewarm_full 0.811 / 0.449 / 0.488 / 0.373; rewarm_frozen 0.852 / 0.396 / 0.423 / 0.369.
+    - T2's test-fold loss is the re-warm's: T2 minus control on test is -0.8 full, -0.5 frozen.
+    - Pseudo-labels' effect (T2 minus control), trap / probe / probe-HO: full +12.8 / +13.1 / +5.2; frozen
+      +6.9 / +8.6 / -4.3. Frozen, they hurt held-out species.
+    - Against the same re-warm, cRT's oversampling recovers the test fold (full 0.897 against 0.811).
+  - Owner (via lepinet-1c): keep trap augmentation opt-in; don't make it a default yet.
 
 ### Later phases
 
