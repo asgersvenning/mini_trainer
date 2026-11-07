@@ -663,6 +663,17 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       CUDACachingAllocator.cpp:3252) with no earlier OOM or NaN. Eval at epoch 18: acc1 91.11, species F1 0.842.
       `checkpoint_last.pth` (epoch index 18) is in tmp-runs/v2s_bu_384x30_s42/weights. Not resubmitted: the
       paper decides whether 30 epochs is needed. c-v2s-384x10 (12449472) exited cleanly.
+    - Resume (lepinet-1c's condition: exact optimiser, schedule position and epoch; owner approved
+      2026-11-07). The local check (`resume_check.py` in the session scratchpad) used the BU preset with the
+      384x30 overrides, fp16 with the GradScaler, V2-S at 64 px, 3 epochs, resumed from checkpoint_0. Results:
+      - Start epoch, scheduler position and AMP scale were restored.
+      - Every resumed LR value equals the uninterrupted run's at the same scheduler step.
+      - Restored weights and BN statistics equal the in-memory model.
+      - Losses are not bit-identical: data and augmentation RNG are not restored, as `train.main`'s docstring
+        says. Even with the RNG replayed, the first batch's logits differ; I haven't isolated why.
+    - Plan `.agents/local/campaign/plans/resume384/`: the same run plus `set.checkpoint` =
+      `checkpoint_last.pth` (it reaches `train.main` through the YAML), hours 18, train_hours 16.
+      `summary.csv` appends, so the epoch 0-18 rows stay. Submitted only once c-otto-bioclip is RUNNING.
   - GPU sharing (owner: don't waste GPU resources, ranked above time over GPU-hours).
     - Benchmark mt-gpu-share-bench, 12449255 (`.agents/local/gpu-share-bench/`), on 1 B200: the compile
       smoke's capped sample, V2-S F at 256 px, bs 64, 2 epochs per run, plain.
@@ -783,6 +794,38 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - baseline: 0.8877 (0.8866-0.8877) / 0.339 / 0.371 (0.349-0.378) / 0.306 (0.292-0.306).
     - The shift legs pass, but the test score drops 0.75 points, about 7x the seed spread, so the rule says off.
   - Submitted 2026-11-07 with `make_otto.py off`: c-otto-bioclip 12450502, c-otto-dinov3 12450503.
+  - Trap evaluation (owner via lepinet-1c, lepinet `fbe33df`). Models: Otto, its DINOv3 twin, P5, Meghan
+    and Nemo. Settings: full vocabulary or the legacy north_europe list (1,977 species), each with or without
+    TTA (`rotation30_pad25_3`, unchanged for every model). Headline: north_europe + TTA.
+    - `logits.py` (session scratchpad, `otto_eval/`) runs one GPU pass per model. It saves float32 species
+      leaf logits for each of the three views, after the model's own preprocessing.
+    - `score.py` builds the four settings offline, following `mambo_deploy`'s HierarchyPlan and lepinet's
+      dev/098:
+      - TTA is the mean of the view logits.
+      - The list masks species; genus and family are logsumexp; confidence is the top-1 softmax.
+      - `known_label` = truth in the model's full vocabulary.
+      - It then runs `flemming.py score`.
+    - Nemo parity: the four settings reproduce lepinet's VN table within 0.0015 (north_europe + TTA:
+      0.599 / 0.646 / 0.491). Per-crop predictions agree with dev/098's at least 99.6 %.
+    - Adapter checks against the native or earlier passes:
+      - Meghan's view 0 is identical to its native reader.
+      - P5 and the MT adapter (st26) agree at least 99.6 % (the earlier passes used fp16 autocast).
+    - BioCLIP checkpoints (Meghan, Otto) need `open_clip`. Run them with lepinet's venv and the worktree
+      on PYTHONPATH (read-only use, no sync).
+    - TTA comparison (lepinet 80a26f6): `logits.py --views all` saves the 17 distinct views (d4 r0..r3 and
+      r0f..r3f, pad08/15/25, rot±10_pad15, rot±30_pad15, rot±30_pad25). For Nemo the preprocessing is
+      identical to `mambo_deploy`'s `_prepare_view`.
+    - `score.py --policy NAME=VIEW+...` scores any average of views. `flemming.py score --sets` gained an
+      opt-in adapt set (`75d155e`).
+  - Otto split (owner, 2026-11-07): c-otto-bioclip 12450502 waited 2 h 20 min for 4 B200s at once, so it was
+    terminated. Its runs were resubmitted unchanged as four 1-B200 jobs: cand 12450599, x2lv 12450600,
+    x2oh 12450601, x2ss 12450602. The 384x30 resume went after the candidate started: 12450604.
+  - AG runs (owner-approved; lepinet 193a96c), each its control's exact plan plus one key:
+    - Plans: `.agents/local/campaign/plans/ag/make_ag.py`.
+    - Augmentations from `988b29f`: `domain_aug: geometric` (RandomRotatePad, ±45° expanded canvas plus
+      0-25 % edge padding, before the affine), `geometric+trap`, and `dataloader_builder_kwargs.sample_augmentation:
+      trivialwide` (in the loader workers; on the GPU it cost 73 ms per 64-image batch at 512 px).
+    - Jobs: ag-otto-bioclip-geo 12450608, ag-v2s-384x10-geo 12450609, -geotrap 12450610, -trivial 12450611.
   - Release TODO: strip the unused text tower. Needs an opt-in vision-only BioCLIP loader, so that Meghan's
     loading is unchanged.
 
