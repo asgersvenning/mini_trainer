@@ -714,6 +714,22 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       0.6375 / 0.7278 / 0.8122.
     - Remaining differences: epochs and resolution (c-v2s-384), backbone lr and schedule.
 
+- Owner approvals, 2026-11-07 (plans in `.agents/local/campaign/plans/weekend4/`, submitted with `submit-all.sh`):
+  - `c-openset-dinov3` 12450329: the four DINOv3 heads (seed 42, the seed-43/44 settings: lr 8e-4) on C3b with
+    open-set evaluation, one per GPU on 4 B200, 18 h. c-openset (V2-S) took 6.5 h; DINOv3 on the full set
+    14.1 h.
+  - Pl@ntNet DINOv3 lr 2e-4, seeds 43 and 44, F/BU/I/TD: 8 single-GPU jobs 12450330-12450337 (seed 42 took
+    1.5 h each).
+  - Trap augmentation ported as an opt-in (`e32c25a`): `augmentation_builder_kwargs: {domain_aug: trap}`
+    appends lepinet's motion blur (p 0.25), low light (p 0.25) and JPEG-like quantisation (p 0.2) after the
+    affine, each drawn once per batch as fastai's `RandTransform`; `blur` and `lowlight` are the ablations.
+    Presets and MT defaults are unchanged. Cost on an RTX 5090, 64 x 256 px: +3.3 ms per batch with all
+    three on, about 3 % of a V2-S step on average.
+    - `c-v2s-trapaug` 12450338: v2s_bu_trapaug_s42, the pinned recipe plus `domain_aug: trap`, one factor
+      against v2s_bu_s42. lepinet's B1 measured +4.0 under shift with oversampling on; T2b found it mostly
+      redundant once the classifier is adapted (+4.75 → +0.57).
+  - c-rewarm (12449970) finished at 19:34 on 2026-11-06, both runs without failure; scores pending.
+
 ### Later phases
 
 - **Phase 2:** self-training on trap crops (per-row weights through `sampling_weights`; mount
