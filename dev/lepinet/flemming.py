@@ -8,8 +8,9 @@
 ``<set>/scores.csv`` next to its input. Scores are lepinet's ``dev/093_rescore_mini_metrics.py``: zero and
 random calibration (``score``) and calibration on whole (trap, night) groups (``score_grouped``); probe-HO keeps
 the held-out species only; ``--sets adapt`` adds the adapt nights (for choosing settings there before reporting
-on probe and probe-HO). Run ``score`` with pandas, scikit-learn and mini_metrics on the path, e.g. lepinet's
-venv with ``PYTHONPATH=<lepinet>/data/tools/mini_metrics-61db373``.
+on probe and probe-HO); ``--set-file NAME=PARQUET`` scores any other crop list (``image_path`` column, e.g. a half
+of the probe nights; a NAME ending in ``-ho`` keeps the held-out species only, as probe-HO does). Run ``score``
+with pandas, scikit-learn and mini_metrics on the path, e.g. lepinet's venv with ``PYTHONPATH=<lepinet>/data/tools/mini_metrics-61db373``.
 """
 
 import argparse
@@ -53,13 +54,18 @@ def score(args):
     rows = pd.read_csv(args.predictions, dtype={"label": str, "prediction": str})
     rows["filename"] = rows.filename.str.split("/").str[-2:].str.join("/")
     rows["known_label"] = rows.known_label.astype(str).isin(["1", "True", "true"])
-    for name in args.sets:
-        split = SETS[name]
-        keep = rows if split is None else rows[rows.filename.isin(set(pd.read_parquet(splits / split).image_path))]
+    files = {name: splits / SETS[name] if SETS[name] else None for name in args.sets}
+    for item in args.set_file:
+        name, _, path = item.partition("=")
+        if not name or not path or name in files:
+            raise SystemExit(f"--set-file wants a new NAME=PARQUET, got {item!r}")
+        files[name] = Path(path)
+    for name, split in files.items():
+        keep = rows if split is None else rows[rows.filename.isin(set(pd.read_parquet(split).image_path))]
         out = args.predictions.parent / name / "predictions.csv"
         out.parent.mkdir(exist_ok=True)
         keep[COLUMNS].to_csv(out, index=False)
-        ho = heldout if name == "probe-ho" else None
+        ho = heldout if name.endswith("-ho") else None
         grouped = pd.DataFrame(rescore.score_grouped(out, ho, args.seeds, splits / "flemming_groups.parquet"))
         plain = pd.DataFrame(rescore.score(out, ho, args.seeds, None))
         scores = plain.merge(grouped[["level", "metric", "n_groups", "calg_mean", "calg_sd"]], on=["level", "metric"])
@@ -84,6 +90,7 @@ def main():
     p.add_argument("--lepinet", type=Path, required=True, help="lepinet checkout (dev/093 and data/flemming/splits).")
     p.add_argument("--seeds", type=int, default=20, help="Calibration splits (dev/093's default).")
     p.add_argument("--sets", nargs="+", choices=list(SETS), default=list(DEFAULT_SETS), help="Crop sets to score.")
+    p.add_argument("--set-file", action="append", default=[], metavar="NAME=PARQUET", help="Another crop set (repeatable).")
     p.set_defaults(run=score)
     args = parser.parse_args()
     args.run(args)
