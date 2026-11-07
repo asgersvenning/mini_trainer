@@ -753,6 +753,24 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - BioCLIP-2 nearest neighbours of all 47,913 crops among the 44,251 DK and machine-observation
       images: max cosine 0.989, and the top distinct pairs are different photos.
 
+- Otto specs (owner, 2026-11-07: Muon lr 1e-5 for BioCLIP-2, push `ce5b7e7`, submit Otto + DINOv3 twin + 3 site
+  folds at 10 epochs once lepinet-ac settles trap augmentation). Ready in `.agents/local/campaign/plans/otto/`;
+  `make_otto.py on|off` writes the plans, and the budget check passes.
+  - c-otto-bioclip (4 B200): otto_bioclip_bu_s42 and otto_bioclip_bu_x2{lv,oh,ss}_s42.
+  - c-otto-dinov3 (1 B200): otto_dinov3_bu_s42 at the DINOv3 campaign settings.
+  - Both: train_hours 40, hours 36.
+  - Ensemble teacher, built locally (`teach.py`, `ensemble.py` in that folder):
+    - P5 from lepinet's HF release, top-1 parity 98.7 % against lepinet's probe predictions.
+    - dinov3_bu_st26_s42, top-1 parity 99.99 % against its campaign trap predictions.
+    - Species probabilities averaged by GBIF key; per-species top 35 on the adapt split.
+    - 8,305 crops, 913 species, 71.3 % correct (diagnostic). Adapt accuracy: P5 0.836, st26 0.869,
+      ensemble 0.859; biased, because both teachers trained on adapt pseudo-labels.
+    - Labels: `/work/mini_trainer-campaign/otto/pseudo_otto.parquet`, sha256 07796a6c.
+    - Merge tested: 2.56 % of training rows (x16); site-LV 2.53 % (x30).
+  - `build.py` gained `"bioclip": true`, which installs the `bioclip` extra.
+  - Release TODO: strip the unused text tower. Needs an opt-in vision-only BioCLIP loader, so that Meghan's
+    loading is unchanged.
+
 ### Later phases
 
 - **Phase 2:** self-training on trap crops (per-row weights through `sampling_weights`; mount
