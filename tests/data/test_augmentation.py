@@ -118,11 +118,9 @@ def _rotate_pad(module, images, degrees, pad):
     """RandomRotatePad's resampling at fixed angles and pads (its forward draws them)."""
     n, _, height, width = images.shape
     grid = module.grid(torch.full((n,), float(degrees)), torch.full((n,), float(pad)), height, width)
-    fill = torch.tensor(module.fill, dtype=torch.float32).view(1, 3, 1, 1) / 255
-    return (
-        torch.nn.functional.grid_sample(images.float() / 255 - fill, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
-        + fill
-    )
+    x = images.float() / 255
+    fill = module.fill_colour(x)
+    return torch.nn.functional.grid_sample(x - fill, grid, mode="bilinear", padding_mode="zeros", align_corners=False) + fill
 
 
 def test_random_rotate_pad_matches_pil_rotation_on_an_expanded_canvas_and_edge_padding():
@@ -131,7 +129,7 @@ def test_random_rotate_pad_matches_pil_rotation_on_an_expanded_canvas_and_edge_p
 
     from mini_trainer.data import RandomRotatePad
 
-    module = RandomRotatePad(fill=(255, 0, 0))
+    module = RandomRotatePad(fill=(255, 0, 0), edge_pad=True)  # the first version, mambo_deploy's striped views
     torch.manual_seed(0)
     images = torch.randint(0, 200, (2, 3, 10, 10), dtype=torch.uint8)
     images[:, 0] = 0  # no red in the images, so any red output pixel is fill
@@ -148,6 +146,30 @@ def test_random_rotate_pad_matches_pil_rotation_on_an_expanded_canvas_and_edge_p
     # At 45 degrees the expanded canvas's corners are fill.
     rotated = _rotate_pad(module, images, 45, 0)
     assert torch.allclose(rotated[:, :, 0, 0], torch.tensor([1.0, 0.0, 0.0]).expand(2, 3), atol=1e-6)
+
+
+def test_random_rotate_pad_fills_corners_and_padding_with_the_border_mean():
+    from mini_trainer.data import RandomRotatePad
+
+    module = RandomRotatePad()
+    torch.manual_seed(0)
+    images = torch.randint(0, 256, (2, 3, 20, 16), dtype=torch.uint8)
+    x = images.float() / 255
+    ring = torch.ones(20, 16, dtype=torch.bool)
+    ring[2:-2, 2:-2] = False
+    mean = x[..., ring].mean(-1)  # [N, C], each image's own 2-pixel border ring
+    torch.testing.assert_close(module.fill_colour(x)[..., 0, 0], mean)
+    # Zoom-out without rotation: the image shrinks to the centre and everything around it is that one colour,
+    # not repeated edge pixels (no stripes).
+    padded = _rotate_pad(module, images, 0, 0.25)
+    outside = torch.ones(20, 16, dtype=torch.bool)
+    outside[3:17, 2:14] = False  # the shrunk image (scale 1/1.5) and the half pixel bilinear blends around it
+    torch.testing.assert_close(padded[..., outside], mean[..., None].expand(-1, -1, int(outside.sum())), atol=1e-6, rtol=0)
+    # Rotation corners are the same colour.
+    rotated = _rotate_pad(module, images, 45, 0)
+    torch.testing.assert_close(rotated[:, :, 0, 0], mean, atol=1e-6, rtol=0)
+    with pytest.raises(ValueError):
+        RandomRotatePad(fill="edge")
 
 
 def test_random_rotate_pad_draws_per_image_and_keeps_shape():

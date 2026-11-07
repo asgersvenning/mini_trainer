@@ -258,22 +258,37 @@ class RandomJPEGish(_BatchTransform):
 
 
 class RandomRotatePad(torch.nn.Module):
-    """Per-image rotation on an expanded canvas, then zoom-out by edge padding, resampled to the input size.
+    """Per-image rotation on an expanded canvas, then zoom-out by padding, resampled to the input size.
 
     The training counterpart of ``mambo_deploy``'s ``RotatePad``/``EdgePad`` test-time views: each image is rotated
-    by a uniform angle in ``[-max_degrees, max_degrees]`` on a canvas expanded to hold the whole rotated image (the
-    corners filled with ``fill``, an RGB colour in 0-255), each canvas edge is then extended by a uniform fraction in
-    ``[0, max_pad]`` of its axis by repeating the canvas border, and the result is resampled (bilinear, one
-    ``grid_sample``) back to the input's height and width, so the object shrinks. Applied with probability ``p``
-    per image. Accepts uint8 (scaled by 1/255) or float images in ``[0, 1]``, ``[N, C, H, W]`` or ``[C, H, W]``,
-    and returns float32; meant to precede ``RandomAffineResize``.
+    by a uniform angle in ``[-max_degrees, max_degrees]`` on a canvas expanded to hold the whole rotated image, each
+    canvas edge is then extended by a uniform fraction in ``[0, max_pad]`` of its axis, and the result is resampled
+    (bilinear, one ``grid_sample``) back to the input's height and width, so the object shrinks. Applied with
+    probability ``p`` per image. Accepts uint8 (scaled by 1/255) or float images in ``[0, 1]``, ``[N, C, H, W]`` or
+    ``[C, H, W]``, and returns float32; meant to precede ``RandomAffineResize``.
+
+    ``fill="border"`` (default) fills the rotation corners and the padding with one constant per image, the mean
+    colour of its outer 2-pixel ring, so zooming out shows more background rather than smeared edge pixels. A
+    0-255 RGB tuple fills with that colour instead. ``edge_pad=True`` reproduces the first version (and
+    ``mambo_deploy``'s views): corners in ``fill``, then padding by repeating the canvas border, which smears the
+    rotated image's corners into stripes; use it with ``fill=(124, 116, 104)``.
     """
 
-    def __init__(self, max_degrees: float = 45.0, max_pad: float = 0.25, fill: tuple[int, int, int] = (124, 116, 104), p: float = 1.0):  # noqa: D107
+    def __init__(  # noqa: D107
+        self,
+        max_degrees: float = 45.0,
+        max_pad: float = 0.25,
+        fill: str | tuple[int, int, int] = "border",
+        p: float = 1.0,
+        edge_pad: bool = False,
+    ):
         super().__init__()
         if max_degrees < 0 or max_pad < 0 or not 0 <= p <= 1:
             raise ValueError("max_degrees and max_pad must be nonnegative and p in [0, 1].")
-        self.max_degrees, self.max_pad, self.fill, self.p = float(max_degrees), float(max_pad), tuple(fill), float(p)
+        if isinstance(fill, str) and fill != "border":
+            raise ValueError(f"fill must be 'border' or an RGB tuple, got {fill!r}.")
+        self.max_degrees, self.max_pad, self.p = float(max_degrees), float(max_pad), float(p)
+        self.fill, self.edge_pad = (fill if isinstance(fill, str) else tuple(fill)), bool(edge_pad)
 
     def grid(self, degrees: torch.Tensor, pad: torch.Tensor, height: int, width: int) -> torch.Tensor:
         """Sampling grid ``[N, H, W, 2]`` (``grid_sample``, ``align_corners=False``) for the given angles and pads."""
@@ -283,12 +298,16 @@ class RandomRotatePad(torch.nn.Module):
         canvas_w = width * cos.abs() + height * sin.abs()
         canvas_h = width * sin.abs() + height * cos.abs()
         scale = 1 + 2 * pad[:, None, None]
-        # Output pixel centres in centred pixel units of the padded canvas, clamped to the centres of the canvas's
-        # border pixels (edge padding repeats them; clamping to the outer edge would blend in the fill colour).
+        # Output pixel centres in centred pixel units of the padded canvas. With edge_pad they are clamped to the
+        # centres of the canvas's border pixels (edge padding repeats them; clamping to the outer edge would blend
+        # in the fill colour); otherwise everything outside the source image is fill.
         u = (torch.arange(width, device=device) + 0.5) / width * 2 - 1
         v = (torch.arange(height, device=device) + 0.5) / height * 2 - 1
-        x = torch.maximum(torch.minimum(u[None, None, :] * canvas_w * scale / 2, canvas_w / 2 - 0.5), 0.5 - canvas_w / 2)
-        y = torch.maximum(torch.minimum(v[None, :, None] * canvas_h * scale / 2, canvas_h / 2 - 0.5), 0.5 - canvas_h / 2)
+        x = u[None, None, :] * canvas_w * scale / 2
+        y = v[None, :, None] * canvas_h * scale / 2
+        if self.edge_pad:
+            x = torch.maximum(torch.minimum(x, canvas_w / 2 - 0.5), 0.5 - canvas_w / 2)
+            y = torch.maximum(torch.minimum(y, canvas_h / 2 - 0.5), 0.5 - canvas_h / 2)
         # Inverse of PIL's counter-clockwise rotation (image y axis points down), back to normalised source coordinates.
         src_x = (x * cos - y * sin) / (width / 2)
         src_y = (x * sin + y * cos) / (height / 2)
@@ -302,14 +321,24 @@ class RandomRotatePad(torch.nn.Module):
         keep = torch.ones(n, device=x.device) if self.p >= 1 else torch.empty(n, device=x.device).bernoulli_(self.p)
         degrees = torch.empty(n, device=x.device).uniform_(-self.max_degrees, self.max_degrees) * keep
         pad = torch.empty(n, device=x.device).uniform_(0, self.max_pad) * keep
-        fill = torch.tensor(self.fill, device=x.device, dtype=x.dtype)[:channels].view(1, -1, 1, 1) / 255
+        fill = self.fill_colour(x)
         grid = self.grid(degrees, pad, height, width)
-        # Outside the source image (inside the rotated canvas) is the fill colour: sample (x - fill) with zero padding.
+        # Outside the source image is the fill colour: sample (x - fill) with zero padding.
         out = torch.nn.functional.grid_sample(x - fill, grid, mode="bilinear", padding_mode="zeros", align_corners=False) + fill
         return out[0] if single else out
 
+    def fill_colour(self, x: torch.Tensor) -> torch.Tensor:
+        """Fill colour ``[N, C, 1, 1]`` in ``x``'s scale: the configured colour, or each image's border-ring mean."""
+        if not isinstance(self.fill, str):
+            return torch.tensor(self.fill, device=x.device, dtype=x.dtype)[: x.shape[1]].view(1, -1, 1, 1) / 255
+        height, width = x.shape[-2:]
+        if height <= 4 or width <= 4:  # no interior: the whole image is its border
+            return x.mean((2, 3), keepdim=True)
+        ring = x[..., :2, :].sum((2, 3)) + x[..., -2:, :].sum((2, 3)) + x[..., 2:-2, :2].sum((2, 3)) + x[..., 2:-2, -2:].sum((2, 3))
+        return (ring / (4 * (height + width - 4))).view(*x.shape[:2], 1, 1)  # 2 full rows each side, 2 inner columns each side
+
     def extra_repr(self) -> str:
-        return f"max_degrees={self.max_degrees}, max_pad={self.max_pad}, fill={self.fill}, p={self.p}"
+        return f"max_degrees={self.max_degrees}, max_pad={self.max_pad}, fill={self.fill}, edge_pad={self.edge_pad}, p={self.p}"
 
 
 def sample_augmentation(name: str | None) -> Callable[[torch.Tensor], torch.Tensor] | None:
