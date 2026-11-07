@@ -45,6 +45,11 @@ def get_bioclip_model(
                 bioclip_preprocess,
             ]
         )
+        # Expose CLIP's statistics as torchvision's model transforms do, so square-crop preprocessing
+        # (which reads ``transform.mean``/``.std``) normalises as BioCLIP expects instead of with ImageNet's.
+        normalize = next((t for t in getattr(bioclip_preprocess, "transforms", []) if hasattr(t, "mean") and hasattr(t, "std")), None)
+        if normalize is not None:
+            default_transform.mean, default_transform.std = tuple(normalize.mean), tuple(normalize.std)
     return BackboneModel(encoder=encoder, encoder_method="encode_image"), default_transform, resize_size or 256
 
 

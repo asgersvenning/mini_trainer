@@ -133,3 +133,35 @@ def test_transformers_model():
     assert outputs.shape == (2, 7)
     assert isinstance(outputs, torch.Tensor)
     assert isinstance(embed_dim, int)
+
+
+def test_bioclip_square_crop_reads_clip_statistics(monkeypatch):
+    """The lepinet preset's square-crop path must normalise BioCLIP inputs with CLIP's statistics."""
+    import torchvision.transforms as T
+
+    from mini_trainer.modeling.architectures.bioclip import get_bioclip_model
+    from mini_trainer.modeling.architectures.core import Preprocess, square_crop_preprocess
+
+    clip_mean, clip_std = (0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)
+
+    class Visual(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = torch.nn.Linear(3, 4)
+
+        def encode_image(self, x):
+            return self.proj(x.mean((2, 3)))
+
+    stub = ModuleType("open_clip")
+    preprocess = T.Compose([T.Resize(224), T.Normalize(clip_mean, clip_std)])
+    stub.create_model_and_transforms = lambda *args, **kwargs: (Visual(), None, preprocess)
+    stub.get_tokenizer = lambda *args, **kwargs: None
+    stub.model = ModuleType("open_clip.model")
+    stub.model.CLIP = Visual
+    stub.tokenizer = ModuleType("open_clip.tokenizer")
+    stub.tokenizer.SimpleTokenizer = object
+    monkeypatch.setitem(sys.modules, "open_clip", stub)
+
+    _, transform, _ = get_bioclip_model("bioclip-2", pretrained=False)
+    crop = square_crop_preprocess(Preprocess(transform=transform), size=224, read_size=256).transform
+    assert (crop.mean, crop.std) == (clip_mean, clip_std)
