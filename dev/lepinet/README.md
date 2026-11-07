@@ -86,6 +86,8 @@ MSP, entropy and margin rules without the full log-probabilities.
 | Reading | Largest square, random offset in training, centred otherwise; PIL bilinear to 460 | `resize_method: crop`, `read_size` |
 | Augmentation | Per image: dihedral (p 0.5), rotation ±15° and zoom 1–1.1 (each p 0.75), one bilinear resample to 256 with reflection padding | `RandomAffineResize` |
 | Trap augmentation (opt-in, off in the presets) | lepinet's `domain_aug: trap`, once per batch after the affine: motion blur (p 0.25), low light (p 0.25), JPEG-like quantisation (p 0.2) | `augmentation_builder_kwargs: {domain_aug: trap}` |
+| Geometric augmentation (opt-in, off in the presets) | per image, before the affine: rotation up to ±45° on an expanded canvas (fill 124,116,104), then 0-25 % edge padding, the training counterpart of `mambo_deploy`'s `RotatePad`/`EdgePad` TTA views; `+`-combinable with trap | `augmentation_builder_kwargs: {domain_aug: geometric}` or `{domain_aug: geometric+trap}` |
+| TrivialAugmentWide (opt-in, off in the presets) | torchvision's `TrivialAugmentWide`, one draw per training image in the loader workers (no training-step cost) | `dataloader_builder_kwargs: {sample_augmentation: trivialwide}` |
 | Evaluation input | Centre square at 460, bilinear resample to 256 | `ResampleNormalize` from checkpoint metadata |
 | Sampling | Row weight `count(species) ** -0.5`, with replacement, one draw per training row per epoch | `class_sampling_power`, `WeightedEpochSampler` |
 | Head | Cosine head with trainable per-class scale and bias, in float32 without TF32; lepinet's repulsion init | `trainable_scale`, `trainable_bias`, `float32_head`, `legacy_spherical_init` |

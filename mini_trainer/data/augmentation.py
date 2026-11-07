@@ -257,6 +257,100 @@ class RandomJPEGish(_BatchTransform):
         return (unit * levels).round() / levels * (hi - lo) + lo
 
 
+class RandomRotatePad(torch.nn.Module):
+    """Per-image rotation on an expanded canvas, then zoom-out by edge padding, resampled to the input size.
+
+    The training counterpart of ``mambo_deploy``'s ``RotatePad``/``EdgePad`` test-time views: each image is rotated
+    by a uniform angle in ``[-max_degrees, max_degrees]`` on a canvas expanded to hold the whole rotated image (the
+    corners filled with ``fill``, an RGB colour in 0-255), each canvas edge is then extended by a uniform fraction in
+    ``[0, max_pad]`` of its axis by repeating the canvas border, and the result is resampled (bilinear, one
+    ``grid_sample``) back to the input's height and width, so the object shrinks. Applied with probability ``p``
+    per image. Accepts uint8 (scaled by 1/255) or float images in ``[0, 1]``, ``[N, C, H, W]`` or ``[C, H, W]``,
+    and returns float32; meant to precede ``RandomAffineResize``.
+    """
+
+    def __init__(self, max_degrees: float = 45.0, max_pad: float = 0.25, fill: tuple[int, int, int] = (124, 116, 104), p: float = 1.0):  # noqa: D107
+        super().__init__()
+        if max_degrees < 0 or max_pad < 0 or not 0 <= p <= 1:
+            raise ValueError("max_degrees and max_pad must be nonnegative and p in [0, 1].")
+        self.max_degrees, self.max_pad, self.fill, self.p = float(max_degrees), float(max_pad), tuple(fill), float(p)
+
+    def grid(self, degrees: torch.Tensor, pad: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """Sampling grid ``[N, H, W, 2]`` (``grid_sample``, ``align_corners=False``) for the given angles and pads."""
+        device = degrees.device
+        theta = degrees * math.pi / 180
+        cos, sin = torch.cos(theta)[:, None, None], torch.sin(theta)[:, None, None]
+        canvas_w = width * cos.abs() + height * sin.abs()
+        canvas_h = width * sin.abs() + height * cos.abs()
+        scale = 1 + 2 * pad[:, None, None]
+        # Output pixel centres in centred pixel units of the padded canvas, clamped to the centres of the canvas's
+        # border pixels (edge padding repeats them; clamping to the outer edge would blend in the fill colour).
+        u = (torch.arange(width, device=device) + 0.5) / width * 2 - 1
+        v = (torch.arange(height, device=device) + 0.5) / height * 2 - 1
+        x = torch.maximum(torch.minimum(u[None, None, :] * canvas_w * scale / 2, canvas_w / 2 - 0.5), 0.5 - canvas_w / 2)
+        y = torch.maximum(torch.minimum(v[None, :, None] * canvas_h * scale / 2, canvas_h / 2 - 0.5), 0.5 - canvas_h / 2)
+        # Inverse of PIL's counter-clockwise rotation (image y axis points down), back to normalised source coordinates.
+        src_x = (x * cos - y * sin) / (width / 2)
+        src_y = (x * sin + y * cos) / (height / 2)
+        return torch.stack([src_x, src_y], dim=-1)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        single = images.ndim == 3
+        x = images.unsqueeze(0) if single else images
+        x = x.float().div(255) if x.dtype == torch.uint8 else x.float()
+        n, channels, height, width = x.shape
+        keep = torch.ones(n, device=x.device) if self.p >= 1 else torch.empty(n, device=x.device).bernoulli_(self.p)
+        degrees = torch.empty(n, device=x.device).uniform_(-self.max_degrees, self.max_degrees) * keep
+        pad = torch.empty(n, device=x.device).uniform_(0, self.max_pad) * keep
+        fill = torch.tensor(self.fill, device=x.device, dtype=x.dtype)[:channels].view(1, -1, 1, 1) / 255
+        grid = self.grid(degrees, pad, height, width)
+        # Outside the source image (inside the rotated canvas) is the fill colour: sample (x - fill) with zero padding.
+        out = torch.nn.functional.grid_sample(x - fill, grid, mode="bilinear", padding_mode="zeros", align_corners=False) + fill
+        return out[0] if single else out
+
+    def extra_repr(self) -> str:
+        return f"max_degrees={self.max_degrees}, max_pad={self.max_pad}, fill={self.fill}, p={self.p}"
+
+
+def sample_augmentation(name: str | None) -> Callable[[torch.Tensor], torch.Tensor] | None:
+    """Return an opt-in per-sample transform for training reads (uint8 ``[C, H, W]``), run in loader workers.
+
+    ``"trivialwide"`` is torchvision's ``TrivialAugmentWide``, one independent draw per image. ``None`` returns
+    ``None``. Workers apply it to each decoded training image, so it costs CPU rather than training-step time.
+    """
+    if not name:
+        return None
+    if name == "trivialwide":
+        from torchvision.transforms import v2
+
+        return v2.TrivialAugmentWide()
+    raise ValueError(f"Unknown sample augmentation {name!r}; known: ['trivialwide']")
+
+
+INPUT_AUGMENTATIONS: dict[str, Callable[[], list[torch.nn.Module]]] = {
+    "geometric": lambda: [RandomRotatePad()],
+}
+
+
+def split_domain_augmentation(spec: str | None) -> tuple[list[torch.nn.Module], list[torch.nn.Module]]:
+    """Resolve a ``+``-joined augmentation spec into transforms before and after the recipe's affine resize.
+
+    ``"geometric"`` (``RandomRotatePad``) acts on the read images, before ``RandomAffineResize``; the camera-trap
+    presets of ``domain_augmentation`` follow it. For example ``"geometric+trap"``. ``None`` or ``""`` returns no
+    transforms. (TrivialAugmentWide runs per sample in the loader workers: ``sample_augmentation``.)
+    """
+    before: list[torch.nn.Module] = []
+    after: list[torch.nn.Module] = []
+    for name in (spec or "").split("+"):
+        if not name:
+            continue
+        if name in INPUT_AUGMENTATIONS:
+            before += INPUT_AUGMENTATIONS[name]()
+        else:
+            after += domain_augmentation(name)
+    return before, after
+
+
 def domain_augmentation(preset: str | None) -> list[torch.nn.Module]:
     """Return lepinet's opt-in camera-trap transforms by preset name; ``None`` returns none.
 
@@ -271,5 +365,5 @@ def domain_augmentation(preset: str | None) -> list[torch.nn.Module]:
     if not preset:
         return []
     if preset not in presets:
-        raise ValueError(f"Unknown domain augmentation {preset!r}; known: {sorted(presets)}")
+        raise ValueError(f"Unknown domain augmentation {preset!r}; known: {sorted(presets) + sorted(INPUT_AUGMENTATIONS)}")
     return presets[preset]()

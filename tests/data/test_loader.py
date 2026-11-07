@@ -72,6 +72,26 @@ def metadata(tmp_path):
     return {"path": paths, "class": list(range(5))}
 
 
+def test_sample_augmentation_transforms_training_reads_only(tmp_path):
+    rng = np.random.default_rng(0)
+    paths = []
+    for index in range(2):
+        path = tmp_path / f"{index}.png"
+        Image.fromarray(rng.integers(0, 256, (12, 12, 3), dtype=np.uint8)).save(path)
+        paths.append(str(path))
+    data = {"path": paths, "class": [0, 1]}
+    kwargs = {"resize_size": 8, "batch_size": 2, "num_workers": 0, "cache": "none", "resize_method": "crop", "read_size": 12}
+    (train, val), _ = get_dataset_dataloader(data, data, sample_augmentation="trivialwide", **kwargs)
+    torch.manual_seed(0)
+    train_reads = {train[0][0].numpy().tobytes() for _ in range(12)}
+    val_reads = {val[0][0].numpy().tobytes() for _ in range(3)}
+    assert len(train_reads) > 1 and len(val_reads) == 1  # val is the centred square, unaugmented
+    (plain, _), _ = get_dataset_dataloader(data, data, **kwargs)
+    assert type(plain.func.reader) is type(val.func.reader)  # without the option the readers are unchanged
+    with pytest.raises(ValueError, match="cannot be combined with dataset caching"):
+        get_dataset_dataloader(data, data, sample_augmentation="trivialwide", **{**kwargs, "cache": "cpu", "resize_method": "squash"})
+
+
 @pytest.mark.parametrize("size", [4, (4, 6), [4, 6]])
 def test_loader_shapes_sampling_and_subsampling(metadata, size):
     datasets, loaders = get_dataset_dataloader(metadata, metadata, resize_size=size, batch_size=2, num_workers=0, cache="none", subsample=2)

@@ -258,3 +258,19 @@ def test_domain_aug_appends_trap_transforms_after_the_affine():
         out = trap(torch.randint(0, 256, (4, 3, 12, 12), dtype=torch.uint8))
         assert out.shape == (4, 3, 8, 8) and out.dtype == torch.float32 and 0 <= out.min() and out.max() <= 1
         assert trap(torch.randint(0, 256, (3, 12, 12), dtype=torch.uint8)).shape == (3, 8, 8)
+
+
+def test_input_augmentations_precede_the_affine_and_trap_follows_it():
+    from mini_trainer.data import (
+        RandomAffineResize,
+        RandomJPEGish,
+        RandomLowLight,
+        RandomMotionBlur,
+        RandomRotatePad,
+    )
+
+    combined = LepinetBuilder.build_augmentation(dtype=torch.float32, size=8, domain_aug="geometric+trap")
+    assert [type(t) for t in combined.transforms] == [RandomRotatePad, RandomAffineResize, RandomMotionBlur, RandomLowLight, RandomJPEGish]
+    torch.manual_seed(0)
+    out = combined(torch.randint(0, 256, (4, 3, 12, 12), dtype=torch.uint8))
+    assert out.shape == (4, 3, 8, 8) and out.dtype == torch.float32 and 0 <= out.min() and out.max() <= 1

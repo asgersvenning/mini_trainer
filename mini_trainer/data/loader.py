@@ -10,6 +10,7 @@ from mini_trainer.utils import is_dist_avail_and_initialized
 
 from ._prefetch import CUDAPrefetchLoader
 from ._workers import _default_worker_count
+from .augmentation import sample_augmentation as make_sample_augmentation
 from .io import (
     CACHE_MODE,
     LazyDataset,
@@ -159,6 +160,7 @@ def get_dataset_dataloader(  # noqa: D103
     class_sampling_power: float = 0.0,
     sampling_weights: str | None = None,
     sampling_seed: int | None = None,
+    sample_augmentation: str | None = None,
 ):
     """Build one dataset and loader per metadata split.
 
@@ -171,6 +173,10 @@ def get_dataset_dataloader(  # noqa: D103
     in the training metadata) replace uniform shuffling of the training split with
     ``WeightedEpochSampler``: one draw per training row per epoch, with replacement, with probability
     proportional to ``weight * count(leaf class) ** -class_sampling_power``.
+
+    ``sample_augmentation`` (opt-in, e.g. ``"trivialwide"``; see ``mini_trainer.data.sample_augmentation``)
+    transforms every decoded training image in the loader workers; other splits are read unchanged. Augmented
+    reads cannot be cached.
     """
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     if isinstance(device, str):
@@ -201,6 +207,12 @@ def get_dataset_dataloader(  # noqa: D103
         readers = {mode: SquareCropReader(side, train=mode.strip().lower() == "train") for mode in modes}
     else:
         raise ValueError(f'Unknown resize_method {resize_method!r}; expected "squash" or "crop".')
+
+    if sample_augmentation:
+        if cache is not CACHE_MODE.NONE:
+            raise ValueError("Per-sample augmentation draws anew on every read; it cannot be combined with dataset caching.")
+        transform = make_sample_augmentation(sample_augmentation)
+        readers = {mode: AugmentedReader(r, transform) if mode.strip().lower() == "train" else r for mode, r in readers.items()}
 
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
@@ -244,6 +256,16 @@ def get_dataset_dataloader(  # noqa: D103
     ]
 
     return datasets, loaders
+
+
+class AugmentedReader:
+    """A reader followed by a per-sample transform of its uint8 ``[C, H, W]`` output (picklable for workers)."""
+
+    def __init__(self, reader: Callable, transform: Callable[[torch.Tensor], torch.Tensor]):  # noqa: D107
+        self.reader, self.transform = reader, transform
+
+    def __call__(self, path):
+        return self.transform(self.reader(path))
 
 
 def _square_read_size(resize_size: tuple[int, int], read_size: int | None) -> int:

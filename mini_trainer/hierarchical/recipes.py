@@ -3,7 +3,7 @@
 import torch
 import torchvision.transforms.v2 as tt
 
-from mini_trainer.data import RandomAffineResize, domain_augmentation
+from mini_trainer.data import RandomAffineResize, split_domain_augmentation
 
 from .integration import HierarchicalBuilder
 
@@ -63,12 +63,18 @@ class LepinetBuilder(HierarchicalBuilder):
     ):
         """Return the per-image affine augmentation; ``size`` must equal the model input size.
 
-        ``domain_aug`` appends lepinet's opt-in camera-trap transforms by preset name (``"trap"``: motion
-        blur, low light, JPEG-like quantization; ``"blur"`` and ``"lowlight"`` alone), each drawn once per
-        batch after the affine and before normalization, as lepinet did. ``None`` leaves the recipe unchanged.
+        ``domain_aug`` adds opt-in transforms by name, ``+``-joined (e.g. ``"geometric+trap"``). lepinet's
+        camera-trap presets (``"trap"``: motion blur, low light, JPEG-like quantization; ``"blur"`` and
+        ``"lowlight"`` alone) are drawn once per batch after the affine and before normalization, as lepinet
+        did. ``"geometric"`` (per-image rotation up to 45 degrees on an expanded canvas, then 0-25 % edge
+        padding, as ``mambo_deploy``'s TTA views) acts on the read images before the affine. ``None`` leaves
+        the recipe unchanged. (TrivialAugmentWide is a loader option: ``dataloader_builder_kwargs``
+        ``sample_augmentation: trivialwide``.)
         """
+        before, after = split_domain_augmentation(domain_aug)
         return tt.Compose(
             [
+                *before,
                 RandomAffineResize(
                     size=size,
                     dihedral=dihedral,
@@ -78,6 +84,6 @@ class LepinetBuilder(HierarchicalBuilder):
                     max_zoom=max_zoom,
                     affine_p=affine_p,
                 ),
-                *domain_augmentation(domain_aug),
+                *after,
             ]
         )

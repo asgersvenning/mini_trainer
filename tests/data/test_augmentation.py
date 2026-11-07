@@ -112,3 +112,82 @@ def test_domain_augmentation_presets_and_batch_semantics():
     assert torch.allclose(RandomMotionBlur(p=1, max_kernel=3)(flat)[..., 2:-2, 2:-2], flat[..., 2:-2, 2:-2])
     levels = RandomJPEGish(p=1, min_levels=12)(torch.linspace(0, 1, 1000).view(1, 1, 10, 100)).unique().numel()
     assert 13 <= levels <= 64
+
+
+def _rotate_pad(module, images, degrees, pad):
+    """RandomRotatePad's resampling at fixed angles and pads (its forward draws them)."""
+    n, _, height, width = images.shape
+    grid = module.grid(torch.full((n,), float(degrees)), torch.full((n,), float(pad)), height, width)
+    fill = torch.tensor(module.fill, dtype=torch.float32).view(1, 3, 1, 1) / 255
+    return (
+        torch.nn.functional.grid_sample(images.float() / 255 - fill, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        + fill
+    )
+
+
+def test_random_rotate_pad_matches_pil_rotation_on_an_expanded_canvas_and_edge_padding():
+    import numpy as np
+    from PIL import Image
+
+    from mini_trainer.data import RandomRotatePad
+
+    module = RandomRotatePad(fill=(255, 0, 0))
+    torch.manual_seed(0)
+    images = torch.randint(0, 200, (2, 3, 10, 10), dtype=torch.uint8)
+    images[:, 0] = 0  # no red in the images, so any red output pixel is fill
+    torch.testing.assert_close(_rotate_pad(module, images, 0, 0), images.float() / 255, atol=1e-6, rtol=0)
+    # A quarter turn of a square: PIL's counter-clockwise rotation with expand=True, exactly.
+    pil = np.stack([np.asarray(Image.fromarray(im.permute(1, 2, 0).numpy()).rotate(90, expand=True)) for im in images])
+    torch.testing.assert_close(
+        _rotate_pad(module, images, 90, 0), torch.from_numpy(pil).permute(0, 3, 1, 2).float() / 255, atol=1e-5, rtol=0
+    )
+    # Edge padding repeats the border (no fill colour) and shrinks the image to the centre.
+    padded = _rotate_pad(module, images, 0, 0.25)
+    assert padded[:, 0].max() < 1e-6
+    torch.testing.assert_close(padded[..., 0, 0], images[..., 0, 0].float() / 255, atol=1e-6, rtol=0)
+    # At 45 degrees the expanded canvas's corners are fill.
+    rotated = _rotate_pad(module, images, 45, 0)
+    assert torch.allclose(rotated[:, :, 0, 0], torch.tensor([1.0, 0.0, 0.0]).expand(2, 3), atol=1e-6)
+
+
+def test_random_rotate_pad_draws_per_image_and_keeps_shape():
+    from mini_trainer.data import RandomRotatePad
+
+    torch.manual_seed(0)
+    image = torch.randint(0, 256, (3, 16, 12), dtype=torch.uint8)
+    batch = image.expand(6, -1, -1, -1).clone()
+    out = RandomRotatePad()(batch)
+    assert out.shape == batch.shape and out.dtype == torch.float32 and 0 <= out.min() and out.max() <= 1
+    assert len({tuple(o.flatten()[:64].tolist()) for o in out}) == 6  # every image its own angle and pad
+    assert RandomRotatePad()(image).shape == image.shape  # single images, as debug_augmentation draws
+    torch.testing.assert_close(RandomRotatePad(p=0)(batch), batch.float() / 255, atol=1e-6, rtol=0)
+    with pytest.raises(ValueError):
+        RandomRotatePad(max_degrees=-1)
+
+
+def test_trivial_augment_wide_sample_augmentation_and_the_augmentation_spec():
+    from mini_trainer.data import (
+        RandomJPEGish,
+        RandomLowLight,
+        RandomMotionBlur,
+        RandomRotatePad,
+        sample_augmentation,
+        split_domain_augmentation,
+    )
+
+    assert sample_augmentation(None) is None
+    transform = sample_augmentation("trivialwide")
+    torch.manual_seed(0)
+    image = torch.randint(0, 256, (3, 16, 16), dtype=torch.uint8)
+    outs = [transform(image) for _ in range(8)]
+    assert all(o.shape == image.shape and o.dtype == torch.uint8 for o in outs)
+    assert len({o.numpy().tobytes() for o in outs}) > 1  # a new draw on every read
+    with pytest.raises(ValueError, match="Unknown sample augmentation"):
+        sample_augmentation("nope")
+
+    assert split_domain_augmentation(None) == ([], [])
+    before, after = split_domain_augmentation("geometric+trap")
+    assert [type(t) for t in before] == [RandomRotatePad]
+    assert [type(t) for t in after] == [RandomMotionBlur, RandomLowLight, RandomJPEGish]
+    with pytest.raises(ValueError, match="Unknown domain augmentation"):
+        split_domain_augmentation("geometric+nope")

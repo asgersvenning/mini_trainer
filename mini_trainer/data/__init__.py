@@ -3,10 +3,13 @@ from .augmentation import (
     RandomJPEGish,
     RandomLowLight,
     RandomMotionBlur,
+    RandomRotatePad,
     SaltAndPepper,
     debug_augmentation,
     domain_augmentation,
     salt_and_pepper,
+    sample_augmentation,
+    split_domain_augmentation,
 )
 from .io import LazyDataset, is_image
 from .loader import get_dataset_dataloader, get_inference_dataloader
@@ -27,9 +30,12 @@ __all__ = [
     "RandomJPEGish",
     "RandomLowLight",
     "RandomMotionBlur",
+    "RandomRotatePad",
     "SaltAndPepper",
     "debug_augmentation",
     "domain_augmentation",
+    "sample_augmentation",
+    "split_domain_augmentation",
     "salt_and_pepper",
     "is_image",
     "get_dataset_dataloader",
