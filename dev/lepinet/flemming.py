@@ -7,7 +7,8 @@
 ``score`` writes ``<set>/predictions.csv`` (lepinet's layout, filename ``<species folder>/<crop>``) and
 ``<set>/scores.csv`` next to its input. Scores are lepinet's ``dev/093_rescore_mini_metrics.py``: zero and
 random calibration (``score``) and calibration on whole (trap, night) groups (``score_grouped``); probe-HO keeps
-the held-out species only. Run ``score`` with pandas, scikit-learn and mini_metrics on the path, e.g. lepinet's
+the held-out species only; ``--sets adapt`` adds the adapt nights (for choosing settings there before reporting
+on probe and probe-HO). Run ``score`` with pandas, scikit-learn and mini_metrics on the path, e.g. lepinet's
 venv with ``PYTHONPATH=<lepinet>/data/tools/mini_metrics-61db373``.
 """
 
@@ -19,7 +20,13 @@ from pathlib import Path
 import pandas as pd
 
 COLUMNS = ["instance_id", "filename", "level", "label", "prediction", "confidence", "threshold", "known_label"]
-SETS = {"trap": None, "probe": "flemming_probe.parquet", "probe-ho": "flemming_probe_heldout_species.parquet"}
+SETS = {
+    "trap": None,
+    "adapt": "flemming_adapt.parquet",
+    "probe": "flemming_probe.parquet",
+    "probe-ho": "flemming_probe_heldout_species.parquet",
+}
+DEFAULT_SETS = ("trap", "probe", "probe-ho")
 
 
 def index(args):
@@ -46,7 +53,8 @@ def score(args):
     rows = pd.read_csv(args.predictions, dtype={"label": str, "prediction": str})
     rows["filename"] = rows.filename.str.split("/").str[-2:].str.join("/")
     rows["known_label"] = rows.known_label.astype(str).isin(["1", "True", "true"])
-    for name, split in SETS.items():
+    for name in args.sets:
+        split = SETS[name]
         keep = rows if split is None else rows[rows.filename.isin(set(pd.read_parquet(splits / split).image_path))]
         out = args.predictions.parent / name / "predictions.csv"
         out.parent.mkdir(exist_ok=True)
@@ -75,6 +83,7 @@ def main():
     p.add_argument("--predictions", type=Path, required=True, help="mini_metric.csv from mt_hpredict on the index.")
     p.add_argument("--lepinet", type=Path, required=True, help="lepinet checkout (dev/093 and data/flemming/splits).")
     p.add_argument("--seeds", type=int, default=20, help="Calibration splits (dev/093's default).")
+    p.add_argument("--sets", nargs="+", choices=list(SETS), default=list(DEFAULT_SETS), help="Crop sets to score.")
     p.set_defaults(run=score)
     args = parser.parse_args()
     args.run(args)
