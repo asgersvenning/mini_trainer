@@ -826,6 +826,29 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       0-25 % edge padding, before the affine), `geometric+trap`, and `dataloader_builder_kwargs.sample_augmentation:
       trivialwide` (in the loader workers; on the GPU it cost 73 ms per 64-image batch at 512 px).
     - Jobs: ag-otto-bioclip-geo 12450608, ag-v2s-384x10-geo 12450609, -geotrap 12450610, -trivial 12450611.
+    - All four FAILED on their own before training. Each log stops silently 12.5 min into staging (340 of 452 GB),
+      and UCloud records only FAILURE. The Otto jobs and the resume, started earlier, staged fine. Suspected cause:
+      a full shared node disk (no SSH endpoint to confirm). `setup-template.sh` now logs `df /tmp` and aborts before
+      staging below 510 GB free.
+    - Resubmitted (owner, 2026-11-07 19:38): 12450732 otto-geo, 12450733 v2s-geo, 12450734 v2s-geotrap,
+      12450735 v2s-trivial.
+    - The geometric arms now use the border-mean fill (`f82cd16`, below).
+  - Stripes (lepinet-1c's Meghan check): edge padding after a rotation repeats the canvas border where the
+    rotated image's corners touch it, smearing them into stripes.
+    - Meghan, single views on probe: r0 0.645 top-1; rot±30_pad25 0.16-0.17.
+    - Quarter turns, flips, padding alone and rotation with a plain fill are all harmless (0.61-0.70).
+    - Nemo's virtual padding (`preprocessing._square`, clamped indices) is the same edge replication, so every
+      model gets the same TTA. Nemo's rotated views score 0.76.
+    - `f82cd16`: RandomRotatePad fills its corners and padding with each image's 2-pixel border-ring mean.
+      `fill=(124, 116, 104), edge_pad=True` keeps the first version.
+    - TTA views `rot±30bm_pad25` (the same fill) and policy `tta3bm`. Nemo's own tta3 stays its card setting.
+  - Eval jobs: `.agents/local/campaign/eval/build_eval.py`, one 1-B200 job per training job, queued --after it
+    (owner, 2026-11-07 19:41).
+    - Frozen copies of `logits.py` and `score.py`. The job computes 19 views (folds: tta3 + bm) and reduces them to
+      per-policy predictions with `score.py --reduce-only`.
+    - Truth and `flemming.py` stay local (`--from-preds`). The split reproduces the old mini_metric.csv exactly.
+    - fp32 logits kept on /work: all 19 views for the candidate; tta3 + bm for the rest (~140 GB).
+    - Outputs: `tmp-runs/otto_eval/<run>/`.
   - Release TODO: strip the unused text tower. Needs an opt-in vision-only BioCLIP loader, so that Meghan's
     loading is unchanged.
 
