@@ -736,6 +736,23 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - Against the same re-warm, cRT's oversampling recovers the test fold (full 0.897 against 0.811).
   - Owner (via lepinet-1c): keep trap augmentation opt-in; don't make it a default yet.
 
+- Otto (lepinet subproject, `L:journal/engineering/2026-11-07-otto-a-production-model-for-ami-traps.md`):
+  BioCLIP-2 check, 2026-11-07, no GPU submission.
+  - It trains with the lepinet preset (`model_type: bioclip:bioclip-2`, size 224, read 256). Local smoke:
+    lepinet's venv with PYTHONPATH at the worktree, since MT's venv lacks the `bioclip` extra.
+  - Fixed `ce5b7e7`: square-crop preprocessing gave BioCLIP ImageNet statistics, because its Compose
+    exposes no `mean`/`std`. It now gets CLIP's.
+  - Remaining differences from P5: the 768-d projected embedding (P5: 1024-d pre-projection; an option
+    needs `model_args` in checkpoint metadata); the unused text tower is kept (1.7 GB checkpoint).
+  - The pinned AdamW lr 1e-3 is the worst lr in lepinet's sweep. Recommend MuonAuxAdamW lr 1e-5
+    (P3c); needs the owner.
+  - Cost: 0.95x DINOv3 ConvNeXt-L per image (RTX 5090), about 15-17 B200-h per 5-epoch run.
+  - Flemming crops in Meghan's or Nemo's training data: none.
+    - Meghan is stock BioCLIP-2 plus a head trained on the same 12,632-species parquet as Nemo.
+    - No DK machine observations in that parquet.
+    - BioCLIP-2 nearest neighbours of all 47,913 crops among the 44,251 DK and machine-observation
+      images: max cosine 0.989, and the top distinct pairs are different photos.
+
 ### Later phases
 
 - **Phase 2:** self-training on trap crops (per-row weights through `sampling_weights`; mount
