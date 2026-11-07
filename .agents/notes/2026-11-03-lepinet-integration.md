@@ -767,6 +767,10 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       ensemble 0.859; biased, because both teachers trained on adapt pseudo-labels.
     - Labels: `/work/mini_trainer-campaign/otto/pseudo_otto.parquet`, sha256 07796a6c.
     - Merge tested: 2.56 % of training rows (x16); site-LV 2.53 % (x30).
+    - Teacher check on probe crops (lepinet-1c's rule: the ensemble only if it is at least the best single teacher
+      on probe and probe-HO). (Trap, night)-calibrated species macro-F1, probe / probe-HO: P5 0.6215 / 0.4882,
+      st26 0.6273 / 0.4307, ensemble 0.6702 / 0.5033. Top-1: 0.836 / 0.758, 0.846 / 0.745, 0.864 / 0.783. The
+      ensemble is kept (`score_teachers.py`; known set is the 12,632-key union for all three).
   - `build.py` gained `"bioclip": true`, which installs the `bioclip` extra.
   - Release TODO: strip the unused text tower. Needs an opt-in vision-only BioCLIP loader, so that Meghan's
     loading is unchanged.
