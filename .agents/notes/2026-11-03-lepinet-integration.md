@@ -772,6 +772,12 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
       st26 0.6273 / 0.4307, ensemble 0.6702 / 0.5033. Top-1: 0.836 / 0.758, 0.846 / 0.745, 0.864 / 0.783. The
       ensemble is kept (`score_teachers.py`; known set is the 12,632-key union for all three).
   - `build.py` gained `"bioclip": true`, which installs the `bioclip` extra.
+  - Trap augmentation OFF (lepinet-1c, 2026-11-07). v2s_bu_trapaug_s42 vs v2s_bu_s42 (seed range 42-44 in
+    brackets), test / trap / probe / probe-HO:
+    - trapaug: 0.8802 / 0.361 / 0.405 / 0.321.
+    - baseline: 0.8877 (0.8866-0.8877) / 0.339 / 0.371 (0.349-0.378) / 0.306 (0.292-0.306).
+    - The shift legs pass, but the test score drops 0.75 points, about 7x the seed spread, so the rule says off.
+  - Submitted 2026-11-07 with `make_otto.py off`: c-otto-bioclip 12450502, c-otto-dinov3 12450503.
   - Release TODO: strip the unused text tower. Needs an opt-in vision-only BioCLIP loader, so that Meghan's
     loading is unchanged.
 
