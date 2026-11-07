@@ -658,6 +658,11 @@ process shares the GPU, so timings are biased). Epochs are counted 1-5 here; lep
     - c-v2s-384 (12449153) mixed two ~13.5 h runs with a ~39 h one; it was cancelled before training. It's
       replaced by c-v2s-384x10 12449177 (F, BU, I, TD at 10 epochs, 384 px; BU and I added) and
       w-v2s-bu-384x30-s42 (1 GPU, 40 h cap; terminated by mistake at 11:13 and resubmitted as 12449232).
+    - 12449232 aborted on 2026-11-07 at 11:39, during epoch 20/30 after 19 full epochs (exit 134). The run
+      log ends in a PyTorch CUDA caching-allocator `INTERNAL ASSERT FAILED` (`free_block`,
+      CUDACachingAllocator.cpp:3252) with no earlier OOM or NaN. Eval at epoch 18: acc1 91.11, species F1 0.842.
+      `checkpoint_last.pth` (epoch index 18) is in tmp-runs/v2s_bu_384x30_s42/weights. Not resubmitted: the
+      paper decides whether 30 epochs is needed. c-v2s-384x10 (12449472) exited cleanly.
   - GPU sharing (owner: don't waste GPU resources, ranked above time over GPU-hours).
     - Benchmark mt-gpu-share-bench, 12449255 (`.agents/local/gpu-share-bench/`), on 1 B200: the compile
       smoke's capped sample, V2-S F at 256 px, bs 64, 2 epochs per run, plain.
