@@ -48,9 +48,26 @@ def is_main_process():  # noqa: D103
     return get_rank() == 0
 
 
-def save_on_master(*args, **kwargs):  # noqa: D103
-    if is_main_process():
-        torch.save(*args, **kwargs)
+def save_on_master(obj, f, *args, **kwargs):
+    """``torch.save`` on the main process only; a path is replaced atomically.
+
+    The object is written to ``<f>.tmp`` beside the target and moved over it with ``os.replace``, so a run killed
+    mid-save (e.g. by a time limit) keeps the previous ``checkpoint_last.pth`` or ``best.pt`` intact. File objects
+    are written directly.
+    """
+    if not is_main_process():
+        return
+    if not isinstance(f, str | os.PathLike):
+        torch.save(obj, f, *args, **kwargs)
+        return
+    tmp = f"{os.fspath(f)}.tmp"
+    try:
+        torch.save(obj, tmp, *args, **kwargs)
+        os.replace(tmp, f)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 
 def init_distributed(device=None):
