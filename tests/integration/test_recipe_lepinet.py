@@ -244,3 +244,17 @@ def test_channels_last_trains_with_converted_weights_and_inputs(tmp_path, monkey
         torch.set_float32_matmul_precision(precision)
     assert seen == {"weights": True, "input": True}
     assert (tmp_path / "out" / "run" / "weights" / "last.pt").is_file()
+
+
+def test_domain_aug_appends_trap_transforms_after_the_affine():
+    from mini_trainer.data import RandomAffineResize, RandomJPEGish, RandomLowLight, RandomMotionBlur
+
+    default = LepinetBuilder.build_augmentation(dtype=torch.float32, size=8).transforms
+    assert [type(t) for t in default] == [RandomAffineResize]  # the recipe without the option is unchanged
+    trap = LepinetBuilder.build_augmentation(dtype=torch.float32, size=8, domain_aug="trap")
+    assert [type(t) for t in trap.transforms] == [RandomAffineResize, RandomMotionBlur, RandomLowLight, RandomJPEGish]
+    torch.manual_seed(0)
+    for _ in range(20):  # uint8 loader batches and the single images debug_augmentation draws
+        out = trap(torch.randint(0, 256, (4, 3, 12, 12), dtype=torch.uint8))
+        assert out.shape == (4, 3, 8, 8) and out.dtype == torch.float32 and 0 <= out.min() and out.max() <= 1
+        assert trap(torch.randint(0, 256, (3, 12, 12), dtype=torch.uint8)).shape == (3, 8, 8)

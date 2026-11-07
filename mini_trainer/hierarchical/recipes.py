@@ -3,7 +3,7 @@
 import torch
 import torchvision.transforms.v2 as tt
 
-from mini_trainer.data import RandomAffineResize
+from mini_trainer.data import RandomAffineResize, domain_augmentation
 
 from .integration import HierarchicalBuilder
 
@@ -14,7 +14,8 @@ class LepinetBuilder(HierarchicalBuilder):
     - Data: square crops read at ``READ_SIZE`` (random in training, centred otherwise), square-root
       class oversampling with replacement, and rows outside the class specification dropped (for a
       class-count floor such as ``spec_model_dataloader_kwargs: {min_count: 50}``).
-    - Augmentation: per-image dihedral flip, rotation and zoom sampled straight to the model size.
+    - Augmentation: per-image dihedral flip, rotation and zoom sampled straight to the model size;
+      lepinet's camera-trap transforms are opt-in (``domain_aug``).
     - Head: cosine head with trainable per-class scale and bias, run in float32 without TF32, and the
       spherical-repulsion step lepinet used.
 
@@ -58,8 +59,14 @@ class LepinetBuilder(HierarchicalBuilder):
         min_zoom: float = 1.0,
         max_zoom: float = 1.1,
         affine_p: float = 0.75,
+        domain_aug: str | None = None,
     ):
-        """Return the per-image affine augmentation; ``size`` must equal the model input size."""
+        """Return the per-image affine augmentation; ``size`` must equal the model input size.
+
+        ``domain_aug`` appends lepinet's opt-in camera-trap transforms by preset name (``"trap"``: motion
+        blur, low light, JPEG-like quantization; ``"blur"`` and ``"lowlight"`` alone), each drawn once per
+        batch after the affine and before normalization, as lepinet did. ``None`` leaves the recipe unchanged.
+        """
         return tt.Compose(
             [
                 RandomAffineResize(
@@ -70,6 +77,7 @@ class LepinetBuilder(HierarchicalBuilder):
                     min_zoom=min_zoom,
                     max_zoom=max_zoom,
                     affine_p=affine_p,
-                )
+                ),
+                *domain_augmentation(domain_aug),
             ]
         )

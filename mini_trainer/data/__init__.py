@@ -1,4 +1,13 @@
-from .augmentation import RandomAffineResize, SaltAndPepper, debug_augmentation, salt_and_pepper
+from .augmentation import (
+    RandomAffineResize,
+    RandomJPEGish,
+    RandomLowLight,
+    RandomMotionBlur,
+    SaltAndPepper,
+    debug_augmentation,
+    domain_augmentation,
+    salt_and_pepper,
+)
 from .io import LazyDataset, is_image
 from .loader import get_dataset_dataloader, get_inference_dataloader
 from .metadata import (
@@ -15,8 +24,12 @@ from .metadata import (
 __all__ = [
     "LazyDataset",
     "RandomAffineResize",
+    "RandomJPEGish",
+    "RandomLowLight",
+    "RandomMotionBlur",
     "SaltAndPepper",
     "debug_augmentation",
+    "domain_augmentation",
     "salt_and_pepper",
     "is_image",
     "get_dataset_dataloader",

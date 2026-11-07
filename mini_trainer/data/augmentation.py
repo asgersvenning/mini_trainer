@@ -185,3 +185,91 @@ class SaltAndPepper(torch.nn.Module):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(proportion={self.proportion}, probability={self.probability})"
+
+
+class _BatchTransform(torch.nn.Module):
+    """Applied to the whole batch with probability ``p``, with one draw of its parameters (fastai's ``RandTransform``).
+
+    Accepts float images ``[N, C, H, W]`` or ``[C, H, W]``; meant to follow ``RandomAffineResize`` (values in
+    ``[0, 1]``) and to precede normalization, as in lepinet's ``batch_tfms``.
+    """
+
+    def __init__(self, p: float):  # noqa: D107
+        super().__init__()
+        self.p = float(p)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        if not (self.p >= 1 or torch.rand(()).item() < self.p):
+            return images
+        single = images.ndim == 3
+        x = self._transform(images.unsqueeze(0) if single else images)
+        return x[0] if single else x
+
+    def extra_repr(self) -> str:
+        return f"p={self.p}"
+
+
+class RandomMotionBlur(_BatchTransform):
+    """Box blur along a random horizontal or vertical line of odd length 3 to ``max_kernel`` (lepinet's trap preset)."""
+
+    def __init__(self, p: float = 0.25, max_kernel: int = 9):  # noqa: D107
+        super().__init__(p)
+        self.max_kernel = int(max_kernel)
+
+    def _transform(self, x: torch.Tensor) -> torch.Tensor:
+        k = int(torch.randint(3, self.max_kernel + 1, ()).item()) | 1
+        kernel = torch.zeros(1, 1, k, k, device=x.device, dtype=x.dtype)
+        if torch.rand(()).item() < 0.5:
+            kernel[..., k // 2, :] = 1.0 / k
+        else:
+            kernel[..., :, k // 2] = 1.0 / k
+        channels = x.shape[1]
+        return torch.nn.functional.conv2d(x, kernel.expand(channels, 1, k, k), padding=k // 2, groups=channels)
+
+
+class RandomLowLight(_BatchTransform):
+    """Darken with a gamma in ``[1, max_gamma]`` and add Gaussian noise of std up to ``max_noise`` (night frames)."""
+
+    def __init__(self, p: float = 0.25, max_gamma: float = 2.2, max_noise: float = 0.05):  # noqa: D107
+        super().__init__(p)
+        self.max_gamma, self.max_noise = float(max_gamma), float(max_noise)
+
+    def _transform(self, x: torch.Tensor) -> torch.Tensor:
+        gamma = 1.0 + torch.rand(()).item() * (self.max_gamma - 1.0)
+        sigma = torch.rand(()).item() * self.max_noise
+        lo, hi = x.min(), x.max()
+        unit = (x - lo) / (hi - lo + 1e-6)
+        out = unit.clamp_min(0).pow(gamma) + torch.randn_like(x) * sigma
+        return out.clamp(0, 1) * (hi - lo) + lo
+
+
+class RandomJPEGish(_BatchTransform):
+    """Quantize intensities to ``min_levels``-63 levels, a GPU stand-in for heavy JPEG compression."""
+
+    def __init__(self, p: float = 0.2, min_levels: int = 12):  # noqa: D107
+        super().__init__(p)
+        self.min_levels = int(min_levels)
+
+    def _transform(self, x: torch.Tensor) -> torch.Tensor:
+        levels = int(torch.randint(self.min_levels, 64, ()).item())
+        lo, hi = x.min(), x.max()
+        unit = (x - lo) / (hi - lo + 1e-6)
+        return (unit * levels).round() / levels * (hi - lo) + lo
+
+
+def domain_augmentation(preset: str | None) -> list[torch.nn.Module]:
+    """Return lepinet's opt-in camera-trap transforms by preset name; ``None`` returns none.
+
+    ``"trap"`` is lepinet's ``domain_aug: trap`` (motion blur 0.25, low light 0.25, JPEG-like 0.2, in that
+    order); ``"blur"`` and ``"lowlight"`` are its single-transform ablations at p 0.35.
+    """
+    presets = {
+        "trap": lambda: [RandomMotionBlur(p=0.25), RandomLowLight(p=0.25), RandomJPEGish(p=0.2)],
+        "blur": lambda: [RandomMotionBlur(p=0.35)],
+        "lowlight": lambda: [RandomLowLight(p=0.35)],
+    }
+    if not preset:
+        return []
+    if preset not in presets:
+        raise ValueError(f"Unknown domain augmentation {preset!r}; known: {sorted(presets)}")
+    return presets[preset]()
