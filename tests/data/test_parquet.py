@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import torch
 
@@ -68,3 +70,45 @@ def test_class_count_floor_counts_non_test_rows_and_drops_their_samples(tmp_path
     # Without the option, rows of excluded species stay in, with unknown classes.
     labels, train, _ = loaders(False)
     assert len(train.dataset) == 13 and (None, 0, 0) in {tuple(c) for c in labels}
+
+
+def test_non_numeric_keys_build_the_vocabulary_and_load_from_folders_with_colons(tmp_path):
+    """Catalogue of Life relabelling: string keys, colons in staged folder names, an extra legacySpeciesKey column."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    from PIL import Image
+
+    from mini_trainer.hierarchical.integration import HierarchicalBuilder
+    from mini_trainer.integrations.parquet import parquet_to_class_spec_hierarchical
+
+    assert get_keys(dict.fromkeys(KCOLUMNS, " H9MH ")) == ["H9MH"] * len(KCOLUMNS)
+    taxa = {"H9MH": ("G1", "F1", "1001"), "gbif:123": ("gbif:45", "F1", "1002"), "none:genus:X": ("none:family:Y", "F2", "1003")}
+    rows = [
+        {"filename": f"{i}.jpg", "set": split, "speciesKey": key, "genusKey": genus, "familyKey": family, "legacySpeciesKey": legacy}
+        for key, (genus, family, legacy) in taxa.items()
+        for i, split in enumerate(("2", "2", "1"))
+    ]
+    for row in rows:
+        folder = tmp_path / "images" / row["speciesKey"]
+        folder.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (16, 16), (120, 80, 40)).save(folder / row["filename"])
+    columns = {name: [row.get(name, "K") for row in rows] for name in ("filename", "set", *KCOLUMNS, "legacySpeciesKey")}
+    path = tmp_path / "data.parquet"
+    pq.write_table(pa.table(columns), path)
+
+    spec = parquet_to_class_spec_hierarchical(str(path))
+    assert set(spec["cls2idx"]["0"]) == set(taxa) and spec["num_classes"] == [3, 3, 2]
+    assert json.loads(json.dumps(spec["cls2idx"])) == spec["cls2idx"]
+
+    labels, train, val = HierarchicalBuilder.build_dataloader(
+        input_dir=str(path),
+        output_dir=str(tmp_path),
+        cls2idx=spec["cls2idx"],
+        batch_size=2,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        resize_size=8,
+        num_workers=0,
+    )
+    assert len(train.dataset) == 6 and len(val.dataset) == 3 and None not in {c for row in labels for c in row}
+    assert next(iter(val))[0].shape[-2:] == (8, 8)

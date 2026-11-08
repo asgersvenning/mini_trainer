@@ -32,7 +32,9 @@ DEFAULT_SETS = ("trap", "probe", "probe-ho")
 
 def index(args):
     rows = pd.read_parquet(args.parquet, columns=["image_path", "speciesKey", "genusKey", "familyKey"])
-    keys = rows[["speciesKey", "genusKey", "familyKey"]].astype("int64").astype(str)
+    keys = rows[["speciesKey", "genusKey", "familyKey"]].apply(  # GBIF keys are numeric; Catalogue of Life keys are strings
+        lambda column: (column.astype("int64") if pd.api.types.is_numeric_dtype(column) else column).astype(str)
+    )
     data = {
         "path": [str(args.images.resolve() / p) for p in rows.image_path],
         "label": keys.values.tolist(),

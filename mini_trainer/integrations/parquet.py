@@ -71,8 +71,9 @@ def path_from_class(file: str, gid: int, dir: str):
 
 
 def get_keys(row: dict[str, Any]):
-    """Get class values from ``gbifxdl` row."""
-    return [str(int(row[k].strip())) for k in KCOLUMNS]
+    """Get class values from ``gbifxdl`` row: numeric ids are normalized, other keys (e.g. Catalogue of Life) kept as they are."""
+    keys = [row[k].strip() for k in KCOLUMNS]
+    return [str(int(k)) if k.isdecimal() else k for k in keys]
 
 
 def combine_dicts(dicts: Sequence[dict]):
