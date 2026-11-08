@@ -63,6 +63,8 @@ def save_on_master(obj, f, *args, **kwargs):
     tmp = f"{os.fspath(f)}.tmp"
     try:
         torch.save(obj, tmp, *args, **kwargs)
+        with open(tmp, "r+b") as written:  # on disk before the rename, so a node crash cannot leave a partial target
+            os.fsync(written.fileno())
         os.replace(tmp, f)
     except BaseException:
         if os.path.exists(tmp):
