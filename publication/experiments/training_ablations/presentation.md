@@ -2,9 +2,12 @@
 
 Present conditional contributions and their interactions, rather than a monotonic
 ladder in which every addition must increase accuracy. Keep datasets, cohorts,
-schedules and seeds identifiable in every panel. All current ablation choices and
-comparisons use validation data; historical test evaluations provide separate
-external context, not extra ablation replicates.
+schedules and seeds identifiable in every panel. The original exploratory reports
+below use validation data. The completed expanded campaign also has archived test
+predictions; its design followed inspection of earlier test results and must not be
+presented as untouched prospective confirmation. Historical Gefion evaluations
+provide separate context, not extra ablation replicates. The
+[snapshot registry](../erda-snapshots.json) identifies each evidence set and split.
 
 | Question | Primary evidence | Necessary companion evidence |
 | --- | --- | --- |
@@ -20,13 +23,14 @@ qualification step for selective main tables and legacy R analyses. The workflow
 below covers the existing unthresholded reports; it does not certify those legacy
 metric definitions.
 
-The current evidence is mixed: normalization improves the first PlantNet seed;
-regularization spreads prototypes but does not consistently improve rare recall;
-EMLA preserves early common-class learning relative to fixed adjustment in
-Lepidoptera; hierarchy repeatedly improves coarse-rank recall while its species
-benefit and interaction with regularization remain uncertain. Tomorrow's second
-PlantNet seed and adjustment/hierarchy treatments test whether these patterns
-replicate. Avoid selecting a favorable endpoint or seed after seeing those results.
+The historical preliminary validation evidence was mixed: normalization improved
+the first PlantNet seed; regularization spread prototypes but did not consistently
+improve rare recall; EMLA preserved early common-class learning relative to fixed
+adjustment in Lepidoptera; hierarchy improved coarse-rank recall while its species
+benefit and interaction with regularization remained uncertain. The later completed
+campaign supplies additional seeds and contrasts; these preliminary summaries do
+not replace its analysis. Avoid selecting a favorable endpoint or seed after seeing
+those results.
 
 ## Reproducible presentation commands
 
@@ -85,11 +89,12 @@ pooled confidence bins after weighting each true class equally; it is not the
 arithmetic mean of separately binned per-class ECEs. Lower ECE need not imply better
 accuracy or lower NLL. Preserve reliability diagrams alongside the scalar ECE.
 
-## Completion review tomorrow
+## Reproduction and presentation review
 
 1. Verify all planned completion manifests and prediction hashes; analyze only
    completed runs. A controller reporting error alone is not evidence of failed
-   training. Require 16/16 PlantNet and 8/8 hierarchy before calling those studies complete.
+   training. Check coverage against the selected study's frozen plan, including
+   which configurations and seeds are required for each reported contrast.
 2. Render the four scientific comparisons above and inspect individual seeds,
    conditional effects and error destinations before revising conclusions.
 3. Retain the existing Lepidoptera `dynamics` outputs for both ten-epoch seeds and
@@ -108,6 +113,7 @@ accuracy or lower NLL. Preserve reliability diagrams alongside the scalar ECE.
    recompute scores. Public download access remains separate from the private
    SFTP archive. See the artifact-manifest commands in the parent study README.
 
-No new training is required for these presentation steps. New embedding extraction,
-spherical means and isotropy analyses remain a subsequent task; existing prototype
-geometry must not be described as measured image-embedding geometry.
+No new training is required for these presentation steps. Test embeddings and head
+weights are already registered on ERDA. Use those for the downstream R geometry
+analyses; prototype geometry alone must not be described as measured image-embedding
+geometry. Import and reproduce the current R project before assessing its outputs.

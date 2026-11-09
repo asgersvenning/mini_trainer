@@ -1,10 +1,13 @@
 # Publication metric protocol and legacy-analysis audit
 
-Audit date: 4 October 2026. This records the proposed publication contract and
-confirmed implementation gaps; it does not retroactively redefine archived results.
-The R scripts are useful exploratory work, not yet a reproducible final-table pipeline.
-Current unthresholded ablation reports remain valid under their recorded definitions.
-The selective main-table extension is **not yet qualified**.
+Historical audit: 4 October 2026. The findings below describe the implementation
+and exploratory R scripts inspected on that date, not the current external R project.
+They do not retroactively redefine archived results. The later
+[replicate exporter](replicates.py) implements calibration/reporting partitions and
+paired resampling; [registered snapshots](../erda-snapshots.json) retain its outputs
+and pinned mini_metrics 0.4.1 revision. R integration and clean-environment
+reproduction remain pending. Preserve this audit for its metric definitions and
+historical failure cases rather than treating every listed gap as still open.
 
 ## Two complementary evaluations
 

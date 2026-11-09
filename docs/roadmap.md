@@ -1,13 +1,14 @@
 # Repository roadmap
 
-Updated 1 October 2026. This is the cross-campaign priority map; specialist
+Publication integration status reviewed 9 November 2026; other specialist status
+entries retain their recorded scope. This is the cross-campaign priority map; specialist
 pages own procedures and evidence. Delivered work is context, not a new checklist.
 
 ## Current state and next delivery
 
 | Area | Delivered | Remaining boundary |
 | --- | --- | --- |
-| Nemo (MAMBO_v3) | Original 0.3.0 release published. Maintenance 0.3.1 restores standalone native deployment, adds explicit loading/public metadata and Hub-native loading, and retains the trained model. | Complete maintenance publication from `release/mambo-v3`; preserve original tags and artifacts. See [qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication](../dev/releases/mambo_v3/publication.md). Reuse existing quality evidence. |
+| Nemo (MAMBO_v3) | Original 0.3.0 release published. Maintenance 0.3.1 restores standalone native deployment, adds explicit loading/public metadata and Hub-native loading, and retains the trained model. | Maintenance 0.3.1 is published and merged into master; preserve original tags and artifacts. See [qualification](../dev/releases/mambo_v3/final-qualification.md) and [publication](../dev/releases/mambo_v3/publication.md). Reuse existing quality evidence. |
 | Training | Four-GPU UCloud production run completed; loader, optimizer-step and checkpoint safeguards implemented. | Before another production run, deliver the recovery/evaluation workflow below. |
 | Quantization | Merged opt-in native CUDA INT8 Linear training, x86 PTQ/QAT, checkpoint/export tools. | Useful target-machine trade-offs remain unqualified; [specialist roadmap](quantization-roadmap.md). |
 | Generic export | `mt_export`, manifests and CPU float32 ONNX qualification across representative heads/backbones. | Broader backend qualification and generic Hugging Face bundle integration; MAMBO packaging does not establish either for every model. |
@@ -132,6 +133,16 @@ Deferred CLI consolidation: `mt_hpredict` already shares the generic prediction
 CLI and supports flat heads. Before replacing entry points, qualify metadata-based
 builder selection, older weights with missing metadata, explicit overrides and
 prediction/metric output compatibility. This is not a production-run prerequisite.
+
+### Publication consolidation
+
+The completed ablation evidence, metric replicates and head weights are registered
+on ERDA. Integrate the externally maintained R project and reproduce its accepted
+outputs before assessing manuscript coverage. Keep publication code on master,
+paper inputs pinned and historical training tied to its original commits; ongoing
+framework development need not wait for the paper. The
+[publication workflow](../publication/experiments/README.md#publication-integration-and-reproducibility)
+owns this plan and the snapshot registry.
 
 ## 6. Additional dataset formats (low priority)
 

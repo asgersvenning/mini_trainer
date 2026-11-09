@@ -3,7 +3,24 @@
 Research protocol, executable harness and exploratory screening results.
 The study uses production trainer APIs through a research builder; it changes no
 package defaults. It follows the [publication workflow](../README.md) conventions:
-frozen inputs, paired seeds, validation-only choices and retained individual results.
+frozen inputs, paired seeds and retained individual results. The original screens
+used validation for selection. The later expanded campaign was designed after earlier
+test results had been seen, to complete factorials; it is not a prospectively untouched
+test confirmation. Preserve this distinction when interpreting the evidence.
+
+## Archived campaign status
+
+The [snapshot registry](../erda-snapshots.json) records the completed expanded campaign
+at training/export revision `808f65e`, seeds 42–44: `lepi-512` (39 runs),
+`lepi-512-duration` (18), `lepi-1513` (57), `lepi-1513-capped` (6), and `plantnet` (57).
+Test scores, embeddings and curves are in `ablation-evidence-20261007-808f65e`;
+replicates and full run directories have separate registered archives. Head weights
+are in `heads-20261008-e91012b`. No new training is required to consume these results.
+
+The original studies and preliminary validation results below remain as historical
+protocol/evidence. Their numerical summaries are not a synthesis of the expanded
+campaign. Final presentation will use the externally maintained R analyses once
+imported and reproduced; manuscript integration has not yet been assessed.
 
 See [presentation protocol and completion workflow](presentation.md) for the
 claim-to-evidence mapping, paired tables, figures and final completeness gate.
@@ -77,7 +94,7 @@ rare-to-rare error probability changes from 2.378 to 2.769% in seed 42 and from
 confusion is not yet a consistent consequence. Image-embedding occupancy remains
 unmeasured by these prototype diagnostics.
 
-### PlantNet normalization × regularization: first seed
+### Historical PlantNet normalization × regularization: first seed
 
 All four EMLA cells at seed 42 and ten epochs are complete on the frozen validation
 partition (31,097 images, 987 species). Percentages below use raw reloaded FP32
@@ -94,7 +111,7 @@ Normalization improves macro/rare recall and equal-class calibration under both
 regularization settings. Regularization improves empirical accuracy but reduces
 rare recall, especially with normalization (-5.93 points versus -1.37 without it).
 The normalization × regularization finite difference is -2.08 macro-recall and
--4.56 rare-recall points. This interaction needs second-seed replication.
+-4.56 rare-recall points. This first-seed summary alone does not establish replication.
 
 Regularization reduces rare-to-rare error probability from 11.85 to 9.88% with
 normalization, and from 13.37 to 10.49% without it. With normalization, however,
@@ -106,14 +123,14 @@ the regularized pairing does not dominate probability quality in this comparison
 The normalized full model's mean training gate rises from .31/.41 for rare/common
 classes during the first epoch to .95/.91 during the last. This verifies adaptive
 confidence-dependent adjustment; it is not direct detection of overfitting.
-In the first three completed epoch evaluations of the still-active CE/fixed runs,
+In the first three completed epoch evaluations of the then-active CE/fixed runs,
 EMLA preserves more image-weighted accuracy than fixed adjustment: 72.01 versus
 62.68% at epoch three, while rare recall is lower (15.50 versus 23.86%). Unlike the
 small Lepidoptera cohort, the rare-class gap has not closed by epoch three. These
 AMP epoch metrics are provisional trajectories, not final FP32 endpoint results.
-Finish CE/fixed, hierarchy and second-seed comparisons before selecting additional
-training. Historical PlantNet test results and these validation results remain
-separate.
+The CE/fixed, hierarchy and second-seed runs subsequently completed; review their
+archived results rather than treating this progress report as a reason for new training.
+Historical PlantNet test results and these validation results remain separate.
 
 ### Corrected PlantNet inputs
 
@@ -823,8 +840,9 @@ MIG is promising for independent runs configured for smaller batches; do not mix
 batch-64 MIG results into the frozen batch-512 factorial. A change of batch size
 requires a separate scientific configuration, including its LR qualification.
 
-Continue development on `research/training-ablations`; pin each node to a published
-commit and use a fresh prepared study when source changes.
+The original campaign was developed on `research/training-ablations`. Reproduce it
+from its recorded commits; use reviewed branches from `master` for new work. Pin
+each node to a published commit and use a fresh prepared study when source changes.
 
 Keep the wrapper in its own tool environment and pin a reviewed Git revision.
 Use interactive `ucloud login`; never copy tokens into configs, logs or this repository.

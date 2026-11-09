@@ -1,9 +1,36 @@
 # Research experiments
 
-The [flat training ablation study](training_ablations/README.md) provides a bounded
-UCloud campaign for normalized heads, prototype regularization, EMLA, projection
-and optimizer comparisons. It uses manual allocation with an optional API pilot;
-the SLURM generator below is a separate workflow.
+The [training ablations](training_ablations/README.md) cover normalized heads,
+prototype regularization, CE/fixed/adaptive adjustment, hierarchical supervision,
+and reduced unique training support. The completed UCloud campaign and historical
+Gefion comparisons are archived on ERDA; the SLURM generator below is an optional
+training workflow, not a prerequisite for reproducing the publication.
+
+## Publication integration and reproducibility
+
+The [snapshot registry](erda-snapshots.json) records the published evidence:
+177 runs in `ablation-evidence-20261007-808f65e`, their bootstrap replicates and full
+run archive, historical Gefion evaluations, and 213 head tables in
+`heads-20261008-e91012b`. Folder names, manifest hashes, study identities and splits
+are authoritative; older progress reports below are historical analyses.
+
+The current R project is maintained outside this checkout and is awaiting import.
+Do not replace it with an older local copy. The next integration should preserve
+its organization and accepted outputs, pin its R dependencies and selected ERDA
+snapshots, and provide a reproduction command independent of current trainer code.
+
+Maintain publication code through reviewed changes on `master`; freeze each paper
+release with an immutable Git tag and its input snapshot pins. Reproducing training
+uses the original recorded training commits and environments, not the latest master.
+Keep framework changes independent of the paper's archived evidence. New taxonomy,
+score semantics or corrected exports require explicitly versioned evidence; never
+silently update published inputs. The producer registry inventories available
+snapshots, while the analysis pins select the subset used by a paper release.
+
+Track completion separately for code, training, computed/archived results and
+manuscript integration. The training and evidence exports above are recorded;
+R integration and clean-environment reproduction remain pending, and manuscript
+integration is undecided until the manuscript can be reviewed.
 
 ## Generate a SLURM matrix
 
@@ -154,7 +181,8 @@ Lepidoptera analysis tables and preliminary ablation mechanism reports, with
 per-bundle and snapshot SHA-256 manifests and reproduction instructions. It does
 not include model checkpoints or the original Global Lepidoptera prediction CSVs.
 Keep later complete reports and optional models in new versioned snapshots.
-A public read-only download link has not yet been established.
+The public read-only download base is recorded as `read_base_url` in the registry.
+Readers do not need SFTP credentials.
 
 [erda-snapshots.json](erda-snapshots.json) records each published snapshot's commits,
 manifest hash, studies and splits; it and each snapshot's own configs and manifests are
@@ -215,6 +243,7 @@ needs retained checkpoints; do not require readers to download them for ordinary
 metric reproduction. Reproduce figures from regenerated tables and compare numeric
 tables with recorded tolerances, rather than demanding byte-identical image files.
 
-The [metric protocol and legacy R audit](statistics/metrics-protocol.md) specifies
-the proposed selective evaluation contract, confirmed mini_metrics issues, and
-qualification required before consolidating final main tables.
+The [metric protocol and legacy R audit](statistics/metrics-protocol.md) preserves
+the October 4 findings. The later [replicate exporter](statistics/replicates.py)
+and registered snapshots record the implemented evaluation and dependency revision;
+the audit is not a current assessment of the externally maintained R project.
