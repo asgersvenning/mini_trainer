@@ -47,11 +47,13 @@ def test_probe_builder_runs_production_train_reload(tmp_path, monkeypatch):
     from publication.experiments.training_ablations import training
     from tests.integration.test_publication_ablations import test_tiny_train_reload_evaluate
 
+    # Exercise LR logging/reload on the full tiny cohort; profile sampling has separate coverage.
+    monkeypatch.setattr(RangeBuilder, "frames", classmethod(training.StudyBuilder.frames.__func__))
     monkeypatch.setattr(training, "StudyBuilder", RangeBuilder)
     monkeypatch.setattr(RangeBuilder, "lower", 0.0001)
     monkeypatch.setattr(RangeBuilder, "upper", 0.001)
     monkeypatch.setattr(RangeBuilder, "hold", False)
-    test_tiny_train_reload_evaluate(tmp_path, monkeypatch, True, "muon", True, "emla")
+    test_tiny_train_reload_evaluate(tmp_path, monkeypatch, True, "muon", True, "emla", rank_weights=None)
     import json
 
     rows = [json.loads(line) for line in (tmp_path / "study/attempt/lr-curve.jsonl").read_text().splitlines()]
