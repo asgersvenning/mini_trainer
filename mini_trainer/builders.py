@@ -170,6 +170,42 @@ class BaseBuilder:
         return metadata[0]["class"], *loaders
 
     @staticmethod
+    def build_shard_inference_dataloader(
+        root: str,
+        split: str,
+        cls2idx: dict,
+        resize_size: int,
+        batch_size: int,
+        device: torch.device,
+        num_workers: int | None = None,
+        hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        resize_method: str = "squash",
+        read_size: int | None = None,
+        prefetch_factor: int | None = None,
+        multiprocessing_context: str | None = None,
+        **kwargs,
+    ):
+        """Build a loader of ``(images, raw labels, keys)`` for one evaluation split of a shard set."""
+        if split.strip().lower() == "train":
+            raise ValueError("Prediction reads an evaluation split of a shard set, not 'train' (its reader crops at random).")
+        return get_shard_dataloaders(
+            root,
+            cls2idx,
+            resize_size,
+            modes=(split,),
+            batch_size=batch_size,
+            num_workers=num_workers,
+            device=device,
+            multilabel=isinstance(next(iter(cls2idx.values())), dict),
+            hook=hook,
+            resize_method=resize_method,
+            read_size=read_size,
+            prefetch_factor=prefetch_factor,
+            multiprocessing_context=multiprocessing_context,
+            with_keys=True,
+        )[0]
+
+    @staticmethod
     def build_inference_dataloader(
         images: list[str],
         batch_size: int,

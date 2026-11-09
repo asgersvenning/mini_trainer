@@ -221,7 +221,7 @@ def test_lepinet_recipe_trains_and_resumes_from_a_shard_set_on_cpu(tmp_path):
             "backbone_lr": 1e-3,
             "decay_all": True,
         },
-        criterion_builder_kwargs={"weights": [1, 1, 1]},
+        criterion_builder_kwargs={"weights": [1, 1, 1], "species_margin": 0.3},
         regularizer_builder_kwargs={"strength": 0.0},
         lr_schedule_builder_kwargs={"warmup_epochs": 0.5, "start_factor": 0.01, "min_factor": 0.0, "pretrained_backbone": False},
         logger_builder_kwargs={"verbose": False, "macro_f1": True, "logger_cls": configure_loggers()},
@@ -235,3 +235,64 @@ def test_lepinet_recipe_trains_and_resumes_from_a_shard_set_on_cpu(tmp_path):
     finally:
         torch.set_float32_matmul_precision(precision)
     assert torch.load(weights / "checkpoint_last.pth", weights_only=False)["epoch"] == 2
+
+    # The trained model predicts the evaluation split of the same set, keyed by sample with its raw labels.
+    from mini_trainer.hierarchical.integration import HierarchicalBuilder, HierarchicalResultCollector
+    from mini_trainer.predict import main as predict
+
+    predict(
+        input=str(root),
+        weights=str(next(weights.glob("*.pt"))),
+        output=str(tmp_path / "out"),
+        name="pred",
+        shard_split="val",
+        device="cpu",
+        dtype="float32",
+        class_spec=str(class_spec),
+        builder=HierarchicalBuilder,
+        collector_cls=HierarchicalResultCollector,
+        collector_cls_kwargs={"scientific_names": False},
+        model_builder_kwargs={"model_type": TinyMockModel(), "pretrained": False, "cls": IndependentClassifier},
+        dataloader_builder_kwargs={"batch_size": 4, "num_workers": 0, "resize_method": "crop", "read_size": 12},
+    )
+    rows = (tmp_path / "out" / "pred" / "mini_metric.csv").read_text().splitlines()
+    assert len(rows) == 1 + 11 * 3  # one row per sample and rank
+    assert rows[1].startswith("0,s00053,0,53,")
+
+
+def test_virtual_epochs_partition_a_real_epoch_into_equal_parts():
+    counts = [31, 29, 33, 30, 28, 32, 30]  # 213 samples, 5 parts of 42
+    common = dict(seed=1, shuffle=True, rank=0, world=1, worker=0, num_workers=1, batch_size=1, drop_last=True)
+    parts = [plan_ids(counts, epoch=2, window=(p * 42, (p + 1) * 42), **common) for p in range(5)]
+    assert [len(p) for p in parts] == [42] * 5
+    flat = [i for part in parts for i in part]
+    assert len(set(flat)) == 210
+    assert flat == plan_ids(counts, epoch=2, window=(0, 210), **common)
+
+
+def test_virtual_epochs_step_through_the_real_epoch_and_keep_a_fixed_validation_part(tmp_path):
+    root, _ = build(tmp_path / "shards")
+    train = dataset(root, virtual_epochs=4)
+    assert len(train) == 53 // 4
+    seen = []
+    for epoch in range(4):
+        train.set_epoch(epoch)
+        seen.append(species(train))
+    assert all(len(part) == 13 for part in seen)
+    assert len({s for part in seen for s in part}) == 52  # one real epoch, one sample left out so the parts are equal
+    train.set_epoch(4)  # the next real epoch has its own permutation
+    assert species(train) != seen[0]
+    val = dataset(root, "val", train=False, virtual_epochs=2)
+    first = species(val)
+    val.set_epoch(1)
+    assert species(val) == first and len(first) == 11 // 2
+
+
+def test_with_keys_returns_raw_labels_and_keeps_labels_outside_the_vocabulary(tmp_path):
+    root, _ = build(tmp_path / "shards", counts={"test": 12})
+    data = ShardDataset(
+        root, "test", lambda d: torch.tensor([d[0]]), {"0": {"0": 0}, "1": {"0": 0}}, 2, train=False, multilabel=True, with_keys=True
+    )
+    samples = list(data)
+    assert [key for _, _, key in samples] == [f"s{i:05d}" for i in range(12)]
+    assert samples[11][1] == ("11", "4")  # species and genus unknown to the specification, retained as strings

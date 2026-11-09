@@ -12,6 +12,12 @@ their shards sequentially and mix samples in a bounded buffer; the mixing across
 the set is built. Training drops only what equal batches on every rank require (fewer than ``world_size`` samples
 plus one partial batch per rank); evaluation keeps every sample. Missing or corrupt data and labels outside the class
 specification raise ``ShardError`` instead of skipping samples.
+
+``virtual_epochs=V`` cuts each real epoch into ``V`` equal training epochs of one permuted stream, so a run of ``E``
+real epochs is trained with ``epochs=E*V`` and checkpoints every ``1/V`` of a real epoch; the per-step schedule needs
+no change, but epoch-denominated options (such as ``warmup_epochs``) count virtual epochs. Up to ``V - 1`` samples per
+real epoch are left out so the parts are equal. Evaluation reads the same fixed first ``1/V`` of the split every time,
+so its metrics stay comparable between virtual epochs; score the full split with prediction.
 """
 
 import argparse
@@ -84,9 +90,15 @@ def epoch_plan(
     num_workers: int,
     batch_size: int,
     drop_last: bool,
+    window: tuple[int, int] | None = None,
 ) -> list[tuple[int, int, int]]:
-    """Return one worker's ``(shard, first, stop)`` segments for an epoch; see the module docstring."""
-    first, stop = rank_range(sum(counts), rank, world, batch_size, drop_last)
+    """Return one worker's ``(shard, first, stop)`` segments for an epoch; see the module docstring.
+
+    ``window`` restricts the plan to ``[low, high)`` of the epoch's permuted sample stream (a virtual epoch).
+    """
+    low, high = window if window is not None else (0, sum(counts))
+    first, stop = rank_range(high - low, rank, world, batch_size, drop_last)
+    first, stop = first + low, stop + low
     batches, partial = divmod(stop - first, batch_size)
     share, extra = divmod(batches, num_workers)
     begin = first + batch_size * (worker * share + min(worker, extra))
@@ -94,9 +106,9 @@ def epoch_plan(
     order = np.random.default_rng([seed, epoch]).permutation(len(counts)) if shuffle else np.arange(len(counts))
     segments, position = [], 0
     for shard in order.tolist():
-        low, high = max(begin, position), min(end, position + counts[shard])
-        if low < high:
-            segments.append((shard, low - position, high - position))
+        start, finish = max(begin, position), min(end, position + counts[shard])
+        if start < finish:
+            segments.append((shard, start - position, finish - position))
         position += counts[shard]
     return segments
 
@@ -113,7 +125,8 @@ class ShardDataset(IterableDataset):
     """Samples of one split, as ``(image, label)``, streamed from a shard set; see the module docstring.
 
     ``reader`` decodes encoded bytes; ``cls2idx`` is flat or per rank (``{"0": {...}, ...}``). With ``multilabel``, the
-    label holds one class index per rank of ``cls2idx``.
+    label holds one class index per rank of ``cls2idx``. With ``with_keys`` (prediction), samples are
+    ``(image, raw label(s), key)``: labels stay the shard's own strings, so ground truth outside the vocabulary is kept.
     """
 
     def __init__(  # noqa: D107
@@ -131,7 +144,12 @@ class ShardDataset(IterableDataset):
         shuffle_buffer: int = 2048,
         read_chunk: int = 16 * 2**20,
         verify_crc: bool = True,
+        virtual_epochs: int = 1,
+        with_keys: bool = False,
     ):
+        if virtual_epochs < 1:
+            raise ValueError(f"virtual_epochs must be at least 1, not {virtual_epochs}.")
+        self.virtual_epochs, self.with_keys = virtual_epochs, with_keys
         self.root, self.split = os.fspath(root), split
         manifest = load_manifest(root)
         if split not in manifest["splits"]:
@@ -146,12 +164,13 @@ class ShardDataset(IterableDataset):
         if len(self.levels) > len(self.label_columns):
             raise ShardError(f"The class specification has {len(self.levels)} ranks; {root} has labels for {len(self.label_columns)}.")
         self.rank, self.world, self.epoch = get_rank(), get_world_size(), 0
-        self.total_samples = sum(self.counts)
+        self.total_samples = sum(self.counts) // virtual_epochs  # samples of one pass of this loader
         first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, train)
         self._length = stop - first
         if train and self.rank == 0:
             get_logger().info(
-                f"Shards {split}: {self.total_samples:,} samples in {len(self.shards):,} shards; "
+                f"Shards {split}: {sum(self.counts):,} samples in {len(self.shards):,} shards, "
+                f"{self.total_samples:,} per epoch ({virtual_epochs} virtual per real epoch); "
                 f"{self._length * self.world:,} used per epoch "
                 f"on {self.world} rank(s), {self.total_samples - self._length * self.world:,} dropped for equal batches."
             )
@@ -166,9 +185,11 @@ class ShardDataset(IterableDataset):
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         info = get_worker_info()
         worker, num_workers = (info.id, info.num_workers) if info is not None else (0, 1)
+        real_epoch, part = divmod(self.epoch, self.virtual_epochs) if self.train else (0, 0)
         segments = epoch_plan(
-            self.counts, epoch=self.epoch, seed=self.seed, shuffle=self.train, rank=self.rank, world=self.world,
+            self.counts, epoch=real_epoch, seed=self.seed, shuffle=self.train, rank=self.rank, world=self.world,
             worker=worker, num_workers=num_workers, batch_size=self.batch_size, drop_last=self.train,
+            window=(part * self.total_samples, (part + 1) * self.total_samples),
         )  # fmt: skip
         rng = np.random.default_rng([self.seed, self.epoch, self.rank, worker])
         if self.train:
@@ -196,7 +217,7 @@ class ShardDataset(IterableDataset):
         buffer[i], buffer[-1] = buffer[-1], buffer[i]
         return buffer.pop()
 
-    def _decode(self, sample: tuple[bytes, np.ndarray, str, str]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _decode(self, sample: tuple[bytes, np.ndarray, str, str]) -> tuple:
         data, label, key, name = sample
         try:
             image = self.reader(data)
@@ -204,6 +225,8 @@ class ShardDataset(IterableDataset):
             raise ShardError(f"Cannot decode sample {key!r} of shard {name}: {e}") from e
         if self.hook is not None:
             image = self.hook(image)
+        if self.with_keys:
+            return image, label if self.multilabel else label[0], key
         return image, torch.as_tensor(label if self.multilabel else label[0], dtype=torch.long)
 
     def _index(self, position: int) -> dict:
@@ -219,6 +242,9 @@ class ShardDataset(IterableDataset):
         if table.num_rows != shard["n_samples"]:
             raise ShardError(f"{path}: {table.num_rows} rows, the manifest declares {shard['n_samples']}.")
         columns = table.to_pydict()
+        if self.with_keys:
+            raw = zip(*([str(v) for v in columns[c]] for c in self.label_columns[: len(self.levels)]))
+            return {**{k: columns[k] for k in INDEX_COLUMNS}, "labels": list(raw)}
         labels = np.empty((table.num_rows, len(self.levels)), dtype=np.int64)
         for level, (column, mapping) in enumerate(zip(self.label_columns, self.levels)):
             try:
@@ -285,6 +311,12 @@ class ShardDataset(IterableDataset):
         position = int(np.searchsorted(np.cumsum(self.counts), i, side="right"))
         first = i - sum(self.counts[:position])
         return self._decode(next(self._read_segment(position, first, first + 1)))
+
+
+def collate_with_keys(samples: list[tuple]) -> tuple[torch.Tensor, list, list[str]]:
+    """Batch ``with_keys`` samples: stacked images, raw labels and keys as lists."""
+    images, labels, keys = zip(*samples)
+    return torch.stack(images), list(labels), list(keys)
 
 
 class ShardWriter:

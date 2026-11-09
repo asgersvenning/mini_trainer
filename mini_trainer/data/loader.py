@@ -22,7 +22,7 @@ from .io import (
     guess_cache_mode,
     make_read_and_resize_fn,
 )
-from .shards import ShardDataset
+from .shards import ShardDataset, collate_with_keys
 
 
 def _normalize_resize_size(resize_size, *, error_suffix=""):
@@ -283,6 +283,8 @@ def get_shard_dataloaders(  # noqa: D103
     sample_augmentation: str | None = None,
     shard_seed: int = 0,
     shard_shuffle_buffer: int = 2048,
+    shard_virtual_epochs: int = 1,
+    with_keys: bool = False,
 ):
     """Build one streaming loader per split of a shard set (``mini_trainer.data.shards``).
 
@@ -298,7 +300,7 @@ def get_shard_dataloaders(  # noqa: D103
     context = multiprocessing_context if num_workers > 0 and multiprocessing_context is not None else context
     loaders = []
     for mode in modes:
-        train = mode.strip().lower() == "train"
+        train = mode.strip().lower() == "train" and not with_keys
         dataset = ShardDataset(
             root,
             mode,
@@ -310,6 +312,8 @@ def get_shard_dataloaders(  # noqa: D103
             hook=hook,
             seed=shard_seed,
             shuffle_buffer=shard_shuffle_buffer,
+            virtual_epochs=shard_virtual_epochs,
+            with_keys=with_keys,
         )
         loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
         loaders.append(
@@ -322,6 +326,7 @@ def get_shard_dataloaders(  # noqa: D103
                 pin_memory=device.type == "cuda",
                 multiprocessing_context=context,
                 prefetch_factor=prefetch_factor if num_workers > 0 else None,
+                **({"collate_fn": collate_with_keys} if with_keys else {}),
             )
         )
     return loaders

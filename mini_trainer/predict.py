@@ -16,7 +16,7 @@ from mini_trainer.config import (
     merge_dicts,
     restructure_cli_args,
 )
-from mini_trainer.data import auto_find_images, get_metadata
+from mini_trainer.data import auto_find_images, get_metadata, is_shard_root
 from mini_trainer.logging import BaseResultCollector, RawResultCollector
 from mini_trainer.modeling import EmbeddingContext, classification_module, predict
 from mini_trainer.modeling.mask import restrict_class_labels
@@ -43,6 +43,7 @@ def main(  # noqa: D417
     criterion_builder_kwargs: dict[str, Any] = {},
     collector_cls_kwargs: dict[str, Any] = {},
     class_list: str | None = None,
+    shard_split: str = "test",
 ):
     """Run inference and save collector output under ``output/name``.
 
@@ -71,6 +72,8 @@ def main(  # noqa: D417
         class_list: UTF-8 file with one candidate label per line (leaf labels for
             hierarchical models). Blank/duplicate lines are ignored; input images
             and ground truth are retained independently of candidate filtering.
+        shard_split: Split read when ``input`` is a shard set (``mini_trainer.data.shards``). Results
+            are keyed by shard sample key and carry the shard's raw labels.
     """
     orig_args = locals()
     if name is None:
@@ -132,16 +135,25 @@ def main(  # noqa: D417
         # Keep original metadata for resolving ground truth, including excluded labels.
 
     labels: list[int] | list[list[int]] | None = None
-    if data_index is not None:
+    from_shards = is_shard_root(input)
+    if from_shards:
+        if data_index is not None or (subsample is not None and subsample > 1):
+            raise ValueError("Prediction from a shard set supports neither `data_index` nor `subsample`.")
+    elif data_index is not None:
         _data_metadata = get_metadata(data_index, **metadata)
         images: list[str] = [p for p, s in zip(_data_metadata["path"], _data_metadata["split"]) if s == "test"]
         labels = [p for p, s in zip(_data_metadata["label"], _data_metadata["split"]) if s == "test"]
     else:
         labels, images = auto_find_images(input, **metadata)
-    if subsample is not None and subsample > 1:
+    if not from_shards and subsample is not None and subsample > 1:
         labels, images = labels[::subsample], images[::subsample]
 
-    loader = builder.build_inference_dataloader(images=images, device=device, dtype=dtype, **{**metadata, **dataloader_builder_kwargs})
+    if from_shards:
+        loader = builder.build_shard_inference_dataloader(
+            input, shard_split, device=device, dtype=dtype, **{**metadata, **dataloader_builder_kwargs}
+        )
+    else:
+        loader = builder.build_inference_dataloader(images=images, device=device, dtype=dtype, **{**metadata, **dataloader_builder_kwargs})
     if not isinstance(loader, torch.utils.data.DataLoader):
         raise TypeError(
             f"Expected `dataloader_builder` to return an objectsinheriting from `torch.utils.data.DataLoader`, but got `{type(loader)}."
@@ -151,6 +163,12 @@ def main(  # noqa: D417
 
     idx = 0
     for batch in TQDM(loader, desc="Running inference", unit="batch"):
+        if from_shards:
+            batch, batch_labels, batch_paths = batch
+        else:
+            idxs = slice(idx, idx + len(batch))
+            idx += len(batch)
+            batch_paths, batch_labels = images[idxs], None if labels is None else labels[idxs]
         with torch.inference_mode():
             batch = model_preprocess(batch)
             batch = batch.to(device, non_blocking=True)
@@ -166,12 +184,10 @@ def main(  # noqa: D417
                         predictions = predictions.to(dtype=dtype)
                     else:
                         predictions = [p.to(dtype=dtype) for p in predictions]
-                idxs = slice(idx, idx + len(batch))
-                idx += len(batch)
                 collector.collect(
-                    paths=images[idxs],
+                    paths=batch_paths,
                     predictions=predictions,  # type: ignore
-                    labels=None if labels is None else labels[idxs],  # type: ignore
+                    labels=batch_labels,  # type: ignore
                 )
     del loader, nn_model
 
@@ -281,6 +297,14 @@ def cli(description="Classify images with a trained model", **extra_kwargs):  # 
         default=None,
         required=False,
         help="Images per inference batch (default=64).",
+    )
+    inf_args.add_argument(
+        "--shard-split",
+        "--shard_split",
+        dest="shard_split",
+        type=str,
+        default=None,
+        help='Split to read when --input is a shard set (default="test").',
     )
     cfg_args = parser.add_argument_group("Runtime [optional]")
     cfg_args.add_argument(
