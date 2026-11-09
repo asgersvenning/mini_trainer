@@ -96,6 +96,7 @@ def train_one_epoch(
     log.debug(f"train_one_epoch starting for epoch {epoch}.")
     model.train()
     getattr(getattr(data_loader.batch_sampler, "sampler", lambda x: x), "set_epoch", lambda x: x)(epoch)
+    getattr(data_loader.dataset, "set_epoch", lambda x: x)(epoch)  # shard sets plan each epoch in the dataset
 
     n_batches = len(data_loader)
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
@@ -207,7 +208,7 @@ def evaluate(
     num_processed_samples = reduce_across_processes(num_processed_samples)
     if (
         hasattr(data_loader.dataset, "__len__")
-        and (dataset_len := len(data_loader.dataset)) != num_processed_samples  # type: ignore
+        and (dataset_len := getattr(data_loader.dataset, "total_samples", len(data_loader.dataset))) != num_processed_samples  # type: ignore
         and (not is_dist_avail_and_initialized() or torch.distributed.get_rank() == 0)
     ):
         log.warning(

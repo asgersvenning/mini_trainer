@@ -19,6 +19,8 @@ from mini_trainer.data import (
     get_dataset_dataloader,
     get_inference_dataloader,
     get_metadata,
+    get_shard_dataloaders,
+    is_shard_root,
     parse_class_spec,
 )
 from mini_trainer.logging import MultiLogger
@@ -106,6 +108,24 @@ class BaseBuilder:
         ``cls2idx``, e.g. species excluded by a class-count floor; otherwise such rows
         are kept. Remaining keywords pass to ``get_dataset_dataloader``.
         """
+
+        if is_shard_root(input_dir):
+            unsupported = {"data_index": data_index, "subsample": subsample, "cache": cache}
+            unsupported |= {k: kwargs.pop(k, None) for k in ("class_sampling_power", "sampling_weights", "sampling_seed", "resample")}
+            if any(v not in (None, 0, 0.0) for v in unsupported.values()):
+                raise ValueError(f"Shard sets do not support {[k for k, v in unsupported.items() if v not in (None, 0, 0.0)]}.")
+            loaders = get_shard_dataloaders(
+                input_dir,
+                cls2idx,
+                resize_size,
+                modes=splits,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                device=device,
+                hook=hook,
+                **kwargs,
+            )
+            return None, *loaders
 
         def _resolve_metadata():
             if data_index is None:

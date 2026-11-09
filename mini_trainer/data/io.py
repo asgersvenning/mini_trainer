@@ -1,3 +1,4 @@
+import io
 import math
 import operator
 import os
@@ -157,13 +158,16 @@ class ReadAndResize:
         self.device = device
         self.dtype = dtype
 
-    def __call__(self, path: str | tuple[str, ...]) -> torch.Tensor:
-        if not isinstance(path, str):
+    def __call__(self, path: str | bytes | tuple[str, ...]) -> torch.Tensor:
+        if isinstance(path, bytes):  # encoded image, e.g. from a shard; errors are reported by the caller
+            path = torch.frombuffer(bytearray(path), dtype=torch.uint8)
+        elif not isinstance(path, str):
             path = path[0]
         try:
             img = decode_image(path, mode=ImageReadMode.RGB, apply_exif_orientation=False)  # uint8 [C,H,W]
         except Exception as e:
-            e.add_note(f"Image path: {path}")
+            if isinstance(path, str):
+                e.add_note(f"Image path: {path}")
             raise
         if (
             self.interp == InterpolationMode.NEAREST
@@ -192,7 +196,9 @@ class SquareCropReader:
         self.size = size
         self.train = train
 
-    def __call__(self, path: str | tuple[str, ...]) -> torch.Tensor:
+    def __call__(self, path: str | bytes | tuple[str, ...]) -> torch.Tensor:
+        if isinstance(path, bytes):  # encoded image, e.g. from a shard; errors are reported by the caller
+            return read_square_crop(io.BytesIO(path), self.size, None if self.train else (0.5, 0.5))
         if not isinstance(path, str):
             path = path[0]
         try:

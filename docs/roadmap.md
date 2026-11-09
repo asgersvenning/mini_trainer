@@ -97,7 +97,11 @@ reads. Locality-aware shuffle is a separate behavior change.
 Deliver compatibility fixtures and a round trip, then indexed shards, then optional
 shared staging. Compare cold and warm end-to-end training including preparation,
 validation and figures; report amortization in epochs. Keep original inputs and
-public APIs usable. This remains planned, not an implemented storage backend.
+public APIs usable.
+
+Status: `mini_trainer.data.shards` implements the indexed TAR reader and writer as an
+opt-in input (a directory holding `manifest.json`), without a local cache. Throughput
+on shared storage is not yet measured, and shared staging remains planned.
 
 ## 5. mini_metrics and continuous model evaluation
 

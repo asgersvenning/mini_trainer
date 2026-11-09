@@ -6,6 +6,7 @@ the ``grid_sample`` step of ``AffineCoordTfm`` (including its area pre-filter ru
 """
 
 import random
+from typing import BinaryIO
 
 import numpy as np
 import torch
@@ -26,7 +27,7 @@ def square_crop_box(width: int, height: int, size: int, position: tuple[float, f
     return left, top, left + side, top + side
 
 
-def read_square_crop(path: str, size: int, position: tuple[float, float] | None = None) -> torch.Tensor:
+def read_square_crop(path: str | BinaryIO, size: int, position: tuple[float, float] | None = None) -> torch.Tensor:
     """Read an RGB image, crop its largest square and resize it to ``size`` with PIL bilinear filtering.
 
     ``position=None`` draws a uniform random offset per axis from Python's ``random`` module (seeded per

@@ -22,6 +22,7 @@ from .io import (
     guess_cache_mode,
     make_read_and_resize_fn,
 )
+from .shards import ShardDataset
 
 
 def _normalize_resize_size(resize_size, *, error_suffix=""):
@@ -197,22 +198,7 @@ def get_dataset_dataloader(  # noqa: D103
     if cache is CACHE_MODE.GUESS:
         cache = guess_cache_mode(dataset_shape, dtype)
 
-    if resize_method == "squash":
-        reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
-        readers = {mode: reader for mode in modes}
-    elif resize_method == "crop":
-        if cache is not CACHE_MODE.NONE:
-            raise ValueError("Square-crop reading draws a new crop every epoch; it cannot be combined with dataset caching.")
-        side = _square_read_size(resize_size, read_size)
-        readers = {mode: SquareCropReader(side, train=mode.strip().lower() == "train") for mode in modes}
-    else:
-        raise ValueError(f'Unknown resize_method {resize_method!r}; expected "squash" or "crop".')
-
-    if sample_augmentation:
-        if cache is not CACHE_MODE.NONE:
-            raise ValueError("Per-sample augmentation draws anew on every read; it cannot be combined with dataset caching.")
-        transform = make_sample_augmentation(sample_augmentation)
-        readers = {mode: AugmentedReader(r, transform) if mode.strip().lower() == "train" else r for mode, r in readers.items()}
+    readers = _make_readers(modes, resize_size, resize_method, read_size, sample_augmentation, cache)
 
     if cache is CACHE_MODE.CUDA:
         # When the entire dataset is preloaded there is no need to use multiprocessing for dataloading
@@ -256,6 +242,89 @@ def get_dataset_dataloader(  # noqa: D103
     ]
 
     return datasets, loaders
+
+
+def _make_readers(modes, resize_size, resize_method, read_size, sample_augmentation, cache) -> dict[str, Callable]:
+    """One image reader per split, accepting a path or encoded bytes."""
+    if resize_method == "squash":
+        reader = make_read_and_resize_fn(resize_size, torch.device("cpu"), torch.uint8)
+        readers = {mode: reader for mode in modes}
+    elif resize_method == "crop":
+        if cache is not CACHE_MODE.NONE:
+            raise ValueError("Square-crop reading draws a new crop every epoch; it cannot be combined with dataset caching.")
+        side = _square_read_size(resize_size, read_size)
+        readers = {mode: SquareCropReader(side, train=mode.strip().lower() == "train") for mode in modes}
+    else:
+        raise ValueError(f'Unknown resize_method {resize_method!r}; expected "squash" or "crop".')
+
+    if sample_augmentation:
+        if cache is not CACHE_MODE.NONE:
+            raise ValueError("Per-sample augmentation draws anew on every read; it cannot be combined with dataset caching.")
+        transform = make_sample_augmentation(sample_augmentation)
+        readers = {mode: AugmentedReader(r, transform) if mode.strip().lower() == "train" else r for mode, r in readers.items()}
+    return readers
+
+
+def get_shard_dataloaders(  # noqa: D103
+    root: str,
+    cls2idx: dict,
+    resize_size: int | tuple[int, int],
+    modes: tuple[str, ...] = ("train", "val"),
+    batch_size: int = 16,
+    num_workers: int | None = None,
+    device: torch.device | str = torch.device("cpu"),
+    multilabel: bool = False,
+    cuda_prefetch: bool = False,
+    prefetch_factor: int | None = None,
+    multiprocessing_context: str | None = None,
+    hook: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    resize_method: str = "squash",
+    read_size: int | None = None,
+    sample_augmentation: str | None = None,
+    shard_seed: int = 0,
+    shard_shuffle_buffer: int = 2048,
+):
+    """Build one streaming loader per split of a shard set (``mini_trainer.data.shards``).
+
+    Workers restart each epoch so they receive the epoch's plan; that costs seconds against an epoch of hours.
+    """
+    resize_size = _normalize_resize_size(resize_size, error_suffix=".")
+    device = torch.device(device) if isinstance(device, str) else device
+    if cuda_prefetch and device.type != "cuda":
+        raise ValueError("CUDA batch prefetch requires a CUDA target device.")
+    readers = _make_readers(modes, resize_size, resize_method, read_size, sample_augmentation, CACHE_MODE.NONE)
+    num_workers = _default_worker_count(16) if num_workers is None else num_workers
+    context = "spawn" if is_dist_avail_and_initialized() and num_workers > 0 else None
+    context = multiprocessing_context if num_workers > 0 and multiprocessing_context is not None else context
+    loaders = []
+    for mode in modes:
+        train = mode.strip().lower() == "train"
+        dataset = ShardDataset(
+            root,
+            mode,
+            readers[mode],
+            cls2idx,
+            batch_size,
+            train=train,
+            multilabel=multilabel,
+            hook=hook,
+            seed=shard_seed,
+            shuffle_buffer=shard_shuffle_buffer,
+        )
+        loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
+        loaders.append(
+            loader_cls(
+                dataset,
+                **({"device": device} if cuda_prefetch else {}),
+                batch_size=batch_size,
+                drop_last=train,
+                num_workers=num_workers,
+                pin_memory=device.type == "cuda",
+                multiprocessing_context=context,
+                prefetch_factor=prefetch_factor if num_workers > 0 else None,
+            )
+        )
+    return loaders
 
 
 class AugmentedReader:

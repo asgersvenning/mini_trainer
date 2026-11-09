@@ -12,7 +12,7 @@ from .augmentation import (
     split_domain_augmentation,
 )
 from .io import LazyDataset, is_image
-from .loader import get_dataset_dataloader, get_inference_dataloader
+from .loader import get_dataset_dataloader, get_inference_dataloader, get_shard_dataloaders
 from .metadata import (
     auto_find_images,
     collect_samples_from_source,
@@ -23,6 +23,7 @@ from .metadata import (
     parse_class_spec,
     partition_class_samples,
 )
+from .shards import ShardDataset, ShardError, ShardWriter, is_shard_root, write_manifest
 
 __all__ = [
     "LazyDataset",
@@ -40,6 +41,12 @@ __all__ = [
     "is_image",
     "get_dataset_dataloader",
     "get_inference_dataloader",
+    "get_shard_dataloaders",
+    "is_shard_root",
+    "ShardDataset",
+    "ShardError",
+    "ShardWriter",
+    "write_manifest",
     "create_metadata",
     "find_images",
     "get_metadata",
