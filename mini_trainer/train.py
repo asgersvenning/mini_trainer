@@ -224,6 +224,9 @@ def main(  # noqa: D417
         _freeze_backbone(nn_model)
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     validate_type(optimizer, torch.optim.Optimizer)
+    if criterion_builder_kwargs.get("species_margin"):
+        embedding_dim = classification_module(nn_model).preclassification_size
+        criterion_builder_kwargs = {"embedding_dim": embedding_dim, **criterion_builder_kwargs}
     criterion = builder.build_criterion(
         labels=train_labels, num_classes=class_spec_data["num_classes"], device=device, dtype=dtype, **criterion_builder_kwargs
     )

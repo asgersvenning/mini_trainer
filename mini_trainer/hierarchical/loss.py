@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import nn
 
@@ -11,9 +13,22 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
         weights: list[float] | list[int] | torch.Tensor | None = None,
         label_smoothing: float = 0.0,
         loss_cls: type[nn.CrossEntropyLoss] = nn.CrossEntropyLoss,
+        species_margin: float = 0.0,
+        embedding_dim: int | None = None,
         **kwargs,
     ):
+        """Sum per-rank cross-entropies of the marginal logits, finest rank first.
+
+        ``species_margin`` adds an ArcFace angular margin (radians) to the species loss during training only.
+        The cosine head's species logit is ``z = sqrt(D - 2) * (pi / 2 - theta) + bias``, so ``cos(theta + m)`` is
+        exactly the true-class logit minus ``m * sqrt(D - 2)``, with ``D = embedding_dim``. Upper ranks are
+        marginalized from the un-margined species logits inside the model, before this loss, so they do not change.
+        """
         super().__init__()
+        if species_margin and embedding_dim is None:
+            raise ValueError("`species_margin` needs `embedding_dim`, the size of the head's cosine space.")
+        self.species_margin = float(species_margin)
+        self.margin_shift = self.species_margin * math.sqrt(embedding_dim - 2) if species_margin else 0.0
         self.device = device
         self.dtype = dtype
         self.loss_cls = loss_cls
@@ -40,8 +55,15 @@ class MultiLevelWeightedCrossEntropyLoss(torch.nn.modules.loss._Loss):  # noqa: 
 
     def __call__(self, preds: torch.Tensor, targets: torch.Tensor):
         targets = targets.transpose(0, 1)
+        if self.margin_shift and torch.is_grad_enabled():  # evaluation losses stay comparable to un-margined runs
+            species = preds[0].clone()
+            species[torch.arange(len(species), device=species.device), targets[0]] -= self.margin_shift
+            preds = [species, *preds[1:]]
         losses: list[torch.Tensor] = [self._loss_fns[i](preds[i], targets[i]) for i in range(self.n_levels)]
         return [loss * weight for loss, weight in zip(losses, self.weights)]
 
     def __repr__(self):
-        return "{}({})[{}]".format(self.__class__.__name__, self.loss_cls.__name__, " x ".join(f"{w:.1f}" for w in self.weights.tolist()))
+        margin = f", species_margin={self.species_margin}" if self.species_margin else ""
+        return "{}({}{})[{}]".format(
+            self.__class__.__name__, self.loss_cls.__name__, margin, " x ".join(f"{w:.1f}" for w in self.weights.tolist())
+        )
