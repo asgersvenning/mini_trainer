@@ -40,7 +40,10 @@ def run(rank: int, world: int):
         skip_spherical_init=True,
     )
     head = head.to(device).train()
-    model = DistributedDataParallel(head, device_ids=[rank], gradient_as_bucket_view=True)
+    # The same wrapping as mini_trainer/trainer.py: the head has parameters outside the loss graph.
+    model = DistributedDataParallel(
+        head, device_ids=[rank], find_unused_parameters=True, gradient_as_bucket_view=True, broadcast_buffers=False
+    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
     criterion = MultiLevelWeightedCrossEntropyLoss(num_classes=SIZES, device=device, dtype=torch.float32, label_smoothing=1 / SIZES[0])
     target = [torch.randint(0, SIZES[0], (BATCH,), device=device)]
