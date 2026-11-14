@@ -14,8 +14,8 @@ run archive, historical Gefion evaluations, and 213 head tables in
 `heads-20261008-e91012b`. Folder names, manifest hashes, study identities and splits
 are authoritative; older progress reports below are historical analyses.
 
-The imported [HEC R analyses](../hec_analyses/README.md) include pinned dependencies,
-ERDA snapshots and accepted manuscript outputs. From `publication/hec_analyses/`,
+The imported [HEC R analyses](../analyses/README.md) include pinned dependencies,
+ERDA snapshots and accepted manuscript outputs. From `publication/analyses/`,
 restore with `renv::restore()` and run `Rscript run_all.R`; clean-environment
 reproduction remains pending.
 
