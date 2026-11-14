@@ -1,0 +1,7 @@
+# Not scanned for package dependencies (renv::dependencies()): the local archive uses packages that
+# the analyses do not need, and the rest has no code
+archive/
+data/
+results/
+figure_previews/
+latex/

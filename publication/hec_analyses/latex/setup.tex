@@ -1,0 +1,56 @@
+% Manuscript support for results exported by the analysis code (generated copy of
+% latex/setup.tex in the analysis repository; edit it there). Usage, in the preamble:
+%   \input{results/setup}
+% Then:  \result[experiment_1, accuracy, flat]   \resulttable{name}   \autoresulttable{name}   \resultgraphic[width=\linewidth]{name}
+\usepackage{pgfkeys}
+\usepackage{graphicx}
+\ExplSyntaxOn
+\clist_new:N \l__results_keys_clist
+\tl_new:N \l__results_path_tl
+
+% \setresult{a/b/c}{value}: written by the analysis code (save_results()).
+\NewDocumentCommand{\setresult}{mm}{ \pgfkeys{/results/#1/.initial={#2}} }
+
+% \result[a, b, c]: the value stored under a/b/c. A hyphen in a key may be written for an underscore,
+% e.g. \result[embedding-caption, global-lepi, text].
+\NewDocumentCommand{\result}{r[]}
+  {
+    \clist_set:Nn \l__results_keys_clist {#1}
+    \tl_set:Nx \l__results_path_tl
+      { /results/ \clist_use:Nn \l__results_keys_clist { / } }
+    % hyphens in the keys stand for underscores (avoids the editor's "_ must be inside math mode" warning)
+    % (any `_` will do: only the character code counts in a control-sequence name)
+    \tl_replace_all:Nnn \l__results_path_tl { - } { _ }
+    \pgfkeysifdefined { \l__results_path_tl }
+      { \exp_args:NV \pgfkeysvalueof \l__results_path_tl }
+      {
+        \msg_warning:nnx { results } { missing } { \l__results_path_tl }
+        \textbf{??}
+      }
+  }
+\msg_new:nnn { results } { missing } { Result~'#1'~is~not~defined. }
+\ExplSyntaxOff
+
+% \resulttable{name}: the tabular of results/tables/name.tex, to put in a table environment with its own
+% placement, \caption and \label. \resultcaption{name}: the generated caption text of that table (to use or adapt).
+\newcommand{\resulttable}[1]{\input{results/tables/#1}}
+\newcommand{\resultcaption}[1]{\result[caption_#1, text]}
+% \autoresulttable{name}[placement][label]: the whole table, i.e. a table environment with \centering, the
+% tabular, the generated caption and \label{tab:name}. Optional: placement (default: none) and label
+% (default: tab:name), e.g. \autoresulttable{calibration_verdicts}[htb][tab:calibration].
+% Note: a "[" directly after the command is read as an option.
+\NewDocumentCommand{\autoresulttable}{m o o}
+  {
+    \IfValueTF{#2}{\begin{table}[#2]}{\begin{table}}
+      \centering
+      \resulttable{#1}
+      \caption{\resultcaption{#1}}
+      \IfValueTF{#3}{\label{#3}}{\label{tab:#1}}
+    \end{table}
+  }
+% \resultsection{name}: a section from results/sections/name.tex.
+\newcommand{\resultsection}[1]{\input{results/sections/#1}}
+% \resultgraphic[options]{name}: a figure from results/figures/name.pdf.
+\newcommand{\resultgraphic}[2][]{\includegraphics[#1]{results/figures/#2}}
+
+\IfFileExists{results/values/index.tex}{\input{results/values/index}}{}

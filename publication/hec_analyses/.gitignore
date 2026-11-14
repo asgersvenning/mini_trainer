@@ -1,0 +1,17 @@
+# Downloaded and regenerable data (see helpers/io.R); data/snapshots.json is tracked.
+data/raw/
+data/derived/
+config.local.R
+
+# PNG previews of the figures (save_figure() also writes the PDFs to results/figures/)
+figure_previews/
+
+# R
+Rplots.pdf
+.Rproj.user/
+.Rhistory
+.RData
+
+# Kept locally, not tracked
+archive/
+AGENT_NOTES.md

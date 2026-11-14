@@ -1,0 +1,6 @@
+study,speciesKey,name,labelled_genusKey,labelled_genus,labelled_familyKey,labelled_family,correct_genus,correct_family,error,evidence
+gefion-global-lepi,1973467,Petrophora chlorosata,8331787,Pterophorus,8863,Pterophoridae,Petrophora,Geometridae,genus and family of a geometrid labelled as a plume moth,docs/taxonomy_error_petrophora.md
+gefion-global-lepi,4525132,Petrophora convergata,8331787,Pterophorus,8863,Pterophoridae,Petrophora,Geometridae,genus and family of a geometrid labelled as a plume moth,docs/taxonomy_error_petrophora.md
+gefion-global-lepi,1973458,Petrophora divisata,8331787,Pterophorus,8863,Pterophoridae,Petrophora,Geometridae,genus and family of a geometrid labelled as a plume moth,docs/taxonomy_error_petrophora.md
+gefion-global-lepi,12046692,Petrophora narbonea,8331787,Pterophorus,8863,Pterophoridae,Petrophora,Geometridae,genus and family of a geometrid labelled as a plume moth,docs/taxonomy_error_petrophora.md
+gefion-global-lepi,1973466,Petrophora subaequaria,8331787,Pterophorus,8863,Pterophoridae,Petrophora,Geometridae,genus and family of a geometrid labelled as a plume moth,docs/taxonomy_error_petrophora.md
