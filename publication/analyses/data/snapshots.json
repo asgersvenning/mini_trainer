@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "source": "a selection from the producer registry publication/experiments/erda-snapshots.json of asgersvenning/mini_trainer (master)",
+  "read_base_url": "https://anon.erda.au.dk/share_redirect/GbBZgO8E0l",
+  "snapshots": [
+    {
+      "name": "ablation-evidence-20261007-808f65e",
+      "role": "evidence",
+      "studies": ["lepi-512", "lepi-512-duration", "lepi-1513", "lepi-1513-capped", "plantnet"],
+      "manifest_sha256": "75c4b1a7e297d2e7ea2375cc070665ddc3f71f9adbfe4920aec300e260053b64",
+      "export_commit": "808f65ecae2e214268d8a105123e9daca8db00e5"
+    },
+    {
+      "name": "ablation-replicates-20261007-808f65e",
+      "role": "replicates",
+      "studies": ["lepi-512", "lepi-512-duration", "lepi-1513", "lepi-1513-capped", "plantnet"],
+      "manifest_sha256": "ec6a00039ef9cd10c2b53eff71db178dec4457a731c4b8b1fb49f3c985475ff4",
+      "export_commit": "808f65ecae2e214268d8a105123e9daca8db00e5"
+    },
+    {
+      "name": "gefion-evidence-20261005-eae9293",
+      "role": "evidence",
+      "studies": ["gefion-global-lepi", "gefion-plantnet"],
+      "note": "gefion-flemming in this folder is superseded by gefion-flemming-evidence-20261006-2726692",
+      "manifest_sha256": "2fc27d2bebd24e361e41923ee72200a39fe34119a06f3bbda301351154770874",
+      "export_commit": "eae9293b531024f479531f46cb3161290d3d9db4"
+    },
+    {
+      "name": "gefion-flemming-evidence-20261006-2726692",
+      "role": "evidence",
+      "studies": ["gefion-flemming"],
+      "manifest_sha256": "d5205394b5488325e8cc5222e863356e4207ee4cb644902363ce46054bb57b80",
+      "export_commit": "2726692ba5778e8dd178e818a3cd818c318ef7a9"
+    },
+    {
+      "name": "gefion-replicates-20261006-db24b6a",
+      "role": "replicates",
+      "studies": ["gefion-global-lepi", "gefion-plantnet", "gefion-flemming"],
+      "manifest_sha256": "41863c6a3697397492343e5ad66dc113d6e78b98f727d213ce4f086bdd6e7fc6",
+      "export_commit": "db24b6abf9bfc75cc453d8df4ee10f750f45180e"
+    },
+    {
+      "name": "checkpoints-20261007-99c6560",
+      "role": "checkpoints",
+      "studies": ["duration-12", "factorial-11", "overnight-12", "gefion-global-lepi", "gefion-plantnet"],
+      "manifest_sha256": "562a120b7c2148955663c79ab2d735516571d9c4cbbc9101a4a07995e7007d89",
+      "export_commit": "99c65604fb0cb1143b19436637f7759c466ebde6"
+    },
+    {
+      "name": "heads-20261008-e91012b",
+      "role": "heads",
+      "studies": [
+        "lepi-512",
+        "lepi-512-duration",
+        "lepi-1513",
+        "lepi-1513-capped",
+        "plantnet",
+        "gefion-global-lepi",
+        "gefion-plantnet",
+        "gefion-flemming"
+      ],
+      "note": "heads/<study>/<run_id>.parquet: effective classifier weights per rank (study, run_id, rank, class_index, key, bias, w0, ...); conditional/independent heads have one layer per rank, ancestor weights are not added to species rows",
+      "manifest_sha256": "304c037b59fabea503235b546fc3343131df930158273e989826bc4e25e582c5"
+    },
+    {
+      "name": "evidence-20261005-31c54fa",
+      "role": "evidence",
+      "studies": ["factorial-11", "overnight-12", "duration-12", "hierarchy-14", "support-16", "plantnet-16"],
+      "status": "legacy",
+      "note": "earlier ablation campaign (test split); kept for the reproducibility comparison with the new campaign",
+      "manifest_sha256": "2cd64c7c2074740a0b28b83389836bff74ba159d71809d83d36269aa6c96728a",
+      "export_commit": "31c54fa0daa60aa0325a4e6054c1832d6a4351de"
+    },
+    {
+      "name": "replicates-20261005-31c54fa",
+      "role": "replicates",
+      "studies": ["factorial-11", "overnight-12", "duration-12", "hierarchy-14", "support-16", "plantnet-16"],
+      "status": "legacy",
+      "note": "earlier ablation campaign; kept for the reproducibility comparison",
+      "manifest_sha256": "33555706301683c06d818abed272e9ef8bc58fdd53e18c518a6281c11772c9d6",
+      "export_commit": "31c54fa0daa60aa0325a4e6054c1832d6a4351de"
+    }
+  ]
+}

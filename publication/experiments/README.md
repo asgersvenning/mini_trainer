@@ -14,10 +14,10 @@ run archive, historical Gefion evaluations, and 213 head tables in
 `heads-20261008-e91012b`. Folder names, manifest hashes, study identities and splits
 are authoritative; older progress reports below are historical analyses.
 
-The current R project is maintained outside this checkout and is awaiting import.
-Do not replace it with an older local copy. The next integration should preserve
-its organization and accepted outputs, pin its R dependencies and selected ERDA
-snapshots, and provide a reproduction command independent of current trainer code.
+The imported [HEC R analyses](../analyses/README.md) include pinned dependencies,
+ERDA snapshots and accepted manuscript outputs. From `publication/analyses/`,
+restore with `renv::restore()` and run `Rscript run_all.R`; clean-environment
+reproduction remains pending.
 
 Maintain publication code through reviewed changes on `master`; freeze each paper
 release with an immutable Git tag and its input snapshot pins. Reproducing training
@@ -28,9 +28,7 @@ silently update published inputs. The producer registry inventories available
 snapshots, while the analysis pins select the subset used by a paper release.
 
 Track completion separately for code, training, computed/archived results and
-manuscript integration. The training and evidence exports above are recorded;
-R integration and clean-environment reproduction remain pending, and manuscript
-integration is undecided until the manuscript can be reviewed.
+manuscript integration.
 
 ## Generate a SLURM matrix
 
