@@ -2,13 +2,16 @@
 
     python dev/lepinet/pseudo.py select --predictions <dir>/trap/mini_metric.csv --adapt <flemming_adapt.parquet> --out pseudo.parquet
     python dev/lepinet/pseudo.py merge --global-parquet <global.parquet> --labels pseudo.parquet --out <data>/train.parquet
+    python dev/lepinet/pseudo.py shard-extra --global-parquet <global.parquet> --labels pseudo.parquet --images <crops> --out extra.parquet
     python dev/lepinet/pseudo.py pool --pattern '<preds>/holdout-{fold}/trap/mini_metric.csv' --folds trap --out <pooled.csv>
 
 ``select`` keeps the adapt crops whose species confidence reaches its ``1 - keep_frac`` quantile (ties kept), labelled by
 the teacher or, with ``--true-labels``, by the trap data. ``merge`` appends them as set '2' to the global rows: species
 with ``--min-count`` real rows outside set 0 only, coarse keys from the global taxonomy, replicated to ``--target-frac``
 of all rows. It writes ``<out>.summary.json`` and ``<out>.staging.tsv`` (copy ``<flemming>/images/<src>`` to
-``<dir of out>/images/<dst>``). ``pool`` keeps each crop's rows from the fold that never saw its trap or site.
+``<dir of out>/images/<dst>``). ``shard-extra`` writes the same rows for a shard-set run (mini_trainer's
+``shard_extra``): crop path, keys and ``weight`` = the replication. ``pool`` keeps each crop's rows from the fold that
+never saw its trap or site.
 """
 
 import argparse
@@ -74,7 +77,8 @@ def select(a):
     print(json.dumps(summary, indent=2))
 
 
-def merge(a):
+def label_rows(a):
+    """The label rows ``merge`` and ``shard-extra`` add: in the vocabulary, with coarse keys and the replication."""
     cols = ["filename", "set", *KEYS]
     real = pq.read_table(a.global_parquet, columns=cols).select(cols).replace_schema_metadata(None)
     labels = pq.read_table(a.labels, columns=["image_path", "speciesKey"]).to_pydict()
@@ -100,6 +104,28 @@ def merge(a):
     mine = real.filter(pc.is_in(real["speciesKey"], value_set=pa.array(sorted(set(species)))))
     tax = mine.group_by("speciesKey", use_threads=False).aggregate([(k, "first") for k in KEYS[1:]])  # first real row
     tax = {r["speciesKey"]: r for r in tax.to_pylist()}
+    n = len(paths)
+    reps = max(1, round(a.target_frac * real.num_rows / ((1 - a.target_frac) * n))) if a.target_frac > 0 else 1
+    return {
+        "real": real,
+        "mine": mine,
+        "vocab": vocab,
+        "paths": paths,
+        "species": species,
+        "names": names,
+        "tax": tax,
+        "reps": reps,
+        "n_labels": n_labels,
+        "n_fold": n_fold,
+    }
+
+
+def merge(a):
+    rows = label_rows(a)
+    real, mine, vocab, paths, species, names, tax, reps = (
+        rows[k] for k in ("real", "mine", "vocab", "paths", "species", "names", "tax", "reps")
+    )
+    n_labels, n_fold = rows["n_labels"], rows["n_fold"]
     dest = [f"{s}/{n}" for s, n in zip(species, names, strict=True)]
     taken = pc.binary_join_element_wise(mine["speciesKey"], mine["filename"], "/").combine_chunks()
     if clash := pc.sum(pc.is_in(pa.array(dest), value_set=taken)).as_py():
@@ -112,7 +138,6 @@ def merge(a):
     block = pa.table(
         {"filename": names, "set": ["2"] * n, "speciesKey": species, **{k: [tax[s][f"{k}_first"] for s in species] for k in KEYS[1:]}}
     ).cast(real.schema)
-    reps = max(1, round(a.target_frac * real.num_rows / ((1 - a.target_frac) * n))) if a.target_frac > 0 else 1
     combined = pa.concat_tables([real, *[block] * reps])
     train = pc.and_(pc.is_in(real["speciesKey"], value_set=vocab), pc.invert(pc.is_in(real["set"], value_set=pa.array(["0", "1"]))))
     summary = {
@@ -138,6 +163,38 @@ def merge(a):
     pq.write_table(combined, a.out)
     Path(f"{a.out}.summary.json").write_text(json.dumps(summary, indent=2))
     Path(f"{a.out}.staging.tsv").write_text("".join(f"{p}\t{d}\n" for d, p in stage.items()))
+
+
+def shard_extra(a):
+    """The same label rows for a shard-set run: one row per label row, ``weight`` = merge's replication."""
+    rows = label_rows(a)
+    species, tax, reps = rows["species"], rows["tax"], rows["reps"]
+    n = len(species)
+    table = pa.table(
+        {
+            "path": [f"{a.images}/{p}" for p in rows["paths"]],
+            "speciesKey": species,
+            **{k: [str(tax[s][f"{k}_first"]) for s in species] for k in KEYS[1:]},
+            "weight": pa.array([reps] * n, pa.int64()),
+        }
+    )
+    real = rows["real"]
+    train = pc.and_(pc.is_in(real["speciesKey"], value_set=rows["vocab"]), pc.invert(pc.is_in(real["set"], value_set=pa.array(["0", "1"]))))
+    summary = {
+        "n_real": real.num_rows,
+        "n_pseudo_unique": n,
+        "replication": reps,
+        "n_pseudo_rows": n * reps,
+        "min_img_per_spc_applied_to_real_only": a.min_count,
+        "fold": a.fold,
+        "n_labels_in": rows["n_labels"],
+        "n_after_fold": rows["n_fold"],
+        "train_share": round(n * reps / (pc.sum(train).as_py() + n * reps), 4),
+        "images": a.images,
+    }
+    print(json.dumps(summary, indent=2))
+    pq.write_table(table, a.out)
+    Path(f"{a.out}.summary.json").write_text(json.dumps(summary, indent=2))
 
 
 def pool(a):
@@ -195,6 +252,15 @@ def main():
     p.add_argument("--fold", choices=list(FOLDS), help="Drop this trap's (or site's) label rows first.")
     p.add_argument("--min-count", type=int, default=50)
     p.set_defaults(run=merge)
+    p = sub.add_parser("shard-extra", help="merge's label rows as mini_trainer's shard_extra parquet (path, keys, weight).")
+    p.add_argument("--global-parquet", type=Path, required=True)
+    p.add_argument("--labels", type=Path, required=True, help="select's output, or a lepinet pseudo/label parquet.")
+    p.add_argument("--images", required=True, help="Folder of the crops (<species folder>/<crop>), as the job sees it.")
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--target-frac", type=float, default=0.02, help="0 for weight 1.")
+    p.add_argument("--fold", choices=list(FOLDS), help="Drop this trap's (or site's) label rows first.")
+    p.add_argument("--min-count", type=int, default=50)
+    p.set_defaults(run=shard_extra)
     p = sub.add_parser("truth", help="The same crops with their trap labels (e.g. lepinet's gated crops, true labels).")
     p.add_argument("--labels", type=Path, required=True, help="A label parquet with image_path (e.g. pseudo_strict.parquet).")
     p.add_argument("--trap", type=Path, required=True, help="lepinet's flemming_names_labels.parquet.")
