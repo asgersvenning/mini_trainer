@@ -198,5 +198,6 @@ performance on other GPUs. MAMBO has separate qualification in its deployment RE
   its CPU execution. CPU quality/speed results therefore cannot qualify that CUDA
   deployment.
 
-Model cards, evaluation attachments and Hub upload commands remain separate
-[roadmap work](roadmap.md).
+For a deployable package (trunk and heads as safetensors and ONNX, preprocessing in the graph,
+verification on real images, model card and a local Hugging Face folder) use `mt_release`:
+see the [release guide](release.md).

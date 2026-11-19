@@ -29,7 +29,7 @@ Python imports remain `mini_trainer`.
 - **Evaluation and inspection:** classification metrics, confusion matrices,
   hierarchy visualizations and optional Weights & Biases logging. The
   [benchmark guide](docs/benchmarks.md) explains maintained evaluation coverage.
-- **Deployment:** native PyTorch inference and optional [ONNX export](docs/onnx.md)
+- **Deployment:** native PyTorch inference and optional [ONNX export](docs/onnx.md) and [releases](docs/release.md)
   with class mappings and preprocessing metadata. See the separate
   [quantization guide](docs/quantization.md) for opt-in x86 INT8 support and its limits.
 
