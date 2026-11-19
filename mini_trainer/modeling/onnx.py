@@ -186,11 +186,25 @@ def export_onnx(
         for name, module in reference.named_modules()
         if isinstance(module, Classifier)
     ]
-    exported = _TensorOutputs(copy.deepcopy(reference)).eval()
     checks = [sample[:1].repeat(batch, *([1] * (sample.ndim - 1))) for batch in (1, 2, 4)] if dynamic_batch else [sample]
     if dynamic_batch:
         checks.append(sample)
     checks.extend(inputs.detach().cpu() for inputs in verification_inputs)
+    # Reference outputs are computed before export so the private copy can be exported without a second
+    # copy and released before ONNX Runtime loads the graph: at most one extra copy of the weights is
+    # resident at a time, which is what lets multi-gigabyte heads export on a workstation.
+    expected_outputs = []
+    for inputs in checks:
+        if inputs.dtype != sample.dtype or inputs.shape[1:] != sample.shape[1:]:
+            raise ValueError("Verification inputs must match the example's dtype and non-batch dimensions.")
+        with torch.inference_mode(), _reference_precision(reference_device):
+            expected_output = reference(inputs.to(reference_device))
+        if _structure(expected_output, iter(names)) != structure:
+            raise ValueError("Model output structure changed during verification.")
+        expected_outputs.append([value.detach().cpu().numpy() for value in _flatten(expected_output)])
+    architecture = class_path(reference)
+    exported = _TensorOutputs(reference).eval()
+    del reference
     destination.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".onnx-export-", dir=destination.parent) as temporary:
         bundle = Path(temporary) / "bundle"
@@ -214,24 +228,17 @@ def export_onnx(
                 external_data=True,
                 custom_translation_table=translations,
             )
+        del exported
         onnx.checker.check_model(str(graph))
         options = ort.SessionOptions()
         options.intra_op_num_threads = 1
         options.inter_op_num_threads = 1
         session = ort.InferenceSession(str(graph), sess_options=options, providers=["CPUExecutionProvider"])
         errors = []
-        for inputs in checks:
-            if inputs.dtype != sample.dtype or inputs.shape[1:] != sample.shape[1:]:
-                raise ValueError("Verification inputs must match the example's dtype and non-batch dimensions.")
-            with torch.inference_mode(), _reference_precision(reference_device):
-                expected_output = reference(inputs.to(reference_device))
-            if _structure(expected_output, iter(names)) != structure:
-                raise ValueError("Model output structure changed during verification.")
-            expected = _flatten(expected_output)
+        for inputs, expected in zip(checks, expected_outputs, strict=True):
             actual = session.run(names, {"images": inputs.numpy()})
             batch_errors = []
-            for name, result, value in zip(names, actual, expected, strict=True):
-                target = value.detach().cpu().numpy()
+            for name, result, target in zip(names, actual, expected, strict=True):
                 if (
                     result.shape != target.shape
                     or result.dtype != target.dtype
@@ -249,7 +256,7 @@ def export_onnx(
                     artifacts[path.name] = hashlib.file_digest(artifact, "sha256").hexdigest()
         manifest = {
             "schema_version": 1,
-            "architecture": class_path(reference),
+            "architecture": architecture,
             "artifacts": artifacts,
             "source": {"serialized_state_sha256": state_hash, "checkpoint_sha256": checkpoint_sha256},
             "input": {

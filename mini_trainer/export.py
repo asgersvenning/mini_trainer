@@ -41,6 +41,7 @@ def main(
     build_args = {} if getter is get_dynamic_model else {"pretrained": False}
     build_args.update(model_args or {})
     model, preprocess = Classifier.build(weights=state, device="cpu", dtype=torch.float32, model_args=build_args)
+    del state  # the model holds its own copy; keeping both doubles peak memory during export
     if input_shape is None:
         size = classification_module(model).metadata.get("resize_size", 224)
         width, height = (size, size) if isinstance(size, int) else size
