@@ -99,6 +99,7 @@ class Classifier(nn.Module):
         trainable_bias: bool = False,
         float32_head: bool = False,
         legacy_spherical_init: bool = False,
+        magnitude_after_angle: bool = False,
         **metadata,
     ):
         """Build the head; the options below only affect normalized (cosine) heads unless noted.
@@ -106,7 +107,11 @@ class Classifier(nn.Module):
         ``trainable_scale`` / ``trainable_bias`` keep each class's row norm and bias trainable
         (initialised at 1 and 0) instead of frozen. ``float32_head`` runs the head in float32 with
         autocast disabled (any head). ``legacy_spherical_init`` uses the spherical-repulsion step
-        from before 2026-08-17. All are stored in the checkpoint metadata.
+        from before 2026-08-17. ``magnitude_after_angle`` applies each class's row norm ``g_c`` after the
+        angle transform, ``g_c * sqrt(D - 2) * asin(clamp(cos)) + b_c`` with ``cos`` a true cosine, instead of
+        ``sqrt(D - 2) * asin(clamp(g_c * cos)) + b_c``, where ``|g_c * cos| > 1`` hits the clamp and gives that
+        class (target included) and the embedding through it no gradient. Identical when ``g_c = 1``.
+        All are stored in the checkpoint metadata.
         """
         super().__init__()
         if not isinstance(in_features, int) or not isinstance(out_features, int):
@@ -148,11 +153,15 @@ class Classifier(nn.Module):
             "trainable_bias": trainable_bias,
             "float32_head": float32_head,
             "legacy_spherical_init": legacy_spherical_init,
+            "magnitude_after_angle": magnitude_after_angle,
         }
         metadata.update({k: True for k, v in options.items() if v})
         self._metadata = metadata
         self.trainable_scale, self.trainable_bias = bool(trainable_scale), bool(trainable_bias)
         self.float32_head, self.legacy_spherical_init = bool(float32_head), bool(legacy_spherical_init)
+        self.magnitude_after_angle = bool(magnitude_after_angle)
+        if self.magnitude_after_angle and not normalized:
+            raise ValueError("`magnitude_after_angle` applies to normalized (cosine) heads only.")
 
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
@@ -230,6 +239,14 @@ class Classifier(nn.Module):
             self._dirty_cache["_weight_bias"] = False
         return self._linear_weight, self._linear_bias
 
+    def _magnitude_direction(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Each active class's row norm ``g`` (shape ``[C]``) and unit direction (``[C, D]``) of the weight-norm layer."""
+        parametrization = self.linear.parametrizations.weight
+        magnitude, direction = parametrization.original0.squeeze(1), F.normalize(parametrization.original1, 2, 1)
+        if self.active_indices is not None:
+            magnitude, direction = magnitude.index_select(0, self.active_indices), direction.index_select(0, self.active_indices)
+        return magnitude, direction
+
     def _reshape_backbone_embeddings(self, x: torch.Tensor) -> torch.Tensor:
         D = self.in_features
 
@@ -275,6 +292,9 @@ class Classifier(nn.Module):
             EmbeddingContext.set(embeddings)
         # Resolve parametrized weights beside their Linear consumer.
         weight, bias = self._weight_bias()
+        if self.normalized and self.magnitude_after_angle:
+            magnitude, direction = self._magnitude_direction()
+            return cosine_to_zscore(F.linear(embeddings, weight=direction), self.preclassification_size) * magnitude + bias
         if self.normalized:
             return cosine_to_zscore(F.linear(embeddings, weight=weight), self.preclassification_size) + bias
         else:

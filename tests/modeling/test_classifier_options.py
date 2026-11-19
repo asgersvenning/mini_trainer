@@ -34,6 +34,57 @@ def test_trainable_scale_and_bias_are_opt_in_for_every_level():
     assert all(not torch.equal(a, b) for a, b in zip(before, params))
 
 
+def _clamped_head(magnitude_after_angle, g, target, dim):
+    torch.manual_seed(0)
+    head = Classifier(
+        in_features=dim,
+        out_features=4,
+        hidden=False,
+        trainable_scale=True,
+        trainable_bias=True,
+        magnitude_after_angle=magnitude_after_angle,
+    ).train()
+    weight = head.linear.parametrizations.weight
+    with torch.no_grad():
+        weight.original0.fill_(g)
+        weight.original1[target] = torch.eye(dim)[0]
+    return head
+
+
+def test_magnitude_after_angle_keeps_the_target_gradient_at_the_clamp():
+    dim, target = 16, 2
+    for after in (False, True):
+        head = _clamped_head(after, g=1.5, target=target, dim=dim)
+        x = (-0.8 * torch.eye(dim)[0] + 0.6 * torch.eye(dim)[1]).unsqueeze(0).requires_grad_(True)  # cos(x, target) = -0.8
+        head(x)[0, target].backward()
+        prototype = head.linear.parametrizations.weight.original1.grad[target]
+        # g * cos = -1.2 is clamped in the default head: no gradient to the target's prototype or to the embedding through it
+        assert bool(prototype.abs().sum() > 0) is after
+        assert bool(x.grad.abs().sum() > 0) is after
+    assert _clamped_head(True, 1.5, target, dim).metadata["magnitude_after_angle"] is True
+    assert "magnitude_after_angle" not in _clamped_head(False, 1.5, target, dim).metadata
+
+
+def test_magnitude_after_angle_is_identical_at_unit_magnitude():
+    torch.manual_seed(0)
+    x = torch.randn(8, 12)
+    logits = []
+    for after in (False, True):
+        torch.manual_seed(1)
+        head = Classifier(in_features=12, out_features=7, trainable_scale=True, magnitude_after_angle=after).eval()
+        with torch.no_grad():
+            logits.append(head(x))
+    torch.testing.assert_close(logits[0], logits[1])
+
+
+def test_magnitude_after_angle_is_refused_where_logits_bypass_it():
+    masks = [torch.tensor([0, 0, 1, 1, 2, 2]), torch.tensor([0, 0, 1])]
+    with pytest.raises(NotImplementedError, match="magnitude_after_angle"):
+        IndependentClassifier(in_features=8, out_features=6, sparse_masks=masks, magnitude_after_angle=True)
+    with pytest.raises(ValueError, match="normalized"):
+        Classifier(in_features=8, out_features=3, normalized=False, magnitude_after_angle=True)
+
+
 def test_float32_head_runs_outside_autocast():
     torch.manual_seed(0)
     head = Classifier(in_features=8, out_features=5, float32_head=True).eval()
@@ -87,7 +138,13 @@ def test_resample_normalize_accepts_read_and_model_sizes_only():
 def test_head_options_and_square_crop_preprocessing_survive_reload(tmp_path):
     from tests.integration.test_integration_train import TinyMockModel
 
-    options = {"trainable_scale": True, "trainable_bias": True, "float32_head": True, "legacy_spherical_init": True}
+    options = {
+        "trainable_scale": True,
+        "trainable_bias": True,
+        "float32_head": True,
+        "legacy_spherical_init": True,
+        "magnitude_after_angle": True,
+    }
     model, preprocess = Classifier.build(
         model_type=TinyMockModel(),
         num_classes=3,
