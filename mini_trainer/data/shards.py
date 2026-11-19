@@ -18,6 +18,11 @@ real epochs is trained with ``epochs=E*V`` and checkpoints every ``1/V`` of a re
 no change, but epoch-denominated options (such as ``warmup_epochs``) count virtual epochs. Up to ``V - 1`` samples per
 real epoch are left out so the parts are equal. Evaluation reads the same fixed first ``1/V`` of the split every time,
 so its metrics stay comparable between virtual epochs; score the full split with prediction.
+
+``extra`` (training only, opt-in) adds rows from outside the shard set, such as pseudo-labelled crops: a parquet with
+``path`` (an image file, absolute or relative to the parquet's folder), the label columns of the manifest and an
+integer ``weight``, the row's copies per real epoch. The copies are shuffled once and cut into chunks of
+``extra_chunk`` samples, which join the epoch plan as small shards, so they mix into the stream like real shards.
 """
 
 import argparse
@@ -146,6 +151,8 @@ class ShardDataset(IterableDataset):
         verify_crc: bool = True,
         virtual_epochs: int = 1,
         with_keys: bool = False,
+        extra: str | os.PathLike | None = None,
+        extra_chunk: int = 64,
     ):
         if virtual_epochs < 1:
             raise ValueError(f"virtual_epochs must be at least 1, not {virtual_epochs}.")
@@ -163,6 +170,12 @@ class ShardDataset(IterableDataset):
         self.levels = [cls2idx[str(i)] for i in range(len(cls2idx))] if isinstance(next(iter(cls2idx.values())), dict) else [cls2idx]
         if len(self.levels) > len(self.label_columns):
             raise ShardError(f"The class specification has {len(self.levels)} ranks; {root} has labels for {len(self.label_columns)}.")
+        self.extra = None
+        if extra is not None:
+            if not train:
+                raise ValueError("Extra rows are for training only.")
+            self.extra = self._load_extra(extra, extra_chunk, seed)
+            self.counts = self.counts + [len(chunk) for chunk in self.extra["chunks"]]
         self.rank, self.world, self.epoch = get_rank(), get_world_size(), 0
         self.total_samples = sum(self.counts) // virtual_epochs  # samples of one pass of this loader
         first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, train)
@@ -174,6 +187,38 @@ class ShardDataset(IterableDataset):
                 f"{self._length * self.world:,} used per epoch "
                 f"on {self.world} rank(s), {self.total_samples - self._length * self.world:,} dropped for equal batches."
             )
+            if self.extra is not None:
+                get_logger().info(
+                    f"Shards {split}: {self.extra['copies']:,} of these are copies of {len(self.extra['paths']):,} extra rows "
+                    f"from {extra} (weights {self.extra['weights'].min()}-{self.extra['weights'].max()})."
+                )
+
+    def _load_extra(self, path: str | os.PathLike, chunk: int, seed: int) -> dict:
+        """Read the extra rows, map their labels and lay out their shuffled copies in chunks."""
+        _, pq = _parquet()
+        columns = ["path", *self.label_columns[: len(self.levels)], "weight"]
+        try:
+            table = pq.read_table(path, columns=columns).to_pydict()
+        except Exception as e:
+            raise ShardError(f"Cannot read extra rows {path} (columns {columns}): {e}") from e
+        weights = np.asarray(table["weight"])
+        if len(weights) == 0 or not np.issubdtype(weights.dtype, np.integer) or weights.min() < 1:
+            raise ShardError(f"{path}: extra rows need integer weights of at least 1.")
+        labels = np.empty((len(weights), len(self.levels)), dtype=np.int64)
+        for level, (column, mapping) in enumerate(zip(self.label_columns, self.levels)):
+            try:
+                labels[:, level] = [mapping[str(v)] for v in table[column]]
+            except KeyError as e:
+                raise ShardError(f"{path}: label {e.args[0]!r} of {column} is not in the class specification.") from e
+        folder = os.path.dirname(os.path.abspath(path))
+        copies = np.random.default_rng([seed, 1]).permutation(np.repeat(np.arange(len(weights)), weights))
+        return {
+            "paths": [os.path.join(folder, p) for p in table["path"]],
+            "labels": labels,
+            "weights": weights,
+            "copies": len(copies),
+            "chunks": [copies[i : i + chunk] for i in range(0, len(copies), chunk)],
+        }
 
     def set_epoch(self, epoch: int) -> None:
         """Select the epoch whose plan the next iteration follows."""
@@ -283,6 +328,9 @@ class ShardDataset(IterableDataset):
         return data
 
     def _read_segment(self, position: int, first: int, stop: int) -> Iterator[tuple[bytes, np.ndarray, str, str]]:
+        if position >= len(self.shards):
+            yield from self._read_extra(self.extra["chunks"][position - len(self.shards)][first:stop])
+            return
         index = self._index(position)
         offsets, sizes = index["offset"], index["size"]
         fd, path = self._open(position)
@@ -305,6 +353,16 @@ class ShardDataset(IterableDataset):
                 i = j
         finally:
             os.close(fd)
+
+    def _read_extra(self, rows: np.ndarray) -> Iterator[tuple[bytes, np.ndarray, str, str]]:
+        for row in rows.tolist():
+            path = self.extra["paths"][row]
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+            except OSError as e:
+                raise ShardError(f"Cannot read extra image {path}: {e}") from e
+            yield data, self.extra["labels"][row], f"extra/{row}", path
 
     def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Random access in shard order, for inspection (e.g. the augmentation preview); training iterates."""

@@ -129,6 +129,8 @@ def test_builder_reads_a_shard_root_and_rejects_row_level_options(tmp_path):
     )
     labels, train, val = BaseBuilder.build_dataloader(**arguments, multilabel=True, resample=False)
     assert labels is None and len(train) == 13 and len(train.dataset[3]) == 2
+    _, train, _ = BaseBuilder.build_dataloader(**arguments, multilabel=True, shard_extra=extra_rows(tmp_path / "x", weights=[3, 1]))
+    assert len(train) == 14  # (53 + 4 copies) // 4: the option reaches the shard loader
     with pytest.raises(ValueError, match="subsample"):
         BaseBuilder.build_dataloader(**arguments, multilabel=True, subsample=2)
 
@@ -150,6 +152,50 @@ def test_corrupt_shards_raise_with_the_shard_named(tmp_path, damage):
         tar.write_bytes(data)
     with pytest.raises(ShardError, match=name):
         list(dataset(root, shuffle_buffer=0))
+
+
+def extra_rows(folder, weights, species=(80, 81), labels=None):
+    """Extra crops outside the shard set (as pseudo-labels), with brightness 200 + i, as a parquet of path, labels, weight."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    (folder / "crops").mkdir(parents=True, exist_ok=True)
+    for i in range(len(weights)):
+        (folder / "crops" / f"c{i}.jpg").write_bytes(jpeg(200 + i))
+    labels = labels or [{"speciesKey": str(s), "genusKey": str(s % 7), "familyKey": str(s % 7 % 3)} for s in species]
+    table = {"path": [f"crops/c{i}.jpg" for i in range(len(weights))], **{c: [r[c] for r in labels] for c in COLUMNS}}
+    pq.write_table(pa.table({**table, "weight": pa.array(weights, pa.int64())}), folder / "extra.parquet")
+    return str(folder / "extra.parquet")
+
+
+def test_extra_rows_reach_training_batches_with_their_labels_as_often_as_their_weight(tmp_path):
+    root, _ = build(tmp_path / "set")
+    extra = extra_rows(tmp_path, weights=[3, 1])
+    train, val = get_shard_dataloaders(
+        str(root), spec(), 8, batch_size=3, num_workers=2, multilabel=True, shard_shuffle_buffer=4, shard_extra=extra
+    )
+    assert len(train) == 19 and len(val) == 4  # 53 shard samples + 4 copies; validation: its 11 samples only
+    for epoch in (0, 1):
+        train.dataset.set_epoch(epoch)
+        rows = [(image, target) for images, targets in train for image, target in zip(images, targets.tolist())]
+        assert len(rows) == 57 and sorted(t[0] for _, t in rows if t[0] < 53) == list(range(53))
+        extra_seen = [(t, int(image.float().mean().round())) for image, t in rows if t[0] >= 80]
+        assert sorted(t for t, _ in extra_seen) == [[80, 3, 0]] * 3 + [[81, 4, 1]]
+        assert all(abs(brightness - (200 + t[0] - 80)) <= 2 for t, brightness in extra_seen)  # its own image
+
+
+def test_extra_rows_are_validated(tmp_path):
+    root, _ = build(tmp_path / "set", counts={"train": 5, "val": 1})
+    with pytest.raises(ShardError, match="integer weights of at least 1"):
+        dataset(root, extra=extra_rows(tmp_path / "w", weights=[0, 1]))
+    with pytest.raises(ShardError, match="'999' of speciesKey is not in the class specification"):
+        dataset(root, extra=extra_rows(tmp_path / "s", weights=[1, 1], species=(1, 999)))
+    with pytest.raises(ValueError, match="training only"):
+        dataset(root, split="val", train=False, extra=extra_rows(tmp_path / "v", weights=[1, 1]))
+    missing = dataset(root, extra=extra_rows(tmp_path / "m", weights=[1, 1]))
+    (tmp_path / "m" / "crops" / "c1.jpg").unlink()
+    with pytest.raises(ShardError, match="Cannot read extra image"):
+        list(missing)
 
 
 def test_undecodable_images_and_unknown_labels_are_errors_not_skips(tmp_path):
