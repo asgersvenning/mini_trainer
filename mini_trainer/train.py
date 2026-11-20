@@ -1,3 +1,4 @@
+import math
 import os
 import random
 import types
@@ -106,6 +107,14 @@ def main(  # noqa: D417
 
     Resume requires ``name`` and trusted checkpoint files. A list is averaged
     before restoration; ``epochs`` is the total budget, not additional epochs.
+
+    ``lr_schedule_builder_kwargs={"schedule": "wsd", "decay_epochs": D}`` (opt-in)
+    keeps the peak rate after warmup and decays over the last ``D`` epochs only.
+    To extend a run or branch a cooldown, restart from a ``checkpoint`` saved
+    before the new decay starts (a new ``name`` branches) with ``epochs`` = that
+    checkpoint's epoch + 1 + ``D``; a restart that would change the rate at the
+    restored step is refused. EMA's default half-life and distillation length
+    scale with ``epochs``: set ``ema_builder_kwargs`` explicitly when extending.
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
@@ -266,6 +275,7 @@ def main(  # noqa: D417
         nn_model.load_state_dict(checkpoint_data["model"])
         optimizer.load_state_dict(checkpoint_data["optimizer"])
         lr_scheduler.load_state_dict(checkpoint_data["lr_scheduler"])
+        _check_wsd_restart(lr_scheduler, checkpoint_data["lr_scheduler"], checkpoint)
         if "scaler" in checkpoint_data:
             scaler.load_state_dict(checkpoint_data["scaler"])
         if "model_ema" in checkpoint_data:
@@ -328,6 +338,26 @@ def main(  # noqa: D417
         else:
             save_on_master(nn_model.state_dict(), last_weight_dst)
         log.info(f"Final weights saved at: {last_weight_dst}")
+
+
+def _check_wsd_restart(lr_scheduler, saved: dict[str, Any], checkpoint) -> None:
+    """Refuse a WSD restart whose new schedule changes the learning rate at the restored step.
+
+    Extending a run or branching a cooldown keeps the rate continuous only when the new decay starts at or after the
+    restored step; restarting inside a decay with a changed length would jump the rate (re-warming, the failure WSD
+    avoids). Unchanged restarts, such as resuming a crashed run mid-decay, pass. Other schedules are not checked.
+    """
+    decay_start = getattr(lr_scheduler, "decay_start_step", None)
+    if decay_start is None or "_last_lr" not in saved:
+        return
+    step = lr_scheduler.last_epoch
+    new = [base * fn(step) for base, fn in zip(lr_scheduler.base_lrs, lr_scheduler.lr_lambdas)]
+    if not all(math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-15) for a, b in zip(new, saved["_last_lr"])):
+        raise ValueError(
+            f"The WSD schedule changes the learning rate at the step restored from {checkpoint} (step {step}, first decay "
+            f"step {decay_start}): {saved['_last_lr']} -> {new}. Branch or extend from a checkpoint saved before the new "
+            "decay starts, e.g. with epochs = checkpoint epoch + 1 + decay_epochs."
+        )
 
 
 def _always_eval(module, mode: bool = True):
@@ -503,6 +533,23 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         default=None,
         required=False,
         help="Number of warmup epochs (default=2.0).",
+    )
+    train_args.add_argument(
+        "--lr_schedule",
+        type=str,
+        choices=["cosine", "wsd"],
+        dest="lr_schedule_builder_kwargs.schedule",
+        default=None,
+        required=False,
+        help="Learning-rate schedule after warmup: cosine decay (default) or warmup-stable-decay ('wsd', needs --decay_epochs).",
+    )
+    train_args.add_argument(
+        "--decay_epochs",
+        type=float,
+        dest="lr_schedule_builder_kwargs.decay_epochs",
+        default=None,
+        required=False,
+        help="With --lr_schedule wsd: length of the final decay in epochs; the rate stays at its peak before it.",
     )
     train_args.add_argument(
         "--size", type=int, default=None, required=False, help="Input image size; defaults to model resize metadata, falling back to 224."

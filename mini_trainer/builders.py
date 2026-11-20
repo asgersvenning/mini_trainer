@@ -32,6 +32,62 @@ from mini_trainer.utils import (
 )
 
 
+class _WSDLambdaLR(torch.optim.lr_scheduler.LambdaLR):
+    """``LambdaLR`` that keeps ``decay_start_step`` out of its state: it describes this run's schedule, so a restored
+    checkpoint (perhaps from a run of another length) must not overwrite it, and checkpoints keep LambdaLR's keys."""
+
+    def __init__(self, optimizer, lr_lambda, decay_start_step: int):  # noqa: D107
+        self.decay_start_step = decay_start_step
+        super().__init__(optimizer, lr_lambda)
+
+    def state_dict(self):  # noqa: D102
+        state = super().state_dict()
+        state.pop("decay_start_step", None)
+        return state
+
+    def load_state_dict(self, state_dict):  # noqa: D102
+        decay_start_step = self.decay_start_step
+        super().load_state_dict(state_dict)
+        self.decay_start_step = decay_start_step
+
+
+def _wsd_scheduler(
+    optimizer: torch.optim.Optimizer,
+    epochs: int,
+    warmup_epochs: float,
+    steps_per_epoch: int,
+    min_factor: float,
+    start_factor: float,
+    pretrained_backbone: bool,
+    decay_epochs: float,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """Warmup-stable-decay schedules for ``BaseBuilder.build_lr_scheduler(schedule="wsd")``.
+
+    Warmup is the cosine schedule's (the head from ``start_factor``, a pretrained backbone at zero). Both groups then
+    hold their base rate until ``decay_start_step``, and decay to ``min_factor`` with the cosine schedule's own formula,
+    so a decay that starts when warmup ends reproduces that schedule exactly.
+    """
+    total = epochs * steps_per_epoch
+    warmup_steps = round(warmup_epochs * steps_per_epoch)
+    decay_start = max(warmup_steps, total - round(decay_epochs * steps_per_epoch))
+    warmup = cosine_schedule_with_warmup(total, warmup_steps, start_factor, min_factor)
+    decay = cosine_schedule_with_warmup(total - decay_start, 0, 1.0, min_factor)
+
+    def head_schedule(step: int) -> float:
+        if step < warmup_steps:
+            return warmup(step)
+        return 1.0 if step < decay_start else decay(step - decay_start)
+
+    def backbone_schedule(step: int) -> float:
+        return 0.0 if step < warmup_steps else head_schedule(step)
+
+    lr_lambdas = [
+        head_schedule if not pretrained_backbone or "head" in grp.get("name", "head") else backbone_schedule
+        for grp in optimizer.param_groups
+    ]
+    return _WSDLambdaLR(optimizer, lr_lambdas, decay_start)
+
+
 class BaseBuilder:
     """Construction hooks for training and inference.
 
@@ -503,6 +559,8 @@ class BaseBuilder:
         min_factor: float = 1e-3,
         start_factor: float = 1e-4,
         pretrained_backbone: bool = True,
+        schedule: str = "cosine",
+        decay_epochs: float | None = None,
     ) -> torch.optim.lr_scheduler.LRScheduler:
         """Build per-step cosine schedules with warmup for named parameter groups.
 
@@ -510,7 +568,26 @@ class BaseBuilder:
         zero learning rate during head warmup, then starts its own cosine decay.
         The optimizer supplies the base learning rates; both schedules end at
         ``min_factor`` times those rates.
+
+        ``schedule="wsd"`` (warmup-stable-decay, opt-in) keeps the peak rate after
+        warmup and runs the same cosine decay over the last ``decay_epochs`` only.
+        A run can then be extended (resume with a larger ``epochs``) or branched
+        into cooldowns of several lengths (``checkpoint`` from the stable phase,
+        a new ``name`` and ``epochs``) without warming up again. A decay longer than
+        the time after warmup starts when warmup ends, so ``decay_epochs >= epochs -
+        warmup_epochs`` gives the cosine schedule exactly. The returned scheduler
+        records the first decay step as ``decay_start_step``.
         """
+        if schedule not in ("cosine", "wsd"):
+            raise ValueError(f"Unknown learning-rate schedule {schedule!r}; expected 'cosine' or 'wsd'.")
+        if schedule == "wsd":
+            if decay_epochs is None or decay_epochs <= 0:
+                raise ValueError("schedule='wsd' needs decay_epochs > 0.")
+            return _wsd_scheduler(
+                optimizer, epochs, warmup_epochs, steps_per_epoch, min_factor, start_factor, pretrained_backbone, decay_epochs
+            )
+        if decay_epochs is not None:
+            raise ValueError("decay_epochs applies to schedule='wsd' only.")
         warmup_steps = round(warmup_epochs * steps_per_epoch)
         head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
 
