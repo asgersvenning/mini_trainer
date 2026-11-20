@@ -111,6 +111,9 @@ class Classifier(nn.Module):
         angle transform, ``g_c * sqrt(D - 2) * asin(clamp(cos)) + b_c`` with ``cos`` a true cosine, instead of
         ``sqrt(D - 2) * asin(clamp(g_c * cos)) + b_c``, where ``|g_c * cos| > 1`` hits the clamp and gives that
         class (target included) and the embedding through it no gradient. Identical when ``g_c = 1``.
+        Tested and not recommended (2026-11): it lowered test top-1 by 0.5 points for an EfficientNetV2-S
+        trained on 12k Lepidoptera species and by 1.1 points for a head on a frozen trunk over 190k species,
+        where the true class rarely sat at the clamp floor; it stays off by default.
         All are stored in the checkpoint metadata.
         """
         super().__init__()
