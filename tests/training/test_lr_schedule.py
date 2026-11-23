@@ -56,29 +56,38 @@ def test_extending_a_wsd_run_keeps_every_rate_before_its_decay():
     assert longer[20:50] == [[0.5, 0.5]] * 30
 
 
+@pytest.mark.parametrize("power", [1.0, 0.9])
 @pytest.mark.parametrize("pretrained_backbone", [True, False])
 @pytest.mark.parametrize("epochs, warmup_epochs, steps_per_epoch", [(5, 0.5, 4), (4, 0, 5), (10, 1, 7)])
-def test_linear_schedule_changes_only_the_decay_shape(epochs, warmup_epochs, steps_per_epoch, pretrained_backbone):
+def test_poly_schedule_changes_only_the_decay_shape(epochs, warmup_epochs, steps_per_epoch, pretrained_backbone, power):
     kwargs = dict(warmup_epochs=warmup_epochs, start_factor=0.01, min_factor=0.0)
     cosine, _ = rates(epochs, steps_per_epoch, pretrained_backbone, **kwargs)
-    linear, _ = rates(epochs, steps_per_epoch, pretrained_backbone, schedule="linear", **kwargs)
+    poly, _ = rates(epochs, steps_per_epoch, pretrained_backbone, schedule="poly", poly_power=power, **kwargs)
     assert rates(epochs, steps_per_epoch, pretrained_backbone, schedule="cosine", **kwargs)[0] == cosine  # the default
     total, warmup = epochs * steps_per_epoch, round(warmup_epochs * steps_per_epoch)
-    assert linear[:warmup] == cosine[:warmup]  # same warmup (pretrained backbone waits at 0)
-    assert linear[warmup] == pytest.approx(cosine[warmup])  # same peak
+    assert poly[:warmup] == cosine[:warmup]  # same warmup (pretrained backbone waits at 0)
+    assert poly[warmup] == pytest.approx(cosine[warmup])  # same peak, the first rate when there is no warmup
     assert cosine[warmup] == pytest.approx([0.5, 0.5])
-    for group in (0, 1):  # then a straight line to min_factor at the step after the last
-        decay = [lr[group] for lr in linear[warmup:]]
-        expected = [0.5 * (1 - i / (total - warmup)) for i in range(total - warmup)]
+    for group in (0, 1):  # then peak x (1 - t/T) ** power, reaching min_factor at the step after the last
+        decay = [lr[group] for lr in poly[warmup:]]
+        expected = [0.5 * (1 - i / (total - warmup)) ** power for i in range(total - warmup)]
         assert decay == pytest.approx(expected, abs=1e-12)
     if total - warmup > 2:
-        assert linear[warmup + 1][0] < cosine[warmup + 1][0]  # linear leaves the peak faster than cosine
+        assert poly[warmup + 1][0] < cosine[warmup + 1][0]  # it leaves the peak faster than cosine
+
+
+def test_poly_defaults_to_nnunet_power():
+    default, _ = rates(4, 5, False, warmup_epochs=0, min_factor=0.0, schedule="poly")
+    explicit, _ = rates(4, 5, False, warmup_epochs=0, min_factor=0.0, schedule="poly", poly_power=0.9)
+    assert default == explicit and default[0] == [0.5, 0.5]
 
 
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"schedule": "poly"}, "Unknown learning-rate schedule"),
+        ({"schedule": "linear"}, "Unknown learning-rate schedule"),
+        ({"poly_power": 0.9}, "applies to schedule='poly' only"),
+        ({"schedule": "poly", "poly_power": 0}, "must be positive"),
         ({"schedule": "wsd"}, "needs decay_epochs"),
         ({"schedule": "wsd", "decay_epochs": 0}, "needs decay_epochs"),
         ({"decay_epochs": 2}, "applies to schedule='wsd' only"),

@@ -42,15 +42,16 @@ def cosine_schedule_with_warmup(total: int, warmup: int, start: float, end: floa
     return _shape_fn
 
 
-def linear_schedule_with_warmup(total: int, warmup: int, start: float, end: float):
-    """Factory for a linear warmup (as ``cosine_schedule_with_warmup``) followed by a straight line from 1.0 to ``end``
-    over the same steps the cosine decay would take (``end`` at step ``total``)."""
+def poly_schedule_with_warmup(total: int, warmup: int, start: float, end: float, power: float = 0.9):
+    """Factory for a linear warmup (as ``cosine_schedule_with_warmup``) followed by polynomial decay
+    ``end + (1 - end) * (1 - progress) ** power`` over the steps the cosine decay would take (nnU-Net: power 0.9,
+    end 0; power 1 is linear)."""
 
     def _shape_fn(step: int):
         if warmup > 0 and step < warmup:
             return start + (1.0 - start) * step / warmup
-        progress = (step - warmup) / max(1, total - warmup)
-        return end + (1.0 - end) * (1.0 - progress)
+        progress = min(1.0, (step - warmup) / max(1, total - warmup))
+        return end + (1.0 - end) * (1.0 - progress) ** power
 
     return _shape_fn
 

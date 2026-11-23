@@ -29,7 +29,7 @@ from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_re
 from mini_trainer.utils import (
     broadcast_from_master,
     cosine_schedule_with_warmup,
-    linear_schedule_with_warmup,
+    poly_schedule_with_warmup,
 )
 
 
@@ -565,6 +565,7 @@ class BaseBuilder:
         pretrained_backbone: bool = True,
         schedule: str = "cosine",
         decay_epochs: float | None = None,
+        poly_power: float | None = None,
     ) -> torch.optim.lr_scheduler.LRScheduler:
         """Build per-step cosine schedules with warmup for named parameter groups.
 
@@ -582,11 +583,17 @@ class BaseBuilder:
         warmup_epochs`` gives the cosine schedule exactly. The returned scheduler
         records the first decay step as ``decay_start_step``.
 
-        ``schedule="linear"`` (opt-in) is the cosine schedule with the decay shape changed only: the same warmup
-        and peak, then a straight line to ``min_factor`` over the same steps (as poly decay with power 1).
+        ``schedule="poly"`` (opt-in) is the cosine schedule with the decay shape changed only: the same warmup and
+        peak, then ``min_factor + (1 - min_factor) * (1 - progress) ** poly_power`` over the same steps (nnU-Net's
+        poly decay: ``poly_power`` 0.9, the default, with ``min_factor`` 0; 1.0 is linear). ``warmup_epochs=0``
+        starts any schedule at its peak.
         """
-        if schedule not in ("cosine", "wsd", "linear"):
-            raise ValueError(f"Unknown learning-rate schedule {schedule!r}; expected 'cosine', 'wsd' or 'linear'.")
+        if schedule not in ("cosine", "wsd", "poly"):
+            raise ValueError(f"Unknown learning-rate schedule {schedule!r}; expected 'cosine', 'wsd' or 'poly'.")
+        if poly_power is not None and schedule != "poly":
+            raise ValueError("poly_power applies to schedule='poly' only.")
+        if schedule == "poly" and (poly_power if poly_power is not None else 0.9) <= 0:
+            raise ValueError(f"poly_power must be positive, not {poly_power}.")
         if schedule == "wsd":
             if decay_epochs is None or decay_epochs <= 0:
                 raise ValueError("schedule='wsd' needs decay_epochs > 0.")
@@ -595,7 +602,14 @@ class BaseBuilder:
             )
         if decay_epochs is not None:
             raise ValueError("decay_epochs applies to schedule='wsd' only.")
-        shape = linear_schedule_with_warmup if schedule == "linear" else cosine_schedule_with_warmup
+        if schedule == "poly":
+            power = 0.9 if poly_power is None else float(poly_power)
+
+            def shape(total: int, warmup: int, start: float, end: float):
+                return poly_schedule_with_warmup(total, warmup, start, end, power)
+
+        else:
+            shape = cosine_schedule_with_warmup
         warmup_steps = round(warmup_epochs * steps_per_epoch)
         head_schedule = shape(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
 

@@ -9,7 +9,7 @@ from .math import (
     decimals,
     float_signif_decimal,
     kl_distill,
-    linear_schedule_with_warmup,
+    poly_schedule_with_warmup,
 )
 from .misc import TERMINAL_WIDTH, TQDM, filter_ordered_dict, make_convert_dtype, make_empty_ndarray, recursive_dfs_attr
 from .types import device_to_string, dtype_to_string, memory_proportion, string_to_device, string_to_dtype, validate_type
@@ -24,7 +24,7 @@ __all__ = [
     "class_path",
     "import_class",
     "cosine_schedule_with_warmup",
-    "linear_schedule_with_warmup",
+    "poly_schedule_with_warmup",
     "cosine_to_zscore",
     "kl_distill",
     "decimals",
