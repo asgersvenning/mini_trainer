@@ -167,9 +167,12 @@ class BaseBuilder:
 
         if is_shard_root(input_dir):
             unsupported = {"data_index": data_index, "subsample": subsample, "cache": cache}
-            unsupported |= {k: kwargs.pop(k, None) for k in ("class_sampling_power", "sampling_weights", "sampling_seed", "resample")}
+            unsupported |= {k: kwargs.pop(k, None) for k in ("sampling_weights", "sampling_seed", "resample")}
             if any(v not in (None, 0, 0.0) for v in unsupported.values()):
                 raise ValueError(f"Shard sets do not support {[k for k, v in unsupported.items() if v not in (None, 0, 0.0)]}.")
+            power = kwargs.pop("class_sampling_power", None)
+            if power:  # opt-in class-weighted draws of the training split (ShardDataset); seeded by shard_seed
+                kwargs["class_sampling_power"] = power
             loaders = get_shard_dataloaders(
                 input_dir,
                 cls2idx,

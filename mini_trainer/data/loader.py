@@ -286,11 +286,13 @@ def get_shard_dataloaders(  # noqa: D103
     shard_virtual_epochs: int = 1,
     shard_extra: str | None = None,
     with_keys: bool = False,
+    class_sampling_power: float = 0.0,
 ):
     """Build one streaming loader per split of a shard set (``mini_trainer.data.shards``).
 
     Workers restart each epoch so they receive the epoch's plan; that costs seconds against an epoch of hours.
     ``shard_extra`` adds weighted rows from outside the set to the training split (``ShardDataset``'s ``extra``).
+    ``class_sampling_power`` (opt-in) draws the training split's samples in proportion to ``count(class) ** -power``.
     """
     resize_size = _normalize_resize_size(resize_size, error_suffix=".")
     device = torch.device(device) if isinstance(device, str) else device
@@ -317,6 +319,7 @@ def get_shard_dataloaders(  # noqa: D103
             virtual_epochs=shard_virtual_epochs,
             with_keys=with_keys,
             extra=shard_extra if train else None,
+            **({"class_sampling_power": class_sampling_power} if train and class_sampling_power else {}),
         )
         loader_cls = CUDAPrefetchLoader if cuda_prefetch else DataLoader
         loaders.append(

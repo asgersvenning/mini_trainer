@@ -24,6 +24,14 @@ so its metrics stay comparable between virtual epochs; score the full split with
 integer ``weight``, the row's copies per real epoch. The copies are shuffled once and cut into chunks of
 ``extra_chunk`` samples, which join the epoch plan as small shards, so they mix into the stream like real shards.
 
+``class_sampling_power=p`` (training only, opt-in; 0 keeps the plan above exactly) draws each real epoch's samples
+with replacement, a sample of a class with ``n`` training samples in proportion to ``n ** -p`` (0.5: square-root
+sampling; as the folder path's ``class_sampling_power``), the same number of draws as samples. The draw is made per
+shard: ``(seed, real epoch)`` fixes how many draws each shard receives (multinomial in its total weight), and
+``(seed, real epoch, shard)`` which of its samples they are (kept in shard order, repeats read once). These counts
+replace the shard sizes in the epoch plan, so ranks, workers and virtual epochs take disjoint parts of one global draw
+and a resumed epoch replays it. Not combined with ``extra``.
+
 ``positions`` (evaluation only, opt-in) reads a fixed subset of a split instead: sorted row numbers of the split's
 shard stream (manifest order), cut into equal parts per rank and contiguous parts per worker, each sample read
 individually (for instance a species-stratified sample of the training split scored in evaluation mode).
@@ -46,6 +54,7 @@ from mini_trainer import get_logger
 from mini_trainer.utils import get_rank, get_world_size
 
 FORMAT, VERSION = "mt-shards", 1
+_DRAW_TAG = 0x5A3D  # separates class-weighted draws from the plan's other random streams
 HEADER = 512
 INDEX_COLUMNS = ("key", "offset", "size", "crc32")
 
@@ -158,6 +167,7 @@ class ShardDataset(IterableDataset):
         extra: str | os.PathLike | None = None,
         extra_chunk: int = 64,
         positions: np.ndarray | None = None,
+        class_sampling_power: float = 0.0,
     ):
         if virtual_epochs < 1:
             raise ValueError(f"virtual_epochs must be at least 1, not {virtual_epochs}.")
@@ -185,6 +195,15 @@ class ShardDataset(IterableDataset):
         self.total_samples = sum(self.counts) // virtual_epochs  # samples of one pass of this loader
         first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, train)
         self._length = stop - first
+        self.class_sampling_power = float(class_sampling_power or 0.0)
+        self._class_weight = self._shard_weight = None
+        if self.class_sampling_power:
+            if not train or self.extra is not None:
+                raise ValueError("Class-weighted sampling applies to a training split without extra rows.")
+            leaf = [self._leaf_labels(shard) for shard in range(len(self.shards))]
+            n = np.bincount(np.concatenate(leaf), minlength=len(self.levels[0])).astype(np.float64)
+            self._class_weight = np.where(n > 0, np.maximum(n, 1.0) ** -self.class_sampling_power, 0.0)
+            self._shard_weight = np.array([self._class_weight[labels].sum() for labels in leaf])
         self.positions = None
         if positions is not None:
             if train or self.extra is not None or virtual_epochs != 1:
@@ -249,8 +268,12 @@ class ShardDataset(IterableDataset):
             yield from self._iter_positions(worker, num_workers)
             return
         real_epoch, part = divmod(self.epoch, self.virtual_epochs) if self.train else (0, 0)
+        counts, read = self.counts, self._read_segment
+        if self._shard_weight is not None:
+            counts = self.draw_counts(real_epoch).tolist()
+            read = lambda shard, first, stop: self._read_draws(shard, first, stop, real_epoch, counts[shard])  # noqa: E731
         segments = epoch_plan(
-            self.counts, epoch=real_epoch, seed=self.seed, shuffle=self.train, rank=self.rank, world=self.world,
+            counts, epoch=real_epoch, seed=self.seed, shuffle=self.train, rank=self.rank, world=self.world,
             worker=worker, num_workers=num_workers, batch_size=self.batch_size, drop_last=self.train,
             window=(part * self.total_samples, (part + 1) * self.total_samples),
         )  # fmt: skip
@@ -259,7 +282,7 @@ class ShardDataset(IterableDataset):
             segments = [segments[i] for i in rng.permutation(len(segments))]
         expected, seen, buffer = sum(stop - first for _, first, stop in segments), 0, []
         for segment in segments:
-            for sample in self._read_segment(*segment):
+            for sample in read(*segment):
                 if self.shuffle_buffer <= 1:
                     seen += 1
                     yield self._decode(sample)
@@ -281,24 +304,71 @@ class ShardDataset(IterableDataset):
         starts = np.cumsum([0, *self.counts])
         shard_of = np.searchsorted(starts, mine, side="right") - 1
         for shard in np.unique(shard_of).tolist():
-            index = self._index(shard)
-            fd, path = self._open(shard)
-            try:
-                for i in (mine[shard_of == shard] - starts[shard]).tolist():
-                    base, length = index["offset"][i] - HEADER, HEADER + index["size"][i]
-                    try:
-                        chunk = os.pread(fd, length, base)
-                    except OSError as e:
-                        raise ShardError(f"Cannot read {length} bytes at {base} of {path}: {e}") from e
-                    if len(chunk) != length:
-                        raise ShardError(f"{path}: short read at byte {base} ({len(chunk)} of {length}).")
-                    sample = self._sample(memoryview(chunk), base, index, i, path)
-                    yield self._decode((sample, index["labels"][i], index["key"][i], path))
-            finally:
-                os.close(fd)
+            for sample in self._read_rows(shard, mine[shard_of == shard] - starts[shard]):
+                yield self._decode(sample)
+
+    def draw_counts(self, real_epoch: int) -> np.ndarray:
+        """Draws per shard in a real epoch of class-weighted sampling (multinomial in the shards' total weights)."""
+        rng = np.random.default_rng([self.seed, real_epoch, _DRAW_TAG])
+        return rng.multinomial(sum(self.counts), self._shard_weight / self._shard_weight.sum())
+
+    def shard_draws(self, shard: int, real_epoch: int, k: int, index: dict | None = None) -> np.ndarray:
+        """The ``k`` drawn rows of ``shard`` in a real epoch of class-weighted sampling, sorted (repeats adjacent)."""
+        labels = self._leaf_labels(shard) if index is None else index["labels"][:, 0]
+        weight = self._class_weight[labels]
+        rng = np.random.default_rng([self.seed, real_epoch, _DRAW_TAG, shard])
+        return np.sort(rng.choice(len(weight), size=k, replace=True, p=weight / weight.sum()))
+
+    def _read_draws(self, shard: int, first: int, stop: int, real_epoch: int, k: int) -> Iterator[tuple]:
+        index = self._index(shard)
+        yield from self._read_rows(shard, self.shard_draws(shard, real_epoch, k, index)[first:stop], index)
+
+    def _read_rows(self, shard: int, rows: np.ndarray, index: dict | None = None) -> Iterator[tuple]:
+        """Samples at sorted ``rows`` of one shard (repeats yielded again), reading nearby rows in shared chunks."""
+        index = self._index(shard) if index is None else index
+        offsets, sizes = index["offset"], index["size"]
+        rows = np.asarray(rows, dtype=np.int64).tolist()
+        fd, path = self._open(shard)
+        try:
+            i = 0
+            while i < len(rows):
+                base, j = offsets[rows[i]] - HEADER, i + 1
+                while j < len(rows) and offsets[rows[j]] + sizes[rows[j]] - base <= self.read_chunk:
+                    j += 1
+                length = offsets[rows[j - 1]] + sizes[rows[j - 1]] - base
+                try:
+                    chunk = os.pread(fd, length, base)
+                except OSError as e:
+                    raise ShardError(f"Cannot read {length} bytes at {base} of {path}: {e}") from e
+                if len(chunk) != length:
+                    raise ShardError(f"{path}: short read at byte {base} ({len(chunk)} of {length}).")
+                view = memoryview(chunk)
+                for r in rows[i:j]:
+                    yield self._sample(view, base, index, r, path), index["labels"][r], index["key"][r], path
+                i = j
+        finally:
+            os.close(fd)
+
+    def _leaf_labels(self, shard: int) -> np.ndarray:
+        """Leaf (level-0) class indices of one shard's samples, read from its index's first label column only."""
+        _, pq = _parquet()
+        path = os.path.join(self.root, f"{self.shards[shard]['name']}.parquet")
+        column, mapping = self.label_columns[0], self.levels[0]
+        try:
+            encoded = pq.read_table(path, columns=[column]).column(column).combine_chunks().dictionary_encode()
+        except Exception as e:
+            raise ShardError(f"Cannot read shard index {path}: {e}") from e
+        try:
+            classes = np.array([mapping[str(v)] for v in encoded.dictionary.to_pylist()], dtype=np.int64)
+        except KeyError as e:
+            raise ShardError(f"{path}: label {e.args[0]!r} of {column} is not in the class specification.") from e
+        return classes[encoded.indices.to_numpy(zero_copy_only=False)] if len(classes) else np.empty(0, dtype=np.int64)
 
     def split_labels(self, level: int = 0) -> np.ndarray:
         """Class indices at ``level`` of every sample of the split, in shard-stream order (extra rows excluded)."""
+        if level == 0:
+            parts = [self._leaf_labels(shard) for shard in range(len(self.shards))]
+            return np.concatenate(parts) if parts else np.empty(0, dtype=np.int64)
         _, pq = _parquet()
         column, mapping, parts = self.label_columns[level], self.levels[level], []
         for shard in self.shards:
