@@ -42,6 +42,19 @@ def cosine_schedule_with_warmup(total: int, warmup: int, start: float, end: floa
     return _shape_fn
 
 
+def linear_schedule_with_warmup(total: int, warmup: int, start: float, end: float):
+    """Factory for a linear warmup (as ``cosine_schedule_with_warmup``) followed by a straight line from 1.0 to ``end``
+    over the same steps the cosine decay would take (``end`` at step ``total``)."""
+
+    def _shape_fn(step: int):
+        if warmup > 0 and step < warmup:
+            return start + (1.0 - start) * step / warmup
+        progress = (step - warmup) / max(1, total - warmup)
+        return end + (1.0 - end) * (1.0 - progress)
+
+    return _shape_fn
+
+
 def cosine_to_zscore(cosine: torch.Tensor, ndim: int, eps: float = 1e-7):
     r"""Converts a cosine (or inner product) between random unit vectors in D dimensions to z-score.
 

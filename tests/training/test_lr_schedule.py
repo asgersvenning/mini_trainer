@@ -56,10 +56,29 @@ def test_extending_a_wsd_run_keeps_every_rate_before_its_decay():
     assert longer[20:50] == [[0.5, 0.5]] * 30
 
 
+@pytest.mark.parametrize("pretrained_backbone", [True, False])
+@pytest.mark.parametrize("epochs, warmup_epochs, steps_per_epoch", [(5, 0.5, 4), (4, 0, 5), (10, 1, 7)])
+def test_linear_schedule_changes_only_the_decay_shape(epochs, warmup_epochs, steps_per_epoch, pretrained_backbone):
+    kwargs = dict(warmup_epochs=warmup_epochs, start_factor=0.01, min_factor=0.0)
+    cosine, _ = rates(epochs, steps_per_epoch, pretrained_backbone, **kwargs)
+    linear, _ = rates(epochs, steps_per_epoch, pretrained_backbone, schedule="linear", **kwargs)
+    assert rates(epochs, steps_per_epoch, pretrained_backbone, schedule="cosine", **kwargs)[0] == cosine  # the default
+    total, warmup = epochs * steps_per_epoch, round(warmup_epochs * steps_per_epoch)
+    assert linear[:warmup] == cosine[:warmup]  # same warmup (pretrained backbone waits at 0)
+    assert linear[warmup] == pytest.approx(cosine[warmup])  # same peak
+    assert cosine[warmup] == pytest.approx([0.5, 0.5])
+    for group in (0, 1):  # then a straight line to min_factor at the step after the last
+        decay = [lr[group] for lr in linear[warmup:]]
+        expected = [0.5 * (1 - i / (total - warmup)) for i in range(total - warmup)]
+        assert decay == pytest.approx(expected, abs=1e-12)
+    if total - warmup > 2:
+        assert linear[warmup + 1][0] < cosine[warmup + 1][0]  # linear leaves the peak faster than cosine
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"schedule": "linear"}, "Unknown learning-rate schedule"),
+        ({"schedule": "poly"}, "Unknown learning-rate schedule"),
         ({"schedule": "wsd"}, "needs decay_epochs"),
         ({"schedule": "wsd", "decay_epochs": 0}, "needs decay_epochs"),
         ({"decay_epochs": 2}, "applies to schedule='wsd' only"),

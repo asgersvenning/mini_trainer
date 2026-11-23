@@ -29,6 +29,7 @@ from mini_trainer.training import EMLACrossEntropy, class_weight_distribution_re
 from mini_trainer.utils import (
     broadcast_from_master,
     cosine_schedule_with_warmup,
+    linear_schedule_with_warmup,
 )
 
 
@@ -580,9 +581,12 @@ class BaseBuilder:
         the time after warmup starts when warmup ends, so ``decay_epochs >= epochs -
         warmup_epochs`` gives the cosine schedule exactly. The returned scheduler
         records the first decay step as ``decay_start_step``.
+
+        ``schedule="linear"`` (opt-in) is the cosine schedule with the decay shape changed only: the same warmup
+        and peak, then a straight line to ``min_factor`` over the same steps (as poly decay with power 1).
         """
-        if schedule not in ("cosine", "wsd"):
-            raise ValueError(f"Unknown learning-rate schedule {schedule!r}; expected 'cosine' or 'wsd'.")
+        if schedule not in ("cosine", "wsd", "linear"):
+            raise ValueError(f"Unknown learning-rate schedule {schedule!r}; expected 'cosine', 'wsd' or 'linear'.")
         if schedule == "wsd":
             if decay_epochs is None or decay_epochs <= 0:
                 raise ValueError("schedule='wsd' needs decay_epochs > 0.")
@@ -591,8 +595,9 @@ class BaseBuilder:
             )
         if decay_epochs is not None:
             raise ValueError("decay_epochs applies to schedule='wsd' only.")
+        shape = linear_schedule_with_warmup if schedule == "linear" else cosine_schedule_with_warmup
         warmup_steps = round(warmup_epochs * steps_per_epoch)
-        head_schedule = cosine_schedule_with_warmup(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
+        head_schedule = shape(epochs * steps_per_epoch, warmup_steps, start_factor, min_factor)
 
         if pretrained_backbone:
 
@@ -600,9 +605,9 @@ class BaseBuilder:
                 if step < warmup_steps:
                     return 0.0  # Completely frozen during head warmup
 
-                # Re-align step count so backbone starts cosine decay from index 0
+                # Re-align step count so backbone starts its decay from index 0
                 # after warmup finishes
-                return cosine_schedule_with_warmup(
+                return shape(
                     epochs * steps_per_epoch - warmup_steps,  # Backbone trains for fewer total steps
                     0,
                     1.0,
