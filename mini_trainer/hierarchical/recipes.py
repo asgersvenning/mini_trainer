@@ -3,7 +3,7 @@
 import torch
 import torchvision.transforms.v2 as tt
 
-from mini_trainer.data import RandomAffineResize, split_domain_augmentation
+from mini_trainer.data import RandomAffineResize, is_shard_root, split_domain_augmentation
 
 from .integration import HierarchicalBuilder
 
@@ -41,6 +41,13 @@ class LepinetBuilder(HierarchicalBuilder):
 
     @staticmethod
     def build_dataloader(*args, **kwargs):
+        # The recipe's square-root default is for folder/parquet sets. A shard set needs the value stated: an omitted
+        # option must not silently switch on class-weighted draws (shard sets refused the option before they had it).
+        if is_shard_root(kwargs.get("input_dir", args[0] if args else None)) and "class_sampling_power" not in kwargs:
+            raise ValueError(
+                "Shard sets need an explicit class_sampling_power (0.0: natural draws, 0.5: square-root oversampling); "
+                "the recipe's folder default of 0.5 is not applied to them."
+            )
         defaults = {
             "resize_method": "crop",
             "read_size": LepinetBuilder.READ_SIZE,

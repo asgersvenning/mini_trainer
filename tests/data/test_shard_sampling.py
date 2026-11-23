@@ -117,3 +117,23 @@ def test_weighted_sampling_is_refused_outside_plain_training(tmp_path):
     root = build_skewed(tmp_path / "s")
     with pytest.raises(ValueError, match="training split"):
         ShardDataset(root, "train", first_byte, spec(), 1, train=False, multilabel=True, class_sampling_power=0.5)
+
+
+def test_an_omitted_power_never_oversamples_a_shard_set(tmp_path):
+    from mini_trainer.hierarchical.integration import HierarchicalBuilder
+    from mini_trainer.hierarchical.recipes import LepinetBuilder
+
+    root = build_skewed(tmp_path / "s")
+    arguments = dict(
+        input_dir=str(root), output_dir=None, cls2idx=spec(), batch_size=4, device=torch.device("cpu"), dtype=torch.float32,
+        resize_size=8, num_workers=0, splits=("train",),
+    )  # fmt: skip
+    # the recipe's 0.5 is a folder default: on a shard set the value must be stated
+    with pytest.raises(ValueError, match="explicit class_sampling_power"):
+        LepinetBuilder.build_dataloader(**arguments)
+    _, train = LepinetBuilder.build_dataloader(**arguments, class_sampling_power=0.0)
+    assert train.dataset._shard_weight is None
+    # builders without a sampling default draw naturally when the option is absent
+    for builder, extra in ((BaseBuilder, {"multilabel": True}), (HierarchicalBuilder, {})):
+        _, train = builder.build_dataloader(**arguments, **extra)
+        assert train.dataset._shard_weight is None and train.dataset.class_sampling_power == 0.0
