@@ -20,7 +20,7 @@ from mini_trainer.config import (
     merge_dicts,
     restructure_cli_args,
 )
-from mini_trainer.data import debug_augmentation
+from mini_trainer.data import debug_augmentation, get_fit_sample_dataloader, stratified_rows, training_leaf_labels
 from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
 from mini_trainer.modeling.quantized_training import prepare_quantized_training
@@ -115,6 +115,13 @@ def main(  # noqa: D417
     checkpoint's epoch + 1 + ``D``; a restart that would change the rate at the
     restored step is refused. EMA's default half-life and distillation length
     scale with ``epochs``: set ``ema_builder_kwargs`` explicitly when extending.
+
+    Head/tail monitoring (opt-in, ``logger_builder_kwargs``): ``frequency_bins`` (upper edges of training images
+    per leaf class, e.g. ``[100, 200, 500, 1000]``) adds validation recall and per-bin macro-F1 / mean recall to
+    every evaluation; ``fit_sample_per_class: n`` scores up to ``n`` training images of every class (fixed by
+    ``fit_sample_seed``, default 0), read as validation reads, after every ``fit_sample_every``-th epoch (default
+    1) and the last, as ``fit/...`` columns of the evaluation row. Counts come from the training rows (shard sets:
+    the training split's index, extra rows excluded).
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
@@ -298,8 +305,38 @@ def main(  # noqa: D417
         log.info("Optimizer updates compiled; scheduler and AMP step gating remain active.")
 
     logger_output = None if get_rank() > 0 else output
+    monitor_kwargs = dict(logger_builder_kwargs)
+    fit_per_class = monitor_kwargs.pop("fit_sample_per_class", None)
+    fit_every = int(monitor_kwargs.pop("fit_sample_every", 1))
+    fit_seed = int(monitor_kwargs.pop("fit_sample_seed", 0))
+    fit_loader = None
+    if monitor_kwargs.get("frequency_bins") is not None or fit_per_class:
+        # Head/tail monitoring (opt-in): training images per leaf class, and a fixed species-stratified training sample.
+        leaf = training_leaf_labels(train_loader.dataset)
+        num_classes = class_spec_data["num_classes"]
+        counts = np.bincount(leaf, minlength=num_classes[0] if isinstance(num_classes, (list, tuple)) else num_classes)
+        if monitor_kwargs.get("frequency_bins") is not None:
+            monitor_kwargs["class_counts"] = counts
+        if fit_per_class:
+            if fit_every < 1:
+                raise ValueError(f"fit_sample_every must be at least 1, not {fit_every}.")
+            rows = stratified_rows(leaf, int(fit_per_class), fit_seed)
+            fit_loader = get_fit_sample_dataloader(
+                train_loader.dataset,
+                val_loader.dataset,
+                rows,
+                batch_size=dataloader_builder_kwargs["batch_size"],
+                num_workers=dataloader_builder_kwargs.get("num_workers"),
+                device=device,
+                multiprocessing_context=dataloader_builder_kwargs.get("multiprocessing_context"),
+            )
+            monitor_kwargs["fit_sample"] = True
+            log.info(
+                f"Training sample: {len(rows):,} images (up to {fit_per_class} of each of {int((counts > 0).sum()):,} classes), "
+                f"scored in evaluation mode every {fit_every} epoch(s)"
+            )
     logger = builder.build_logger(
-        train_loader=train_loader, val_loader=val_loader, epochs=epochs, output=logger_output, name=name, **logger_builder_kwargs
+        train_loader=train_loader, val_loader=val_loader, epochs=epochs, output=logger_output, name=name, **monitor_kwargs
     )
 
     train(
@@ -323,6 +360,7 @@ def main(  # noqa: D417
         weight_store_rate=5,
         compile=compile,
         compile_mode=compile_mode,
+        **({"fit_loader": fit_loader, "fit_every": fit_every} if fit_loader is not None else {}),
     )
 
     del train_loader

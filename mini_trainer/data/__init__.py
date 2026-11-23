@@ -12,7 +12,14 @@ from .augmentation import (
     split_domain_augmentation,
 )
 from .io import LazyDataset, is_image
-from .loader import get_dataset_dataloader, get_inference_dataloader, get_shard_dataloaders
+from .loader import (
+    get_dataset_dataloader,
+    get_fit_sample_dataloader,
+    get_inference_dataloader,
+    get_shard_dataloaders,
+    stratified_rows,
+    training_leaf_labels,
+)
 from .metadata import (
     auto_find_images,
     collect_samples_from_source,
@@ -40,6 +47,9 @@ __all__ = [
     "salt_and_pepper",
     "is_image",
     "get_dataset_dataloader",
+    "get_fit_sample_dataloader",
+    "stratified_rows",
+    "training_leaf_labels",
     "get_inference_dataloader",
     "get_shard_dataloaders",
     "is_shard_root",

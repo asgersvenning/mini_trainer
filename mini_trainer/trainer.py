@@ -231,6 +231,32 @@ def evaluate(
     return float(global_metric)
 
 
+def score_fit_sample(
+    model: nn.Module,
+    data_loader: DataLoader,
+    logger: MultiLogger,
+    preprocess: Callable = lambda x: x,
+    device: torch.device = torch.device("cpu"),
+    dtype: torch.dtype = torch.float32,
+):
+    """Score a training sample in evaluation mode and log its leaf statistics into the current evaluation row
+    (``MultiLogger.log_fit_sample``); restores the model's training mode."""
+    training_state = model.training
+    model.eval()
+    labels, predictions = [], []
+    with torch.inference_mode():
+        for batch, target in data_loader:
+            batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
+            with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32):
+                output = model(preprocess(batch))
+            leaf = output[0] if isinstance(output, (list, tuple)) else output
+            labels.append((target[:, 0] if target.ndim == 2 else target).cpu())
+            predictions.append(leaf.argmax(1).cpu())
+    empty = torch.empty(0, dtype=torch.long)
+    logger.log_fit_sample(torch.cat([empty, *labels]).numpy(), torch.cat([empty, *predictions]).numpy())
+    model.train(training_state)
+
+
 def train(
     model: nn.Module,
     model_ema: EMATeacher,
@@ -252,6 +278,8 @@ def train(
     weight_store_rate: int | None = None,
     compile: bool = False,
     compile_mode: str | None = None,
+    fit_loader: DataLoader | None = None,
+    fit_every: int = 1,
     **kwargs,
 ):
     """Train from ``start_epoch`` up to the total ``epochs`` budget.
@@ -265,6 +293,9 @@ def train(
     zero-based epoch multiples. ``best.pt`` contains evaluation-model weights;
     the canonical metric is maximized, with ties replacing the previous best.
     Best-metric tracking restarts on each call. Close the logger on completion.
+
+    ``fit_loader`` (opt-in) is a training sample read as evaluation reads; it is scored with the evaluation model
+    after every ``fit_every``-th epoch (one-based) and after the last one (``score_fit_sample``).
     """
     log = get_logger()
 
@@ -314,6 +345,8 @@ def train(
             **kwargs,
         )
         eval_metric = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
+        if fit_loader is not None and ((epoch + 1) % fit_every == 0 or epoch + 1 == epochs):
+            score_fit_sample(eval_model, fit_loader, logger, preprocess, device=device, dtype=dtype)
         is_best_eval = (best_eval_metric := max(best_eval_metric, eval_metric)) == eval_metric
         if is_best_eval:
             best_epoch = epoch

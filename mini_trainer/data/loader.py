@@ -335,6 +335,76 @@ def get_shard_dataloaders(  # noqa: D103
     return loaders
 
 
+def training_leaf_labels(dataset: torch.utils.data.Dataset) -> np.ndarray:
+    """Leaf (level-0) class index of every training row of a folder/parquet dataset or a shard split (extra rows excluded)."""
+    if isinstance(dataset, ShardDataset):
+        return dataset.split_labels(0)
+    if isinstance(dataset, LazyDataset):
+        classes = dataset.items[1]
+        leaf = (
+            classes[:, 0] if classes.ndim == 2 else np.asarray([c[0] if isinstance(c, (list, tuple, np.ndarray)) else c for c in classes])
+        )
+        return np.asarray(leaf, dtype=np.int64)
+    raise TypeError(f"Training-frequency monitoring supports folder/parquet and shard datasets, not {type(dataset).__name__}.")
+
+
+def stratified_rows(labels: np.ndarray, per_class: int, seed: int = 0) -> np.ndarray:
+    """Sorted rows holding up to ``per_class`` rows of every class in ``labels``, drawn without replacement (seeded)."""
+    if per_class < 1:
+        raise ValueError(f"per_class must be at least 1, not {per_class}.")
+    order = np.random.default_rng(seed).permutation(len(labels))
+    shuffled = labels[order]
+    by_class = np.argsort(shuffled, kind="stable")
+    sorted_labels = shuffled[by_class]
+    first = np.searchsorted(sorted_labels, sorted_labels, side="left")
+    rank_in_class = np.arange(len(sorted_labels)) - first
+    return np.sort(order[by_class[rank_in_class < per_class]])
+
+
+def get_fit_sample_dataloader(
+    train_dataset: torch.utils.data.Dataset,
+    val_dataset: torch.utils.data.Dataset,
+    rows: np.ndarray,
+    batch_size: int,
+    num_workers: int | None,
+    device: torch.device,
+    multiprocessing_context: str | None = None,
+) -> DataLoader:
+    """A loader over ``rows`` of the training data read as evaluation reads (the validation reader: no augmentation,
+    centred crops). Folder/parquet sets reuse the validation dataset's processor; shard sets read the rows in place."""
+    num_workers = _default_worker_count(16) if num_workers is None else num_workers
+    if isinstance(train_dataset, ShardDataset):
+        levels = train_dataset.levels
+        dataset = ShardDataset(
+            train_dataset.root,
+            train_dataset.split,
+            val_dataset.reader,
+            {str(i): level for i, level in enumerate(levels)} if len(levels) > 1 else levels[0],
+            batch_size,
+            train=False,
+            multilabel=train_dataset.multilabel,
+            hook=val_dataset.hook,
+            read_chunk=train_dataset.read_chunk,
+            verify_crc=train_dataset.verify_crc,
+            positions=rows,
+        )
+        context = "spawn" if is_dist_avail_and_initialized() and num_workers > 0 else None
+        context = multiprocessing_context if num_workers > 0 and multiprocessing_context is not None else context
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=device.type == "cuda",
+            multiprocessing_context=context,
+        )
+    if isinstance(train_dataset, LazyDataset) and isinstance(val_dataset, LazyDataset):
+        dataset = LazyDataset(func=val_dataset.func, items=tuple(seq[rows] for seq in train_dataset.items))
+        return get_dataloader(
+            dataset, "val", batch_size, num_workers, device.type == "cuda", device, multiprocessing_context=multiprocessing_context
+        )
+    raise TypeError(f"Training-sample scoring supports folder/parquet and shard datasets, not {type(train_dataset).__name__}.")
+
+
 class AugmentedReader:
     """A reader followed by a per-sample transform of its uint8 ``[C, H, W]`` output (picklable for workers)."""
 

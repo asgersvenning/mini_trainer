@@ -546,6 +546,9 @@ class MultiLogger:
 
     macro_f1: bool = False  # Class defaults for instances (or subclasses) that skip __init__
     diagnostics: bool = True
+    fit_sample: bool = False
+    _class_bin: np.ndarray | None = None
+    _bin_names: tuple[str, ...] | list[str] = ()
 
     @staticmethod
     def _reset_cuda_memory_stats():
@@ -573,17 +576,43 @@ class MultiLogger:
         verbose: bool = False,
         macro_f1: bool = False,
         diagnostics: bool = True,
+        frequency_bins: Sequence[int] | None = None,
+        class_counts: Sequence[int] | np.ndarray | None = None,
+        fit_sample: bool = False,
     ):
         """Create multi-logger orchestrator.
 
         ``macro_f1`` adds per-level validation macro-F1 statistics. ``diagnostics=False`` skips the
         per-evaluation figures (confusion matrices, class distances, dendrogram) and the soft confusion
         matrix they need.
+
+        Head/tail monitoring (opt-in): ``frequency_bins`` (increasing upper edges, e.g. ``[100, 200, 500, 1000]``)
+        with ``class_counts`` (training images per leaf class, class-index order) adds, at each evaluation,
+        the leaf mean per-class recall (``recall``) and per bin of training frequency the macro-F1 and mean
+        recall over the bin's classes present in the truth (``f1/<100``, ``recall/100-200``, ...,
+        ``recall/>=1000``). ``fit_sample`` adds the same for a training sample scored in evaluation mode
+        (``log_fit_sample``) under ``fit/`` (with ``fit/acc1``), in the evaluation's summary row.
         """
         self.macro_f1 = macro_f1
         self.diagnostics = diagnostics
+        self.fit_sample = fit_sample
         self.total_epochs = epochs
         self.private_statistics = private_statistics
+        self._class_bin, self._bin_names = None, []
+        if frequency_bins is not None:
+            edges = [int(e) for e in frequency_bins]
+            if not edges or any(b <= a for a, b in zip(edges, edges[1:])) or edges[0] <= 0:
+                raise ValueError(f"frequency_bins must be positive increasing edges, not {frequency_bins}.")
+            if class_counts is None:
+                raise ValueError("frequency_bins needs class_counts (training images per leaf class).")
+            self._class_bin = np.searchsorted(np.asarray(edges), np.asarray(class_counts), side="right")
+            self._bin_names = [f"<{edges[0]}", *(f"{a}-{b}" for a, b in zip(edges, edges[1:])), f">={edges[-1]}"]
+        monitored = []
+        if self._class_bin is not None:
+            monitored += ["recall", *(f"{m}/{b}" for b in self._bin_names for m in ("f1", "recall"))]
+        if fit_sample:
+            monitored += ["fit/acc1", "fit/f1", "fit/recall", *(f"fit/{m}/{b}" for b in self._bin_names for m in ("f1", "recall"))]
+        statistics = [*statistics, *(m for m in monitored if m not in statistics)]
         self.statistics = sorted(list(set(statistics) - set(self.private_statistics)), key=lambda x: statistics.index(x))
         self.statistics_storage = defaultdict(list)
         self.heterogeneous_storage = defaultdict(list)
@@ -1146,10 +1175,72 @@ class MultiLogger:
             f1 = 2 * correct[present] / (true[present] + predicted[present])
             self.log_statistic(**{"f1" if level == 0 else f"f1/lvl{level}": float(f1.mean())})
 
+    def _leaf_class_counts(self, labels: np.ndarray, predictions: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Per leaf class (correct, true, predicted) counts, summed across ranks; collective under DDP."""
+        assert self._class_bin is not None or self.fit_sample
+        size = len(self._class_bin) if self._class_bin is not None else None
+        if size is None:
+            size = int(max(labels.max(initial=-1), predictions.max(initial=-1))) + 1
+            if dist.is_available() and dist.is_initialized():
+                device = torch.device("cuda", torch.cuda.current_device()) if dist.get_backend() == "nccl" else torch.device("cpu")
+                total = torch.tensor(size, device=device)
+                dist.all_reduce(total, op=dist.ReduceOp.MAX)
+                size = int(total.item())
+        if len(labels) and max(labels.max(), predictions.max()) >= size:
+            raise ValueError(f"Class index {max(labels.max(), predictions.max())} outside the {size} counted classes.")
+        counts = np.stack(
+            [
+                np.bincount(labels[labels == predictions], minlength=size),
+                np.bincount(labels, minlength=size),
+                np.bincount(predictions, minlength=size),
+            ]
+        ).astype(np.int64)
+        if dist.is_available() and dist.is_initialized():
+            device = torch.device("cuda", torch.cuda.current_device()) if dist.get_backend() == "nccl" else torch.device("cpu")
+            total = torch.from_numpy(counts).to(device)
+            dist.all_reduce(total)
+            counts = total.cpu().numpy()
+        return counts[0], counts[1], counts[2]
+
+    def _frequency_statistics(self, correct: np.ndarray, true: np.ndarray, predicted: np.ndarray, prefix: str = "") -> dict:
+        """Mean recall over the classes present in the truth, and per frequency bin its macro-F1 and mean recall."""
+        present = true > 0
+        stats = {}
+        if present.any():
+            stats[f"{prefix}recall"] = float((correct[present] / true[present]).mean())
+        if self._class_bin is not None:
+            for b, name in enumerate(self._bin_names):
+                sel = present & (self._class_bin == b)
+                if sel.any():
+                    stats[f"{prefix}f1/{name}"] = float((2 * correct[sel] / (true[sel] + predicted[sel])).mean())
+                    stats[f"{prefix}recall/{name}"] = float((correct[sel] / true[sel]).mean())
+        return stats
+
+    def log_frequency_bins(self):
+        """Log the current evaluation's leaf recall and per-bin macro-F1 / recall (``frequency_bins``)."""
+        key = "labels" if "labels" in self.heterogeneous_storage else "labels/lvl0"
+        labels = np.asarray(self._eval_values(key), dtype=np.int64)
+        predictions = np.asarray(self._eval_values(key.replace("labels", "predictions")), dtype=np.int64)
+        self.log_statistic(**self._frequency_statistics(*self._leaf_class_counts(labels, predictions)))
+
+    def log_fit_sample(self, labels: np.ndarray, predictions: np.ndarray):
+        """Log a training sample's leaf accuracy (``fit/acc1``, %), macro-F1, mean recall and per-bin statistics.
+
+        ``labels`` and ``predictions`` are this rank's leaf class indices; counts are summed across ranks (collective).
+        """
+        correct, true, predicted = self._leaf_class_counts(np.asarray(labels, dtype=np.int64), np.asarray(predictions, dtype=np.int64))
+        present = true > 0
+        stats = {"fit/acc1": 100.0 * float(correct.sum()) / max(int(true.sum()), 1)}
+        if present.any():
+            stats["fit/f1"] = float((2 * correct[present] / (true[present] + predicted[present])).mean())
+        self.log_statistic(**stats, **self._frequency_statistics(correct, true, predicted, prefix="fit/"))
+
     def figures(self, model: nn.Module | None):
-        """Emit end-of-evaluation statistics (opt-in macro-F1) and diagnostic figures."""
+        """Emit end-of-evaluation statistics (opt-in macro-F1 and frequency bins) and diagnostic figures."""
         if self.macro_f1:
             self.log_macro_f1()
+        if self._class_bin is not None:
+            self.log_frequency_bins()
         if not self.diagnostics:
             return
         cm_figs = self.confusion_matrix()

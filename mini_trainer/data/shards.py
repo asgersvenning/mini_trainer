@@ -23,6 +23,10 @@ so its metrics stay comparable between virtual epochs; score the full split with
 ``path`` (an image file, absolute or relative to the parquet's folder), the label columns of the manifest and an
 integer ``weight``, the row's copies per real epoch. The copies are shuffled once and cut into chunks of
 ``extra_chunk`` samples, which join the epoch plan as small shards, so they mix into the stream like real shards.
+
+``positions`` (evaluation only, opt-in) reads a fixed subset of a split instead: sorted row numbers of the split's
+shard stream (manifest order), cut into equal parts per rank and contiguous parts per worker, each sample read
+individually (for instance a species-stratified sample of the training split scored in evaluation mode).
 """
 
 import argparse
@@ -153,6 +157,7 @@ class ShardDataset(IterableDataset):
         with_keys: bool = False,
         extra: str | os.PathLike | None = None,
         extra_chunk: int = 64,
+        positions: np.ndarray | None = None,
     ):
         if virtual_epochs < 1:
             raise ValueError(f"virtual_epochs must be at least 1, not {virtual_epochs}.")
@@ -180,6 +185,16 @@ class ShardDataset(IterableDataset):
         self.total_samples = sum(self.counts) // virtual_epochs  # samples of one pass of this loader
         first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, train)
         self._length = stop - first
+        self.positions = None
+        if positions is not None:
+            if train or self.extra is not None or virtual_epochs != 1:
+                raise ValueError("A fixed subset of positions is read in evaluation mode, without extra rows or virtual epochs.")
+            self.positions = np.unique(np.asarray(positions, dtype=np.int64))
+            if len(self.positions) and (self.positions[0] < 0 or self.positions[-1] >= sum(self.counts)):
+                raise ShardError(f"Positions outside split {split!r} of {root} ({sum(self.counts):,} samples).")
+            self.total_samples = len(self.positions)
+            first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, False)
+            self._length = stop - first
         if train and self.rank == 0:
             get_logger().info(
                 f"Shards {split}: {sum(self.counts):,} samples in {len(self.shards):,} shards, "
@@ -230,6 +245,9 @@ class ShardDataset(IterableDataset):
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         info = get_worker_info()
         worker, num_workers = (info.id, info.num_workers) if info is not None else (0, 1)
+        if self.positions is not None:
+            yield from self._iter_positions(worker, num_workers)
+            return
         real_epoch, part = divmod(self.epoch, self.virtual_epochs) if self.train else (0, 0)
         segments = epoch_plan(
             self.counts, epoch=real_epoch, seed=self.seed, shuffle=self.train, rank=self.rank, world=self.world,
@@ -255,6 +273,45 @@ class ShardDataset(IterableDataset):
             yield self._decode(self._pop(buffer, rng))
         if seen != expected:
             raise ShardError(f"Worker {worker} of rank {self.rank} produced {seen} samples, its plan holds {expected}.")
+
+    def _iter_positions(self, worker: int, num_workers: int) -> Iterator[tuple]:
+        first, stop = rank_range(len(self.positions), self.rank, self.world, self.batch_size, False)
+        mine = self.positions[first:stop]
+        mine = mine[worker * len(mine) // num_workers : (worker + 1) * len(mine) // num_workers]
+        starts = np.cumsum([0, *self.counts])
+        shard_of = np.searchsorted(starts, mine, side="right") - 1
+        for shard in np.unique(shard_of).tolist():
+            index = self._index(shard)
+            fd, path = self._open(shard)
+            try:
+                for i in (mine[shard_of == shard] - starts[shard]).tolist():
+                    base, length = index["offset"][i] - HEADER, HEADER + index["size"][i]
+                    try:
+                        chunk = os.pread(fd, length, base)
+                    except OSError as e:
+                        raise ShardError(f"Cannot read {length} bytes at {base} of {path}: {e}") from e
+                    if len(chunk) != length:
+                        raise ShardError(f"{path}: short read at byte {base} ({len(chunk)} of {length}).")
+                    sample = self._sample(memoryview(chunk), base, index, i, path)
+                    yield self._decode((sample, index["labels"][i], index["key"][i], path))
+            finally:
+                os.close(fd)
+
+    def split_labels(self, level: int = 0) -> np.ndarray:
+        """Class indices at ``level`` of every sample of the split, in shard-stream order (extra rows excluded)."""
+        _, pq = _parquet()
+        column, mapping, parts = self.label_columns[level], self.levels[level], []
+        for shard in self.shards:
+            path = os.path.join(self.root, f"{shard['name']}.parquet")
+            try:
+                values = pq.read_table(path, columns=[column]).column(column).to_pylist()
+            except Exception as e:
+                raise ShardError(f"Cannot read shard index {path}: {e}") from e
+            try:
+                parts.append(np.fromiter((mapping[str(v)] for v in values), dtype=np.int64, count=len(values)))
+            except KeyError as e:
+                raise ShardError(f"{path}: label {e.args[0]!r} of {column} is not in the class specification.") from e
+        return np.concatenate(parts) if parts else np.empty(0, dtype=np.int64)
 
     @staticmethod
     def _pop(buffer: list, rng: np.random.Generator):
