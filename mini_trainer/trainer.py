@@ -23,9 +23,11 @@ from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.training.compilation import model_compile_options
 from mini_trainer.training.mixing import BatchRegularizer, mixed_loss
 from mini_trainer.utils import (
+    PHASE_TRACEBACK_ENV,  # noqa: F401  (re-exported: the variable's name)
     TERMINAL_WIDTH,
     TQDM,
     is_dist_avail_and_initialized,
+    phase_traceback_seconds,
     reduce_across_processes,
     save_on_master,
 )
@@ -65,29 +67,59 @@ def _optimizer_step(optimizer: Optimizer, scaler: GradScaler) -> bool:
     return completed and (found_inf is None or not bool(found_inf))
 
 
-PHASE_TRACEBACK_ENV = "MT_PHASE_TRACEBACK_SECONDS"
+_phase_window: dict[str, float | None] = {"since": None}  # monotonic start of the open phase-start window
 
 
-def watch_phase_start(batches):
+def _open_phase_window(seconds: float) -> None:
+    """Start dumping stacks every ``seconds`` unless a window is already open (it then keeps its start)."""
+    if _phase_window["since"] is None:
+        faulthandler.dump_traceback_later(seconds, repeat=True)
+        _phase_window["since"] = time.monotonic()
+
+
+def close_phase_window() -> float | None:
+    """Stop the phase-start stack dumps; return how long the window was open (None if none was)."""
+    since, _phase_window["since"] = _phase_window["since"], None
+    if since is None:
+        return None
+    faulthandler.cancel_dump_traceback_later()
+    return time.monotonic() - since
+
+
+def watch_phase_start(batches, phase: str = "phase"):
     """Opt-in diagnosis of slow phase starts (environment variable ``MT_PHASE_TRACEBACK_SECONDS``, unset: off).
 
-    With ``MT_PHASE_TRACEBACK_SECONDS=10``, every thread's stack is written to stderr every 10 s (``faulthandler``)
-    from the phase change until the phase's first batch arrives; a start shorter than that writes nothing.
+    With ``MT_PHASE_TRACEBACK_SECONDS=10``, every thread of the main process writes its stack to stderr every 10 s
+    while a phase start is pending: from the previous phase's last batch (or this call, for the first phase) until
+    this phase's first batch arrives, so end-of-phase work (metrics, checkpoints) is inside the window. The first
+    batch also logs the window's length. Shard loader workers log their own start-up timings under the same variable.
     """
-    seconds = float(os.environ.get(PHASE_TRACEBACK_ENV) or 0)
+    seconds = phase_traceback_seconds()
     if seconds <= 0:
         return batches
-    faulthandler.dump_traceback_later(seconds, repeat=True)
+    _open_phase_window(seconds)
+    wrapped = time.monotonic()
 
-    def first_batch_stops_the_dumps():
+    def first_batch_closes_the_window():
+        exhausted = False
         try:
-            for batch in batches:
-                faulthandler.cancel_dump_traceback_later()
+            for i, batch in enumerate(batches):
+                if i == 0:
+                    arrived = time.monotonic()
+                    window = close_phase_window()
+                    get_logger().info(
+                        f"Phase start {phase}: first batch {window or 0.0:.1f} s after the previous phase's last batch "
+                        f"(or the run's first phase began), {arrived - wrapped:.1f} s after this phase's loader was wrapped."
+                    )
                 yield batch
+            exhausted = True
         finally:
-            faulthandler.cancel_dump_traceback_later()
+            if exhausted:
+                _open_phase_window(seconds)  # the next phase's start begins at this phase's last batch
+            else:
+                close_phase_window()
 
-    return first_batch_stops_the_dumps()
+    return first_batch_closes_the_window()
 
 
 def train_one_epoch(
@@ -133,7 +165,7 @@ def train_one_epoch(
         batch_regularizer.set_epoch(epoch)
 
     n_batches = len(data_loader)
-    pbar = TQDM(watch_phase_start(data_loader), total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
+    pbar = TQDM(watch_phase_start(data_loader, f"train {epoch}"), total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
     logger.start_timing()
 
@@ -225,7 +257,8 @@ def evaluate(
 
     training_state = model.training
     model.eval()
-    pbar = TQDM(watch_phase_start(data_loader), desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
+    batches = watch_phase_start(data_loader, f"eval {epoch}")
+    pbar = TQDM(batches, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="eval")
     logger.start_timing()
 
@@ -417,6 +450,7 @@ def train(
             if is_best_eval:
                 save_on_master(eval_model.state_dict(), os.path.join(output_dir, "best.pt"))
 
+    close_phase_window()  # no phase follows the last one
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     if logger.verbose:

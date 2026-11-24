@@ -39,6 +39,10 @@ individually (for instance a species-stratified sample of the training split sco
 Pickling (spawned loader workers) leaves the large static state, the class maps above all, in a side file in the
 temporary directory, written once per dataset and removed with it; the pickle holds its path. Each worker start then
 writes kilobytes to the worker instead of megabytes it can read only after its imports, so workers start in parallel.
+
+With ``MT_PHASE_TRACEBACK_SECONDS`` set (opt-in phase-start diagnostics, see ``mini_trainer.trainer``), each iteration
+writes one stderr line per start-up event: iteration started, first shard index read, shuffle buffer filled, first
+batch's samples yielded, each with the wall time and the seconds since the iteration started.
 """
 
 import argparse
@@ -46,8 +50,10 @@ import hashlib
 import json
 import os
 import pickle
+import sys
 import tarfile
 import tempfile
+import time
 import weakref
 import zlib
 from collections.abc import Callable, Iterator
@@ -59,13 +65,27 @@ import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from mini_trainer import get_logger
-from mini_trainer.utils import get_rank, get_world_size
+from mini_trainer.utils import get_rank, get_world_size, phase_traceback_seconds
 
 FORMAT, VERSION = "mt-shards", 1
 _DRAW_TAG = 0x5A3D  # separates class-weighted draws from the plan's other random streams
 HEADER = 512
 INDEX_COLUMNS = ("key", "offset", "size", "crc32")
 SIDE_STATE = ("levels", "shards", "counts", "extra", "positions", "_class_weight", "_shard_weight")  # pickled by file
+
+
+class _StartTrace:
+    """Start-up timing lines of one worker's iteration (opt-in), one stderr line per event."""
+
+    def __init__(self, split: str, epoch: int, rank: int, worker: int, num_workers: int):
+        self.prefix = f"shard trace {split} epoch {epoch} rank {rank} worker {worker}/{num_workers} pid {os.getpid()}"
+        self.start, self.index_read = time.monotonic(), False
+        self.line("iteration started")
+
+    def line(self, event: str) -> None:
+        now = time.time()
+        stamp = f"{time.strftime('%H:%M:%S', time.localtime(now))}.{int(now % 1 * 1000):03d}"
+        print(f"[{stamp}] {self.prefix}: {event} (+{time.monotonic() - self.start:.2f} s)", file=sys.stderr, flush=True)
 
 
 class ShardError(RuntimeError):
@@ -216,6 +236,7 @@ class ShardDataset(IterableDataset):
             self.extra = self._load_extra(extra, extra_chunk, seed)
             self.counts = self.counts + [len(chunk) for chunk in self.extra["chunks"]]
         self.rank, self.world, self.epoch = get_rank(), get_world_size(), 0
+        self._trace: _StartTrace | None = None
         self.total_samples = sum(self.counts) // virtual_epochs  # samples of one pass of this loader
         first, stop = rank_range(self.total_samples, self.rank, self.world, batch_size, train)
         self._length = stop - first
@@ -280,13 +301,14 @@ class ShardDataset(IterableDataset):
 
     def __getstate__(self) -> dict:
         """The pickled state: the large static attributes (``SIDE_STATE``) are replaced by the path of a side file."""
-        state = {k: v for k, v in self.__dict__.items() if k not in SIDE_STATE and k != "_side"}
+        state = {k: v for k, v in self.__dict__.items() if k not in SIDE_STATE and k not in ("_side", "_trace")}
         state["_side_path"] = self._side_file()
         return state
 
     def __setstate__(self, state: dict) -> None:
         path = state.pop("_side_path", None)
         self.__dict__.update(state)
+        self._trace = None
         if path is not None:
             try:
                 with open(path, "rb") as f:
@@ -322,9 +344,19 @@ class ShardDataset(IterableDataset):
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         info = get_worker_info()
         worker, num_workers = (info.id, info.num_workers) if info is not None else (0, 1)
-        if self.positions is not None:
-            yield from self._iter_positions(worker, num_workers)
+        self._trace = None
+        if phase_traceback_seconds() > 0:
+            self._trace = _StartTrace(self.split, self.epoch, self.rank, worker, num_workers)
+        samples = self._iter_positions(worker, num_workers) if self.positions is not None else self._iter_plan(worker, num_workers)
+        if self._trace is None:
+            yield from samples
             return
+        for n, sample in enumerate(samples, 1):
+            if n == self.batch_size:
+                self._trace.line(f"first batch's {n} samples yielded")
+            yield sample
+
+    def _iter_plan(self, worker: int, num_workers: int) -> Iterator[tuple]:
         real_epoch, part = divmod(self.epoch, self.virtual_epochs) if self.train else (0, 0)
         counts, read = self.counts, self._read_segment
         if self._shard_weight is not None:
@@ -347,6 +379,8 @@ class ShardDataset(IterableDataset):
                     continue
                 buffer.append(sample)
                 if len(buffer) >= self.shuffle_buffer:
+                    if seen == 0 and self._trace is not None:
+                        self._trace.line(f"shuffle buffer filled ({len(buffer)} samples)")
                     seen += 1
                     yield self._decode(self._pop(buffer, rng))
         while buffer:
@@ -460,7 +494,16 @@ class ShardDataset(IterableDataset):
         return image, torch.as_tensor(label if self.multilabel else label[0], dtype=torch.long)
 
     def _index(self, position: int) -> dict:
-        """Load and validate the sidecar index of one shard."""
+        """Load and validate the sidecar index of one shard (the first one timed under the opt-in start trace)."""
+        if self._trace is None or self._trace.index_read:
+            return self._read_index(position)
+        started = time.monotonic()
+        index = self._read_index(position)
+        self._trace.index_read = True
+        self._trace.line(f"first shard index ({self.shards[position]['name']}) read in {time.monotonic() - started:.2f} s")
+        return index
+
+    def _read_index(self, position: int) -> dict:
         _, pq = _parquet()
         shard = self.shards[position]
         path = os.path.join(self.root, f"{shard['name']}.parquet")

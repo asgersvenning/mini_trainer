@@ -147,6 +147,23 @@ def test_pickles_leave_the_class_maps_in_a_side_file_so_spawned_workers_start_at
     assert not os.path.exists(side)  # removed with the dataset
 
 
+def test_start_trace_logs_each_start_up_event_once_and_changes_no_sample(tmp_path, monkeypatch, capfd):
+    root, _ = build(tmp_path)
+    monkeypatch.delenv("MT_PHASE_TRACEBACK_SECONDS", raising=False)
+    plain = [y.tolist() for _, y in dataset(root, batch_size=4, shuffle_buffer=4)]
+    assert capfd.readouterr().err == ""  # off by default
+    monkeypatch.setenv("MT_PHASE_TRACEBACK_SECONDS", "10")
+    assert [y.tolist() for _, y in dataset(root, batch_size=4, shuffle_buffer=4)] == plain
+    lines = capfd.readouterr().err.splitlines()
+    events = [line.split(": ", 1)[1].rsplit(" (+", 1)[0] for line in lines]
+    assert [e.split(" (")[0].split(" read")[0] for e in events] == [
+        "iteration started", "first shard index", "shuffle buffer filled", "first batch's 4 samples yielded"
+    ]  # fmt: skip
+    assert all("shard trace train epoch 0 rank 0 worker 0/1" in line for line in lines)
+    list(dataset(root, "val", batch_size=4, train=False))
+    assert "shuffle buffer" not in capfd.readouterr().err  # evaluation reads without a buffer
+
+
 def test_builder_reads_a_shard_root_and_rejects_row_level_options(tmp_path):
     root, _ = build(tmp_path)
     arguments = dict(

@@ -1,3 +1,4 @@
+import os
 import shutil
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
@@ -61,3 +62,11 @@ class TQDM(tqdm):
         if get_rank() > 0:
             kwargs["disable"] = True
         return super().__new__(cls, *args, **kwargs)
+
+
+PHASE_TRACEBACK_ENV = "MT_PHASE_TRACEBACK_SECONDS"
+
+
+def phase_traceback_seconds() -> float:
+    """Seconds of ``MT_PHASE_TRACEBACK_SECONDS`` (opt-in phase-start diagnostics); 0 when unset or empty: off."""
+    return float(os.environ.get(PHASE_TRACEBACK_ENV) or 0)

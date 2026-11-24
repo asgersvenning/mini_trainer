@@ -16,6 +16,7 @@ from ._concurrent import (
 )
 from ._core import (
     MISSING_VALUE,
+    PHASE_TRACEBACK_ENV,
     TERMINAL_WIDTH,
     TQDM,
     affine_resample,
@@ -34,6 +35,7 @@ from ._core import (
     make_convert_dtype,
     make_empty_ndarray,
     memory_proportion,
+    phase_traceback_seconds,
     poly_schedule_with_warmup,
     read_square_crop,
     recursive_dfs_attr,
@@ -67,6 +69,7 @@ __all__ = [
     "thread_map",
     # _core
     "MISSING_VALUE",
+    "PHASE_TRACEBACK_ENV",
     "TERMINAL_WIDTH",
     "TQDM",
     "class_path",
@@ -84,6 +87,7 @@ __all__ = [
     "make_convert_dtype",
     "make_empty_ndarray",
     "memory_proportion",
+    "phase_traceback_seconds",
     "recursive_dfs_attr",
     "setup_logging",
     "string_to_device",
