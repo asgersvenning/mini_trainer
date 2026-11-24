@@ -1,4 +1,5 @@
 import datetime
+import faulthandler
 import inspect
 import os
 import time
@@ -64,6 +65,31 @@ def _optimizer_step(optimizer: Optimizer, scaler: GradScaler) -> bool:
     return completed and (found_inf is None or not bool(found_inf))
 
 
+PHASE_TRACEBACK_ENV = "MT_PHASE_TRACEBACK_SECONDS"
+
+
+def watch_phase_start(batches):
+    """Opt-in diagnosis of slow phase starts (environment variable ``MT_PHASE_TRACEBACK_SECONDS``, unset: off).
+
+    With ``MT_PHASE_TRACEBACK_SECONDS=10``, every thread's stack is written to stderr every 10 s (``faulthandler``)
+    from the phase change until the phase's first batch arrives; a start shorter than that writes nothing.
+    """
+    seconds = float(os.environ.get(PHASE_TRACEBACK_ENV) or 0)
+    if seconds <= 0:
+        return batches
+    faulthandler.dump_traceback_later(seconds, repeat=True)
+
+    def first_batch_stops_the_dumps():
+        try:
+            for batch in batches:
+                faulthandler.cancel_dump_traceback_later()
+                yield batch
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+
+    return first_batch_stops_the_dumps()
+
+
 def train_one_epoch(
     model: nn.Module,
     model_ema: EMATeacher,
@@ -107,7 +133,7 @@ def train_one_epoch(
         batch_regularizer.set_epoch(epoch)
 
     n_batches = len(data_loader)
-    pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
+    pbar = TQDM(watch_phase_start(data_loader), total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="train")
     logger.start_timing()
 
@@ -199,7 +225,7 @@ def evaluate(
 
     training_state = model.training
     model.eval()
-    pbar = TQDM(data_loader, desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
+    pbar = TQDM(watch_phase_start(data_loader), desc="Evaluation", total=len(data_loader), ncols=TERMINAL_WIDTH, leave=False)
     logger.update(epoch=epoch, type="eval")
     logger.start_timing()
 
