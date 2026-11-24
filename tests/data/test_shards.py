@@ -1,6 +1,8 @@
+import gc
 import io
 import json
 import os
+import pickle
 import subprocess
 import sys
 
@@ -52,6 +54,11 @@ def species(dataset):
 
 def dataset(root, split="train", batch_size=1, train=True, **kwargs):
     return ShardDataset(root, split, lambda data: torch.tensor([data[0]]), spec(), batch_size, train=train, multilabel=True, **kwargs)
+
+
+def first_byte(data):
+    """A picklable reader for spawned workers: the toy shards encode each sample's id in its brightness."""
+    return torch.tensor([data[0]])
 
 
 def plan_ids(counts, **kwargs):
@@ -113,6 +120,31 @@ def test_loaders_decode_real_images_across_workers_with_exact_batch_counts(tmp_p
     images, targets = next(iter(val))
     assert images.dtype == torch.uint8 and images.shape == (4, 3, 8, 8) and targets.shape == (4, 3)
     assert sorted(lab for _, y in val for lab in y[:, 0].tolist()) == list(range(53, 64))
+
+
+def test_pickles_leave_the_class_maps_in_a_side_file_so_spawned_workers_start_at_once(tmp_path):
+    root, _ = build(tmp_path)
+    classes = {**spec(), "0": {str(i): i for i in range(200_000)}}  # a leaf class map of ToL's size
+    data = ShardDataset(root, "train", first_byte, classes, 4, train=True, multilabel=True, shuffle_buffer=4)
+    blob = pickle.dumps(data)
+    assert len(blob) < 2**16 < len(pickle.dumps(classes))  # fits the pipe a spawned worker is started through
+    side = data._side.path
+    clone = pickle.loads(blob)
+    assert clone.levels == data.levels and clone.counts == data.counts and clone._length == data._length
+    data.set_epoch(1), clone.set_epoch(1)
+    in_process = [y.tolist() for _, y in data]
+    assert [y.tolist() for _, y in clone] == in_process
+    pickle.dumps(data)
+    assert data._side.path == side  # written once per dataset
+    workers = DataLoader(data, batch_size=4, num_workers=2, multiprocessing_context="spawn")
+    assert sorted(y.tolist() for batch in workers for y in batch[1]) == sorted(in_process)
+    data.levels = [dict(level) for level in data.levels]  # a replaced attribute is written again
+    pickle.dumps(data)
+    assert data._side.path != side and not os.path.exists(side)
+    side = data._side.path
+    del data, clone, workers
+    gc.collect()
+    assert not os.path.exists(side)  # removed with the dataset
 
 
 def test_builder_reads_a_shard_root_and_rejects_row_level_options(tmp_path):

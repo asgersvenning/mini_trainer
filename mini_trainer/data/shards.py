@@ -35,16 +35,24 @@ and a resumed epoch replays it. Not combined with ``extra``.
 ``positions`` (evaluation only, opt-in) reads a fixed subset of a split instead: sorted row numbers of the split's
 shard stream (manifest order), cut into equal parts per rank and contiguous parts per worker, each sample read
 individually (for instance a species-stratified sample of the training split scored in evaluation mode).
+
+Pickling (spawned loader workers) leaves the large static state, the class maps above all, in a side file in the
+temporary directory, written once per dataset and removed with it; the pickle holds its path. Each worker start then
+writes kilobytes to the worker instead of megabytes it can read only after its imports, so workers start in parallel.
 """
 
 import argparse
 import hashlib
 import json
 import os
+import pickle
 import tarfile
+import tempfile
+import weakref
 import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -57,6 +65,7 @@ FORMAT, VERSION = "mt-shards", 1
 _DRAW_TAG = 0x5A3D  # separates class-weighted draws from the plan's other random streams
 HEADER = 512
 INDEX_COLUMNS = ("key", "offset", "size", "crc32")
+SIDE_STATE = ("levels", "shards", "counts", "extra", "positions", "_class_weight", "_shard_weight")  # pickled by file
 
 
 class ShardError(RuntimeError):
@@ -129,6 +138,21 @@ def epoch_plan(
             segments.append((shard, start - position, finish - position))
         position += counts[shard]
     return segments
+
+
+class _SideFile(NamedTuple):
+    path: str
+    values: tuple
+    pid: int
+    remove: weakref.finalize
+
+
+def _remove_side_file(path: str, pid: int) -> None:
+    if os.getpid() == pid:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
 
 
 def rank_range(total: int, rank: int, world: int, batch_size: int, drop_last: bool) -> tuple[int, int]:
@@ -253,6 +277,40 @@ class ShardDataset(IterableDataset):
             "copies": len(copies),
             "chunks": [copies[i : i + chunk] for i in range(0, len(copies), chunk)],
         }
+
+    def __getstate__(self) -> dict:
+        """The pickled state: the large static attributes (``SIDE_STATE``) are replaced by the path of a side file."""
+        state = {k: v for k, v in self.__dict__.items() if k not in SIDE_STATE and k != "_side"}
+        state["_side_path"] = self._side_file()
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        path = state.pop("_side_path", None)
+        self.__dict__.update(state)
+        if path is not None:
+            try:
+                with open(path, "rb") as f:
+                    self.__dict__.update(pickle.load(f))
+            except OSError as e:
+                raise ShardError(f"Cannot read {path}, the side file of a pickled shard dataset of {self.root}: {e}") from e
+
+    def _side_file(self) -> str:
+        """Write the ``SIDE_STATE`` attributes to a temporary file once (again if one was replaced or the file is gone)."""
+        values = tuple(getattr(self, k) for k in SIDE_STATE)
+        side = self.__dict__.get("_side")
+        if side is not None and side.pid == os.getpid() and all(a is b for a, b in zip(side.values, values)) and os.path.exists(side.path):
+            return side.path
+        if side is not None:
+            side.remove()
+        fd, path = tempfile.mkstemp(prefix="mt-shards-", suffix=".pkl")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                pickle.dump(dict(zip(SIDE_STATE, values)), f, protocol=pickle.HIGHEST_PROTOCOL)
+        except BaseException:
+            os.unlink(path)
+            raise
+        self._side = _SideFile(path, values, os.getpid(), weakref.finalize(self, _remove_side_file, path, os.getpid()))
+        return path
 
     def set_epoch(self, epoch: int) -> None:
         """Select the epoch whose plan the next iteration follows."""
