@@ -7,6 +7,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import chain, repeat
 from pathlib import Path
@@ -533,6 +534,15 @@ def compute_aligned_steps(target_length: int, origin_length: int, total_epochs: 
     return [int(round(step)) for step in np.linspace(start, end, num=origin_length)]
 
 
+def _append_summary_row(row: dict[str, list], path: str) -> None:
+    try:
+        write_csv_from_dict(row, path)
+    except BaseException as e:
+        epoch, phase = row.get("epoch", [None])[0], row.get("type", [None])[0]
+        get_logger().error(f"Could not append the epoch {epoch} {phase} row to {path}: {e!r}")
+        raise
+
+
 class MultiLogger:
     """Coordinate per-phase backends, summary CSVs and diagnostic figures.
 
@@ -542,6 +552,10 @@ class MultiLogger:
 
     Summaries and figures are saved under output/name/logs. Per-step history
     accumulation is disabled to bound memory; save() remains a compatibility no-op.
+    Each phase's summary.csv row is computed at the phase change and appended by one
+    background thread, in order, so a slow output file system does not hold up the
+    next phase; finish() waits for the writes and re-raises a failed one, and rows
+    still queued are written before the interpreter exits, also after an error.
     """
 
     macro_f1: bool = False  # Class defaults for instances (or subclasses) that skip __init__
@@ -649,6 +663,8 @@ class MultiLogger:
         self._n_classes: int | None = None
         self._soft_confusion_matrix: dict[int, torch.Tensor] = dict()
         self._finished = False
+        self._summary_writer: ThreadPoolExecutor | None = None
+        self._summary_writes: list[Future] = []
 
     def start_timing(self):
         assert self._type is not None
@@ -807,8 +823,28 @@ class MultiLogger:
             sum = self.summary()
             sum["epoch"] = self._epoch
             sum["type"] = self._type
-            write_csv_from_dict({k: [v] for k, v in sum.items()}, os.path.join(self.output_dir, "summary.csv"))
+            self._check_summary_writes()
+            if self._summary_writer is None:
+                self._summary_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt-summary")
+            row, path = {k: [v] for k, v in sum.items()}, os.path.join(self.output_dir, "summary.csv")
+            self._summary_writes.append(self._summary_writer.submit(_append_summary_row, row, path))
         return
+
+    def _check_summary_writes(self, wait: bool = False) -> None:
+        """Re-raise the first failed summary.csv write; with ``wait``, wait for every queued write first."""
+        writes, self._summary_writes = self._summary_writes, []
+        failed = None
+        for write in writes:
+            if not (wait or write.done()):
+                self._summary_writes.append(write)
+            elif failed is None and write.exception() is not None:
+                failed = write.exception()
+        if failed is not None:
+            raise failed
+
+    def flush_summary(self) -> None:
+        """Wait until every queued summary.csv row is written (re-raising a failed write)."""
+        self._check_summary_writes(wait=True)
 
     def save(self, fp: str | TextIO | None = None, encoding: str = "utf-8", **kwargs):
         """Compatibility no-op; summaries and diagnostic figures are saved separately."""
@@ -819,7 +855,13 @@ class MultiLogger:
             self._store_summary()
             self.save()
         finally:
-            self._close_loggers()
+            try:
+                self.flush_summary()
+            finally:
+                if self._summary_writer is not None:
+                    self._summary_writer.shutdown(wait=True)
+                    self._summary_writer = None
+                self._close_loggers()
         self._start_time = None
         self.eta = None
         self.statistics_storage = defaultdict(list)
