@@ -25,7 +25,7 @@ from mini_trainer.logging import configure_loggers
 from mini_trainer.modeling import average_checkpoints, classification_module
 from mini_trainer.modeling.quantized_training import prepare_quantized_training
 from mini_trainer.trainer import train
-from mini_trainer.training import MuonAuxAdamW
+from mini_trainer.training import BatchRegularizer, MuonAuxAdamW
 from mini_trainer.training.compilation import MODEL_COMPILE_MODES, model_compile_options, validate_optimizer_compilation
 from mini_trainer.training.compilation import compile_optimizer as prepare_compiled_optimizer
 from mini_trainer.utils import (
@@ -39,6 +39,15 @@ from mini_trainer.utils import (
     setup_logging,
     validate_type,
 )
+
+# Opt-in batch regularization (``augmentation_builder_kwargs`` key -> ``BatchRegularizer`` argument)
+BATCH_REGULARIZER_KEYS = {
+    "random_erasing": "erase_p",
+    "mixup_alpha": "mixup_alpha",
+    "cutmix_alpha": "cutmix_alpha",
+    "mix_prob": "mix_prob",
+    "mix_switch_prob": "switch_prob",
+}
 
 
 @ddp_train_wrapper
@@ -122,6 +131,12 @@ def main(  # noqa: D417
     ``fit_sample_seed``, default 0), read as validation reads, after every ``fit_sample_every``-th epoch (default
     1) and the last, as ``fit/...`` columns of the evaluation row. Counts come from the training rows (shard sets:
     the training split's index, extra rows excluded).
+
+    Batch regularization (opt-in, ``augmentation_builder_kwargs``; all absent: off): ``random_erasing: p`` erases
+    one box per image with probability ``p`` (timm ``RandomErasing``, per-pixel normal noise), and ``mixup_alpha`` /
+    ``cutmix_alpha`` (with ``mix_prob``, default 1, and ``mix_switch_prob``, default 0.5) mix each batch with its
+    reverse (timm ``Mixup``, batch mode), trained on the mixed loss of both label sets at every rank. Both act on the
+    normalized training batch after the recipe's augmentation; evaluation reads clean images.
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
@@ -229,6 +244,12 @@ def main(  # noqa: D417
     validate_type(train_loader, torch.utils.data.DataLoader)
     validate_type(val_loader, torch.utils.data.DataLoader)
 
+    batch_kwargs = {k: augmentation_builder_kwargs[k] for k in BATCH_REGULARIZER_KEYS if k in augmentation_builder_kwargs}
+    augmentation_builder_kwargs = {k: v for k, v in augmentation_builder_kwargs.items() if k not in BATCH_REGULARIZER_KEYS}
+    batch_regularizer = None
+    if batch_kwargs:
+        batch_regularizer = BatchRegularizer(**{BATCH_REGULARIZER_KEYS[k]: v for k, v in batch_kwargs.items()}, seed=seed)
+        log.info(f"Batch regularization of the training batch: {batch_regularizer}")
     augmentation = builder.build_augmentation(dtype=dtype, **augmentation_builder_kwargs)
     validate_type(augmentation, (torchvision.transforms.Compose, torchvision.transforms.v2.Compose))
     debug_augmentation(augmentation=augmentation, dataset=train_loader.dataset, output_dir=output_dir, strict=True)
@@ -361,6 +382,7 @@ def main(  # noqa: D417
         compile=compile,
         compile_mode=compile_mode,
         **({"fit_loader": fit_loader, "fit_every": fit_every} if fit_loader is not None else {}),
+        **({"batch_regularizer": batch_regularizer} if batch_regularizer is not None else {}),
     )
 
     del train_loader

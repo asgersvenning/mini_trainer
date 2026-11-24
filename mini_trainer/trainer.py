@@ -20,6 +20,7 @@ from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
 from mini_trainer.modeling import EmbeddingContext, SupervisionContext
 from mini_trainer.training.compilation import model_compile_options
+from mini_trainer.training.mixing import BatchRegularizer, mixed_loss
 from mini_trainer.utils import (
     TERMINAL_WIDTH,
     TQDM,
@@ -79,6 +80,7 @@ def train_one_epoch(
     clip_grad_norm: float | None = 5,
     device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
+    batch_regularizer: BatchRegularizer | None = None,
 ):
     """Run an epoch over ``(NCHW inputs, targets)`` batches and finish in eval mode.
 
@@ -90,6 +92,10 @@ def train_one_epoch(
     AMP overflow gating. Non-finite criterion/distillation losses skip the batch;
     five consecutive failures raise ``RuntimeError``. ``clip_grad_norm=None``
     disables clipping; ``dtype=float32`` disables autocast.
+
+    ``batch_regularizer`` (opt-in) erases and/or mixes the preprocessed batch; a mixed batch's loss is
+    ``lam * criterion(logits, target) + (1 - lam) * criterion(logits, target.flip(0))``. The logged training
+    accuracy is then measured against the unflipped labels.
     """
     log = get_logger()
 
@@ -97,6 +103,8 @@ def train_one_epoch(
     model.train()
     getattr(getattr(data_loader.batch_sampler, "sampler", lambda x: x), "set_epoch", lambda x: x)(epoch)
     getattr(data_loader.dataset, "set_epoch", lambda x: x)(epoch)  # shard sets plan each epoch in the dataset
+    if batch_regularizer is not None:
+        batch_regularizer.set_epoch(epoch)
 
     n_batches = len(data_loader)
     pbar = TQDM(data_loader, total=n_batches, ncols=TERMINAL_WIDTH, leave=False)
@@ -118,8 +126,14 @@ def train_one_epoch(
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
         batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
         with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
-            logits = model(preprocess(augmentation(batch)))
+            inputs = preprocess(augmentation(batch))
+            lam = 1.0
+            if batch_regularizer is not None:
+                inputs, lam = batch_regularizer(inputs)
+            logits = model(inputs)
             loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
+            if lam < 1.0:
+                loss = mixed_loss(loss, criterion(logits, target.flip(0)), lam)
             distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
 
