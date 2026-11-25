@@ -422,6 +422,9 @@ def train(
         eval_metric = evaluate(eval_model, criterion, val_loader, epoch, logger, preprocess, device=device, dtype=dtype)
         if fit_loader is not None and ((epoch + 1) % fit_every == 0 or epoch + 1 == epochs):
             score_fit_sample(eval_model, fit_loader, logger, preprocess, device=device, dtype=dtype)
+        for name, scale in eval_model.named_parameters():  # a cosine head's shared learned scale (opt-in)
+            if name.endswith("global_scale"):
+                log.info(f"Epoch {epoch + 1}: {name} s = {scale.item():.6f}")
         is_best_eval = (best_eval_metric := max(best_eval_metric, eval_metric)) == eval_metric
         if is_best_eval:
             best_epoch = epoch

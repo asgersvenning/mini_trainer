@@ -333,7 +333,8 @@ class BaseBuilder:
         containing ``linear`` or ``layer`` select the no-Muon group, or every head
         parameter does when ``head_muon`` is False; normalization parameters, weight
         parametrizations and biases receive no weight decay unless ``decay_all`` is
-        set. Frozen parameters are excluded.
+        set; a cosine head's shared ``global_scale`` is never on Muon and never decayed.
+        Frozen parameters are excluded.
         """
         if not hasattr(model, "_backbone_output_name"):
             raise AttributeError("Model does not have `_backbone_output_name` attribute to identify the head.")
@@ -372,7 +373,8 @@ class BaseBuilder:
                 continue
             grp_name = "head" if id(p) in head_module_param_ids else "backbone"
             # Keep final classifier layers (or, without head_muon, the whole head) on the auxiliary optimizer, not Muon.
-            if grp_name == "head" and (not head_muon or "linear" in name or "layer" in name):
+            shared_scale = name.endswith("global_scale")
+            if grp_name == "head" and (not head_muon or "linear" in name or "layer" in name or shared_scale):
                 new_grp_name = f"{grp_name}_nomuon"
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {
@@ -381,7 +383,7 @@ class BaseBuilder:
                         "weight_decay": param_groups[grp_name]["weight_decay"],
                     }
                 grp_name = new_grp_name
-            if not decay_all and ("parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias")):
+            if shared_scale or (not decay_all and ("parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias"))):
                 new_grp_name = f"{grp_name}_nodecay"
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {"params": [], "lr": param_groups[grp_name]["lr"], "weight_decay": 0}

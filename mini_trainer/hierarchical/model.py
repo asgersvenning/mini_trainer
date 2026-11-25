@@ -157,8 +157,10 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
 
     def __init__(self, normalized: bool = True, **kwargs):  # noqa: D107
         super().__init__(normalized=normalized, **kwargs)
-        if self.magnitude_after_angle:
-            raise NotImplementedError("`magnitude_after_angle` is implemented for single-layer heads (flat and bottom-up) only.")
+        if self.magnitude_after_angle or self.global_scale is not None:
+            raise NotImplementedError(
+                "`magnitude_after_angle` and `global_scale` are implemented for single-layer heads (flat and bottom-up) only."
+            )
         # Conditional layers
         layers: list[nn.Linear] = [self.linear]
         orig_indices = self.active_indices
@@ -283,8 +285,10 @@ class AutoregressiveClassifierV2(AutoregressiveMixin, HierarchicalClassifier):
             decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
         cls_path = class_path(decoder_cls)
         super().__init__(*args, decoder_cls=cls_path, decoder_kwargs=decoder_kwargs, **kwargs)
-        if self.magnitude_after_angle:
-            raise NotImplementedError("`magnitude_after_angle` is implemented for single-layer heads (flat and bottom-up) only.")
+        if self.magnitude_after_angle or self.global_scale is not None:
+            raise NotImplementedError(
+                "`magnitude_after_angle` and `global_scale` are implemented for single-layer heads (flat and bottom-up) only."
+            )
 
         self.sequence_length = self.num_masks + 1 + 1
         self._init_autoregressive_components(decoder_cls, decoder_kwargs)

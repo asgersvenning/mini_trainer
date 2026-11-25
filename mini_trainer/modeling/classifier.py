@@ -100,6 +100,7 @@ class Classifier(nn.Module):
         float32_head: bool = False,
         legacy_spherical_init: bool = False,
         magnitude_after_angle: bool = False,
+        global_scale: bool = False,
         **metadata,
     ):
         """Build the head; the options below only affect normalized (cosine) heads unless noted.
@@ -114,6 +115,9 @@ class Classifier(nn.Module):
         Tested and not recommended (2026-11): it lowered test top-1 by 0.5 points for an EfficientNetV2-S
         trained on 12k Lepidoptera species and by 1.1 points for a head on a frozen trunk over 190k species,
         where the true class rarely sat at the clamp floor; it stays off by default.
+        ``global_scale`` adds one learned scalar ``s`` (initialised at 1, no weight decay) shared by every class,
+        ``s * sqrt(D - 2) * asin(clamp(cos)) + b_c``: the magnitude-after-angle form with ``g`` tied across rows.
+        It needs ``normalized`` and excludes ``trainable_scale``; the bias follows ``trainable_bias``.
         All are stored in the checkpoint metadata.
         """
         super().__init__()
@@ -157,6 +161,7 @@ class Classifier(nn.Module):
             "float32_head": float32_head,
             "legacy_spherical_init": legacy_spherical_init,
             "magnitude_after_angle": magnitude_after_angle,
+            "global_scale": global_scale,
         }
         metadata.update({k: True for k, v in options.items() if v})
         self._metadata = metadata
@@ -165,6 +170,10 @@ class Classifier(nn.Module):
         self.magnitude_after_angle = bool(magnitude_after_angle)
         if self.magnitude_after_angle and not normalized:
             raise ValueError("`magnitude_after_angle` applies to normalized (cosine) heads only.")
+        if global_scale and (not normalized or trainable_scale):
+            raise ValueError("`global_scale` needs a normalized (cosine) head without `trainable_scale` (one shared g, not one per class).")
+        # One shared scale; registered only when enabled, so default state dicts are unchanged.
+        self.register_parameter("global_scale", nn.Parameter(torch.ones(1)) if global_scale else None)
 
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
@@ -243,11 +252,16 @@ class Classifier(nn.Module):
         return self._linear_weight, self._linear_bias
 
     def _magnitude_direction(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """Each active class's row norm ``g`` (shape ``[C]``) and unit direction (``[C, D]``) of the weight-norm layer."""
+        """Each active class's row norm ``g`` (shape ``[C]``) and unit direction (``[C, D]``) of the weight-norm layer.
+
+        With ``global_scale``, ``g`` is the shared scale repeated for every class.
+        """
         parametrization = self.linear.parametrizations.weight
         magnitude, direction = parametrization.original0.squeeze(1), F.normalize(parametrization.original1, 2, 1)
         if self.active_indices is not None:
             magnitude, direction = magnitude.index_select(0, self.active_indices), direction.index_select(0, self.active_indices)
+        if self.global_scale is not None:
+            magnitude = self.global_scale.expand(direction.shape[0])
         return magnitude, direction
 
     def _reshape_backbone_embeddings(self, x: torch.Tensor) -> torch.Tensor:
@@ -295,7 +309,7 @@ class Classifier(nn.Module):
             EmbeddingContext.set(embeddings)
         # Resolve parametrized weights beside their Linear consumer.
         weight, bias = self._weight_bias()
-        if self.normalized and self.magnitude_after_angle:
+        if self.normalized and (self.magnitude_after_angle or self.global_scale is not None):
             magnitude, direction = self._magnitude_direction()
             return cosine_to_zscore(F.linear(embeddings, weight=direction), self.preclassification_size) * magnitude + bias
         if self.normalized:

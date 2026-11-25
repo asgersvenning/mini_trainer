@@ -89,11 +89,15 @@ def tensor_digest(tensors: dict[str, torch.Tensor]) -> str:
 
 
 def head_tensors(classifier: Classifier) -> dict[str, torch.Tensor]:
-    """What :func:`standalone.score` needs: unit prototypes, magnitudes, biases, hidden layer, the tree."""
+    """What :func:`standalone.score` needs: unit prototypes, magnitudes, biases, hidden layer, the tree.
+
+    A shared ``global_scale`` is written as every class's magnitude (scored magnitude-after-angle).
+    """
     weight = classifier.linear.parametrizations.weight
+    scale = getattr(classifier, "global_scale", None)
     tensors = {
         "direction": F.normalize(weight.original1, 2, 1),
-        "magnitude": weight.original0.squeeze(1),
+        "magnitude": weight.original0.squeeze(1) if scale is None else scale.expand(weight.original1.shape[0]),
         "bias": classifier.linear.bias,
     }
     if classifier.hidden:
@@ -129,7 +133,9 @@ def write_head(folder: Path, name: str, classifier: Classifier, ranks: list[str]
         "sizes": sizes,
         "features": classifier.in_features,
         "embedding": classifier.preclassification_size,
-        "magnitude_after_angle": bool(getattr(classifier, "magnitude_after_angle", False)),
+        "magnitude_after_angle": bool(
+            getattr(classifier, "magnitude_after_angle", False) or getattr(classifier, "global_scale", None) is not None
+        ),
         "formula": "logit = sqrt(D-2)*asin(clamp(g*cos, -1+1e-7, 1-1e-7)) + b; coarser rank = logsumexp of children",
         "source": source,
     }
