@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torchvision.transforms as tt
 from torch.utils.data import DataLoader, TensorDataset
@@ -123,6 +124,53 @@ def test_integration_resume_train(tmp_path):
     main(**{**args, "epochs": 2, "checkpoint": config["checkpoint"]})
     assert run_dir.is_dir()
     assert not (output_dir / "resume_test_run_1").exists()
+
+
+def test_checkpoint_retention_resume_after_kill_and_clean_finish(tmp_path, monkeypatch):
+    """Retention keeps one resume checkpoint while running, resumes after a kill, and removes it on a clean finish."""
+    import mini_trainer.trainer as trainer_module
+    from mini_trainer.config import load_yaml_config
+
+    input_dir = tmp_path / "data"
+    for label in ("class_a", "class_b"):
+        (input_dir / label).mkdir(parents=True)
+    run_dir = tmp_path / "output" / "retention"
+    weights = run_dir / "weights"
+    args = {
+        "input": str(input_dir),
+        "output": str(tmp_path / "output"),
+        "epochs": 3,
+        "device": "cpu",
+        "dtype": "float32",
+        "name": "retention",
+        "builder": MockBuilder,
+        "model_builder_kwargs": {"model_type": TinyMockModel(), "pretrained": False},
+        "logger_builder_kwargs": {"verbose": False, "logger_cls": configure_loggers()},
+        "ema": False,
+        "seed": 42,
+        "checkpoint_retention": True,
+        "keep_checkpoints": [1],
+    }
+
+    one_epoch = trainer_module.train_one_epoch
+
+    def killed_in_epoch_2(*a, **kw):
+        if a[7] == 2:  # the epoch argument
+            raise KeyboardInterrupt("killed")
+        return one_epoch(*a, **kw)
+
+    monkeypatch.setattr(trainer_module, "train_one_epoch", killed_in_epoch_2)
+    with pytest.raises(KeyboardInterrupt):
+        main(**args)
+    assert sorted(p.name for p in weights.iterdir()) == ["best.pt", "checkpoint_1.pth", "checkpoint_last.pth"]
+    assert torch.load(weights / "checkpoint_last.pth", weights_only=False)["epoch"] == 1
+
+    monkeypatch.setattr(trainer_module, "train_one_epoch", one_epoch)
+    config = load_yaml_config(path=None, resume=True, output_dir=str(run_dir))
+    main(**{**args, "checkpoint": config["checkpoint"]})
+    assert sorted(p.name for p in weights.iterdir()) == ["best.pt", "checkpoint_1.pth", "last.pt"]
+    assert torch.load(weights / "checkpoint_1.pth", weights_only=False)["epoch"] == 1
+    assert not (tmp_path / "output" / "retention_1").exists()
 
 
 def test_integration_migration(tmp_path):

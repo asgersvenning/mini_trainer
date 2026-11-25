@@ -3,7 +3,7 @@ import faulthandler
 import inspect
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Literal
 
 import torch
@@ -349,6 +349,7 @@ def train(
     dtype: torch.dtype = torch.float32,
     output_dir: str | None = None,
     weight_store_rate: int | None = None,
+    keep_epochs: Collection[int] = (),
     compile: bool = False,
     compile_mode: str | None = None,
     fit_loader: DataLoader | None = None,
@@ -363,7 +364,8 @@ def train(
 
     When ``output_dir`` is set, save model/optimizer/scheduler/scaler and optional
     EMA state in ``checkpoint_last.pth``. ``weight_store_rate`` adds snapshots at
-    zero-based epoch multiples. ``best.pt`` contains evaluation-model weights;
+    zero-based epoch multiples and ``keep_epochs`` at those zero-based epochs, both as
+    ``checkpoint_<epoch>.pth``. ``best.pt`` contains evaluation-model weights;
     the canonical metric is maximized, with ties replacing the previous best.
     Best-metric tracking restarts on each call. Close the logger on completion.
 
@@ -444,7 +446,7 @@ def train(
                 checkpoint["model_ema"] = model_ema.state_dict()
             if scaler is not None:
                 checkpoint["scaler"] = scaler.state_dict()
-            if weight_store_rate is not None and epoch % weight_store_rate == 0:
+            if (weight_store_rate is not None and epoch % weight_store_rate == 0) or epoch in keep_epochs:
                 save_on_master(checkpoint, os.path.join(output_dir, f"checkpoint_{epoch}.pth"))
             save_on_master(checkpoint, os.path.join(output_dir, "checkpoint_last.pth"))
             if is_best_eval:

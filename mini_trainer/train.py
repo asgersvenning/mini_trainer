@@ -33,6 +33,7 @@ from mini_trainer.utils import (
     ddp_train_wrapper,
     get_rank,
     increment_name_dir,
+    is_main_process,
     main_process_first,
     save_on_master,
     setup_device,
@@ -94,6 +95,8 @@ def main(  # noqa: D417
     compile_optimizer: bool = False,
     compile_mode: str | None = None,
     optimizer_cudagraphs: bool = False,
+    checkpoint_retention: bool = False,
+    keep_checkpoints: list[int] | None = None,
 ):
     """Build training components, restore optional state, and run the epoch loop.
 
@@ -137,10 +140,18 @@ def main(  # noqa: D417
     ``cutmix_alpha`` (with ``mix_prob``, default 1, and ``mix_switch_prob``, default 0.5) mix each batch with its
     reverse (timm ``Mixup``, batch mode), trained on the mixed loss of both label sets at every rank. Both act on the
     normalized training batch after the recipe's augmentation; evaluation reads clean images.
+
+    Checkpoint retention (opt-in, ``checkpoint_retention=True``) bounds a run's storage: no periodic
+    ``checkpoint_<epoch>.pth`` snapshots; ``checkpoint_last.pth`` is still replaced only once its successor is fully
+    written, and it is deleted after ``last.pt`` is saved on a clean finish. ``best.pt`` and ``last.pt`` are always
+    kept. ``keep_checkpoints`` (zero-based epochs, as in the snapshot names; e.g. a WSD branch point) are saved as
+    ``checkpoint_<epoch>.pth`` and kept, with or without retention.
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
     validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
+    if any(e < 0 for e in keep_checkpoints or ()):
+        raise ValueError(f"keep_checkpoints are zero-based epochs, not {keep_checkpoints}.")
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -378,7 +389,8 @@ def main(  # noqa: D417
         device=device,
         dtype=dtype,
         output_dir=weight_output_dir,
-        weight_store_rate=5,
+        weight_store_rate=None if checkpoint_retention else 5,
+        keep_epochs=frozenset(keep_checkpoints or ()),
         compile=compile,
         compile_mode=compile_mode,
         **({"fit_loader": fit_loader, "fit_every": fit_every} if fit_loader is not None else {}),
@@ -398,6 +410,11 @@ def main(  # noqa: D417
         else:
             save_on_master(nn_model.state_dict(), last_weight_dst)
         log.info(f"Final weights saved at: {last_weight_dst}")
+        if checkpoint_retention and is_main_process():
+            resume_checkpoint = os.path.join(weight_output_dir, "checkpoint_last.pth")
+            if os.path.exists(resume_checkpoint):
+                os.remove(resume_checkpoint)
+                log.info(f"Checkpoint retention: removed {resume_checkpoint} after a clean finish")
 
 
 def _check_wsd_restart(lr_scheduler, saved: dict[str, Any], checkpoint) -> None:
@@ -663,6 +680,24 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         default=None,
         required=False,
         help="OBS: This should probably not be used. Update only the classifier weights.",
+    )
+
+    out_args.add_argument(
+        "--checkpoint-retention",
+        action="store_true",
+        default=None,  # omitted flag: keep a config file's value
+        dest="checkpoint_retention",
+        help="Keep only the newest resume checkpoint (no periodic snapshots) and delete it after a clean finish;\n"
+        "best.pt, last.pt and --keep-checkpoints are kept (default=False).",
+    )
+    out_args.add_argument(
+        "--keep-checkpoints",
+        type=int,
+        nargs="+",
+        default=None,
+        dest="keep_checkpoints",
+        help="Zero-based epochs whose full checkpoint is saved and kept as checkpoint_<epoch>.pth\n"
+        "(e.g. a WSD branch point; 19 = after the 20th epoch).",
     )
 
     cfg_args = parser.add_argument_group("Runtime [optional]")
