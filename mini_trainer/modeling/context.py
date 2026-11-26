@@ -64,3 +64,39 @@ class EmbeddingContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         EmbeddingContext.clear()
+
+
+class AuxiliaryLogitsContext:
+    """Process-global list of auxiliary head outputs collected during one training forward; nested contexts are rejected.
+
+    An opt-in auxiliary head (e.g. ``Classifier(detached_learned_head=True)``) adds its output while the context is
+    active; the training step adds the criterion of each to the loss. Outside the context nothing is computed.
+    """
+
+    _state: dict[str, list] = {"logits": []}
+    _active: bool = False
+
+    @classmethod
+    def add(cls, logits):
+        cls._state["logits"] = [*cls._state["logits"], logits]
+
+    @classmethod
+    def get(cls) -> list:
+        return cls._state["logits"]
+
+    @classmethod
+    def clear(cls):
+        cls._state["logits"] = []
+        cls._active = False
+
+    @classmethod
+    def active(cls):
+        return cls._active
+
+    def __enter__(self):
+        if AuxiliaryLogitsContext._active:
+            raise RuntimeError("AuxiliaryLogitsContext is already active")
+        AuxiliaryLogitsContext._active = True
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        AuxiliaryLogitsContext.clear()

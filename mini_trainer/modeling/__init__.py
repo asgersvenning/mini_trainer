@@ -8,9 +8,10 @@ from .classifier import (
     backbone,
     bypass_submodule,
     classification_module,
+    detached_head_as_learned,
     predict,
 )
-from .context import EmbeddingContext, SupervisionContext
+from .context import AuxiliaryLogitsContext, EmbeddingContext, SupervisionContext
 from .distance import class_distance, class_similarity
 from .ema import EMATeacher, ema_lambda_per_update
 from .mask import mask_classifier, set_classification_mask
@@ -35,7 +36,9 @@ __all__ = [
     "backbone",
     "bypass_submodule",
     "classification_module",
+    "detached_head_as_learned",
     "predict",
+    "AuxiliaryLogitsContext",
     "EmbeddingContext",
     "SupervisionContext",
     "class_distance",

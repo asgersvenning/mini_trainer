@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from mini_trainer import get_logger
 from mini_trainer.builders import EMATeacher
 from mini_trainer.logging import MultiLogger
-from mini_trainer.modeling import EmbeddingContext, SupervisionContext
+from mini_trainer.modeling import AuxiliaryLogitsContext, EmbeddingContext, SupervisionContext
 from mini_trainer.training.compilation import model_compile_options
 from mini_trainer.training.mixing import BatchRegularizer, mixed_loss
 from mini_trainer.utils import (
@@ -122,6 +122,27 @@ def watch_phase_start(batches, phase: str = "phase"):
     return first_batch_closes_the_window()
 
 
+HEAD_SUMMARY_SUFFIXES = (
+    "parametrizations.weight.original0",
+    "linear.bias",
+    "global_scale",
+    "detached_linear.scale",
+    "detached_linear.bias",
+)
+
+
+def head_parameter_summary(model: nn.Module) -> str:
+    """Quantiles of a cosine head's trainable per-class magnitudes and biases (and a shared or detached head's)."""
+    parts = []
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad and name.endswith(HEAD_SUMMARY_SUFFIXES):
+            values = parameter.detach().float().flatten()
+            q = torch.quantile(values, torch.tensor([0.0, 0.05, 0.5, 0.95, 1.0], device=values.device)).tolist()
+            quantiles = f"min {q[0]:.4f} p05 {q[1]:.4f} median {q[2]:.4f} p95 {q[3]:.4f} max {q[4]:.4f}"
+            parts.append(f"{name} {quantiles} mean {values.mean().item():.4f}")
+    return "; ".join(parts) or "no trainable head magnitudes or biases"
+
+
 def train_one_epoch(
     model: nn.Module,
     model_ema: EMATeacher,
@@ -139,6 +160,7 @@ def train_one_epoch(
     device: torch.device = torch.device("cpu"),
     dtype: torch.dtype = torch.float32,
     batch_regularizer: BatchRegularizer | None = None,
+    head_summary_every: int | None = None,
 ):
     """Run an epoch over ``(NCHW inputs, targets)`` batches and finish in eval mode.
 
@@ -154,6 +176,12 @@ def train_one_epoch(
     ``batch_regularizer`` (opt-in) erases and/or mixes the preprocessed batch; a mixed batch's loss is
     ``lam * criterion(logits, target) + (1 - lam) * criterion(logits, target.flip(0))``. The logged training
     accuracy is then measured against the unflipped labels.
+
+    Auxiliary heads (opt-in, e.g. a detached learned head) add their outputs during the forward; the criterion of
+    each is added to the loss, and their parameters are clipped separately from the model's, so their gradient does
+    not rescale the model's update. The logged loss stays the model's own. ``head_summary_every`` (opt-in) logs,
+    every that many batches and at the epoch's end, the mean training loss since the last line (and the auxiliary
+    loss) with quantiles of the head's trainable magnitudes and biases.
     """
     log = get_logger()
 
@@ -171,6 +199,10 @@ def train_one_epoch(
 
     nan_errs = 0
     distill_loss = 0
+    auxiliary = [p for name, p in model.named_parameters() if "detached_linear." in name and p.requires_grad]
+    auxiliary_ids = {id(p) for p in auxiliary}
+    own = [p for p in model.parameters() if id(p) not in auxiliary_ids]
+    summary_loss, summary_aux, summary_n = 0.0, 0.0, 0
 
     start_time = time.time()
     for i, (batch, target) in enumerate(pbar):
@@ -183,7 +215,12 @@ def train_one_epoch(
         if len(batch.shape) != 4:
             raise RuntimeError(f"Incorrect {batch.shape=}, expected 4 dimensions, not {len(batch.shape)}.")
         batch, target = batch.to(device, non_blocking=True), target.to(device, non_blocking=True)
-        with autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32), SupervisionContext(target), EmbeddingContext():
+        with (
+            autocast(device_type=device.type, dtype=dtype, enabled=dtype != torch.float32),
+            SupervisionContext(target),
+            EmbeddingContext(),
+            AuxiliaryLogitsContext(),
+        ):
             inputs = preprocess(augmentation(batch))
             lam = 1.0
             if batch_regularizer is not None:
@@ -192,13 +229,23 @@ def train_one_epoch(
             loss: list[torch.Tensor] | torch.Tensor = criterion(logits, target)
             if lam < 1.0:
                 loss = mixed_loss(loss, criterion(logits, target.flip(0)), lam)
+            aux_loss: torch.Tensor | Literal[0] = 0
+            for aux_logits in AuxiliaryLogitsContext.get():
+                term = criterion(aux_logits, target)
+                if lam < 1.0:
+                    term = mixed_loss(term, criterion(aux_logits, target.flip(0)), lam)
+                aux_loss = aux_loss + (sum(term) if isinstance(term, (list, tuple)) else term)
             distill_loss = model_ema.teach(step=step, input=preprocess(batch), student=logits) if model_ema else 0.0
             reg = regularizer(model)
 
         if isinstance(loss, torch.Tensor) and loss.numel() == 1:
             loss = [loss]
         optimizer.zero_grad()
-        if not all([torch.isfinite(term).all() for term in loss]) or not torch.isfinite(torch.as_tensor(distill_loss)):
+        if (
+            not all([torch.isfinite(term).all() for term in loss])
+            or not torch.isfinite(torch.as_tensor(distill_loss))
+            or not torch.isfinite(torch.as_tensor(aux_loss)).all()
+        ):
             nan_errs += 1
             if nan_errs < 5:
                 continue
@@ -206,10 +253,14 @@ def train_one_epoch(
                 raise RuntimeError("Interrupted training due to persistent nan's detected in the loss.")
         else:
             nan_errs = 0
-        scaler.scale(sum(loss) + reg + distill_loss).backward()
+        scaler.scale(sum(loss) + reg + distill_loss + aux_loss).backward()
         scaler.unscale_(optimizer)
         if clip_grad_norm is not None:
-            nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
+            if auxiliary:
+                nn.utils.clip_grad_norm_(own, clip_grad_norm)
+                nn.utils.clip_grad_norm_(auxiliary, clip_grad_norm)
+            else:
+                nn.utils.clip_grad_norm_(model.parameters(), clip_grad_norm)
 
         # Advance dependent state only when AMP allowed the optimizer update.
         if _optimizer_step(optimizer, scaler):
@@ -230,6 +281,17 @@ def train_one_epoch(
         )
         if i % 25 == 0:
             pbar.set_description_str(logger.status())
+        if head_summary_every:
+            summary_loss = summary_loss + sum(loss).detach().float()
+            summary_aux = summary_aux + (aux_loss.detach().float() if isinstance(aux_loss, torch.Tensor) else 0.0)
+            summary_n += 1
+            if (i + 1) % head_summary_every == 0 or i + 1 == n_batches:
+                aux_text = f", auxiliary loss {float(summary_aux) / summary_n:.4f}" if auxiliary else ""
+                log.info(
+                    f"Head summary epoch {epoch + 1} batch {i + 1}/{n_batches}: training loss {float(summary_loss) / summary_n:.4f}"
+                    f" (mean of {summary_n}){aux_text}; {head_parameter_summary(model)}"
+                )
+                summary_loss, summary_aux, summary_n = 0.0, 0.0, 0
         start_time = time.time()
     logger.stop_timing()
     logger.synchronize_between_processes()

@@ -17,7 +17,7 @@ from mini_trainer import get_logger
 from mini_trainer.utils import class_path, cosine_to_zscore, dtype_to_string, import_class, string_to_dtype
 
 from .architectures import get_model, square_crop_preprocess
-from .context import EmbeddingContext
+from .context import AuxiliaryLogitsContext, EmbeddingContext
 from .quantized_training import load_training_weights, restore_quantized_training
 
 
@@ -101,6 +101,7 @@ class Classifier(nn.Module):
         legacy_spherical_init: bool = False,
         magnitude_after_angle: bool = False,
         global_scale: bool = False,
+        detached_learned_head: bool = False,
         **metadata,
     ):
         """Build the head; the options below only affect normalized (cosine) heads unless noted.
@@ -118,6 +119,13 @@ class Classifier(nn.Module):
         ``global_scale`` adds one learned scalar ``s`` (initialised at 1, no weight decay) shared by every class,
         ``s * sqrt(D - 2) * asin(clamp(cos)) + b_c``: the magnitude-after-angle form with ``g`` tied across rows.
         It needs ``normalized`` and excludes ``trainable_scale``; the bias follows ``trainable_bias``.
+        ``detached_learned_head`` adds a second head on the same rows with its own per-class ``g`` and ``b``
+        (``detached_linear.scale`` / ``.bias``, initialised at 1 and 0), scored in the learned-head form
+        ``sqrt(D - 2) * asin(clamp(g_c * cos)) + b_c`` on the embedding and the rows with the gradient stopped, so its
+        loss trains only its own ``g`` and ``b``. Only training computes it (``AuxiliaryLogitsContext``: the training
+        step adds its criterion to the loss); predictions are the main head's. ``detached_head_as_learned`` turns a
+        checkpoint into one whose head is this second head. It needs ``normalized`` and excludes ``global_scale`` and
+        ``magnitude_after_angle``.
         All are stored in the checkpoint metadata.
         """
         super().__init__()
@@ -162,6 +170,7 @@ class Classifier(nn.Module):
             "legacy_spherical_init": legacy_spherical_init,
             "magnitude_after_angle": magnitude_after_angle,
             "global_scale": global_scale,
+            "detached_learned_head": detached_learned_head,
         }
         metadata.update({k: True for k, v in options.items() if v})
         self._metadata = metadata
@@ -174,6 +183,14 @@ class Classifier(nn.Module):
             raise ValueError("`global_scale` needs a normalized (cosine) head without `trainable_scale` (one shared g, not one per class).")
         # One shared scale; registered only when enabled, so default state dicts are unchanged.
         self.register_parameter("global_scale", nn.Parameter(torch.ones(1)) if global_scale else None)
+        if detached_learned_head and (not normalized or global_scale or self.magnitude_after_angle):
+            raise ValueError("`detached_learned_head` needs a normalized (cosine) head without `global_scale` or `magnitude_after_angle`.")
+        # The second head's own g and b; registered only when enabled, so default state dicts are unchanged.
+        self.detached_linear = None
+        if detached_learned_head:
+            self.detached_linear = nn.Module()
+            self.detached_linear.scale = nn.Parameter(torch.ones(out_features, 1))
+            self.detached_linear.bias = nn.Parameter(torch.zeros(out_features))
 
         self.hidden = hidden and nn.Linear(in_features, self.preclassification_size)
 
@@ -303,10 +320,26 @@ class Classifier(nn.Module):
         else:
             return self.batch_norm(x)
 
+    def _aggregate(self, logits: torch.Tensor) -> Any:
+        """The head's output from its leaf logits (identity here; a hierarchy adds the coarser ranks)."""
+        return logits
+
+    def detached_logits(self, embeddings: torch.Tensor) -> torch.Tensor:
+        """Leaf logits of the detached learned head: the main head's unit rows and ``embeddings`` without gradient."""
+        direction = F.normalize(self.linear.parametrizations.weight.original1, 2, 1).detach()
+        scale, bias = self.detached_linear.scale.squeeze(1), self.detached_linear.bias  # type: ignore[union-attr]
+        if self.active_indices is not None:
+            direction = direction.index_select(0, self.active_indices)
+            scale, bias = scale.index_select(0, self.active_indices), bias.index_select(0, self.active_indices)
+        cosine = F.linear(embeddings.detach(), weight=direction)
+        return cosine_to_zscore(cosine * scale, self.preclassification_size) + bias
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         embeddings = self.preclassification(x)
         if EmbeddingContext.active():
             EmbeddingContext.set(embeddings)
+        if self.detached_linear is not None and AuxiliaryLogitsContext.active():
+            AuxiliaryLogitsContext.add(self._aggregate(self.detached_logits(embeddings)))
         # Resolve parametrized weights beside their Linear consumer.
         weight, bias = self._weight_bias()
         if self.normalized and (self.magnitude_after_angle or self.global_scale is not None):
@@ -748,3 +781,25 @@ def classification_module(model: nn.Module):
         if not isinstance(module, Classifier):
             raise RuntimeError(f"Unexpected classification head type {type(module)} found.")
         return module
+
+
+def detached_head_as_learned(state: dict[str, Any], head_name: str) -> OrderedDict[str, Any]:
+    """The state dict of the same model with its detached learned head as the head.
+
+    ``state`` comes from a model trained with ``Classifier(detached_learned_head=True)``. The returned head keeps the
+    shared rows and takes the detached head's ``g`` and ``b`` as its row norms and biases, recorded as an ordinary
+    learned head (``trainable_scale`` and ``trainable_bias``); everything else is unchanged. It loads and scores like
+    any learned head, so the second head can be evaluated and released with the usual tools.
+    """
+    prefix = f"{head_name}."
+    if f"{prefix}detached_linear.scale" not in state:
+        raise KeyError(f"No detached learned head under {head_name!r} in this state dict.")
+    converted = OrderedDict((k, v) for k, v in state.items() if not k.startswith(f"{prefix}detached_linear."))
+    weight = converted[f"{prefix}linear.parametrizations.weight.original0"]
+    converted[f"{prefix}linear.parametrizations.weight.original0"] = state[f"{prefix}detached_linear.scale"].detach().clone().to(weight)
+    converted[f"{prefix}linear.bias"] = state[f"{prefix}detached_linear.bias"].detach().clone().to(converted[f"{prefix}linear.bias"])
+    metadata = dict(state[f"{prefix}_extra_state"])
+    metadata.pop("detached_learned_head", None)
+    metadata.update(trainable_scale=True, trainable_bias=True)
+    converted[f"{prefix}_extra_state"] = metadata
+    return converted

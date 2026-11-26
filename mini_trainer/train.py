@@ -3,6 +3,7 @@ import os
 import random
 import types
 from argparse import ArgumentParser
+from fnmatch import fnmatchcase
 from typing import Any
 
 import numpy as np
@@ -97,6 +98,8 @@ def main(  # noqa: D417
     optimizer_cudagraphs: bool = False,
     checkpoint_retention: bool = False,
     keep_checkpoints: list[int] | None = None,
+    train_only: list[str] | None = None,
+    head_summary_every: int | None = None,
 ):
     """Build training components, restore optional state, and run the epoch loop.
 
@@ -146,12 +149,23 @@ def main(  # noqa: D417
     written, and it is deleted after ``last.pt`` is saved on a clean finish. ``best.pt`` and ``last.pt`` are always
     kept. ``keep_checkpoints`` (zero-based epochs, as in the snapshot names; e.g. a WSD branch point) are saved as
     ``checkpoint_<epoch>.pth`` and kept, with or without retention.
+
+    ``train_only`` (opt-in) trains only the parameters whose names match one of its patterns (``fnmatch``, full
+    names such as ``classifier.linear.bias``); every other parameter is frozen, and every module without a trainable
+    parameter stays in eval mode (fixed normalisation statistics, no dropout), e.g. a frozen trunk and hidden layer
+    under a head's trainable magnitudes and biases. Each pattern must match. It excludes ``freeze_backbone``.
+    ``head_summary_every`` (opt-in) logs every that many training batches the mean loss and quantiles of the head's
+    trainable magnitudes and biases.
     """
     orig_args = locals()
     model_compile_options(compile, compile_mode)
     validate_optimizer_compilation(compile_optimizer, optimizer_cudagraphs, device)
     if any(e < 0 for e in keep_checkpoints or ()):
         raise ValueError(f"keep_checkpoints are zero-based epochs, not {keep_checkpoints}.")
+    if train_only and freeze_backbone:
+        raise ValueError("Use either `train_only` or `freeze_backbone`, not both.")
+    if head_summary_every is not None and head_summary_every < 1:
+        raise ValueError(f"head_summary_every must be a positive number of batches, not {head_summary_every}.")
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -270,6 +284,8 @@ def main(  # noqa: D417
         nn_model.register_forward_pre_hook(_channels_last_input)
     if freeze_backbone:
         _freeze_backbone(nn_model)
+    if train_only:
+        _train_only(nn_model, train_only)
     optimizer = builder.build_optimizer(model=nn_model, **optimizer_builder_kwargs)
     validate_type(optimizer, torch.optim.Optimizer)
     if criterion_builder_kwargs.get("species_margin"):
@@ -395,6 +411,7 @@ def main(  # noqa: D417
         compile_mode=compile_mode,
         **({"fit_loader": fit_loader, "fit_every": fit_every} if fit_loader is not None else {}),
         **({"batch_regularizer": batch_regularizer} if batch_regularizer is not None else {}),
+        **({"head_summary_every": head_summary_every} if head_summary_every else {}),
     )
 
     del train_loader
@@ -460,6 +477,26 @@ def _freeze_backbone(model: torch.nn.Module) -> None:
                 child.eval()
                 child.train = types.MethodType(_always_eval, child)
         node = getattr(node, part)
+
+
+def _train_only(model: torch.nn.Module, patterns: list[str]) -> None:
+    """Train only the parameters matching ``patterns``; freeze the rest and keep modules without one in eval mode."""
+    names = [name for name, _ in model.named_parameters()]
+    unmatched = [pattern for pattern in patterns if not any(fnmatchcase(name, pattern) for name in names)]
+    if unmatched:
+        raise ValueError(f"train_only patterns {unmatched} match no parameter of the model.")
+    trainable = set()
+    for name, parameter in model.named_parameters():
+        keep = any(fnmatchcase(name, pattern) for pattern in patterns)
+        parameter.requires_grad_(keep)
+        if keep:
+            trainable.add(id(parameter))
+    for module in model.modules():
+        if not any(id(parameter) in trainable for parameter in module.parameters()):
+            module.eval()
+            module.train = types.MethodType(_always_eval, module)
+    kept = [(name, p.numel()) for name, p in model.named_parameters() if id(p) in trainable]
+    get_logger().info(f"train_only: {sum(n for _, n in kept):,} trainable values in {kept}; everything else frozen")
 
 
 def _channels_last_input(module, args):
@@ -691,6 +728,13 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         "best.pt, last.pt and --keep-checkpoints are kept (default=False).",
     )
     out_args.add_argument(
+        "--head-summary-every",
+        type=int,
+        default=None,
+        dest="head_summary_every",
+        help="Log every N training batches the mean loss and quantiles of the head's trainable magnitudes and biases.",
+    )
+    out_args.add_argument(
         "--keep-checkpoints",
         type=int,
         nargs="+",
@@ -772,6 +816,15 @@ def cli(description="Train a classifier", **extra_kwargs):  # noqa: D103
         dest="freeze_backbone",
         required=False,
         help="Train only the classification head; the backbone stays frozen and in eval mode (default=False).",
+    )
+    cfg_args.add_argument(
+        "--train-only",
+        type=str,
+        nargs="+",
+        default=None,
+        dest="train_only",
+        help="Train only parameters whose full names match these fnmatch patterns; the rest is frozen, and modules\n"
+        "without a trainable parameter stay in eval mode (e.g. classifier.linear.bias).",
     )
     cfg_args.add_argument(
         "--compile-mode",

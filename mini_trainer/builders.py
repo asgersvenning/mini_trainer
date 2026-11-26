@@ -333,7 +333,8 @@ class BaseBuilder:
         containing ``linear`` or ``layer`` select the no-Muon group, or every head
         parameter does when ``head_muon`` is False; normalization parameters, weight
         parametrizations and biases receive no weight decay unless ``decay_all`` is
-        set; a cosine head's shared ``global_scale`` is never on Muon and never decayed.
+        set; a cosine head's shared ``global_scale`` is never on Muon and never decayed. A detached learned head's
+        ``g`` and ``b`` (``detached_linear``) go where a learned head's row norms and biases go.
         Frozen parameters are excluded.
         """
         if not hasattr(model, "_backbone_output_name"):
@@ -383,7 +384,9 @@ class BaseBuilder:
                         "weight_decay": param_groups[grp_name]["weight_decay"],
                     }
                 grp_name = new_grp_name
-            if shared_scale or (not decay_all and ("parametrizations.weight" in name or id(p) in norm_param_ids or name.endswith(".bias"))):
+            # A detached learned head's g is grouped as a learned head's row norm (a weight parametrization).
+            row_norm = "parametrizations.weight" in name or name.endswith("detached_linear.scale")
+            if shared_scale or (not decay_all and (row_norm or id(p) in norm_param_ids or name.endswith(".bias"))):
                 new_grp_name = f"{grp_name}_nodecay"
                 if new_grp_name not in param_groups:
                     param_groups[new_grp_name] = {"params": [], "lr": param_groups[grp_name]["lr"], "weight_decay": 0}

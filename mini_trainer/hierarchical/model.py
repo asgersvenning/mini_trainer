@@ -122,6 +122,9 @@ class HierarchicalClassifier(Classifier):  # noqa: D101 TODO
             ys.append(batched_scatter_logsumexp(ys[-1], mask, dim_size=self.mask_dim_size(i)))
         return ys
 
+    def _aggregate(self, logits):
+        return self.hierarchy(logits)
+
     def forward(self, x):
         return self.hierarchy(super().forward(x))
 
@@ -157,9 +160,10 @@ class ConditionalClassifier(HierarchicalClassifier):  # noqa: D101 TODO
 
     def __init__(self, normalized: bool = True, **kwargs):  # noqa: D107
         super().__init__(normalized=normalized, **kwargs)
-        if self.magnitude_after_angle or self.global_scale is not None:
+        if self.magnitude_after_angle or self.global_scale is not None or self.detached_linear is not None:
             raise NotImplementedError(
-                "`magnitude_after_angle` and `global_scale` are implemented for single-layer heads (flat and bottom-up) only."
+                "`magnitude_after_angle`, `global_scale` and `detached_learned_head` are implemented for single-layer heads"
+                " (flat and bottom-up) only."
             )
         # Conditional layers
         layers: list[nn.Linear] = [self.linear]
@@ -285,9 +289,10 @@ class AutoregressiveClassifierV2(AutoregressiveMixin, HierarchicalClassifier):
             decoder_cls = cast(type[BaseDecoder], import_class(decoder_cls))
         cls_path = class_path(decoder_cls)
         super().__init__(*args, decoder_cls=cls_path, decoder_kwargs=decoder_kwargs, **kwargs)
-        if self.magnitude_after_angle or self.global_scale is not None:
+        if self.magnitude_after_angle or self.global_scale is not None or self.detached_linear is not None:
             raise NotImplementedError(
-                "`magnitude_after_angle` and `global_scale` are implemented for single-layer heads (flat and bottom-up) only."
+                "`magnitude_after_angle`, `global_scale` and `detached_learned_head` are implemented for single-layer heads"
+                " (flat and bottom-up) only."
             )
 
         self.sequence_length = self.num_masks + 1 + 1
