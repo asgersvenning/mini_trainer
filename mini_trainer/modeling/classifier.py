@@ -102,6 +102,7 @@ class Classifier(nn.Module):
         magnitude_after_angle: bool = False,
         global_scale: bool = False,
         detached_learned_head: bool = False,
+        hidden_activation: str = "leaky_relu",
         **metadata,
     ):
         """Build the head; the options below only affect normalized (cosine) heads unless noted.
@@ -126,6 +127,9 @@ class Classifier(nn.Module):
         step adds its criterion to the loss); predictions are the main head's. ``detached_head_as_learned`` turns a
         checkpoint into one whose head is this second head. It needs ``normalized`` and excludes ``global_scale`` and
         ``magnitude_after_angle``.
+        ``hidden_activation`` is the hidden layer's activation: ``"leaky_relu"`` (the default, slope 0.01) or
+        ``"none"``, which keeps the hidden layer linear (``h = W f + c``, then normalised); recorded in the metadata
+        only when it is not the default, so reloading and export rebuild it.
         All are stored in the checkpoint metadata.
         """
         super().__init__()
@@ -173,6 +177,11 @@ class Classifier(nn.Module):
             "detached_learned_head": detached_learned_head,
         }
         metadata.update({k: True for k, v in options.items() if v})
+        if hidden_activation not in ("leaky_relu", "none"):
+            raise ValueError(f"hidden_activation must be 'leaky_relu' or 'none', not {hidden_activation!r}.")
+        if hidden_activation != "leaky_relu":
+            metadata["hidden_activation"] = hidden_activation
+        self.hidden_activation = hidden_activation
         self._metadata = metadata
         self.trainable_scale, self.trainable_bias = bool(trainable_scale), bool(trainable_bias)
         self.float32_head, self.legacy_spherical_init = bool(float32_head), bool(legacy_spherical_init)
@@ -314,7 +323,8 @@ class Classifier(nn.Module):
         if self.hidden:
             x = self.dropout(x)  # type: ignore
             x = self.hidden(x)  # type: ignore
-            x = F.leaky_relu(x)
+            if self.hidden_activation == "leaky_relu":
+                x = F.leaky_relu(x)
         if self.normalized:
             return F.normalize(x, 2, -1)
         else:

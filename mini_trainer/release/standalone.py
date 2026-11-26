@@ -65,6 +65,7 @@ class Head:
     hidden_bias: np.ndarray | None = None
     magnitude_after_angle: bool = False
     sizes: list[int] = field(default_factory=list)  # nodes per rank
+    hidden_activation: str = "leaky_relu"  # or "none": a linear hidden layer
 
     def __post_init__(self):
         if not self.sizes:
@@ -93,6 +94,7 @@ def load_head(path: str | Path, labels: str | Path | None = None, prefix: str = 
         hidden_bias=tensors.get("hidden.bias"),
         magnitude_after_angle=meta["magnitude_after_angle"],
         sizes=meta["sizes"],
+        hidden_activation=meta.get("hidden_activation", "leaky_relu"),
     )
 
 
@@ -119,6 +121,7 @@ def subset(head: Head, rows) -> Head:
         hidden_weight=head.hidden_weight,
         hidden_bias=head.hidden_bias,
         magnitude_after_angle=head.magnitude_after_angle,
+        hidden_activation=head.hidden_activation,
     )
 
 
@@ -141,11 +144,13 @@ def logsumexp_by_parent(logits: np.ndarray, parent: np.ndarray, size: int) -> np
 
 
 def embed_features(features: np.ndarray, head: Head) -> np.ndarray:
-    """The head's embedding: hidden layer and leaky ReLU when it has one, then L2 normalisation."""
+    """The head's embedding: hidden layer and its activation (leaky ReLU unless "none") when it has one, then L2
+    normalisation."""
     x = features.astype(np.float32)
     if head.hidden_weight is not None:
         x = x @ head.hidden_weight.T + head.hidden_bias
-        x = np.where(x >= 0, x, np.float32(0.01) * x)
+        if head.hidden_activation == "leaky_relu":
+            x = np.where(x >= 0, x, np.float32(0.01) * x)
     return x / np.maximum(np.linalg.norm(x, axis=1, keepdims=True), np.float32(1e-12))
 
 

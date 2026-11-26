@@ -139,6 +139,8 @@ def write_head(folder: Path, name: str, classifier: Classifier, ranks: list[str]
         "formula": "logit = sqrt(D-2)*asin(clamp(g*cos, -1+1e-7, 1-1e-7)) + b; coarser rank = logsumexp of children",
         "source": source,
     }
+    if getattr(classifier, "hidden_activation", "leaky_relu") != "leaky_relu":  # recorded only when not the default
+        meta["hidden_activation"] = classifier.hidden_activation
     (folder / "heads").mkdir(exist_ok=True)
     save_file(tensors, str(folder / f"heads/{name}.safetensors"), metadata={"format": "pt", "mini_trainer_head": json.dumps(meta)})
     (folder / f"heads/{name}.json").write_text(json.dumps({"ranks": ranks, "labels": labels}) + "\n")
